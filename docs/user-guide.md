@@ -142,7 +142,9 @@ Use the search box and class filter at the top of the Students tab to quickly fi
 
 Next to each student on the Students tab, tap **"▾ Breakdown"** to expand a mini panel showing that student's points broken down by activity — how many points and how many times they've been scanned for each one, with a **Net total** at the bottom. Tap it again (now showing **"▴ Breakdown"**) to collapse it.
 
-Deductions are included, so an activity that takes points away shows up as a negative number in red, and the Net total reflects the real balance for that period — not just what was earned.
+Deductions are included, so an activity that takes points away shows up as a negative number in red, and the Net total reflects the real balance for that period — not just what was earned. Store purchases are included too, as their own line.
+
+Auction tickets are also included, as a separate line labeled **"Auction tickets (current, all-time)"** — this shows the points that student currently has tied up in ticket purchases across every auction. Because ticket placements aren't timestamped (a student can move tickets between prizes, or get a refund, right up until a prize is drawn), this line always reflects the full current total, not just the period you've selected — the app tells you this right under the total whenever you're viewing anything other than "All time."
 
 Use the **"Breakdown"** dropdown at the top of the Students tab to choose the time period for every open breakdown panel: **All time**, **This week**, **Last 7 days**, or **Last 30 days**.
 

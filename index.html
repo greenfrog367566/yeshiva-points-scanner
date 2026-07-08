@@ -5133,9 +5133,28 @@ nameLine
     }
     return 0; // "all"
   }
+  // Total points a student currently has tied up in auction tickets, across every auction
+  // (there's one per class). Only auctions in "points" budget mode actually spend real
+  // points — "flat" budget auctions use a separate made-up budget, not real points — so
+  // those are skipped. This has no timestamps (tickets can be moved/refunded until a prize
+  // is drawn), so unlike everything else in the breakdown it's always a live, all-time
+  // figure — it can't be limited to "this week" etc.
+  function auctionPointsSpent(sid){
+    var total=0, count=0;
+    var aus=data.auctions||{};
+    Object.keys(aus).forEach(function(key){
+      var au=aus[key];
+      if(!au || au.budgetMode==="flat") return;
+      var t=au.tickets && au.tickets[sid]; if(!t) return;
+      Object.keys(t).forEach(function(pid){ var n=t[pid]||0; if(n>0){ total+=n; count+=1; } });
+    });
+    return {p:total, n:count};
+  }
   // Built straight from the real scan log (not the lifetime-earned totals used by Trends),
   // so deductions are included and the numbers can go negative — this is what makes a
-  // per-activity breakdown for a chosen time period possible and accurate.
+  // per-activity breakdown for a chosen time period possible and accurate. Store purchases
+  // are folded in the same way (they're timestamped); Auction spending is added separately
+  // below since it has no timestamp to filter by period.
   function renderActivityBreakdown(sid){
     var wrap=el("div","stud-breakdown");
     var period = $("breakdownPeriod") ? $("breakdownPeriod").value : "all";
@@ -5149,8 +5168,16 @@ nameLine
       if(!agg[L]) agg[L]={p:0,n:0};
       agg[L].p+=(e.delta||0); agg[L].n+=1;
     });
+    (data.store && data.store.log || []).forEach(function(p){
+      if(!p || p.sid!==sid) return;
+      if(cutoff && p.ts<cutoff) return;
+      var L="Store purchases";
+      if(!agg[L]) agg[L]={p:0,n:0};
+      agg[L].p-=(p.cost||0); agg[L].n+=1;
+    });
+    var auSpent=auctionPointsSpent(sid);
     var labels=Object.keys(agg).sort(function(a,b){ return agg[b].p-agg[a].p || agg[b].n-agg[a].n; });
-    if(!labels.length){ wrap.appendChild(el("div","recent-empty","No scans in this period yet.")); return wrap; }
+    if(!labels.length && !auSpent.p){ wrap.appendChild(el("div","recent-empty","No scans, purchases, or auction tickets in this period yet.")); return wrap; }
     var totalP=0;
     labels.forEach(function(L){
       totalP+=agg[L].p;
@@ -5160,11 +5187,22 @@ nameLine
       row.appendChild(el("span","stud-breakdown-pts"+(agg[L].p<0?" neg":""), fmt(agg[L].p)+" pts"));
       wrap.appendChild(row);
     });
+    if(auSpent.p>0){
+      totalP-=auSpent.p;
+      var auRow=el("div","stud-breakdown-row");
+      auRow.appendChild(el("span","stud-breakdown-label","Auction tickets (current, all-time)"));
+      auRow.appendChild(el("span","stud-breakdown-count","×"+auSpent.n));
+      auRow.appendChild(el("span","stud-breakdown-pts neg", fmt(-auSpent.p)+" pts"));
+      wrap.appendChild(auRow);
+    }
     var totalRow=el("div","stud-breakdown-row stud-breakdown-total");
     totalRow.appendChild(el("span","stud-breakdown-label","Net total"));
     totalRow.appendChild(el("span","stud-breakdown-count",""));
     totalRow.appendChild(el("span","stud-breakdown-pts"+(totalP<0?" neg":""), fmt(totalP)+" pts"));
     wrap.appendChild(totalRow);
+    if(auSpent.p>0 && period!=="all"){
+      wrap.appendChild(el("div","recent-empty","Auction tickets aren't timestamped, so that line always shows the full current total, not just this period."));
+    }
     return wrap;
   }
   function renderStudents(){
