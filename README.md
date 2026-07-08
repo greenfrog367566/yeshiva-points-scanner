@@ -82,5 +82,5 @@ MIT — see [LICENSE](LICENSE). Free to use, modify, and share; please keep the 
 
 ## Maintainers
 
-- Rabbi B. Steinerman — @greenfrog367566
+- Rabbi B. Steinerman — [Rabbi B. Steinerman](https://github.com/greenfrog367566)
 - Rabbi L. A. Goldwasser - 
