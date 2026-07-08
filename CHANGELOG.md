@@ -12,8 +12,11 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 - **Personal scoring pages** (QR Labels tab): print a page per student with a QR code for every activity, already linked to that student — scanning one code awards that exact activity to that exact student in a single scan, no arming step needed. Includes a "Custom" card that adds whatever amount is currently in the Custom box at scan time. Filter by group, and choose "Actual size" or "Fill page" before printing.
-- **Points breakdown by activity** (Students tab): click "▾ Breakdown" next to any student to expand a mini panel showing their lifetime points broken down by activity (points and number of times earned), with a total at the bottom.
-- **Live Custom QR codes** (Scan tab + Activity menu print): two small QR codes next to the Custom amount box let you scan to arm +Custom or −Custom instead of clicking the buttons — using whatever amount is currently typed in, at scan time. The same two codes are now included on the printable Activity menu (QR Labels tab) alongside the regular activity and Undo codes.
+- **Points breakdown by activity** (Students tab): click "▾ Breakdown" next to any student to expand a mini panel showing points broken down by activity — including deductions, so the numbers net out correctly, with a "Net total" at the bottom. A period selector at the top of the Students tab ("All time" / "This week" / "Last 7 days" / "Last 30 days") controls every open breakdown panel.
+- **Live Custom QR codes** (Activity menu print): two QR codes let you scan to arm +Custom or −Custom instead of clicking a button — using whatever amount is currently typed in the Custom box, at scan time. Printed on the Activity menu (QR Labels tab) alongside the regular activity and Undo codes.
+
+### Changed
+- Scan tab: the Custom Add/Subtract buttons now look and behave like the regular activity buttons (highlighting to show when armed) instead of small green/red pill buttons with QR codes next to them. The QR-code option for Custom now lives only on the printed Activity menu, not on the Scan tab itself.
 
 ### Fixed
 - Personal scoring pages: the "Personal scoring pages" section heading was being printed at the top of the first physical page (it wasn't marked as screen-only), which pushed the first student's page down and could cause their name to print at the bottom of the page before their QR grid, instead of both staying together at the top of their own page. The heading is now hidden when printing, and each student's page is set to reliably start on a fresh page.
