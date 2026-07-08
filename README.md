@@ -2,7 +2,7 @@
 
 A single-file, offline-friendly web app for tracking classroom/bunk points with a handheld barcode/QR scanner. Built by Rebbeim, for Rebbeim.
 
-**Live app:** `https://<your-org>.github.io/<your-repo>/` *(fill in once GitHub Pages is on)*
+**Live app:** (https://github.com/greenfrog367566/yeshiva-points-scanner)
 
 ## What it does
 
@@ -20,7 +20,7 @@ Any Rebbi/teacher who wants a fast, low-friction way to track points without pay
 
 ## Quick start (use it today, no setup)
 
-1. Download `index.html` from this repo (or open the [live version](https://<your-org>.github.io/<your-repo>/)).
+1. Download `index.html` from this repo (or open the [live version] (https://github.com/greenfrog367566/yeshiva-points-scanner)).
 2. Open it in any browser.
 3. Set your school/class name in the header, add students and activities, and start scanning.
 4. Your data is saved locally in your browser (`localStorage`) — nothing is sent anywhere unless you turn on Google Sheets sync yourself.
@@ -82,5 +82,5 @@ MIT — see [LICENSE](LICENSE). Free to use, modify, and share; please keep the 
 
 ## Maintainers
 
-- [Your Name] — [your GitHub username]
-- Rabbi B. Steinerman — [his GitHub username]
+- Rabbi B. Steinerman — @greenfrog367566
+- Rabbi L. A. Goldwasser - 
