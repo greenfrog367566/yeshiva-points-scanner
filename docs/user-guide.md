@@ -58,6 +58,8 @@ Repeat this for each student — the selected activity stays "armed" so you can 
 
 If you need to give an amount that isn't one of your preset buttons, use the custom row on the Scan screen: type in a point value and tap Add points or Subtract.
 
+Next to those buttons are two small QR codes — **Scan: +Custom** and **Scan: −Custom**. Scanning one of these does the same thing as tapping the button, but from a scanner instead of the screen: it arms the custom amount you currently have typed in, then scan a student to give it. These two codes are also printed on the Activity menu (QR Labels tab), so you can keep them on your clipboard along with your regular activities — the point value isn't baked into the printed code, so whatever you type into the Custom box at the moment you scan is what gets used.
+
 ## **2.3  QR Code Scanners**
 
 A USB barcode/QR scanner works like a keyboard — you don't need any special software. Just make sure your cursor is on the Scan screen, and the scanner will "type" the student's code and press Enter automatically.
@@ -135,6 +137,12 @@ If you'd rather not set up Google Sheets, you can also just copy the Name and Cl
 ## **4.4  Editing or Searching Students**
 
 Use the search box and class filter at the top of the Students tab to quickly find someone. Tap a student's name to edit their name or class.
+
+## **4.5  Points Breakdown by Activity**
+
+Next to each student on the Students tab, tap **"▾ Breakdown"** to expand a mini panel showing that student's lifetime points broken down by activity — how many points and how many times they've earned each one, with a total at the bottom. Tap it again (now showing **"▴ Breakdown"**) to collapse it.
+
+This only counts points that were *earned* (positive scans) — it doesn't include manual +/- stepper adjustments or deductions, so it's meant as a quick "what has this student been doing well at" glance rather than a full audit. For a fuller history including deductions and week-by-week trends, use the Trends tab instead.
 
 # **5. Activities **&** Point Values**
 
@@ -223,6 +231,14 @@ Once your students are added, print their QR code labels from the QR Labels tab.
 - Print one set at the start of the year (or whenever you add new students), and you're set for the whole year.
 
 *QR Labels — one code per student, ready to print on label sheets.*
+
+## **11.1 Personal Scoring Pages**
+
+Below the regular labels, there's a second option: **Personal scoring pages** — one full page per student, with a separate QR code for every activity, already linked to that specific student.
+
+- Normally, scanning takes two steps: scan an activity code to "arm" it, then scan the student. On a personal page, each code already knows both the student and the activity, so **one scan does the whole thing** — handy for centers, stations, or independent work where a madrich/aide is helping without needing to pick an activity first.
+- There's also a **Custom** card on each student's page — scanning it adds whatever amount is currently typed into the Custom box on the Scan tab, so it stays useful even though the exact number isn't fixed at print time.
+- Filter by group before printing, and choose **Actual size** or **Fill page** depending on whether you want compact pages or one big page per student.
 
 # **12. Picker (Choosing a Turn)**
 
