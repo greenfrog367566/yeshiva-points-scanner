@@ -230,6 +230,7 @@
   .stud-breakdown-label{flex:1;font-weight:600;color:var(--ink)}
   .stud-breakdown-count{color:var(--muted);font-size:.82rem}
   .stud-breakdown-pts{font-weight:800;color:var(--good);min-width:60px;text-align:right}
+  .stud-breakdown-pts.neg{color:var(--bad)}
   .stud-breakdown-total{border-top:2px solid var(--line);margin-top:2px;padding-top:8px;font-weight:800}
   .stud-breakdown-total .stud-breakdown-label{font-family:var(--serif)}
   .avatar{border-radius:50%;background:var(--ink-soft);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;overflow:hidden;position:relative}
@@ -268,9 +269,6 @@
   .personal-qr-card .personal-points.neg{color:var(--bad)}
   .personal-qr-card .personal-hint{font-size:.7rem;color:var(--muted);line-height:1.2;margin-top:6px;max-width:200px}
   .personal-qr{width:104px;height:104px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid var(--line);border-radius:12px;padding:5px}
-  .custom-qr-mini{display:flex;flex-direction:column;align-items:center;gap:3px}
-  .custom-qr-mini > div{width:56px;height:56px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:3px}
-  .custom-qr-mini span{font-size:.68rem;color:var(--muted);font-weight:600;white-space:nowrap}
   .label .qrwrap{display:flex;justify-content:center;margin-bottom:8px}
   .label .ln{font-family:var(--serif);font-weight:600;font-size:1rem;line-height:1.2}
   .label .lg{font-size:.75rem;color:var(--muted)}
@@ -687,16 +685,14 @@
             <label class="lbl">Custom amount</label>
             <input type="number" id="customAmt" class="field" value="1" min="0" step="1">
           </div>
-          <button class="btn btn-good btn-sm" id="customAdd">Add points</button>
-          <button class="btn btn-bad btn-sm" id="customSub">Subtract</button>
-          <div class="custom-qr-mini" title="Scan to arm +Custom using the amount above, then scan a student">
-            <div id="customQrAdd"></div>
-            <span>Scan: +Custom</span>
-          </div>
-          <div class="custom-qr-mini" title="Scan to arm −Custom using the amount above, then scan a student">
-            <div id="customQrSub"></div>
-            <span>Scan: −Custom</span>
-          </div>
+          <button class="act-btn" id="customAdd" type="button">
+            <span class="an">Custom (add)</span>
+            <span class="av pos" id="customAddVal">+1 pts</span>
+          </button>
+          <button class="act-btn" id="customSub" type="button">
+            <span class="an">Custom (subtract)</span>
+            <span class="av neg" id="customSubVal">−1 pts</span>
+          </button>
         </div>
 
         <div class="scan-box card pad">
@@ -1259,6 +1255,12 @@
     <div class="toolbar">
       <input id="studSearch" class="field grow" placeholder="Search students…">
       <select id="studGroupFilter" class="field" style="width:auto"><option value="">All classes</option></select>
+      <select id="breakdownPeriod" class="field" style="width:auto" title="Time period used by any open “▾ Breakdown” panels below">
+        <option value="all">Breakdown: All time</option>
+        <option value="week">Breakdown: This week</option>
+        <option value="7d">Breakdown: Last 7 days</option>
+        <option value="30d">Breakdown: Last 30 days</option>
+      </select>
       <span style="font-size:.85rem;color:var(--muted)" id="studCount"></span>
     </div>
     <div class="card pad"><div class="row-list" id="studentList"></div></div>
@@ -2954,22 +2956,25 @@ function setupRoster() {
     $("scanInput").focus();
   });
 
-  // custom amount
-  $("customAdd").addEventListener("click", function(){ var n=Math.abs(parseInt($("customAmt").value,10)||0); setArmed("Custom", n); $("scanInput").focus(); });
-  $("customSub").addEventListener("click", function(){ var n=Math.abs(parseInt($("customAmt").value,10)||0); setArmed("Custom", -n); $("scanInput").focus(); });
-  function renderCustomQr(){
-    var hasQR=(typeof QRCode!=="undefined");
-    [["customQrAdd","CTRL:CUSTOM+"],["customQrSub","CTRL:CUSTOM-"]].forEach(function(pair){
-      var holder=$(pair[0]); if(!holder) return;
-      holder.innerHTML="";
-      if(hasQR){
-        try{ new QRCode(holder,{text:pair[1],width:48,height:48,correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ holder.appendChild(el("div","lc","?")); }
-      } else {
-        holder.appendChild(el("div","lc","offline"));
-      }
-    });
+  // custom amount — buttons behave like activity buttons (dataset.label/delta drives the
+  // "armed" highlight in setArmed), with the live-typed amount kept in sync on every input.
+  function syncCustomButtons(){
+    var n=Math.abs(parseInt($("customAmt").value,10)||0);
+    var addBtn=$("customAdd"), subBtn=$("customSub");
+    addBtn.dataset.label="Custom"; addBtn.dataset.delta=n;
+    subBtn.dataset.label="Custom"; subBtn.dataset.delta=-n;
+    $("customAddVal").textContent="+"+n+" pts";
+    $("customSubVal").textContent="−"+n+" pts";
+    if(armed && armed.label==="Custom"){
+      addBtn.classList.toggle("selected", armed.delta===n);
+      subBtn.classList.toggle("selected", armed.delta===-n);
+    } else {
+      addBtn.classList.remove("selected"); subBtn.classList.remove("selected");
+    }
   }
+  $("customAmt").addEventListener("input", syncCustomButtons);
+  $("customAdd").addEventListener("click", function(){ var n=Math.abs(parseInt($("customAmt").value,10)||0); setArmed("Custom", n); syncCustomButtons(); $("scanInput").focus(); });
+  $("customSub").addEventListener("click", function(){ var n=Math.abs(parseInt($("customAmt").value,10)||0); setArmed("Custom", -n); syncCustomButtons(); $("scanInput").focus(); });
 
   // global scanner capture (works even if focus is lost / on other tabs)
   var buf="", lastT=0;
@@ -5118,24 +5123,47 @@ nameLine
 
   /* ---------- STUDENTS ---------- */
   var studentBreakdownOpen = {};
+  function breakdownPeriodCutoff(period){
+    var now=Date.now();
+    if(period==="7d") return now-7*24*60*60*1000;
+    if(period==="30d") return now-30*24*60*60*1000;
+    if(period==="week"){
+      var d=new Date(now), day=d.getDay(), diff=(day===0?-6:1-day);
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate()+diff).getTime();
+    }
+    return 0; // "all"
+  }
+  // Built straight from the real scan log (not the lifetime-earned totals used by Trends),
+  // so deductions are included and the numbers can go negative — this is what makes a
+  // per-activity breakdown for a chosen time period possible and accurate.
   function renderActivityBreakdown(sid){
     var wrap=el("div","stud-breakdown");
-    var earned=(data.earned && data.earned[sid])||{};
-    var labels=Object.keys(earned).sort(function(a,b){ return (earned[b].p-earned[a].p) || (earned[b].n-earned[a].n); });
-    if(!labels.length){ wrap.appendChild(el("div","recent-empty","No points earned yet — points earned from scans will show up here, broken down by activity.")); return wrap; }
+    var period = $("breakdownPeriod") ? $("breakdownPeriod").value : "all";
+    var cutoff = breakdownPeriodCutoff(period);
+    var agg={};
+    (data.log||[]).forEach(function(e){
+      if(!e || e.sid!==sid) return;
+      if(e.undone || e.kind==="correction") return; // skip reversed scans and the corrections that reverse them
+      if(cutoff && e.ts<cutoff) return;
+      var L=e.label||"Points";
+      if(!agg[L]) agg[L]={p:0,n:0};
+      agg[L].p+=(e.delta||0); agg[L].n+=1;
+    });
+    var labels=Object.keys(agg).sort(function(a,b){ return agg[b].p-agg[a].p || agg[b].n-agg[a].n; });
+    if(!labels.length){ wrap.appendChild(el("div","recent-empty","No scans in this period yet.")); return wrap; }
     var totalP=0;
     labels.forEach(function(L){
-      totalP+=earned[L].p;
+      totalP+=agg[L].p;
       var row=el("div","stud-breakdown-row");
       row.appendChild(el("span","stud-breakdown-label",L));
-      row.appendChild(el("span","stud-breakdown-count","×"+earned[L].n));
-      row.appendChild(el("span","stud-breakdown-pts",earned[L].p+" pts"));
+      row.appendChild(el("span","stud-breakdown-count","×"+agg[L].n));
+      row.appendChild(el("span","stud-breakdown-pts"+(agg[L].p<0?" neg":""), fmt(agg[L].p)+" pts"));
       wrap.appendChild(row);
     });
     var totalRow=el("div","stud-breakdown-row stud-breakdown-total");
-    totalRow.appendChild(el("span","stud-breakdown-label","Total earned"));
+    totalRow.appendChild(el("span","stud-breakdown-label","Net total"));
     totalRow.appendChild(el("span","stud-breakdown-count",""));
-    totalRow.appendChild(el("span","stud-breakdown-pts",totalP+" pts"));
+    totalRow.appendChild(el("span","stud-breakdown-pts"+(totalP<0?" neg":""), fmt(totalP)+" pts"));
     wrap.appendChild(totalRow);
     return wrap;
   }
@@ -5229,6 +5257,7 @@ nameLine
   }
   $("studSearch").addEventListener("input", renderStudents);
   $("studGroupFilter").addEventListener("change", renderStudents);
+  $("breakdownPeriod").addEventListener("change", renderStudents);
   $("addStudent").addEventListener("click", function(){
     var name=$("newName").value.trim(); if(!name){ $("newName").focus(); return; }
     var grp=$("newGroup").value.trim();
@@ -5752,7 +5781,7 @@ nameLine
   $("muteBtn").textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   showDate();
   renderActButtons();
-  renderCustomQr();
+  syncCustomButtons();
   if(data.activities.length) setArmed(data.activities[0].name, data.activities[0].pts);
   renderRecent();
   renderScanBoard();

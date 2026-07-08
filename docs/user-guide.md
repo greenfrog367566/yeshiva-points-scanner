@@ -56,9 +56,9 @@ Repeat this for each student — the selected activity stays "armed" so you can 
 
 ## **2.2  Custom Point Amounts**
 
-If you need to give an amount that isn't one of your preset buttons, use the custom row on the Scan screen: type in a point value and tap Add points or Subtract.
+If you need to give an amount that isn't one of your preset buttons, use the custom row on the Scan screen: type in a point value, then tap the **Custom (add)** or **Custom (subtract)** button — they look and work just like your regular activity buttons, including highlighting to show they're armed.
 
-Next to those buttons are two small QR codes — **Scan: +Custom** and **Scan: −Custom**. Scanning one of these does the same thing as tapping the button, but from a scanner instead of the screen: it arms the custom amount you currently have typed in, then scan a student to give it. These two codes are also printed on the Activity menu (QR Labels tab), so you can keep them on your clipboard along with your regular activities — the point value isn't baked into the printed code, so whatever you type into the Custom box at the moment you scan is what gets used.
+There are also two "live" Custom QR codes printed on the Activity menu (QR Labels tab) — scanning one arms Custom using whatever amount is currently typed into the box above, so you can use a scanner for Custom amounts too, not just the on-screen buttons.
 
 ## **2.3  QR Code Scanners**
 
@@ -140,9 +140,13 @@ Use the search box and class filter at the top of the Students tab to quickly fi
 
 ## **4.5  Points Breakdown by Activity**
 
-Next to each student on the Students tab, tap **"▾ Breakdown"** to expand a mini panel showing that student's lifetime points broken down by activity — how many points and how many times they've earned each one, with a total at the bottom. Tap it again (now showing **"▴ Breakdown"**) to collapse it.
+Next to each student on the Students tab, tap **"▾ Breakdown"** to expand a mini panel showing that student's points broken down by activity — how many points and how many times they've been scanned for each one, with a **Net total** at the bottom. Tap it again (now showing **"▴ Breakdown"**) to collapse it.
 
-This only counts points that were *earned* (positive scans) — it doesn't include manual +/- stepper adjustments or deductions, so it's meant as a quick "what has this student been doing well at" glance rather than a full audit. For a fuller history including deductions and week-by-week trends, use the Trends tab instead.
+Deductions are included, so an activity that takes points away shows up as a negative number in red, and the Net total reflects the real balance for that period — not just what was earned.
+
+Use the **"Breakdown"** dropdown at the top of the Students tab to choose the time period for every open breakdown panel: **All time**, **This week**, **Last 7 days**, or **Last 30 days**.
+
+One thing this still doesn't capture: the +/− stepper right next to each student's score (for quick manual adjustments) doesn't go through the normal scan process, so it won't show up in the breakdown or affect these totals — only real scans (activities, Custom, personal QR pages) are counted.
 
 # **5. Activities **&** Point Values**
 
