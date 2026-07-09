@@ -16,15 +16,21 @@ This program runs entirely in a web browser (like Chrome or Safari) — there is
 
 **NOTE  **Because your data is saved on that specific computer/browser, always use the same device for the same class whenever possible. See the Backup chapter for how to move your data or protect it.
 
+**TIP — Which scanner to buy:** You need a **2D** scanner (not the older 1D kind) since the QR codes this program prints require one. Any USB "keyboard-emulation" 2D scanner works with no setup — just plug it in. We've personally used and can recommend the **[NETUM NT-1228BL](https://a.co/d/0eS4Qweq)** (2D Barcode Scanner, works over 2.4G Wireless, Bluetooth, or USB Wired); it isn't the only option that works, just the one we've tested. See Chapter 17.1 for advanced (serial/COM) scanner setup if you have a different kind.
+
 ## **1.1  The Screen Layout**
 
 Every screen in the program shares the same layout:
 
 - A dark header at the top with your school name and bunk/class name — tap either one to rename it.
 
+- Today's date in the header, with the Hebrew date shown right alongside it (this can be turned off on the Settings tab).
+
 - A row of tabs just below the header (Scan, Standings, Trends, Raffle, and so on). Tap a tab to switch screens.
 
 - A class dropdown in the top-right corner — this lets you switch between different classes if you manage more than one.
+
+- Three shortcut buttons in the header — **➕ Points**, **⏱ Timer**, and **🎡 Picker** — each opens a small floating version of that tool that stays on screen no matter which tab you're on. These can be hidden as a group from the Settings tab if you don't use them.
 
 - A Sound On/Off button in the header, in case you want the program to "beep" quietly.
 
@@ -362,6 +368,8 @@ Most cheap USB scanners need no setup at all — they act like a keyboard and al
 | --- | --- |
 | **Sound** | Turns the confirmation beep on or off. |
 | **Tapping a student shows their points breakdown instead of giving points** | Off by default. When on, tapping a name in the Scan tab's Tap Panel pops up their points breakdown instead of scoring them (scanning still always scores normally). See Chapter 2.1.1. |
+| **Show the Points / Timer / Picker shortcut buttons** | On by default. Turn off to simplify the header if you don't use the floating tools; the class dropdown and sound button stay either way. |
+| **Show the Hebrew date** | On by default. Shown right next to the regular date in the header — computed by the browser, no internet needed. |
 | **Quiz delay** | How long the quiz waits after a student answers before moving to the next question — lower it to speed things up, or set it to 0 to jump instantly. |
 | **Auto-advance timing** | Gives you time to get students positioned/scanned before the next quiz question appears automatically. |
 | **Label format** | Which label sheet layout to use when printing QR codes. |

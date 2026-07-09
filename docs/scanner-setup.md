@@ -1,5 +1,9 @@
 # Scanner Setup
 
+## Which scanner to buy
+
+You need a **2D scanner** — 1D scanners can only read old-style striped barcodes, not the QR codes this app generates. We've personally used and can recommend the **[NETUM NT-1228BL](https://a.co/d/0eS4Qweq)** — a 2D barcode scanner that connects over 2.4G Wireless, Bluetooth, or USB Wired, and works with QR, PDF417, and Data Matrix codes in addition to 1D barcodes. Used over USB, it's plug-and-play with no drivers or setup. It's not the only one that works — any USB "keyboard-emulation" 2D scanner should behave the same way — it's just the one we've tested ourselves.
+
 ## Most people need to do nothing
 
 Cheap USB barcode/QR scanners act like a keyboard — plug one in, click into the **Scan** tab, and start scanning. No pairing, no drivers, no settings.

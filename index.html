@@ -656,6 +656,7 @@
   </div>
   <div class="header-right">
     <span class="header-date" id="todayDate"></span>
+    <span class="header-date" id="todayDateHebrew"></span>
     <select id="classSel" class="mute-btn" title="Which class you're working with"></select>
     <button class="mute-btn" id="fsBtn" title="Floating points scanner">➕ Points</button>
     <button class="mute-btn" id="timerBtn" title="Floating timer">⏱ Timer</button>
@@ -1782,6 +1783,18 @@ function setupRoster() {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Header Shortcuts</h3>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHeaderShortcuts"> Show the Points / Timer / Picker shortcut buttons in the top-right corner</label>
+      <p class="view-note" style="margin:8px 0 0">On by default. Turn this off to keep the header simpler if you don't use the floating points scanner, timer, or picker wheel — the class dropdown and sound button stay either way, and you can always turn this back on here.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Hebrew Date</h3>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHebrewDate"> Show the Hebrew date next to the regular date</label>
+      <p class="view-note" style="margin:8px 0 0">On by default. Computed by the browser itself — no internet connection needed. If a browser doesn't support it, the Hebrew date is simply left off and nothing else is affected.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Shorashim — Quiz</h3>
       <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-weight:600">Seconds before the next question:</span>
@@ -2002,6 +2015,8 @@ function setupRoster() {
     if(!data.seating||typeof data.seating!=="object") data.seating={};
     if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
     if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
+    if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
+    if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
     if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
     if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
@@ -2491,6 +2506,8 @@ function setupRoster() {
   function renderSettings(){
     $("setSound").checked = !data.muted;
     $("setTapBreakdown").checked = !!data.tapShowsBreakdown;
+    $("setHeaderShortcuts").checked = data.showHeaderShortcuts!==false;
+    $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setQuizDelay").value = String(data.quizDelay);
     $("setGameAuto").checked = !!data.gameAuto;
     $("setGameAutoSecs").value = String(data.gameAutoSecs);
@@ -2539,6 +2556,8 @@ function setupRoster() {
     var mb=$("muteBtn"); if(mb) mb.textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   });
   $("setTapBreakdown").addEventListener("change", function(){ data.tapShowsBreakdown=this.checked; save(); });
+  $("setHeaderShortcuts").addEventListener("change", function(){ data.showHeaderShortcuts=this.checked; save(); applyHeaderShortcutsVisibility(); });
+  $("setHebrewDate").addEventListener("change", function(){ data.showHebrewDate=this.checked; save(); showDate(); });
   $("setQuizDelay").addEventListener("change", function(){
     var v=parseFloat(this.value); if(isNaN(v)||v<0) v=0; if(v>10) v=10;
     data.quizDelay=v; this.value=String(v); save();
@@ -3007,9 +3026,12 @@ function setupRoster() {
   $("scanInput").addEventListener("keydown", function(e){
     if(e.key==="Enter"){ e.preventDefault(); var v=this.value; this.value=""; handleScannedCode(v); }
   });
-  // keep it focused while on scan tab
+  // keep it focused while on scan tab — but never steal focus (which scrolls the
+  // page to bring the input into view) for anything inside the Tap Panel. Seating-chart
+  // tiles are plain <div>s rather than <button>s, so they need their own explicit
+  // exclusion here in addition to the general button check.
   document.getElementById("view-scan").addEventListener("click", function(e){
-    if(e.target.closest(".act-btn")||e.target.closest("button")) return;
+    if(e.target.closest(".act-btn")||e.target.closest("button")||e.target.closest("#tapPanelBody")) return;
     $("scanInput").focus();
   });
 
@@ -5836,7 +5858,7 @@ nameLine
     r.readAsText(file);
     e.target.value="";
   });
-  function load2fix(){ ["students","activities","log"].forEach(function(k){ if(!Array.isArray(data[k])) data[k]=[]; }); if(!data.scores) data.scores={}; if(!data.school) data.school="Sample School"; if(!data.bunk) data.bunk="Sample Class 1"; if(typeof data.sheetUrl!=="string") data.sheetUrl=""; if(typeof data.autoSheet!=="boolean") data.autoSheet=true; if(!data.raffle||typeof data.raffle!=="object") data.raffle={mode:"auto",entries:{},winners:[]}; if(!data.raffle.entries) data.raffle.entries={}; if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[]; if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1}; if(!data.pesukimDone) data.pesukimDone={}; if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1}; if(!data.pasukGameBest) data.pasukGameBest={}; if(!data.pasukPhrases) data.pasukPhrases={}; if(!data.pasukPointed) data.pasukPointed={}; if(!Array.isArray(data.textSets)) data.textSets=[]; migrateSets(); if(!Array.isArray(data.shorashim)) data.shorashim=[]; if(!data.game||typeof data.game!=="object") data.game={points:{}}; if(!data.game.points) data.game.points={}; if(!data.shorMatchBest) data.shorMatchBest={}; if(!data.gameBoards) data.gameBoards={}; if(!data.auctions||typeof data.auctions!=="object") data.auctions={}; if(data.auction && typeof data.auction==="object" && !data.auctionsMigrated){ data.auctions[""]=data.auction; data.auctionsMigrated=true; } delete data.auction; if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]}; if(!Array.isArray(data.store.items)) data.store.items=[]; if(!Array.isArray(data.store.log)) data.store.log=[]; if(!data.earned) data.earned={}; if(!data.weekly) data.weekly={}; if(typeof data.standingsActivity!=="string") data.standingsActivity=""; if(typeof data.raffleActivity!=="string") data.raffleActivity=""; if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={perPage:9,scale:"actual",groupMode:"all",groupKeys:[]}; if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[]; if(typeof data.quizDelay!=="number") data.quizDelay=1; if(typeof data.gameAuto!=="boolean") data.gameAuto=false; if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5; if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()}; if(!data.passes.used) data.passes.used={}; if(typeof data.fpCompact!=="boolean") data.fpCompact=false; if(typeof data.currentClass!=="string") data.currentClass=""; if(typeof data.labelFormat!=="string") data.labelFormat="avery5160"; if(typeof data.promptStyle!=="string") data.promptStyle=""; if(typeof data.nameStyle!=="string") data.nameStyle="hashem"; if(!data.seating||typeof data.seating!=="object") data.seating={}; if(typeof data.tapViewMode!=="string") data.tapViewMode="list"; if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false; if(typeof data.seatArranging!=="boolean") data.seatArranging=false; if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600; if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false; if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}}; if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={}; if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={}; if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[]; if(data.spinnerMode!=="custom") data.spinnerMode="class"; if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true; }
+  function load2fix(){ ["students","activities","log"].forEach(function(k){ if(!Array.isArray(data[k])) data[k]=[]; }); if(!data.scores) data.scores={}; if(!data.school) data.school="Sample School"; if(!data.bunk) data.bunk="Sample Class 1"; if(typeof data.sheetUrl!=="string") data.sheetUrl=""; if(typeof data.autoSheet!=="boolean") data.autoSheet=true; if(!data.raffle||typeof data.raffle!=="object") data.raffle={mode:"auto",entries:{},winners:[]}; if(!data.raffle.entries) data.raffle.entries={}; if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[]; if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1}; if(!data.pesukimDone) data.pesukimDone={}; if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1}; if(!data.pasukGameBest) data.pasukGameBest={}; if(!data.pasukPhrases) data.pasukPhrases={}; if(!data.pasukPointed) data.pasukPointed={}; if(!Array.isArray(data.textSets)) data.textSets=[]; migrateSets(); if(!Array.isArray(data.shorashim)) data.shorashim=[]; if(!data.game||typeof data.game!=="object") data.game={points:{}}; if(!data.game.points) data.game.points={}; if(!data.shorMatchBest) data.shorMatchBest={}; if(!data.gameBoards) data.gameBoards={}; if(!data.auctions||typeof data.auctions!=="object") data.auctions={}; if(data.auction && typeof data.auction==="object" && !data.auctionsMigrated){ data.auctions[""]=data.auction; data.auctionsMigrated=true; } delete data.auction; if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]}; if(!Array.isArray(data.store.items)) data.store.items=[]; if(!Array.isArray(data.store.log)) data.store.log=[]; if(!data.earned) data.earned={}; if(!data.weekly) data.weekly={}; if(typeof data.standingsActivity!=="string") data.standingsActivity=""; if(typeof data.raffleActivity!=="string") data.raffleActivity=""; if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={perPage:9,scale:"actual",groupMode:"all",groupKeys:[]}; if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[]; if(typeof data.quizDelay!=="number") data.quizDelay=1; if(typeof data.gameAuto!=="boolean") data.gameAuto=false; if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5; if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()}; if(!data.passes.used) data.passes.used={}; if(typeof data.fpCompact!=="boolean") data.fpCompact=false; if(typeof data.currentClass!=="string") data.currentClass=""; if(typeof data.labelFormat!=="string") data.labelFormat="avery5160"; if(typeof data.promptStyle!=="string") data.promptStyle=""; if(typeof data.nameStyle!=="string") data.nameStyle="hashem"; if(!data.seating||typeof data.seating!=="object") data.seating={}; if(typeof data.tapViewMode!=="string") data.tapViewMode="list"; if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false; if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true; if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true; if(typeof data.seatArranging!=="boolean") data.seatArranging=false; if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600; if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false; if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}}; if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={}; if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={}; if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[]; if(data.spinnerMode!=="custom") data.spinnerMode="class"; if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true; }
   $("resetScores").addEventListener("click", function(){
     if(confirm("Reset every student's score to zero? Roster and activities stay. This can't be undone.")){
       data.scores={}; data.log=[]; save(); renderRecent();
@@ -5861,7 +5883,26 @@ nameLine
   $("bunkName").addEventListener("blur", function(){ data.bunk=this.textContent.trim()||"Sample Class 1"; this.textContent=data.bunk; save(); });
   $("bunkName").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); this.blur(); } });
   $("muteBtn").addEventListener("click", function(){ data.muted=!data.muted; this.textContent=data.muted?"🔇 Sound off":"🔊 Sound on"; var ss=$("setSound"); if(ss) ss.checked=!data.muted; save(); });
-  function showDate(){ var d=new Date(); $("todayDate").textContent=d.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"}); }
+  function showDate(){
+    var d=new Date();
+    $("todayDate").textContent=d.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+    var heb=$("todayDateHebrew");
+    if(!heb) return;
+    if(!data.showHebrewDate){ heb.textContent=""; heb.style.display="none"; return; }
+    try{
+      var f=new Intl.DateTimeFormat("en-u-ca-hebrew",{day:"numeric",month:"long",year:"numeric"});
+      heb.textContent="· "+f.format(d);
+      heb.style.display="";
+    }catch(e){ heb.textContent=""; heb.style.display="none"; } // unsupported browser — just leave it off
+  }
+  // Header Points/Timer/Picker shortcuts can be hidden from Settings to keep the
+  // header simpler; the class dropdown and sound button are unaffected either way.
+  function applyHeaderShortcutsVisibility(){
+    var show = data.showHeaderShortcuts!==false;
+    ["fsBtn","timerBtn","pickerBtn"].forEach(function(id){
+      var b=$(id); if(b) b.style.display = show ? "" : "none";
+    });
+  }
 
   /* ---------- init ---------- */
   load();
@@ -5871,6 +5912,7 @@ nameLine
   $("autoSheet").checked=(data.autoSheet!==false);
   $("muteBtn").textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   showDate();
+  applyHeaderShortcutsVisibility();
   renderActButtons();
   syncCustomButtons();
   if(data.activities.length) setArmed(data.activities[0].name, data.activities[0].pts);
