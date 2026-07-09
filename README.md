@@ -2,7 +2,7 @@
 
 A single-file, offline-friendly web app for tracking classroom/bunk points with a handheld barcode/QR scanner. Built by Rebbeim, for Rebbeim.
 
-**Live app:** `https://<your-org>.github.io/<your-repo>/` *(fill in once GitHub Pages is on)*
+**Live app:**  (https://github.com/greenfrog367566/yeshiva-points-scanner)
 
 ## What it does
 
