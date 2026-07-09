@@ -50,7 +50,7 @@ This repo contains only the **app code**. It does **not** contain:
 
 Each teacher's roster, scores, and history live in **their own browser** (and optionally their own private Google Sheet or a backup JSON file they keep). Updating the app should never touch or erase your data — see [CONTRIBUTING.md](CONTRIBUTING.md) for the rule we follow to guarantee that.
 
-**Never commit a real backup file, real student names, or a real Google Sheet link to this repo.** Use `sample-backup.json` as a template — it contains only placeholder/demo data.
+**Never commit a real backup file, real student names, or a real Google Sheet link to this repo.** Use `sample-backup.json` as a template — it contains only placeholder/demo data (fictional students, a few days of sample scan history, a Store purchase, and a Raffle entry, so it demonstrates the real data shape without any real information).
 
 ## Adding a parsha or mishnayos text set (Pesukim tab)
 
@@ -65,7 +65,7 @@ The app ships with **no parsha pre-loaded** — you add your own text set(s) rig
 
 ```
 index.html          the app (currently a single file)
-sample-backup.json  blank/demo backup file — safe template, no real data
+sample-backup.json  demo backup with sample scan/Store/Raffle history — safe template, no real data
 samples/
   vayelech-parsha-sample.csv   example text set, ready to import via the Pesukim tab
 docs/
