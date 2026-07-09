@@ -2,13 +2,13 @@
 
 A single-file, offline-friendly web app for tracking classroom/bunk points with a handheld barcode/QR scanner. Built by Rebbeim, for Rebbeim.
 
-**Live app:** (https://greenfrog367566.github.io/yeshiva-points-scanner/)
+**Live app:** `https://<your-org>.github.io/<your-repo>/` *(fill in once GitHub Pages is on)*
 
 ## What it does
 
 - **Scan-based point tracking** — works with any USB scanner (keyboard-emulation, no setup) or a serial/COM scanner (Chrome/Edge, configurable baud rate)
 - **Activities & scoring** — define activities with point values, award/deduct points per student
-- **QR labels** — print QR codes per student for scanning
+- **QR labels** — print QR codes per student for scanning, or print one-page-per-student "personal scoring pages" where every activity's QR is already linked to that student for one-scan awarding
 - **Raffle** — auto or manual raffle entries tied to points
 - **Google Sheets sync** — push scans and live standings to your own Sheet
 - **Backup & restore** — export/import all data as JSON; rebuild from a Sheet's log CSV if needed
@@ -20,10 +20,16 @@ Any Rebbi/teacher who wants a fast, low-friction way to track points without pay
 
 ## Quick start (use it today, no setup)
 
-1. Download `index.html` from this repo (or open the [live version] (https://github.com/greenfrog367566/yeshiva-points-scanner)).
+1. Download `index.html` from this repo (or open the [live version](https://<your-org>.github.io/<your-repo>/)).
 2. Open it in any browser.
 3. Set your school/class name in the header, add students and activities, and start scanning.
 4. Your data is saved locally in your browser (`localStorage`) — nothing is sent anywhere unless you turn on Google Sheets sync yourself.
+
+## Recommended hardware
+
+Any USB barcode/QR scanner that acts as a keyboard (the cheap, common kind — no drivers, no setup) works with this app. If you want a **2D scanner** specifically (needed to read the QR codes this app generates, not just old-style 1D barcodes), we've used and can recommend the **[NETUM NT-1228BL](https://a.co/d/0eS4Qweq)** (2D Barcode Scanner, 2.4G Wireless/Bluetooth/USB Wired) — plug-and-play over USB, reads QR codes reliably.
+
+This is just what's worked well for us, not a paid endorsement or an exclusive recommendation — any 2D/QR-capable USB scanner should work the same way. See [docs/scanner-setup.md](docs/scanner-setup.md) for setup details and troubleshooting.
 
 ## A note on AI
 
@@ -82,5 +88,5 @@ MIT — see [LICENSE](LICENSE). Free to use, modify, and share; please keep the 
 
 ## Maintainers
 
-- Rabbi B. Steinerman — [Rabbi B. Steinerman](https://github.com/greenfrog367566)
-- Rabbi L. A. Goldwasser - 
+- [Rabbi B. Steinerman](https://github.com/greenfrog367566)
+- [Rabbi Goldwasser](https://github.com/REPLACE-WITH-HIS-USERNAME)
