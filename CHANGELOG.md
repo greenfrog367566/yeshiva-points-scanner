@@ -10,7 +10,11 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ## [Unreleased]
 
-- (add upcoming changes here as PRs are merged)
+### Added
+- **Setting: "Tapping a student shows their points breakdown instead of giving points"** (Settings tab, off by default). When turned on, tapping a name in the Scan tab's Tap Panel (list view or seating chart) pops up that student's points breakdown — same data as the Students tab's "▾ Breakdown," with its own time-period selector — instead of scoring them. Scanning a QR code still always scores normally regardless of this setting; it only changes what a tap on the Tap Panel does.
+
+### Fixed
+- **Points breakdown: Store purchases were being counted twice.** Store purchases already get logged into the normal scan history (`storeBuy()` calls the same `addLogEntry()` everything else does), but the breakdown was *also* separately pulling from the Store tab's own purchase-history list and adding a second "Store purchases" line on top — doubling the deduction for every unrefunded purchase and throwing off the Net Total. The breakdown now reads Store spending only from the scan log (each item shows as its own "Store: <item name>" line, same as before), matching the real balance exactly. As a side effect, this also makes the breakdown immune to the Store tab's "Clear history" button — that only clears the visible list on the Store tab, and never affected real balances, but now it can't make the breakdown's numbers look wrong either. Raffle ticket purchases/refunds were already logged correctly and needed no change. Auction remains the one category computed separately (ticket placement has no timestamp and isn't logged at all), clearly labeled as such.
 
 ## [0.2.0] — 2026-07-08
 
