@@ -54,6 +54,14 @@ Repeat this for each student — the selected activity stays "armed" so you can 
 
 *The Scan screen: pick an activity, then scan or tap a name.*
 
+## **2.1.1  Tap Panel: Checking a Student Instead of Scoring Them**
+
+Normally, tapping a student's name in the panel below the scan box (list view or the seating chart) scores them with whatever's currently armed — same as scanning their code.
+
+If you'd rather use that panel to quickly check on a student instead, turn on **"Tapping a student shows their points breakdown instead of giving points"** on the Settings tab (it's off by default). With it on, tapping a name pops up that student's points breakdown — the same information as the Students tab's "▾ Breakdown," with its own time-period dropdown right in the popup — instead of scoring them. Tap the ✕ or anywhere outside the popup to close it.
+
+This only changes what a **tap** does. Scanning an actual QR code still always scores normally, even while this setting is on — so you can leave it on and still score students the normal way with the scanner, while using taps just to check in on someone.
+
 ## **2.2  Custom Point Amounts**
 
 If you need to give an amount that isn't one of your preset buttons, use the custom row on the Scan screen: type in a point value, then tap the **Custom (add)** or **Custom (subtract)** button — they look and work just like your regular activity buttons, including highlighting to show they're armed.
@@ -142,9 +150,9 @@ Use the search box and class filter at the top of the Students tab to quickly fi
 
 Next to each student on the Students tab, tap **"▾ Breakdown"** to expand a mini panel showing that student's points broken down by activity — how many points and how many times they've been scanned for each one, with a **Net total** at the bottom. Tap it again (now showing **"▴ Breakdown"**) to collapse it.
 
-Deductions are included, so an activity that takes points away shows up as a negative number in red, and the Net total reflects the real balance for that period — not just what was earned. Store purchases are included too, as their own line.
+Deductions are included, so an activity that takes points away shows up as a negative number in red, and the Net total reflects the real balance for that period — not just what was earned. This includes Store purchases (each shows as its own "Store: <item name>" line) and Raffle ticket purchases/refunds — both are pulled from the same permanent scan history everything else uses, so the numbers always match the student's real point balance, and they aren't affected by clearing the Store tab's visible purchase-history list (that only tidies up the list you see there — it never touches real balances, and now can't throw off the breakdown either).
 
-Auction tickets are also included, as a separate line labeled **"Auction tickets (current, all-time)"** — this shows the points that student currently has tied up in ticket purchases across every auction. Because ticket placements aren't timestamped (a student can move tickets between prizes, or get a refund, right up until a prize is drawn), this line always reflects the full current total, not just the period you've selected — the app tells you this right under the total whenever you're viewing anything other than "All time."
+Auction tickets are the one exception, included as a separate line labeled **"Auction tickets (current, all-time)"** — this shows the points that student currently has tied up in ticket purchases across every auction. Because ticket placements aren't timestamped or logged the way everything else is (a student can move tickets between prizes, or get a refund, right up until a prize is drawn), this line always reflects the full current total, not just the period you've selected — the app tells you this right under the total whenever you're viewing anything other than "All time."
 
 Use the **"Breakdown"** dropdown at the top of the Students tab to choose the time period for every open breakdown panel: **All time**, **This week**, **Last 7 days**, or **Last 30 days**.
 
@@ -353,6 +361,7 @@ Most cheap USB scanners need no setup at all — they act like a keyboard and al
 | **Setting** | **What it does** |
 | --- | --- |
 | **Sound** | Turns the confirmation beep on or off. |
+| **Tapping a student shows their points breakdown instead of giving points** | Off by default. When on, tapping a name in the Scan tab's Tap Panel pops up their points breakdown instead of scoring them (scanning still always scores normally). See Chapter 2.1.1. |
 | **Quiz delay** | How long the quiz waits after a student answers before moving to the next question — lower it to speed things up, or set it to 0 to jump instantly. |
 | **Auto-advance timing** | Gives you time to get students positioned/scanned before the next quiz question appears automatically. |
 | **Label format** | Which label sheet layout to use when printing QR codes. |

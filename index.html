@@ -233,6 +233,13 @@
   .stud-breakdown-pts.neg{color:var(--bad)}
   .stud-breakdown-total{border-top:2px solid var(--line);margin-top:2px;padding-top:8px;font-weight:800}
   .stud-breakdown-total .stud-breakdown-label{font-family:var(--serif)}
+  .modal-overlay{position:fixed;inset:0;background:rgba(20,22,30,.55);display:flex;align-items:center;justify-content:center;z-index:500;padding:16px}
+  .modal-card{background:#fff;border-radius:16px;padding:20px;max-width:420px;width:100%;max-height:85vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .modal-title{font-family:var(--serif);font-size:1.25rem;font-weight:700;color:var(--ink)}
+  .modal-close{border:none;background:#f1f2f6;color:var(--muted);width:30px;height:30px;border-radius:50%;font-size:.95rem;cursor:pointer;flex:none}
+  .modal-close:hover{background:#e5e7ee;color:var(--ink)}
+  .modal-card .stud-breakdown{margin:0;padding:0;background:none;border:none}
   .avatar{border-radius:50%;background:var(--ink-soft);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;overflow:hidden;position:relative}
   .avatar img{width:100%;height:100%;object-fit:cover;display:block}
   .avatar.editable{cursor:pointer}
@@ -1769,6 +1776,12 @@ function setupRoster() {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Scan Tab — Tap Panel</h3>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setTapBreakdown"> Tapping a student shows their points breakdown instead of giving points</label>
+      <p class="view-note" style="margin:8px 0 0">Off by default. When on, tapping a name in the list or seating chart on the Scan tab pops up that student's points breakdown (same as the "▾ Breakdown" panel on the Students tab) instead of scoring them — handy if you want to use the Tap Panel to check on a student mid-class without accidentally giving or taking points. Scanning a QR code still always scores normally, even while this is on.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Shorashim — Quiz</h3>
       <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-weight:600">Seconds before the next question:</span>
@@ -1988,6 +2001,7 @@ function setupRoster() {
     if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
     if(!data.seating||typeof data.seating!=="object") data.seating={};
     if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
+    if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
     if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
     if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
@@ -2476,6 +2490,7 @@ function setupRoster() {
   /* ---------- SETTINGS ---------- */
   function renderSettings(){
     $("setSound").checked = !data.muted;
+    $("setTapBreakdown").checked = !!data.tapShowsBreakdown;
     $("setQuizDelay").value = String(data.quizDelay);
     $("setGameAuto").checked = !!data.gameAuto;
     $("setGameAutoSecs").value = String(data.gameAutoSecs);
@@ -2523,6 +2538,7 @@ function setupRoster() {
     data.muted = !this.checked; save();
     var mb=$("muteBtn"); if(mb) mb.textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   });
+  $("setTapBreakdown").addEventListener("change", function(){ data.tapShowsBreakdown=this.checked; save(); });
   $("setQuizDelay").addEventListener("change", function(){
     var v=parseFloat(this.value); if(isNaN(v)||v<0) v=0; if(v>10) v=10;
     data.quizDelay=v; this.value=String(v); save();
@@ -2804,7 +2820,7 @@ function setupRoster() {
       b.appendChild(avatarEl(s, 30));
       b.appendChild(el("span",null,s.name));
       b.appendChild(el("span","ts", score(s.id)+" pts"));
-      b.addEventListener("click", function(){ tapAward(s,b); });
+      b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
     body.appendChild(grid);
@@ -2873,7 +2889,7 @@ function setupRoster() {
           });
         }
       } else if(s){
-        seat.addEventListener("click", function(){ tapAward(s, seat); });
+        seat.addEventListener("click", function(){ tapClick(s, seat); });
       }
       grid.appendChild(seat);
     });
@@ -2905,6 +2921,47 @@ function setupRoster() {
   }
   var seatGridPending=null;
 
+  // Routes a Tap Panel click either to normal scoring, or — if the "tap shows
+  // breakdown instead" setting is on — to a read-only popup of that student's
+  // points breakdown. Scanning a QR code always scores normally either way;
+  // this only changes what tapping a tile in the Tap Panel does.
+  function tapClick(s, btn){
+    if(data.tapShowsBreakdown){ showBreakdownModal(s); return; }
+    tapAward(s, btn);
+  }
+  function showBreakdownModal(s){
+    var overlay=el("div","modal-overlay");
+    var card=el("div","modal-card");
+    var head=el("div","modal-head");
+    head.appendChild(el("div","modal-title", s.name+(s.group?"  ·  "+s.group:"")));
+    var closeBtn=el("button","modal-close","✕"); closeBtn.type="button"; closeBtn.title="Close";
+    head.appendChild(closeBtn);
+    card.appendChild(head);
+
+    var periodSel=el("select","field"); periodSel.style.width="auto"; periodSel.style.margin="0 0 12px";
+    [["all","All time"],["week","This week"],["7d","Last 7 days"],["30d","Last 30 days"]].forEach(function(p){
+      var o=el("option",null,p[1]); o.value=p[0]; periodSel.appendChild(o);
+    });
+    card.appendChild(periodSel);
+
+    var body=el("div");
+    card.appendChild(body);
+    function refresh(){ body.innerHTML=""; body.appendChild(renderActivityBreakdown(s.id, periodSel.value)); }
+    periodSel.addEventListener("change", refresh);
+    refresh();
+
+    function close(){
+      if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+    }
+    function onKey(e){ if(e.key==="Escape") close(); }
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function(e){ if(e.target===overlay) close(); });
+    document.addEventListener("keydown", onKey);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
   function tapAward(s,btn){
     var ok=award(s);
     if(!ok) return;
@@ -5151,13 +5208,16 @@ nameLine
     return {p:total, n:count};
   }
   // Built straight from the real scan log (not the lifetime-earned totals used by Trends),
-  // so deductions are included and the numbers can go negative — this is what makes a
-  // per-activity breakdown for a chosen time period possible and accurate. Store purchases
-  // are folded in the same way (they're timestamped); Auction spending is added separately
-  // below since it has no timestamp to filter by period.
-  function renderActivityBreakdown(sid){
+  // so deductions are included and the numbers can go negative. Store purchases and Raffle
+  // ticket spending already go through this same log (storeBuy()/refundPurchase() and the
+  // manual-raffle "Raffle tickets"/"Raffle refund" entries all call addLogEntry themselves),
+  // so they show up here automatically as their own labeled lines — no separate handling
+  // needed, and nothing gets double-counted. Auction is the one exception: ticket placement
+  // never goes through the log at all (it can be moved/refunded live, right up until a prize
+  // is drawn), so it's the only category computed separately, below.
+  function renderActivityBreakdown(sid, periodOverride){
     var wrap=el("div","stud-breakdown");
-    var period = $("breakdownPeriod") ? $("breakdownPeriod").value : "all";
+    var period = periodOverride || ($("breakdownPeriod") ? $("breakdownPeriod").value : "all");
     var cutoff = breakdownPeriodCutoff(period);
     var agg={};
     (data.log||[]).forEach(function(e){
@@ -5167,13 +5227,6 @@ nameLine
       var L=e.label||"Points";
       if(!agg[L]) agg[L]={p:0,n:0};
       agg[L].p+=(e.delta||0); agg[L].n+=1;
-    });
-    (data.store && data.store.log || []).forEach(function(p){
-      if(!p || p.sid!==sid) return;
-      if(cutoff && p.ts<cutoff) return;
-      var L="Store purchases";
-      if(!agg[L]) agg[L]={p:0,n:0};
-      agg[L].p-=(p.cost||0); agg[L].n+=1;
     });
     var auSpent=auctionPointsSpent(sid);
     var labels=Object.keys(agg).sort(function(a,b){ return agg[b].p-agg[a].p || agg[b].n-agg[a].n; });
@@ -5783,7 +5836,7 @@ nameLine
     r.readAsText(file);
     e.target.value="";
   });
-  function load2fix(){ ["students","activities","log"].forEach(function(k){ if(!Array.isArray(data[k])) data[k]=[]; }); if(!data.scores) data.scores={}; if(!data.school) data.school="Sample School"; if(!data.bunk) data.bunk="Sample Class 1"; if(typeof data.sheetUrl!=="string") data.sheetUrl=""; if(typeof data.autoSheet!=="boolean") data.autoSheet=true; if(!data.raffle||typeof data.raffle!=="object") data.raffle={mode:"auto",entries:{},winners:[]}; if(!data.raffle.entries) data.raffle.entries={}; if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[]; if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1}; if(!data.pesukimDone) data.pesukimDone={}; if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1}; if(!data.pasukGameBest) data.pasukGameBest={}; if(!data.pasukPhrases) data.pasukPhrases={}; if(!data.pasukPointed) data.pasukPointed={}; if(!Array.isArray(data.textSets)) data.textSets=[]; migrateSets(); if(!Array.isArray(data.shorashim)) data.shorashim=[]; if(!data.game||typeof data.game!=="object") data.game={points:{}}; if(!data.game.points) data.game.points={}; if(!data.shorMatchBest) data.shorMatchBest={}; if(!data.gameBoards) data.gameBoards={}; if(!data.auctions||typeof data.auctions!=="object") data.auctions={}; if(data.auction && typeof data.auction==="object" && !data.auctionsMigrated){ data.auctions[""]=data.auction; data.auctionsMigrated=true; } delete data.auction; if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]}; if(!Array.isArray(data.store.items)) data.store.items=[]; if(!Array.isArray(data.store.log)) data.store.log=[]; if(!data.earned) data.earned={}; if(!data.weekly) data.weekly={}; if(typeof data.standingsActivity!=="string") data.standingsActivity=""; if(typeof data.raffleActivity!=="string") data.raffleActivity=""; if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={perPage:9,scale:"actual",groupMode:"all",groupKeys:[]}; if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[]; if(typeof data.quizDelay!=="number") data.quizDelay=1; if(typeof data.gameAuto!=="boolean") data.gameAuto=false; if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5; if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()}; if(!data.passes.used) data.passes.used={}; if(typeof data.fpCompact!=="boolean") data.fpCompact=false; if(typeof data.currentClass!=="string") data.currentClass=""; if(typeof data.labelFormat!=="string") data.labelFormat="avery5160"; if(typeof data.promptStyle!=="string") data.promptStyle=""; if(typeof data.nameStyle!=="string") data.nameStyle="hashem"; if(!data.seating||typeof data.seating!=="object") data.seating={}; if(typeof data.tapViewMode!=="string") data.tapViewMode="list"; if(typeof data.seatArranging!=="boolean") data.seatArranging=false; if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600; if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false; if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}}; if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={}; if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={}; if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[]; if(data.spinnerMode!=="custom") data.spinnerMode="class"; if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true; }
+  function load2fix(){ ["students","activities","log"].forEach(function(k){ if(!Array.isArray(data[k])) data[k]=[]; }); if(!data.scores) data.scores={}; if(!data.school) data.school="Sample School"; if(!data.bunk) data.bunk="Sample Class 1"; if(typeof data.sheetUrl!=="string") data.sheetUrl=""; if(typeof data.autoSheet!=="boolean") data.autoSheet=true; if(!data.raffle||typeof data.raffle!=="object") data.raffle={mode:"auto",entries:{},winners:[]}; if(!data.raffle.entries) data.raffle.entries={}; if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[]; if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1}; if(!data.pesukimDone) data.pesukimDone={}; if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1}; if(!data.pasukGameBest) data.pasukGameBest={}; if(!data.pasukPhrases) data.pasukPhrases={}; if(!data.pasukPointed) data.pasukPointed={}; if(!Array.isArray(data.textSets)) data.textSets=[]; migrateSets(); if(!Array.isArray(data.shorashim)) data.shorashim=[]; if(!data.game||typeof data.game!=="object") data.game={points:{}}; if(!data.game.points) data.game.points={}; if(!data.shorMatchBest) data.shorMatchBest={}; if(!data.gameBoards) data.gameBoards={}; if(!data.auctions||typeof data.auctions!=="object") data.auctions={}; if(data.auction && typeof data.auction==="object" && !data.auctionsMigrated){ data.auctions[""]=data.auction; data.auctionsMigrated=true; } delete data.auction; if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]}; if(!Array.isArray(data.store.items)) data.store.items=[]; if(!Array.isArray(data.store.log)) data.store.log=[]; if(!data.earned) data.earned={}; if(!data.weekly) data.weekly={}; if(typeof data.standingsActivity!=="string") data.standingsActivity=""; if(typeof data.raffleActivity!=="string") data.raffleActivity=""; if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={perPage:9,scale:"actual",groupMode:"all",groupKeys:[]}; if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[]; if(typeof data.quizDelay!=="number") data.quizDelay=1; if(typeof data.gameAuto!=="boolean") data.gameAuto=false; if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5; if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()}; if(!data.passes.used) data.passes.used={}; if(typeof data.fpCompact!=="boolean") data.fpCompact=false; if(typeof data.currentClass!=="string") data.currentClass=""; if(typeof data.labelFormat!=="string") data.labelFormat="avery5160"; if(typeof data.promptStyle!=="string") data.promptStyle=""; if(typeof data.nameStyle!=="string") data.nameStyle="hashem"; if(!data.seating||typeof data.seating!=="object") data.seating={}; if(typeof data.tapViewMode!=="string") data.tapViewMode="list"; if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false; if(typeof data.seatArranging!=="boolean") data.seatArranging=false; if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600; if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false; if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}}; if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={}; if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={}; if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[]; if(data.spinnerMode!=="custom") data.spinnerMode="class"; if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true; }
   $("resetScores").addEventListener("click", function(){
     if(confirm("Reset every student's score to zero? Roster and activities stay. This can't be undone.")){
       data.scores={}; data.log=[]; save(); renderRecent();
