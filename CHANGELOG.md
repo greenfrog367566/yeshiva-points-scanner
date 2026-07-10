@@ -8,7 +8,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 - **Minor (v1.0.0 → v1.1.0):** new features
 - **Patch (v1.0.0 → v1.0.1):** bug fixes only
 
-## [Unreleased]
+## [0.3.0] — 2026-07-10
 
 ### Added
 - **Print the seating chart with names and QR codes** (QR Labels tab, moved to the top of that tab for easy access): prints the current class's seating chart full-page, laid out like the chart on the Scan tab — each seat shows the student's name and their scoring QR code, sized compactly (not stretched to fill the page), with a title showing which class it's for. Empty seats print blank. Choose **Portrait** or **Landscape**, both of which now correctly use the full page width for their orientation.
@@ -25,16 +25,13 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 - **Setting: "Tapping a student shows their points breakdown instead of giving points"** (Settings tab, off by default).
 - **Avery-label printing** for Print point cards, the Activity menu, and Personal scoring codes.
 - **Settings: "Show the Points / Timer / Picker shortcut buttons"** and **"Show the Hebrew date next to the regular date"** (both on by default).
-- **Personal scoring pages** (QR Labels tab): one page per student with a QR code for every activity, already linked to them — one scan awards that activity to that student. Includes a live "Custom" card.
-- **Points breakdown by activity** (Students tab): "▾ Breakdown" expands a panel showing points by activity, including deductions, Store purchases, and Auction tickets, with a Net total and a time-period selector.
-- **Live Custom QR codes** on the printed Activity menu, using whatever amount is in the Custom box at scan time.
+- **`data.version` field and a `migrateData()` function**, following the pattern already documented in CONTRIBUTING.md — closes out a TODO left open since v0.1.0. Every teacher's existing saved data gets stamped as version 1 the first time they load this release; there's no actual data-shape change in this release, so nothing else happens yet, but this establishes the foundation any future migration will build on.
 
 ### Changed
 - **The custom-amount controls now live with the activity buttons**, under one "Activities" section.
 - **Trimmed explanatory text on the Scan tab** to one short line under the title.
 - **The header is now a single bar, locked to the top of the page**, so the scan bar is never scrolled out of reach.
 - **`sample-backup.json` is now a realistic fixture** with sample students and scan history, useful for testing import/export.
-- Scan tab: Custom Add/Subtract buttons now look and behave like the regular activity buttons instead of separate pill buttons with their own QR codes (those QR codes now live only on the printed Activity menu).
 
 ### Fixed
 - **The "Customize layout" button no longer looks stuck-highlighted after finishing** — it was a lingering focus ring, not an actual stuck state.
@@ -46,7 +43,19 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 - **Tap Panel: clicking a seating-chart tile scrolled the page to the top** — seating tiles are `<div>`s, not `<button>`s, so the scan-focus handler didn't recognize them. The whole Tap Panel is now excluded from that behavior.
 - **Points breakdown: Store purchases were being counted twice** — once from the scan log, once from the Store tab's own history list. Now reads only from the scan log.
 - **Switching classes in the header dropdown now repopulates the activity buttons immediately**, respecting group restrictions.
-- **Personal scoring pages: the section heading was printing at the top of the first physical page**, pushing the first student's content down. Now hidden when printing, with each student reliably starting on a fresh page.
+
+## [0.2.0] — 2026-07-08
+
+### Added
+- **Personal scoring pages** (QR Labels tab): print a page per student with a QR code for every activity, already linked to that student — scanning one code awards that exact activity to that exact student in a single scan, no arming step needed. Includes a "Custom" card that adds whatever amount is currently in the Custom box at scan time. Filter by group, and choose "Actual size" or "Fill page" before printing.
+- **Points breakdown by activity** (Students tab): click "▾ Breakdown" next to any student to expand a mini panel showing points broken down by activity — including deductions, Store purchases, and points currently tied up in Auction tickets — with a "Net total" at the bottom. A period selector at the top of the Students tab ("All time" / "This week" / "Last 7 days" / "Last 30 days") controls every open breakdown panel. Auction tickets have no timestamp, so that line always shows the full current total regardless of the period selected.
+- **Live Custom QR codes** (Activity menu print): two QR codes let you scan to arm +Custom or −Custom instead of clicking a button — using whatever amount is currently typed in the Custom box, at scan time. Printed on the Activity menu (QR Labels tab) alongside the regular activity and Undo codes.
+
+### Changed
+- Scan tab: the Custom Add/Subtract buttons now look and behave like the regular activity buttons (highlighting to show when armed) instead of small green/red pill buttons with QR codes next to them. The QR-code option for Custom now lives only on the printed Activity menu, not on the Scan tab itself.
+
+### Fixed
+- Personal scoring pages: the "Personal scoring pages" section heading was being printed at the top of the first physical page (it wasn't marked as screen-only), which pushed the first student's page down and could cause their name to print at the bottom of the page before their QR grid, instead of both staying together at the top of their own page. The heading is now hidden when printing, and each student's page is set to reliably start on a fresh page.
 
 ## [0.1.0] — 2026-07-08
 
