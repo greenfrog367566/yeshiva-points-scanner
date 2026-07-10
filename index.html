@@ -270,6 +270,8 @@
   .rank.medal{color:var(--brass);font-size:1.05rem}
   .score-cell{font-weight:800;text-align:right;font-variant-numeric:tabular-nums}
   .grp-tag{font-size:.74rem;background:#eef0f6;color:var(--muted);border-radius:6px;padding:2px 7px;margin-left:8px;font-weight:600}
+  .au-cost-tag{cursor:pointer;background:var(--brass-soft);color:#6b4d18;border:1px dashed var(--brass)}
+  .au-cost-tag:hover{background:var(--brass);color:#2a1d05}
   .empty-state{text-align:center;color:var(--muted);padding:40px 20px}
 
   /* ======= STUDENTS / ACTIVITIES rows ======= */
@@ -377,6 +379,8 @@
   .spin-result.show{opacity:1}
   .spin-result .rr-label{font-size:.82rem;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
   .spin-result .rr-name{font-family:var(--serif);font-size:1.9rem;font-weight:700;color:var(--brass);line-height:1.1}
+  .rr-action{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:10px;font-size:.85rem;color:var(--muted)}
+  .rr-action select{padding:5px 8px;border-radius:8px;border:1px solid var(--line);font-size:.85rem}
   .pool-pts{color:var(--muted);font-size:.85rem;min-width:54px}
   .pool-in{font-size:.82rem;font-weight:700;color:var(--ink);min-width:78px}
   .winner-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:.9rem}
@@ -641,6 +645,16 @@
     body.print-students #personalPagesBlock,body.print-menu #personalPagesBlock{display:none!important}
     body.print-personal #studentLabelsBlock,body.print-personal #menuLabelsBlock{display:none!important}
     body.print-menu #menuLabelsBlock,body.print-personal #personalPagesBlock{margin-top:0!important}
+    body.print-students #seatChartPrintBlock,body.print-menu #seatChartPrintBlock,body.print-personal #seatChartPrintBlock{display:none!important}
+    body.print-seating #studentLabelsBlock,body.print-seating #menuLabelsBlock,body.print-seating #personalPagesBlock{display:none!important}
+    body.print-seating #seatChartGrid{display:block!important;width:8.5in;padding:0.3in;box-sizing:border-box}
+    body.print-seating-landscape #seatChartGrid{width:11in}
+    .seat-print-title{text-align:center;font-family:var(--serif);font-size:1.3rem;font-weight:700;margin-bottom:4px}
+    body.print-seating .seat-front{margin:0 0 0.15in;font-size:1rem}
+    body.print-seating .print-seat-grid{padding:0;gap:0.15in}
+    body.print-seating .seat{min-height:1.5in;border:1px solid #999}
+    .seat-print-qr{width:55%;max-width:110px;margin:0 auto 6px}
+    .seat-print-qr img,.seat-print-qr canvas{width:100%;height:auto;display:block}
     .personal-page{page-break-after:always;page-break-before:always;break-after:page;break-before:page;break-inside:avoid;border:none;border-radius:0;padding:0.35in;margin-bottom:0}
     .personal-page:first-child{page-break-before:auto;break-before:auto}
     .personal-page:last-child{page-break-after:auto;break-after:auto}
@@ -922,6 +936,14 @@
       <button data-mode="manual">Boys choose tickets</button>
     </div>
 
+    <label class="toolbar" style="gap:7px;font-size:.86rem;color:var(--muted);font-weight:600;cursor:pointer">
+      <input type="checkbox" id="raffleSpread"> Spread each student's tickets around the wheel (instead of one grouped slice)
+    </label>
+    <div class="toolbar" id="raffleAdjustRow" style="display:none">
+      <span id="raffleAdjustNote" style="font-size:.85rem;color:var(--muted)"></span>
+      <button class="btn btn-sm" id="raffleAdjustReset">↺ Un-remove everyone</button>
+    </div>
+
     <div id="autoNote" class="pill-note">Each student's current points are their tickets. Points are <b>not</b> spent — this is just a draw, so the wheel always reflects the live standings.</div>
     <div id="raffleActivityRow" class="toolbar">
       <span style="font-weight:600">Tickets from:</span>
@@ -959,7 +981,7 @@
   <!-- ============ CHINESE AUCTION ============ -->
   <section id="view-auction" class="view">
     <h2 class="view-title">Chinese Auction</h2>
-    <p class="view-note">Set up your prizes, then let each student place tickets on the prizes he wants. Each prize is drawn from its own pile — the more tickets a student puts in, the better his odds. With <b>Each student's points</b>, every ticket <b>costs 1 point</b> (deducted right away); removing a ticket <b>refunds</b> it — until that prize is drawn, after which it locks.</p>
+    <p class="view-note">Set up your prizes, then let each student place tickets on the prizes he wants. Each prize is drawn from its own pile — the more tickets a student puts in, the better his odds. With <b>Each student's points</b>, each prize has its own cost per ticket (deducted right away); removing a ticket <b>refunds</b> it — until that prize is drawn, after which it locks.</p>
     <div class="pill-note" id="auClassBanner" style="margin-bottom:14px;font-weight:600"></div>
 
     <div class="card pad" style="margin-bottom:16px">
@@ -967,6 +989,9 @@
       <div class="toolbar" style="margin-bottom:6px">
         <select id="auPrizeEmoji" class="field" style="width:62px"></select>
         <input id="auPrizeName" class="field" style="max-width:240px" placeholder="Prize name (e.g. Slurpee party)">
+        <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--muted);font-weight:600">
+          Pts/ticket <input id="auPrizeCost" class="field" type="number" min="1" step="1" value="1" style="width:60px">
+        </label>
         <button id="auAddPrize" class="btn btn-sm btn-primary">+ Add prize</button>
       </div>
       <div id="auPrizeList" class="row-list"></div>
@@ -1438,7 +1463,20 @@
       Generating the QR codes needs an internet connection this one time. Daily scanning works offline afterward.
     </div>
 
-    <div id="studentLabelsBlock">
+    <div id="seatChartPrintBlock">
+      <h3 class="no-print" style="font-family:var(--serif);font-size:1.15rem;margin:0 0 6px">Seating chart (names + QR codes)</h3>
+      <p class="view-note no-print">Prints the current class's seating chart full-page — each seat shows the student's name and their scoring QR code, laid out exactly like the chart on the Scan tab. Empty seats print blank. Uses whichever class is selected in the header.</p>
+      <div class="toolbar no-print">
+        <span class="seg" id="seatPrintOrient">
+          <button data-orient="portrait" class="active">Portrait (vertical)</button>
+          <button data-orient="landscape">Landscape (horizontal)</button>
+        </span>
+        <button class="btn btn-primary" id="printSeatChart">🖨 Print seating chart</button>
+      </div>
+      <div id="seatChartGrid" style="display:none"></div>
+    </div>
+
+    <div id="studentLabelsBlock" style="margin-top:30px">
       <h3 class="no-print" style="font-family:var(--serif);font-size:1.15rem;margin:0 0 6px">Student labels</h3>
       <div class="toolbar no-print">
         <select id="labelFormat" class="field" style="width:auto">
@@ -2106,6 +2144,9 @@ function setupRoster() {
     if(!data.raffle.entries) data.raffle.entries={};
     if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[];
     if(data.raffle.mode!=="manual") data.raffle.mode="auto";
+    if(!data.raffle.adjust||typeof data.raffle.adjust!=="object") data.raffle.adjust={};
+    if(!data.raffle.removed||typeof data.raffle.removed!=="object") data.raffle.removed={};
+    if(typeof data.raffle.spreadTickets!=="boolean") data.raffle.spreadTickets=false;
     if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1};
     if(!data.pesukimDone) data.pesukimDone={};
     if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1};
@@ -3822,7 +3863,17 @@ function setupRoster() {
         if(t>0) arr.push({sid:s.id,name:s.name,tickets:t});
       });
     }
-    return arr;
+    // Post-draw adjustments from the "after this win" dropdown — works the same
+    // way regardless of mode, since auto-mode tickets are computed fresh each
+    // time rather than stored, so a plain per-student adjustment is what lets
+    // "remove that ticket" / "remove that student" apply on top of either mode.
+    if(data.raffle.adjust){
+      arr.forEach(function(e){ if(data.raffle.adjust[e.sid]) e.tickets=Math.max(0, e.tickets+data.raffle.adjust[e.sid]); });
+    }
+    if(data.raffle.removed){
+      arr=arr.filter(function(e){ return !data.raffle.removed[e.sid]; });
+    }
+    return arr.filter(function(e){ return e.tickets>0; });
   }
 
   function renderRaffle(){
@@ -3838,14 +3889,44 @@ function setupRoster() {
       data.raffleActivity=sel.value;
     }
     $("manualPanel").style.display = mode==="manual"?"block":"none";
+    $("raffleSpread").checked = !!data.raffle.spreadTickets;
+    renderRaffleAdjustNote();
     if(mode==="manual") renderPool();
     renderWheel();
     renderWinners();
   }
   $("raffleActivity").addEventListener("change", function(){ data.raffleActivity=this.value; save(); renderWheel(); renderWinners(); });
+  $("raffleSpread").addEventListener("change", function(){ data.raffle.spreadTickets=this.checked; save(); renderWheel(); });
+  $("raffleAdjustReset").addEventListener("click", function(){
+    if(!confirm("Clear all after-win removals from this raffle? Everyone becomes eligible again with their full ticket count.")) return;
+    data.raffle.adjust={}; data.raffle.removed={}; save(); renderWheel(); renderRaffleAdjustNote();
+  });
+  function renderRaffleAdjustNote(){
+    var removedCount=Object.keys(data.raffle.removed||{}).length;
+    var adjustedCount=Object.keys(data.raffle.adjust||{}).filter(function(k){return data.raffle.adjust[k];}).length;
+    var any=removedCount>0 || adjustedCount>0;
+    $("raffleAdjustRow").style.display = any ? "flex" : "none";
+    if(any){
+      var bits=[];
+      if(removedCount) bits.push(removedCount+" student"+(removedCount===1?"":"s")+" removed");
+      if(adjustedCount) bits.push(adjustedCount+" ticket adjustment"+(adjustedCount===1?"":"s"));
+      $("raffleAdjustNote").textContent = bits.join(", ")+" from past wins.";
+    }
+  }
 
   function renderWheel(){
     var entries=raffleEntries();
+    var studentCount=entries.length;
+    if(data.raffle.spreadTickets){
+      // Expand each student's tickets into individual 1-ticket slices, then
+      // shuffle so the same student's tickets land scattered around the wheel
+      // instead of one big grouped block. Doesn't change draw fairness at all —
+      // the winner-selection math already treats every ticket as equally
+      // likely either way; this only changes how the wheel is drawn.
+      var expanded=[];
+      entries.forEach(function(e){ for(var i=0;i<e.tickets;i++) expanded.push({sid:e.sid,name:e.name,tickets:1}); });
+      entries=shuffle(expanded);
+    }
     var g=$("wheelG");
     g.style.transition="none"; g.style.transform="rotate(0deg)"; currentRotation=0;
     g.innerHTML=""; wheelSlices=[];
@@ -3883,7 +3964,7 @@ function setupRoster() {
         start=end;
       });
     }
-    $("raffleStats").textContent = entries.length+" student"+(entries.length===1?"":"s")+" in the draw · "+total+" ticket"+(total===1?"":"s");
+    $("raffleStats").textContent = studentCount+" student"+(studentCount===1?"":"s")+" in the draw · "+total+" ticket"+(total===1?"":"s");
     $("spinBtn").disabled = (total===0 || spinning);
   }
 
@@ -3917,14 +3998,42 @@ function setupRoster() {
       armWheelSpin(g, target, dur, function(){ finishSpin(win); });
     }
   }
+  function raffleAdjustTicket(sid, delta){
+    if(!data.raffle.adjust) data.raffle.adjust={};
+    data.raffle.adjust[sid]=(data.raffle.adjust[sid]||0)+delta;
+  }
+  function raffleRemoveStudent(sid){
+    if(!data.raffle.removed) data.raffle.removed={};
+    data.raffle.removed[sid]=true;
+  }
   function finishSpin(win){
     spinning=false;
     var res=$("raffleResult"); res.className="spin-result show"; res.innerHTML="";
     res.appendChild(el("div","rr-label","\uD83C\uDF89 Winner"));
     res.appendChild(el("div","rr-name",win.name));
-    data.raffle.winners.unshift({ts:Date.now(),name:win.name,tickets:win.tickets,mode:data.raffle.mode});
+    data.raffle.winners.unshift({ts:Date.now(),name:win.name,tickets:win.tickets,mode:data.raffle.mode,sid:win.sid});
     if(data.raffle.winners.length>50) data.raffle.winners.length=50;
     save(); beep(true); renderWinners();
+    // After-win options — lets you keep the ticket in the pool for a repeat
+    // chance, remove just the one winning ticket, or remove the student
+    // entirely from future draws. Applies on top of either raffle mode.
+    var actionWrap=el("div","rr-action");
+    actionWrap.appendChild(el("label",null,"After this win:"));
+    var sel=el("select","field");
+    [["keep","Keep that ticket in the pool"],
+     ["removeTicket","Remove that one ticket"],
+     ["removeStudent","Remove "+win.name+" from the pool"]].forEach(function(o){
+      var opt=el("option",null,o[1]); opt.value=o[0]; sel.appendChild(opt);
+    });
+    sel.value="keep";
+    sel.addEventListener("change", function(){
+      if(sel.value==="removeTicket") raffleAdjustTicket(win.sid, -1);
+      else if(sel.value==="removeStudent") raffleRemoveStudent(win.sid);
+      save(); renderWheel(); renderRaffleAdjustNote();
+      sel.disabled=true; // one choice per win — the pool has already changed
+    });
+    actionWrap.appendChild(sel);
+    res.appendChild(actionWrap);
     $("spinBtn").disabled=false;
   }
   $("spinBtn").addEventListener("click", spin);
@@ -4015,12 +4124,18 @@ function setupRoster() {
     return au;
   }
   function auPrize(pid){ for(var i=0;i<curAu().prizes.length;i++){ if(curAu().prizes[i].id===pid) return curAu().prizes[i]; } return null; }
+  function auCost(pid){ var p=auPrize(pid); return Math.max(1, (p&&p.costPerTicket)||1); }
   function auPointsMode(){ return curAu().budgetMode!=="flat"; }
   function auPrizeLocked(pid){ return !!(curAu().winners && curAu().winners[pid]); }
   function auTk(sid,pid){ var t=curAu().tickets[sid]; return (t&&t[pid])||0; }
   function auAllocated(sid){ var t=curAu().tickets[sid]||{}, sum=0; curAu().prizes.forEach(function(p){ sum+=t[p.id]||0; }); return sum; }
+  // Points actually tied up across all of a student's tickets, accounting for
+  // each prize's own cost per ticket — distinct from auAllocated(), which is
+  // a plain ticket *count* still used for the "tickets placed" display and for
+  // flat-budget-mode math (where cost-per-ticket doesn't apply at all).
+  function auAllocatedPoints(sid){ var t=curAu().tickets[sid]||{}, sum=0; curAu().prizes.forEach(function(p){ sum+=(t[p.id]||0)*auCost(p.id); }); return sum; }
   function auLockedAllocated(sid){ var t=curAu().tickets[sid]||{}, sum=0; curAu().prizes.forEach(function(p){ if(auPrizeLocked(p.id)) sum+=t[p.id]||0; }); return sum; }
-  function auBudget(sid){ return auPointsMode() ? (score(sid)+auAllocated(sid)) : Math.max(0,curAu().flatBudget||0); }
+  function auBudget(sid){ return auPointsMode() ? (score(sid)+auAllocatedPoints(sid)) : Math.max(0,curAu().flatBudget||0); }
   function auRemaining(sid){ return auPointsMode() ? Math.max(0, score(sid)) : Math.max(0, (curAu().flatBudget||0)-auAllocated(sid)); }
   function auPrizeTotal(pid){ var sum=0; data.students.forEach(function(s){ sum+=auTk(s.id,pid); }); return sum; }
   function auSort(){ return activeStudents().sort(function(a,b){ return a.name.localeCompare(b.name); }); }
@@ -4028,10 +4143,14 @@ function setupRoster() {
     if(auPrizeLocked(pid)) return auTk(sid,pid);       // drawn prize — locked, no changes
     n=Math.max(0, Math.floor(n||0));
     var cur=auTk(sid,pid);
+    var cost=auCost(pid);
     if(auPointsMode()){
       var delta=n-cur;
-      if(delta>0){ var avail=score(sid); if(delta>avail){ delta=avail; n=cur+avail; } if(delta>0) data.scores[sid]=score(sid)-delta; }
-      else if(delta<0){ data.scores[sid]=score(sid)+(cur-n); }   // refund
+      if(delta>0){
+        var avail=score(sid), maxAdd=Math.floor(avail/cost);
+        if(delta>maxAdd){ delta=maxAdd; n=cur+maxAdd; }
+        if(delta>0) data.scores[sid]=score(sid)-delta*cost;
+      } else if(delta<0){ data.scores[sid]=score(sid)+(cur-n)*cost; }   // refund
     } else {
       var others=auAllocated(sid)-cur;
       var maxN=Math.max(0, (curAu().flatBudget||0)-others);
@@ -4044,7 +4163,7 @@ function setupRoster() {
   function auRefundNonLocked(sid){
     var t=curAu().tickets[sid]; if(!t) return;
     curAu().prizes.forEach(function(p){
-      if(!auPrizeLocked(p.id) && t[p.id]){ if(auPointsMode()) data.scores[sid]=score(sid)+t[p.id]; delete t[p.id]; }
+      if(!auPrizeLocked(p.id) && t[p.id]){ if(auPointsMode()) data.scores[sid]=score(sid)+t[p.id]*auCost(p.id); delete t[p.id]; }
     });
   }
   var auReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -4076,14 +4195,34 @@ function setupRoster() {
     var prizes=curAu().prizes.filter(function(p){ return !auPrizeLocked(p.id); });
     if(!prizes.length) return;
     prizes.forEach(function(p){ auSetTk(sid,p.id,0); });          // refund current (non-locked) allocations
-    var pool = auPointsMode() ? score(sid) : Math.max(0,(curAu().flatBudget||0)-auLockedAllocated(sid));
-    var per=Math.floor(pool/prizes.length), rem=pool-per*prizes.length;
-    prizes.forEach(function(p){ if(per>0) auSetTk(sid,p.id,per); });
-    if(rem>0){
+    if(auPointsMode()){
+      // Prizes can have different costs per ticket, so "divide evenly" means
+      // splitting the POINTS budget into equal shares, then converting each
+      // prize's own share into however many tickets its own cost buys —
+      // not the same ticket count for every prize.
+      var pool=score(sid);
+      var share=Math.floor(pool/prizes.length);
+      prizes.forEach(function(p){
+        var tk=Math.floor(share/auCost(p.id));
+        if(tk>0) auSetTk(sid,p.id,tk);
+      });
       var mode=curAu().remainderMode, order=null;
-      if(mode==="random") order=shuffle(prizes.slice()).slice(0,rem);
-      else if(mode==="first") order=prizes.slice(0,rem);
-      if(order) order.forEach(function(p){ auSetTk(sid,p.id, auTk(sid,p.id)+1); });
+      if(mode==="random") order=shuffle(prizes.slice());
+      else if(mode==="first") order=prizes.slice();
+      // Try one more ticket per prize, in order — auSetTk safely caps
+      // anything that's no longer affordable, so this just spends down
+      // whatever's left of the remainder as far as it'll go.
+      if(order) order.forEach(function(p){ if(score(sid)>=auCost(p.id)) auSetTk(sid,p.id, auTk(sid,p.id)+1); });
+    } else {
+      var pool2=Math.max(0,(curAu().flatBudget||0)-auLockedAllocated(sid));
+      var per=Math.floor(pool2/prizes.length), rem=pool2-per*prizes.length;
+      prizes.forEach(function(p){ if(per>0) auSetTk(sid,p.id,per); });
+      if(rem>0){
+        var mode2=curAu().remainderMode, order2=null;
+        if(mode2==="random") order2=shuffle(prizes.slice()).slice(0,rem);
+        else if(mode2==="first") order2=prizes.slice(0,rem);
+        if(order2) order2.forEach(function(p){ auSetTk(sid,p.id, auTk(sid,p.id)+1); });
+      }
     }
     save();
   }
@@ -4174,6 +4313,7 @@ function setupRoster() {
     $("auBudgetMode").value=curAu().budgetMode;
     $("auFlatBudget").style.display = curAu().budgetMode==="flat"?"inline-block":"none";
     $("auFlatBudget").value=String(curAu().flatBudget||0);
+    $("auPrizeCost").parentElement.style.display = auPointsMode() ? "flex" : "none";
     $("auRemMode").value=curAu().remainderMode;
     document.querySelectorAll("#auMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.aumode===auctionMode); });
     $("auPrizePanel").style.display = auctionMode==="prize"?"block":"none";
@@ -4185,13 +4325,24 @@ function setupRoster() {
     var list=$("auPrizeList"); list.innerHTML="";
     if(!curAu().prizes.length){ list.appendChild(el("div","recent-empty","No prizes yet — add some above.")); return; }
     curAu().prizes.forEach(function(p,idx){
+      if(typeof p.costPerTicket!=="number" || p.costPerTicket<1) p.costPerTicket=1;
       var row=el("div","erow");
       var emo=makeEmojiSelect(p.emoji||"🎁");
       emo.title="Choose an icon for this prize";
       emo.addEventListener("change", function(){ p.emoji=emo.value; save(); renderAuction(); });
       var nm=el("span","grow"); nm.textContent=(idx+1)+". "+p.name;
       var tot=el("span","grp-tag", auPrizeTotal(p.id)+" tk");
+      var costTag=el("span","grp-tag au-cost-tag", p.costPerTicket+" pt/tk");
+      costTag.title="Click to change the point cost per ticket for this prize";
+      costTag.style.display = auPointsMode() ? "" : "none";
+      costTag.addEventListener("click", function(){
+        var v=prompt("Points per ticket for \""+p.name+"\":", p.costPerTicket);
+        if(v==null) return;
+        var n=Math.max(1, parseInt(v,10)||1);
+        p.costPerTicket=n; save(); renderAuction();
+      });
       nm.appendChild(document.createTextNode("  ")); nm.appendChild(tot);
+      nm.appendChild(document.createTextNode(" ")); nm.appendChild(costTag);
       var win=curAu().winners[p.id];
       if(win) nm.appendChild(el("span","au-win"," \uD83C\uDFC6 "+win.name));
       var ren=el("button","btn btn-sm","Rename");
@@ -4273,8 +4424,9 @@ function setupRoster() {
   $("auAddPrize").addEventListener("click", function(){
     var name=$("auPrizeName").value.trim(); if(!name) name="Prize "+(curAu().prizes.length+1);
     var emoji=$("auPrizeEmoji").value||"🎁";
+    var cost=Math.max(1, parseInt($("auPrizeCost").value,10)||1);
     var id="p"+Date.now().toString(36)+Math.floor(Math.random()*1000);
-    curAu().prizes.push({id:id,name:name,emoji:emoji}); $("auPrizeName").value="";
+    curAu().prizes.push({id:id,name:name,emoji:emoji,costPerTicket:cost}); $("auPrizeName").value=""; $("auPrizeCost").value="1";
     if(!auctionPrizeId) auctionPrizeId=id; save(); renderAuction(); $("auPrizeName").focus();
   });
   $("auPrizeName").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); $("auAddPrize").click(); } });
@@ -5955,6 +6107,7 @@ nameLine
     if($("view-trends").classList.contains("active")) renderTrends();
     if($("view-store").classList.contains("active")) renderStore();
     if($("view-pesukim").classList.contains("active")) applyPesukMode();
+    if($("view-labels").classList.contains("active")) renderLabels();
     auctionPrizeId=null; auctionStudentId=null;
     if($("view-auction").classList.contains("active")) renderAuction();
     if(typeof pickerOpen!=="undefined" && pickerOpen) renderPicker();
@@ -6074,11 +6227,24 @@ nameLine
   });
 
   /* ---------- LABELS ---------- */
+  // Tracks the last class each filter was synced to, so they follow the
+  // header's current class by default, but a manual override on this tab
+  // survives re-renders (printing, format changes, etc.) until the header
+  // class actually changes again. Two separate variables because renderLabels()
+  // calls renderPersonalPages() internally on the same render pass — sharing
+  // one variable would mean the second filter's sync check always sees it as
+  // "already handled" and never actually syncs.
+  var labelGroupLastClass, personalGroupLastClass;
   function renderLabels(){
     // group dropdown
     var sel=$("labelGroup"), cur=sel.value;
     sel.innerHTML='<option value="">All groups</option>';
     groups().forEach(function(g){ var o=el("option",null,g); o.value=g; sel.appendChild(o); });
+    if(labelGroupLastClass!==data.currentClass){
+      var hasClass=Array.prototype.some.call(sel.options, function(o){ return o.value===data.currentClass; });
+      cur = (data.currentClass && hasClass) ? data.currentClass : "";
+      labelGroupLastClass=data.currentClass;
+    }
     sel.value=cur;
     var fsel=$("labelFormat");
     if(fsel.options.length!==LABEL_ORDER.length){
@@ -6138,9 +6304,10 @@ nameLine
     avery5161:{name:"Avery 5161 / 8161 — 1\"×4\" — 20/sheet", cols:2, rows:10, w:4, h:1, padT:0.5, padS:0.15625, colGap:0.1875, rowGap:0},
     avery5162:{name:"Avery 5162 — 1⅓\"×4\" — 14/sheet", cols:2, rows:7, w:4, h:1.333, padT:0.833, padS:0.15625, colGap:0.1875, rowGap:0},
     avery5163:{name:"Avery 5163 / 8163 — 2\"×4\" — 10/sheet", cols:2, rows:5, w:4, h:2, padT:0.5, padS:0.15625, colGap:0.1875, rowGap:0},
-    avery5167:{name:"Avery 5167 / 8167 — ½\"×1¾\" — 80/sheet", cols:4, rows:20, w:1.75, h:0.5, padT:0.5, padS:0.3, colGap:0.3, rowGap:0}
+    avery5167:{name:"Avery 5167 / 8167 — ½\"×1¾\" — 80/sheet", cols:4, rows:20, w:1.75, h:0.5, padT:0.5, padS:0.3, colGap:0.3, rowGap:0},
+    avery5911:{name:"Avery 5911 — Business Cards 2\"×3½\" — 10/sheet", cols:2, rows:5, w:3.5, h:2, padT:0.5, padS:0.5, colGap:0.5, rowGap:0}
   };
-  var LABEL_ORDER=["avery5160","avery5161","avery5162","avery5163","avery5167","tiles"];
+  var LABEL_ORDER=["avery5160","avery5161","avery5162","avery5163","avery5167","avery5911","tiles"];
   // Generic Avery-sheet renderer — takes flat {qrText, line1, line2, line3} items and
   // lays them out across as many sheets as needed, using the same LABEL_SPECS geometry
   // for every use of Avery printing in the app (students, activity menu, personal codes).
@@ -6184,8 +6351,11 @@ nameLine
   $("menuLabelFormat").addEventListener("change", function(){ data.menuLabelFormat=this.value; save(); renderMenuLabels(); });
   function menuLabelItems(){
     // Flat {qrText, name, sub} list shared by both the tile view and Avery-sheet view,
-    // so the two formats can never drift out of sync with each other.
-    var items=data.activities.map(function(a){
+    // so the two formats can never drift out of sync with each other. Only includes
+    // activities that apply to the currently selected class (same group-restriction
+    // logic the Scan tab's activity buttons already use) — the control codes below
+    // (Custom, Undo, phrase-nav) aren't activity-specific, so they always show.
+    var items=data.activities.filter(actVisibleInCurrentClass).map(function(a){
       return {qrText:"ACT:"+a.id, name:a.name, sub:(a.pts<0?"":"+")+a.pts+" pts"};
     });
     items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount"});
@@ -6253,6 +6423,11 @@ nameLine
     var pcur=psel.value;
     psel.innerHTML='<option value="">All groups</option>';
     groups().forEach(function(g){ var o=el("option",null,g); o.value=g; psel.appendChild(o); });
+    if(personalGroupLastClass!==data.currentClass){
+      var hasClass=Array.prototype.some.call(psel.options, function(o){ return o.value===data.currentClass; });
+      pcur = (data.currentClass && hasClass) ? data.currentClass : "";
+      personalGroupLastClass=data.currentClass;
+    }
     psel.value=pcur;
     var pgrp=psel.value;
 
@@ -6322,7 +6497,72 @@ nameLine
   $("personalGroup").addEventListener("change", renderLabels);
   $("personalScale").addEventListener("change", renderLabels);
   $("printPersonal").addEventListener("click", function(){ document.body.classList.add("print-personal"); window.print(); });
-  window.addEventListener("afterprint", function(){ document.body.classList.remove("print-students","print-menu","print-personal"); });
+
+  /* ---------- Seating chart print (names + QR, full page) ---------- */
+  var seatPrintOrient="portrait";
+  $("seatPrintOrient").addEventListener("click", function(e){
+    var b=e.target.closest("button"); if(!b) return;
+    seatPrintOrient=b.dataset.orient;
+    document.querySelectorAll("#seatPrintOrient button").forEach(function(x){ x.classList.toggle("active", x===b); });
+  });
+  function renderSeatChartPrint(){
+    var wrap=$("seatChartGrid"); wrap.innerHTML="";
+    var lay=seatLayout();
+    var studs=activeStudents();
+    var byId={}; studs.forEach(function(s){ byId[s.id]=s; });
+    var hasQR=(typeof QRCode!=="undefined");
+    // Reuses the exact same .seat-front / .seat-grid / .seat card classes as the
+    // live Scan-tab seating chart, so the printed page looks like that chart —
+    // just with a scannable QR code standing in for the little avatar circle.
+    // Rows are NOT stretched to fill the page (a chart with only a few rows
+    // would otherwise get absurdly tall cards) — cards stay a compact, fixed
+    // size and the grid is only as tall as it needs to be, same as on screen.
+    var title=data.currentClass || "All Classes";
+    wrap.appendChild(el("div","seat-print-title", title));
+    wrap.appendChild(el("div","seat-front","Front of room"));
+    var grid=el("div","seat-grid print-seat-grid");
+    grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
+    lay.seats.forEach(function(sid){
+      var s = sid ? byId[sid] : null;
+      var seat=el("div","seat"+(s?"":" empty"));
+      if(s){
+        var qrw=el("div","seat-print-qr");
+        if(hasQR){
+          var holder=el("div"); qrw.appendChild(holder);
+          try{ new QRCode(holder,{text:s.id,width:95,height:95,correctLevel:QRCode.CorrectLevel.M}); }
+          catch(e){ qrw.appendChild(document.createTextNode("QR?")); }
+        } else {
+          qrw.appendChild(document.createTextNode("(offline)"));
+        }
+        seat.appendChild(qrw);
+        seat.appendChild(el("span","seat-name",s.name));
+      } else {
+        seat.textContent="Empty seat";
+      }
+      grid.appendChild(seat);
+    });
+    wrap.appendChild(grid);
+  }
+  // @page can't be scoped by a body class, so landscape mode is applied by
+  // briefly injecting its own <style> tag around the print action, removed
+  // right after — every other print mode here stays plain portrait letter.
+  var seatLandscapeStyleEl=null;
+  $("printSeatChart").addEventListener("click", function(){
+    if(!activeStudents().length){ alert("No students in this class to print. Pick a class in the header first."); return; }
+    renderSeatChartPrint();
+    document.body.classList.add("print-seating");
+    if(seatPrintOrient==="landscape"){
+      document.body.classList.add("print-seating-landscape");
+      seatLandscapeStyleEl=document.createElement("style");
+      seatLandscapeStyleEl.textContent="@page{size:letter landscape;margin:0}";
+      document.head.appendChild(seatLandscapeStyleEl);
+    }
+    window.print();
+  });
+  window.addEventListener("afterprint", function(){
+    document.body.classList.remove("print-students","print-menu","print-personal","print-seating","print-seating-landscape");
+    if(seatLandscapeStyleEl){ seatLandscapeStyleEl.remove(); seatLandscapeStyleEl=null; }
+  });
 
   /* ---------- GOOGLE SHEET SYNC ---------- */
   function pushToSheet(payload){
@@ -6478,7 +6718,7 @@ nameLine
     r.readAsText(file);
     e.target.value="";
   });
-  function load2fix(){ ["students","activities","log"].forEach(function(k){ if(!Array.isArray(data[k])) data[k]=[]; }); if(!data.scores) data.scores={}; if(!data.school) data.school="Sample School"; if(!data.bunk) data.bunk="Sample Class 1"; if(typeof data.sheetUrl!=="string") data.sheetUrl=""; if(typeof data.autoSheet!=="boolean") data.autoSheet=true; if(!data.raffle||typeof data.raffle!=="object") data.raffle={mode:"auto",entries:{},winners:[]}; if(!data.raffle.entries) data.raffle.entries={}; if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[]; if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1}; if(!data.pesukimDone) data.pesukimDone={}; if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1}; if(!data.pasukGameBest) data.pasukGameBest={}; if(!data.pasukPhrases) data.pasukPhrases={}; if(!data.pasukPointed) data.pasukPointed={}; if(!Array.isArray(data.textSets)) data.textSets=[]; migrateSets(); if(!Array.isArray(data.shorashim)) data.shorashim=[]; if(!data.game||typeof data.game!=="object") data.game={points:{}}; if(!data.game.points) data.game.points={}; if(!data.shorMatchBest) data.shorMatchBest={}; if(!data.gameBoards) data.gameBoards={}; if(!data.auctions||typeof data.auctions!=="object") data.auctions={}; if(data.auction && typeof data.auction==="object" && !data.auctionsMigrated){ data.auctions[""]=data.auction; data.auctionsMigrated=true; } delete data.auction; if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]}; if(!Array.isArray(data.store.items)) data.store.items=[]; if(!Array.isArray(data.store.log)) data.store.log=[]; if(!data.earned) data.earned={}; if(!data.weekly) data.weekly={}; if(typeof data.standingsActivity!=="string") data.standingsActivity=""; if(typeof data.raffleActivity!=="string") data.raffleActivity=""; if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={perPage:9,scale:"actual",groupMode:"all",groupKeys:[],format:"grid"}; if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[]; if(typeof data.pointsPrint.format!=="string") data.pointsPrint.format="grid"; if(typeof data.quizDelay!=="number") data.quizDelay=1; if(typeof data.gameAuto!=="boolean") data.gameAuto=false; if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5; if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()}; if(!data.passes.used) data.passes.used={}; if(typeof data.fpCompact!=="boolean") data.fpCompact=false; if(typeof data.currentClass!=="string") data.currentClass=""; if(typeof data.labelFormat!=="string") data.labelFormat="avery5160"; if(typeof data.promptStyle!=="string") data.promptStyle=""; if(typeof data.nameStyle!=="string") data.nameStyle="hashem"; if(!data.seating||typeof data.seating!=="object") data.seating={}; if(typeof data.tapViewMode!=="string") data.tapViewMode="list"; if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false; if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true; if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true; ensureScanLayout(); if(typeof data.teachRepeatMode!=="boolean") data.teachRepeatMode=true; if(typeof data.menuLabelFormat!=="string") data.menuLabelFormat="tiles"; if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages"; if(typeof data.seatArranging!=="boolean") data.seatArranging=false; if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600; if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false; if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}}; if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={}; if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={}; if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[]; if(data.spinnerMode!=="custom") data.spinnerMode="class"; if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true; }
+  function load2fix(){ ["students","activities","log"].forEach(function(k){ if(!Array.isArray(data[k])) data[k]=[]; }); if(!data.scores) data.scores={}; if(!data.school) data.school="Sample School"; if(!data.bunk) data.bunk="Sample Class 1"; if(typeof data.sheetUrl!=="string") data.sheetUrl=""; if(typeof data.autoSheet!=="boolean") data.autoSheet=true; if(!data.raffle||typeof data.raffle!=="object") data.raffle={mode:"auto",entries:{},winners:[]}; if(!data.raffle.entries) data.raffle.entries={}; if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[]; if(!data.raffle.adjust||typeof data.raffle.adjust!=="object") data.raffle.adjust={}; if(!data.raffle.removed||typeof data.raffle.removed!=="object") data.raffle.removed={}; if(typeof data.raffle.spreadTickets!=="boolean") data.raffle.spreadTickets=false; if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1}; if(!data.pesukimDone) data.pesukimDone={}; if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1}; if(!data.pasukGameBest) data.pasukGameBest={}; if(!data.pasukPhrases) data.pasukPhrases={}; if(!data.pasukPointed) data.pasukPointed={}; if(!Array.isArray(data.textSets)) data.textSets=[]; migrateSets(); if(!Array.isArray(data.shorashim)) data.shorashim=[]; if(!data.game||typeof data.game!=="object") data.game={points:{}}; if(!data.game.points) data.game.points={}; if(!data.shorMatchBest) data.shorMatchBest={}; if(!data.gameBoards) data.gameBoards={}; if(!data.auctions||typeof data.auctions!=="object") data.auctions={}; if(data.auction && typeof data.auction==="object" && !data.auctionsMigrated){ data.auctions[""]=data.auction; data.auctionsMigrated=true; } delete data.auction; if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]}; if(!Array.isArray(data.store.items)) data.store.items=[]; if(!Array.isArray(data.store.log)) data.store.log=[]; if(!data.earned) data.earned={}; if(!data.weekly) data.weekly={}; if(typeof data.standingsActivity!=="string") data.standingsActivity=""; if(typeof data.raffleActivity!=="string") data.raffleActivity=""; if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={perPage:9,scale:"actual",groupMode:"all",groupKeys:[],format:"grid"}; if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[]; if(typeof data.pointsPrint.format!=="string") data.pointsPrint.format="grid"; if(typeof data.quizDelay!=="number") data.quizDelay=1; if(typeof data.gameAuto!=="boolean") data.gameAuto=false; if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5; if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()}; if(!data.passes.used) data.passes.used={}; if(typeof data.fpCompact!=="boolean") data.fpCompact=false; if(typeof data.currentClass!=="string") data.currentClass=""; if(typeof data.labelFormat!=="string") data.labelFormat="avery5160"; if(typeof data.promptStyle!=="string") data.promptStyle=""; if(typeof data.nameStyle!=="string") data.nameStyle="hashem"; if(!data.seating||typeof data.seating!=="object") data.seating={}; if(typeof data.tapViewMode!=="string") data.tapViewMode="list"; if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false; if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true; if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true; ensureScanLayout(); if(typeof data.teachRepeatMode!=="boolean") data.teachRepeatMode=true; if(typeof data.menuLabelFormat!=="string") data.menuLabelFormat="tiles"; if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages"; if(typeof data.seatArranging!=="boolean") data.seatArranging=false; if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600; if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false; if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}}; if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={}; if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={}; if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[]; if(data.spinnerMode!=="custom") data.spinnerMode="class"; if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true; }
   $("resetScores").addEventListener("click", function(){
     if(confirm("Reset every student's score to zero? Roster and activities stay. This can't be undone.")){
       data.scores={}; data.log=[]; save(); renderRecent();
