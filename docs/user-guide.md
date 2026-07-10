@@ -20,25 +20,27 @@ This program runs entirely in a web browser (like Chrome or Safari) — there is
 
 ## **1.1  The Screen Layout**
 
-Every screen in the program shares the same layout:
+The whole program sits under one header bar, which stays locked to the top of the page as you scroll:
 
-- A dark header at the top with your school name and bunk/class name — tap either one to rename it.
+- Your school name and class name on the left — tap either one to rename it.
 
-- Today's date in the header, with the Hebrew date shown right alongside it (this can be turned off on the Settings tab).
+- A **scan box** built right into the header, always there no matter which tab you're on. Next to it, a small label shows what a scan will currently do — it changes automatically depending on which tab is open (**Points**, **Store**, **Hall passes**, **Pesukim**, **Game Show**, and so on). See Chapter 2.4 for the full picture.
 
-- A row of tabs just below the header (Scan, Standings, Trends, Raffle, and so on). Tap a tab to switch screens.
+- Today's date, with the Hebrew date shown right alongside it (this can be turned off on the Settings tab).
 
-- A class dropdown in the top-right corner — this lets you switch between different classes if you manage more than one.
+- A class dropdown — this lets you switch between different classes if you manage more than one.
 
-- Three shortcut buttons in the header — **➕ Points**, **⏱ Timer**, and **🎡 Picker** — each opens a small floating version of that tool that stays on screen no matter which tab you're on. These can be hidden as a group from the Settings tab if you don't use them.
+- Three small icon buttons — **↗** (floating points scanner), **⏱** (Timer), and **🎡** (Picker) — each opens a small floating version of that tool that stays on screen no matter which tab you're on. These can be hidden as a group from the Settings tab if you don't use them.
 
-- A Sound On/Off button in the header, in case you want the program to "beep" quietly.
+- A Sound On/Off button, in case you want the program to "beep" quietly.
 
-*The header: school/bunk name, class dropdown, and sound toggle.*
+Below the header is a row of tabs (Scan, Standings, Trends, Raffle, and so on) — tap one to switch screens.
+
+*The header: school/class name, scan box, date, class dropdown, and tool icons — all in one bar.*
 
 ## **1.2  The Class Dropdown**
 
-If you work with more than one class or group, use the dropdown in the top-right corner of the header to choose which class you're currently working with. Many screens — the Scan screen, the Picker, Standings, and more — automatically show only the students in the class you've selected. Choosing "All classes" shows everybody.
+If you work with more than one class or group, use the dropdown in the header to choose which class you're currently working with. Most screens — the Scan screen, QR Labels, the Picker, Standings, and more — automatically show only the students (and only the activities that apply to them) in the class you've selected. Choosing "All classes" shows everybody.
 
 **TIP  **Set up your classes on the Students tab first (see Chapter 4), and they'll automatically appear in this dropdown.
 
@@ -50,11 +52,11 @@ This is the main screen you'll use every day. It's how you give (or take away) p
 
 - Open the Scan tab (it's usually the one already showing when you open the program).
 
-- Tap the button for what you're scoring — for example "On time" or "Davening nicely." The button will highlight to show it's selected, and a pill above the buttons will confirm what's "armed" and how many points it's worth.
+- Tap the button for what you're scoring — for example "On time" or "Davening nicely." The button will highlight to show it's selected, and a pill above the buttons will confirm what's "armed" and how many points it's worth. (You can also arm an activity from anywhere in the app — see Chapter 2.4.)
 
-- Scan the student's QR code with a USB scanner, or click into the box and type/scan there. You can also just tap a student's name in the panel below if you're not using scanned codes.
+- Scan the student's QR code with a USB scanner — it works anywhere on this screen, or from the scan box in the header on any other tab. You can also just tap a student's name in the panel below if you're not using scanned codes.
 
-- You'll see a quick on-screen confirmation (a green flash for positive points, red for a deduction) with the student's name and new total.
+- You'll see a quick on-screen confirmation (a green flash for positive points, red for a deduction) with the student's name and new total, plus a matching confirmation next to the header scan box.
 
 Repeat this for each student — the selected activity stays "armed" so you can scan several students in a row without re-selecting it each time.
 
@@ -70,15 +72,35 @@ This only changes what a **tap** does. Scanning an actual QR code still always s
 
 ## **2.2  Custom Point Amounts**
 
-If you need to give an amount that isn't one of your preset buttons, use the custom row on the Scan screen: type in a point value, then tap the **Custom (add)** or **Custom (subtract)** button — they look and work just like your regular activity buttons, including highlighting to show they're armed.
+Right below the activity buttons is a Custom row: type in a point value, then tap the **Custom (add)** or **Custom (subtract)** button — they look and work just like your regular activity buttons, including highlighting to show they're armed.
 
 There are also two "live" Custom QR codes printed on the Activity menu (QR Labels tab) — scanning one arms Custom using whatever amount is currently typed into the box above, so you can use a scanner for Custom amounts too, not just the on-screen buttons.
 
 ## **2.3  QR Code Scanners**
 
-A USB barcode/QR scanner works like a keyboard — you don't need any special software. Just make sure your cursor is on the Scan screen, and the scanner will "type" the student's code and press Enter automatically.
+A USB barcode/QR scanner works like a keyboard — you don't need any special software. Scanning works anywhere in the app, not just on the Scan tab, since there's always a scan box available in the header. Just make sure your cursor isn't sitting in some other text field, and the scanner will "type" the code and press Enter automatically.
 
 **TIP  **No scanner? No problem — every student can also be picked from a list, or from a seating chart, right on the Scan screen (see Chapter 3).
+
+## **2.4  The Header Scan Box**
+
+The scan box in the header is available on every tab, all the time — it's the same box you can also click into and type a code by hand. It always calls the same routing logic as every other scan box in the app, so it never behaves differently no matter which one you use.
+
+- **The context label** next to it tells you exactly what a scan will do right now — "Points," "Store," "Hall passes," "Pesukim (mark tested)," "Game Show," "Save board," and so on — computed automatically from whichever tab is open.
+
+- **When the context is Points**, that label becomes a live pill showing the activity you currently have armed (for example, "Davening nicely  +1"). **Tap the pill to open a dropdown of every activity** — pick one to arm it, right from the header, without needing to be on the Scan tab at all.
+
+- **A brief confirmation** flashes next to the box after every scan, showing what just happened — in whichever context you were in.
+
+## **2.5  The Floating Points Scanner (↗)**
+
+Tap the **↗** icon in the header to open a small floating panel with its own scan box, a row of activity buttons, and a tappable list of every student's name — handy if you want scoring controls visible while you're on a completely different tab (for example, while reviewing Trends).
+
+- Drag the panel by its title bar to move it out of the way; drag the bottom-right corner to resize it.
+
+- The **Aa** button switches between full names and first-names-only, so more names fit on screen at once.
+
+- **⬛ QR** switches the panel into a QR-code view instead — a grid of scannable codes right on screen (activities first, then every student in the current class). This lets you scan the *screen itself* to score, handy for testing or if printed labels aren't on hand. Tap **⬛ QR** again to go back to the normal tap/type view.
 
 # **3. Tap a Name to Give Points (List or Seating Chart)**
 
@@ -94,7 +116,7 @@ Seating Chart mode lays students out in a grid you design to match your actual c
 
 - Tap "Seating chart" to switch modes.
 
-- Set your Rows and Cols to match your room (for example, 4 rows × 6 columns).
+- Set your Rows and Cols to match your room (for example, 3 rows × 8 columns).
 
 - Tap "Arrange seats" to start placing students.
 
@@ -110,7 +132,23 @@ Once you're done arranging, tapping any seated student's name awards points exac
 
 *Finished seating chart — tap any seat to award points.*
 
-**NOTE  **Each class you select from the header dropdown keeps its own separate seating chart, and your layout is saved automatically — you only need to arrange it once per class.
+**NOTE  **Each class you select from the header dropdown keeps its own separate seating chart, and your layout is saved automatically — you only need to arrange it once per class. You can also print this exact chart with a QR code on every seat — see Chapter 11.1.
+
+## **3.3  Customizing the Scan Tab's Layout**
+
+The Scan tab is made up of five sections — Activities, the scan box, Recent scans, the Leaderboard, and the Class list (List/Seating chart panel) — and you can rearrange them to fit how you work.
+
+- Tap **⚙ Customize layout** to enter edit mode.
+
+- **Drag** a section and drop it onto another to place it there, or use the **▲ ▼** buttons to reorder a section within its column and **⇄** to move it to the next column.
+
+- Choose **2 columns** or **3 columns** from the switch that appears while customizing.
+
+- Tap **↺ Reset layout** to go back to the default arrangement at any time.
+
+- Tap **✓ Done** to leave customize mode. Scanning a student also automatically exits customize mode for you, so you're never left mid-rearrange after scoring someone.
+
+Your arrangement is saved automatically per computer.
 
 # **4. Setting Up Your Students**
 
@@ -176,15 +214,32 @@ One thing this still doesn't capture: the +/− stepper right next to each stude
 
 Any changes here show up immediately as buttons on the Scan screen — there's nothing else to configure.
 
-*The Activities tab — tap +/– to adjust point values for each button.*
+## **5.1  Restricting an Activity to Specific Groups**
+
+If you manage more than one class or group and some activities only apply to some of them, each activity has its own group checklist right below its name and points.
+
+- **All** (checked by default) — the activity shows up for every group.
+
+- Uncheck **All** and tick specific groups instead to restrict that activity — it'll only appear on the Scan screen when one of those groups is the currently selected class.
+
+- If you uncheck every group, it automatically reverts back to **All**, so an activity can never accidentally disappear from everywhere.
+
+If you try to scan a student whose group isn't allowed for the activity you currently have armed, you'll see a short error instead of points being awarded — that student just isn't eligible for that particular activity.
+
+*The Activities tab — tap +/– to adjust point values, and use the group checklist to restrict who an activity applies to.*
 
 # **6. Standings (the Leader Board)**
 
-The Standings tab shows live point totals for everyone — great to put up on a projector.
+The Standings tab shows live point totals for everyone — great to put up on a projector. It updates immediately as students are scored, even while you're sitting on this tab.
 
 - Filter by class, group, activity, or time period using the controls at the top.
 
-- Print a card for each student showing their current total — handy for handing out or posting on a bulletin board. The printed cards use whatever filter you've set on this screen.
+## **6.1  Print Point Cards**
+
+Below the leaderboard, **Print point cards** prints a card for each student showing their current total — handy for handing out or posting on a bulletin board. The printed cards use whatever filter you've set on the Standings screen above (class, group, activity, or time period).
+
+- **Format** — choose **Card grid** to print on plain paper (pick how many cards per page and whether to fill the page), or choose an **Avery label size** to print the same information as small labels instead. These labels don't have a QR code on them (there's nothing to scan — they're just informational), so they show the student's name, their current point total, and their group.
+- **Groups to print** — check off which groups to include, or leave "All groups" checked.
 
 *Standings — a live leader board you can filter and print.*
 
@@ -210,19 +265,37 @@ Use the Raffle tab to spin a wheel and pick a winner — for example, from stude
 
 **NOTE  **The Raffle is different from the Picker (Chapter 12) — the Raffle is weighted by tickets/points, while the Picker gives everyone an equal chance.
 
+## **8.1  After a Winner Is Drawn**
+
+Once the wheel lands, a small dropdown lets you choose what happens next:
+
+- **Keep that ticket in the pool** (the default) — the winner stays fully eligible and could win again on a future spin.
+
+- **Remove that one ticket** — takes away just the single ticket that won, without removing the student or their other tickets.
+
+- **Remove [name] from the pool** — takes that student out of future draws entirely, even if they still have points/tickets that would otherwise qualify them.
+
+Whenever any removals are active, an **"↺ Un-remove everyone"** button appears so you can clear them all and start the raffle fresh.
+
+## **8.2  Spreading Tickets Around the Wheel**
+
+Normally, a student with several tickets gets one big slice sized to their total. Check **"Spread each student's tickets around the wheel"** to instead break each ticket into its own thin slice, shuffled randomly around the wheel — so one student's tickets aren't all clustered together in one spot. This is purely visual; the actual odds of winning are exactly the same either way, since every ticket was always equally likely to be picked.
+
 *The Raffle wheel, ready to spin.*
 
 # **9. Chinese Auction**
 
 The Chinese Auction tab lets you set up prizes that students "bid" on using tickets.
 
-- Add your prizes on the Auction screen.
+- Add your prizes on the Auction screen. Each prize can have its own **point cost per ticket** — set it when adding the prize ("Pts/ticket"), or tap the cost tag on an existing prize to change it later. This only matters in "Each student's points" mode; it has no effect in "Same number for everyone" mode.
 
 - Let each student place tickets on whichever prizes they want — tap their name, then tap a prize to add a ticket.
 
 - Each prize is drawn separately from its own pool of tickets — the more tickets a student has on a prize, the better their odds of winning it.
 
-If you turn on "Each camper's points" as the ticket source, every ticket placed costs 1 point, deducted right away. Removing a ticket refunds the point — but only until that prize has actually been drawn, after which it locks in.
+If you turn on "Each student's points" as the ticket source, every ticket placed costs that prize's own point value, deducted right away. Removing a ticket refunds the points — but only until that prize has actually been drawn, after which it locks in.
+
+**TIP  **"Divide ALL students evenly" spreads a student's points across every prize automatically — it correctly accounts for each prize's own cost, so a more expensive prize gets proportionally fewer tickets from the same budget.
 
 **TIP  **If you manage more than one class, each class gets its own separate auction — clearing or resetting one class's auction does not affect any other class.
 
@@ -244,33 +317,46 @@ The Prize Store lets students spend the points they've earned on real prizes you
 
 # **11. QR Labels**
 
-Once your students are added, print their QR code labels from the QR Labels tab. These are the codes you'll scan on the Scan screen to give points.
+Once your students are added, print their QR code labels from the QR Labels tab. These are the codes you'll scan on the Scan screen to give points. Everything on this tab — student labels, the activity menu, personal codes — automatically follows whichever class is currently selected in the header, so switching classes narrows what gets printed without any extra clicks.
 
-- Labels are designed to print on standard Avery-style label sheets.
+- Labels are designed to print on standard Avery-style label sheets — including business-card-sized Avery 5911, if you want a bigger physical card.
 
 - Print one set at the start of the year (or whenever you add new students), and you're set for the whole year.
 
 *QR Labels — one code per student, ready to print on label sheets.*
 
-## **11.1 Personal Scoring Pages**
+## **11.1  Print the Seating Chart (Names + QR Codes)**
+
+At the top of the QR Labels tab, print the current class's seating chart exactly as it's arranged on the Scan tab — each seat shows the student's name and their scoring QR code, laid out just like the live chart, with empty seats printing blank. A title at the top of the page shows which class it's for.
+
+- Choose **Portrait (vertical)** or **Landscape (horizontal)**, whichever better matches the shape of your room's rows and columns.
+
+- This is a great one to hang on the wall or keep on a clipboard — no need to look someone up, just scan straight off the chart.
+
+## **11.2  Personal Scoring Pages**
 
 Below the regular labels, there's a second option: **Personal scoring pages** — one full page per student, with a separate QR code for every activity, already linked to that specific student.
 
 - Normally, scanning takes two steps: scan an activity code to "arm" it, then scan the student. On a personal page, each code already knows both the student and the activity, so **one scan does the whole thing** — handy for centers, stations, or independent work where a madrich/aide is helping without needing to pick an activity first.
 - There's also a **Custom** card on each student's page — scanning it adds whatever amount is currently typed into the Custom box on the Scan tab, so it stays useful even though the exact number isn't fixed at print time.
 - Filter by group before printing, and choose **Actual size** or **Fill page** depending on whether you want compact pages or one big page per student.
+- Prefer small labels instead of full pages? A format dropdown next to the print button lets you print these same codes on a standard Avery label sheet instead — each student's whole set of codes stays grouped together on the sheet, so cutting them apart keeps things organized per student.
+
+## **11.3  Printing the Activity Menu on Avery Labels**
+
+The Activity menu (the printable clipboard sheet with your activity codes, Custom codes, the Undo code, and the Pesukim phrase-navigation codes) also has a format dropdown, right next to "Print activity menu" — choose an Avery label size instead of the default grid to print these as small labels rather than one big sheet.
 
 # **12. Picker (Choosing a Turn)**
 
 The Picker is a separate spinner from the Raffle — it's just for choosing whose turn it is (for example, who reads next), with an equal chance for every student. No points are involved.
 
-- Turn on "Skip campers who already had a turn" if you want everyone to get one turn before anyone goes twice.
+- Turn on "Skip students who already had a turn" if you want everyone to get one turn before anyone goes twice.
 
 - Tap "Reset round" to clear who's already gone and start over.
 
 - Tap Spin, and the wheel picks a name at random.
 
-**NOTE  **The Picker respects the class dropdown in the top-right corner — if you have a specific class selected, only that class's students appear in the wheel. Switch to "All classes" to include everyone.
+**NOTE  **The Picker respects the class dropdown in the header — if you have a specific class selected, only that class's students appear in the wheel. Switch to "All classes" to include everyone.
 
 *The Picker — spin to choose whose turn it is, with equal odds for everyone.*
 
@@ -293,6 +379,14 @@ Track which students have been tested on which pesukim (verses).
 - Pick a pasuk, then scan a student to mark that they were tested on it.
 
 - You can also just tap any square in the grid directly to flip it on or off, without scanning.
+
+## **14.1.1  Teach Mode**
+
+Teach mode shows a pasuk broken into phrases, each with a translation you can reveal by tapping.
+
+- **Navigating phrases** — use the ‹ / › buttons, the ← / → keys on a keyboard, or scan the **CTRL:PASUKPREV** / **CTRL:PASUKNEXT** QR codes (printed on the Activity menu, QR Labels tab) to step through a pasuk one phrase at a time. The current phrase highlights and its translation reveals automatically; phrases you've already passed stay revealed too, so the group can see what's been covered so far.
+
+- **↻ Repeat pasuk / → Continue on** — this toggle controls what happens once you reach the last phrase. **Repeat pasuk** loops back to phrase 1 of the same pasuk (good for drilling one pasuk repeatedly). **Continue on** rolls straight into phrase 1 of the next pasuk instead, so you can review a long stretch of text phrase-by-phrase without stopping at each pasuk boundary.
 
 ## **14.2  Shorashim (Root Words)**
 
@@ -346,7 +440,7 @@ The Settings tab holds a handful of "set it and forget it" options that apply ac
 
 ## **17.1  Barcode/QR Scanner — Serial/COM (Advanced)**
 
-Most cheap USB scanners need no setup at all — they act like a keyboard and already work anywhere on the Scan screen. This section is only for scanners that connect as an actual serial/COM port device instead, which is common with some industrial, handheld, or Bluetooth-SPP scanners.
+Most cheap USB scanners need no setup at all — they act like a keyboard and already work anywhere in the app. This section is only for scanners that connect as an actual serial/COM port device instead, which is common with some industrial, handheld, or Bluetooth-SPP scanners.
 
 - This feature works in Chrome or Edge on a computer, over a secure connection — it is not available on phones/tablets or in other browsers like Safari or Firefox.
 
@@ -381,11 +475,11 @@ If you're setting this up for the very first time, here's the order that makes t
 
 - Add your students (Chapter 4) — one at a time, in bulk, or imported from a sheet.
 
-- Review your Activities and their point values (Chapter 5).
+- Review your Activities and their point values, and set up group restrictions if you manage more than one class (Chapter 5).
 
 - Print QR Labels for your students (Chapter 11).
 
-- (Optional) Arrange a seating chart so you can award points by tapping seats (Chapter 3.2).
+- (Optional) Arrange a seating chart so you can award points by tapping seats, and print it with QR codes (Chapter 3.2, Chapter 11.1).
 
 - (Optional) Set up Google Sheets syncing so you have a backup record (Chapter 15).
 
