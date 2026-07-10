@@ -36,9 +36,10 @@
   /* ---- Header ---- */
   header{
     background:var(--ink);color:#fff;
-    padding:14px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    padding:12px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    position:sticky;top:0;z-index:50;
   }
-  .brand{display:flex;flex-direction:column;line-height:1.1}
+  .brand{display:flex;flex-direction:column;line-height:1.1;flex:0 0 auto}
   .brand .name{font-family:var(--serif);font-size:1.35rem;font-weight:600;letter-spacing:.2px}
   .brand .sub{font-size:.78rem;color:#aeb6d2;letter-spacing:.4px;text-transform:uppercase;margin-top:2px}
   .brand .name[contenteditable]{outline:none;border-bottom:1px dashed transparent;padding-bottom:1px}
@@ -49,6 +50,34 @@
   .header-date{font-size:.85rem;color:#aeb6d2}
   .mute-btn{background:transparent;border:1px solid #41507f;color:#cfd5ea;border-radius:8px;padding:6px 10px;font-size:.85rem}
   .mute-btn:hover{background:#26315a}
+  .icon-btn{background:transparent;border:1px solid #41507f;color:#cfd5ea;border-radius:8px;width:34px;height:34px;font-size:1.05rem;display:inline-flex;align-items:center;justify-content:center;padding:0;flex:0 0 auto}
+  .icon-btn:hover{background:#26315a}
+
+  /* --- Persistent header scan bar: one always-there input for QR/barcode
+     scans (or typed codes), regardless of which tab is open. It calls the
+     exact same handleScannedCode() router every other scan box already
+     uses, so behavior never diverges between them. The label next to it
+     shows what a scan will currently do, computed from the active tab —
+     see scanContextLabel(). It sits inline in the single header row, growing
+     to fill the middle space between the brand (left) and the controls
+     (right); on narrow screens the header's flex-wrap lets it drop to its
+     own line gracefully. --- */
+  .header-scanbar{flex:1 1 260px;min-width:220px;display:flex;align-items:center;gap:10px}
+  .hsb-context-wrap{position:relative;flex:0 0 auto}
+  .hsb-label{font-size:.75rem;font-weight:700;color:#e8b93a;background:rgba(232,185,58,.12);border:1px solid rgba(232,185,58,.35);border-radius:6px;padding:4px 10px;white-space:nowrap;cursor:default;font-family:inherit}
+  .hsb-label.clickable{cursor:pointer}
+  .hsb-label.clickable:hover{background:rgba(232,185,58,.22)}
+  .hsb-dropdown{position:absolute;top:calc(100% + 6px);left:0;z-index:60;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px;min-width:220px;max-height:280px;overflow:auto}
+  .hsb-dropdown button{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;background:none;border:none;border-radius:7px;padding:8px 10px;font-size:.88rem;color:var(--ink);cursor:pointer}
+  .hsb-dropdown button:hover{background:#f4f5f9}
+  .hsb-dropdown .hd-pts{font-weight:800;color:var(--good);flex:0 0 auto}
+  .hsb-dropdown .hd-pts.neg{color:var(--bad)}
+  .hsb-dropdown .hd-empty{padding:8px 10px;font-size:.85rem;color:var(--muted)}
+  #headerScanInput{flex:1;max-width:440px;font-size:.92rem;padding:7px 12px;border-radius:8px;border:1px solid #41507f;background:#fff;color:var(--ink)}
+  .hsb-flash{flex:0 0 auto;min-width:120px;font-size:.82rem;font-weight:700;padding:5px 12px;border-radius:6px;opacity:0;transform:translateY(-3px);transition:opacity .12s,transform .12s;pointer-events:none}
+  .hsb-flash.show{opacity:1;transform:translateY(0)}
+  .hsb-flash.good{background:rgba(60,180,110,.18);color:#bdf2d4}
+  .hsb-flash.bad{background:rgba(220,80,80,.2);color:#ffd0d0}
 
   /* ---- Tabs ---- */
   nav.tabs{background:linear-gradient(180deg,var(--ink-soft),#232f57);border-bottom:1px solid rgba(255,255,255,.05);display:flex;overflow-x:auto;padding:0 12px}
@@ -101,6 +130,28 @@
   /* ======= SCAN VIEW ======= */
   .scan-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start}
   @media(max-width:780px){.scan-grid{grid-template-columns:1fr}}
+
+  /* --- Customizable Scan-tab layout: five movable panels arranged across two
+     columns. Panels are physically moved into the column containers by
+     applyScanLayout() (DOM appendChild), not by CSS grid areas, so the layout
+     is deterministic and can't half-break. Each column is a plain vertical
+     flex stack. --- */
+  .scan-layout{display:flex;gap:20px;align-items:flex-start}
+  .scan-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:20px}
+  @media(max-width:820px){.scan-layout{flex-direction:column}}
+  .panel{position:relative}
+  #panel-recent #recentList{max-height:280px;overflow:auto}
+  .panel-tools{display:none;align-items:center;gap:6px;background:var(--brass-soft);border:1px dashed var(--brass);border-radius:8px;padding:6px 10px;margin-bottom:8px}
+  .panel-name{font-weight:700;font-size:.85rem;color:#6b4d18}
+  .pt-btn{background:#fff;border:1px solid var(--line);border-radius:6px;width:28px;height:28px;font-size:.8rem;cursor:pointer;padding:0}
+  .pt-btn:hover{background:var(--brass-soft)}
+  #view-scan.customizing .panel{outline:2px dashed var(--brass);outline-offset:3px;border-radius:12px;cursor:grab}
+  #view-scan.customizing .panel-tools{display:flex}
+  #view-scan.customizing .panel-body{pointer-events:none}
+  #view-scan.customizing .panel.drag-over{outline-color:var(--ink);outline-style:solid}
+  #view-scan.customizing .scan-col{min-height:90px}
+  #view-scan.customizing .scan-col:empty{border:2px dashed var(--line);border-radius:12px;align-items:center;justify-content:center}
+  #view-scan.customizing .scan-col:empty::after{content:"Drop a section here";color:var(--muted);font-size:.85rem;padding:24px 12px;text-align:center}
 
   .armed-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
   .armed-pill{font-family:var(--serif);font-size:1.05rem;background:var(--brass-soft);color:#6b4d18;border:1px solid #e4cf9f;border-radius:999px;padding:7px 16px;font-weight:600}
@@ -224,6 +275,12 @@
   /* ======= STUDENTS / ACTIVITIES rows ======= */
   .row-list{display:flex;flex-direction:column}
   .erow{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;transition:background .1s ease}
+  .act-erow{flex-direction:column;align-items:stretch}
+  .act-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .act-group-checks{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:6px 4px 4px;font-size:.82rem}
+  .act-groups-lbl{font-weight:700;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.4px;margin-right:2px}
+  .act-group-all,.act-group-opt{display:flex;align-items:center;gap:5px;cursor:pointer;border:1px solid var(--line);border-radius:20px;padding:3px 10px;background:#fff;user-select:none}
+  .act-group-opt input,.act-group-all input{cursor:pointer}
   .stud-breakdown{background:#f8f9fc;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:-4px 0 10px}
   .stud-breakdown-row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:.88rem;border-bottom:1px solid var(--line)}
   .stud-breakdown-row:last-child{border-bottom:none}
@@ -278,11 +335,14 @@
   .personal-qr{width:104px;height:104px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid var(--line);border-radius:12px;padding:5px}
   .label .qrwrap{display:flex;justify-content:center;margin-bottom:8px}
   .label .ln{font-family:var(--serif);font-weight:600;font-size:1rem;line-height:1.2}
-  .label .lg{font-size:.75rem;color:var(--muted)}
+  .label .lg{font-size:.75rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .label .lc{font-family:ui-monospace,monospace;font-size:.7rem;color:#9aa1b6;margin-top:3px}
   .avery-wrap{margin-top:16px;overflow:auto}
   .av-sheet{width:8.5in;box-sizing:border-box;background:#fff;margin:0 auto 16px;display:grid;justify-content:start;align-content:start;border:1px solid var(--line)}
   .av-cell{box-sizing:border-box;display:flex;align-items:center;gap:0.1in;padding:0 0.1in;overflow:hidden;outline:1px dashed #e3e6ef}
+  .av-cell.no-qr{justify-content:center;text-align:center}
+  .av-cell.no-qr .av-info{text-align:center}
+  .av-cell.no-qr .av-name{white-space:normal;text-overflow:clip}
   .av-qr{flex:0 0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden}
   .av-qr>*{width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;display:block}
   .av-qr canvas,.av-qr img,.av-qr table{width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;image-rendering:pixelated}
@@ -370,7 +430,10 @@
   .corner.correct{outline:5px solid var(--ink);transform:scale(1.03)}
   .corner.dim{opacity:.3}
   .game-reveal{text-align:center;font-size:1.2rem;font-weight:700;margin-top:14px}
+  #teachLines{display:flex;flex-direction:column;gap:8px}
   .teach-line{display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fff;cursor:pointer}
+  .teach-line.active{border-color:var(--ink);box-shadow:0 0 0 2px var(--ink) inset;background:var(--brass-soft)}
+  .teach-line.passed{opacity:.6}
   .teach-he{flex:1;font-size:1.35rem;font-weight:600;line-height:1.4}
   .teach-en{flex:1;color:var(--ink);font-size:1.02rem;filter:blur(5px);transition:filter .15s;user-select:none}
   .teach-en.show{filter:none;user-select:text}
@@ -432,6 +495,7 @@
   .float-timer.min .ft-grip{cursor:grab}
   .float-timer.min .ft-mindisp{display:inline-block;font-weight:700;font-variant-numeric:tabular-nums;margin-left:2px}
   .float-scan{position:fixed;top:64px;right:12px;z-index:201;width:440px;max-width:calc(100vw - 24px);background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(20,26,46,.3);overflow:hidden;user-select:none}
+  .float-scan.qr-mode{width:680px}
   .float-scan .ft-grip{touch-action:none}
   .float-scan.min .fs-body{display:none}
   .float-scan.min{width:auto}
@@ -442,6 +506,16 @@
   .fs-names{display:flex;flex-wrap:wrap;gap:6px;max-height:62vh;overflow:auto;resize:vertical}
   .fs-resize{position:absolute;right:0;bottom:0;width:20px;height:20px;cursor:nwse-resize;z-index:4;touch-action:none}
   .fs-resize::after{content:"";position:absolute;right:4px;bottom:4px;width:9px;height:9px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);opacity:.6}
+  /* QR panel: activities first (bigger), then students (smaller grid) */
+  #fsQrPanel{max-height:80vh;overflow:auto}
+  .fs-qr-section{margin-bottom:14px}
+  .fs-qr-section h4{font-size:.8rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:0 0 8px}
+  .fs-qr-grid{display:flex;flex-wrap:wrap;gap:10px}
+  .fs-qr-card{display:flex;flex-direction:column;align-items:center;gap:4px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px;cursor:default;min-width:80px;max-width:100px}
+  .fs-qr-card.act-card{min-width:96px;max-width:120px}
+  .fs-qr-label{font-size:.7rem;font-weight:700;text-align:center;line-height:1.2;color:var(--ink);word-break:break-word}
+  .fs-qr-sub{font-size:.65rem;color:var(--muted);text-align:center}
+  .ft-btn.on{background:var(--brass);color:#2a1d05;border-color:var(--brass)}
   .float-picker{position:fixed;top:64px;right:12px;z-index:201;width:380px;max-width:calc(100vw - 24px);background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(20,26,46,.3);overflow:hidden;user-select:none}
   .float-picker .ft-grip{touch-action:none}
   .float-picker.min .ft-body{display:none}
@@ -518,7 +592,8 @@
     body.print-points header,body.print-points nav.tabs,body.print-points nav.subtabs,body.print-points .view-note,body.print-points .toolbar,body.print-points .no-print,body.print-points .pill-note,body.print-points .lb-stage{display:none!important}
     body.print-points .view{display:none!important}
     body.print-points #view-standings.active{display:block!important}
-    body.print-points #pointsPrintGrid{display:block!important}
+    body.print-points:not(.points-avery) #pointsPrintGrid{display:block!important}
+    body.print-points.points-avery #pointsPrintAverySheet{display:block!important}
     body.print-points h2.view-title{display:none}
     .print-page{page-break-after:always;break-after:page;padding:0.4in}
     .print-page:last-child{page-break-after:auto;break-after:auto}
@@ -565,8 +640,7 @@
     body.print-menu #studentLabelsBlock{display:none!important}
     body.print-students #personalPagesBlock,body.print-menu #personalPagesBlock{display:none!important}
     body.print-personal #studentLabelsBlock,body.print-personal #menuLabelsBlock{display:none!important}
-    body.print-personal .labels-grid{display:none!important}
-    body.print-personal #personalGrid{display:block!important}
+    body.print-menu #menuLabelsBlock,body.print-personal #personalPagesBlock{margin-top:0!important}
     .personal-page{page-break-after:always;page-break-before:always;break-after:page;break-before:page;break-inside:avoid;border:none;border-radius:0;padding:0.35in;margin-bottom:0}
     .personal-page:first-child{page-break-before:auto;break-before:auto}
     .personal-page:last-child{page-break-after:auto;break-after:auto}
@@ -608,7 +682,8 @@
 
 <div id="floatScan" class="float-scan" style="display:none">
   <div class="ft-grip" id="fsGrip">
-    <span class="ft-title">➕ Points</span>
+    <span class="ft-title">↗ Points</span>
+    <button class="ft-btn" id="fsQrMode" title="Show QR codes to scan from screen">⬛ QR</button>
     <button class="ft-btn" id="fsCompact" title="Compact names (fit more, first names)">Aa</button>
     <button class="ft-btn" id="fsMin" title="Minimize">–</button>
     <button class="ft-btn" id="fsClose" title="Close">✕</button>
@@ -619,6 +694,7 @@
     <div class="fs-flash" id="fsFlash"></div>
     <div class="fs-names" id="fsNames"></div>
   </div>
+  <div id="fsQrPanel" style="display:none;padding:12px;overflow:auto"></div>
   <div class="fs-resize" id="fsResize" title="Drag to resize"></div>
 </div>
 
@@ -654,13 +730,21 @@
     <span class="name" id="schoolName" contenteditable="true" spellcheck="false">Sample School</span>
     <span class="sub" id="bunkName" contenteditable="true" spellcheck="false">Sample Class 1</span>
   </div>
+  <div class="header-scanbar">
+    <div class="hsb-context-wrap" id="hsbContextWrap">
+      <button class="hsb-label" id="hsbContext" type="button">Points</button>
+      <div class="hsb-dropdown" id="hsbDropdown" style="display:none"></div>
+    </div>
+    <input id="headerScanInput" autocomplete="off" placeholder="Scan a QR code here, or type a code + Enter">
+    <div class="hsb-flash" id="hsbFlash"></div>
+  </div>
   <div class="header-right">
     <span class="header-date" id="todayDate"></span>
     <span class="header-date" id="todayDateHebrew"></span>
     <select id="classSel" class="mute-btn" title="Which class you're working with"></select>
-    <button class="mute-btn" id="fsBtn" title="Floating points scanner">➕ Points</button>
-    <button class="mute-btn" id="timerBtn" title="Floating timer">⏱ Timer</button>
-    <button class="mute-btn" id="pickerBtn" title="Floating picker wheel">🎡 Picker</button>
+    <button class="icon-btn" id="fsBtn" title="Floating points scanner (with activity buttons and a tap-to-score name list)">↗</button>
+    <button class="icon-btn" id="timerBtn" title="Floating timer">⏱</button>
+    <button class="icon-btn" id="pickerBtn" title="Floating picker wheel">🎡</button>
     <button class="mute-btn" id="muteBtn" title="Toggle sound">🔊 Sound on</button>
   </div>
 </header>
@@ -677,61 +761,100 @@
   <!-- ============ SCAN ============ -->
   <section id="view-scan" class="view active">
     <h2 class="view-title">Scan to award points</h2>
-    <p class="view-note">Pick what you're scoring, then scan each student. A USB scanner works anywhere on this screen; or click the box and use your keyboard.</p>
+    <p class="view-note">Pick an activity, then scan each student — a USB scanner works anywhere on this page. Scan a point-value QR to switch what you're scoring.</p>
 
-    <div class="scan-grid">
-      <div>
-        <div class="armed-bar">
-          <span style="font-size:.85rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Now scoring</span>
-          <span class="armed-pill" id="armedPill">—</span>
-        </div>
+    <div class="toolbar no-print" id="scanCustomizeBar" style="margin-bottom:14px">
+      <span class="grow"></span>
+      <span class="seg" id="scanColsToggle" style="display:none;margin:0">
+        <button data-cols="2">2 columns</button>
+        <button data-cols="3">3 columns</button>
+      </span>
+      <button class="btn btn-sm" id="scanCustomizeBtn" title="Rearrange the sections on this page">⚙ Customize layout</button>
+      <button class="btn btn-sm btn-bad" id="scanLayoutReset" style="display:none">↺ Reset layout</button>
+    </div>
+    <p class="view-note no-print" id="scanCustomizeHint" style="display:none">Drag a section onto another spot to move it, or use the ▲ ▼ (reorder) and ⇄ (next column) buttons. Choose 2 or 3 columns above. Tap "Done" when finished.</p>
 
-        <div class="act-buttons" id="actButtons"></div>
+    <div class="scan-layout" id="scanLayout">
+      <div class="scan-col" id="scanCol0" data-col="0"></div>
+      <div class="scan-col" id="scanCol1" data-col="1"></div>
+      <div class="scan-col" id="scanCol2" data-col="2" style="display:none"></div>
+    </div>
 
-        <div class="custom-row">
-          <div>
-            <label class="lbl">Custom amount</label>
-            <input type="number" id="customAmt" class="field" value="1" min="0" step="1">
+    <div id="scanPanelPool" style="display:none">
+
+      <div class="panel" id="panel-activities" data-panel="activities">
+        <div class="panel-tools"><span class="panel-name">Activities</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
+        <div class="panel-body">
+          <div class="armed-bar">
+            <span style="font-size:.85rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Now scoring</span>
+            <span class="armed-pill" id="armedPill">—</span>
           </div>
-          <button class="act-btn" id="customAdd" type="button">
-            <span class="an">Custom (add)</span>
-            <span class="av pos" id="customAddVal">+1 pts</span>
-          </button>
-          <button class="act-btn" id="customSub" type="button">
-            <span class="an">Custom (subtract)</span>
-            <span class="av neg" id="customSubVal">−1 pts</span>
-          </button>
+          <div class="act-buttons" id="actButtons"></div>
+          <div class="custom-row">
+            <div>
+              <label class="lbl">Custom amount</label>
+              <input type="number" id="customAmt" class="field" value="1" min="0" step="1">
+            </div>
+            <button class="act-btn" id="customAdd" type="button">
+              <span class="an">Custom (add)</span>
+              <span class="av pos" id="customAddVal">+1 pts</span>
+            </button>
+            <button class="act-btn" id="customSub" type="button">
+              <span class="an">Custom (subtract)</span>
+              <span class="av neg" id="customSubVal">−1 pts</span>
+            </button>
+          </div>
         </div>
+      </div>
 
-        <div class="scan-box card pad">
-          <input id="scanInput" autocomplete="off" placeholder="Scan a QR code here  (or type a student code + Enter)">
-          <div class="scan-hint">Tip: a $50 USB QR scanner acts like a keyboard — just scan and it lands here automatically. Scan a point-value QR (from the QR Labels tab) to switch what you're scoring, then scan students — no clicking needed. There's also a printable Undo QR to reverse the last scan.</div>
-          <div class="flash" id="flash"></div>
+      <div class="panel" id="panel-scanbar" data-panel="scanbar">
+        <div class="panel-tools"><span class="panel-name">Scan box</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
+        <div class="panel-body">
+          <div class="scan-box card pad">
+            <input id="scanInput" autocomplete="off" placeholder="Scan a QR code here  (or type a student code + Enter)">
+            <div class="flash" id="flash"></div>
+          </div>
         </div>
       </div>
 
-      <div class="card pad recent">
-        <h3>Recent scans</h3>
-        <div id="recentList"></div>
-        <button class="btn btn-sm" id="undoLast" style="margin-top:12px;width:100%">↩ Undo last scan</button>
+      <div class="panel" id="panel-recent" data-panel="recent">
+        <div class="panel-tools"><span class="panel-name">Recent scans</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
+        <div class="panel-body">
+          <div class="card pad recent">
+            <h3>Recent scans</h3>
+            <div id="recentList"></div>
+            <button class="btn btn-sm" id="undoLast" style="margin-top:12px;width:100%">↩ Undo last scan</button>
+          </div>
+        </div>
       </div>
-    </div>
 
-    <div class="card" id="tapCard" style="margin-top:20px">
-      <div class="board-head">
-        <h3>Tap a name to give points</h3>
-        <button class="btn btn-sm" id="tapToggle">Hide</button>
+      <div class="panel" id="panel-leaderboard" data-panel="leaderboard">
+        <div class="panel-tools"><span class="panel-name">Leaderboard</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
+        <div class="panel-body">
+          <div class="card" id="scanBoard">
+            <div class="board-head">
+              <h3>Leaderboard</h3>
+              <span class="live-dot">Live</span>
+              <button class="btn btn-sm" id="boardToggle">Hide</button>
+            </div>
+            <div class="board-body" id="scanBoardBody"></div>
+          </div>
+        </div>
       </div>
-      <div id="tapPanelBody"></div>
-    </div>
 
-    <div class="card" id="scanBoard" style="margin-top:20px">
-      <div class="board-head">
-        <h3>Leaderboard</h3>
-        <span class="live-dot">Live</span>
-        <button class="btn btn-sm" id="boardToggle">Hide</button>
+      <div class="panel" id="panel-tappanel" data-panel="tappanel">
+        <div class="panel-tools"><span class="panel-name">Class list</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
+        <div class="panel-body">
+          <div class="card" id="tapCard">
+            <div class="board-head">
+              <h3>Tap a name to give points</h3>
+              <button class="btn btn-sm" id="tapToggle">Hide</button>
+            </div>
+            <div id="tapPanelBody"></div>
+          </div>
+        </div>
       </div>
-      <div class="board-body" id="scanBoardBody"></div>
+
     </div>
   </section>
 
@@ -760,17 +883,21 @@
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">🖨 Print point cards</h3>
       <p class="view-note" style="margin:0 0 10px">Prints one card per student with their current points — uses whatever class/group/activity/time filter is set above.</p>
       <div class="toolbar">
-        <span style="font-weight:600">Cards per page</span>
-        <select id="pointsPerPage" class="field" style="width:auto">
-          <option value="1">1</option><option value="2">2</option><option value="3">3</option>
-          <option value="4">4</option><option value="6">6</option><option value="8">8</option>
-          <option value="9">9</option><option value="12">12</option>
-        </select>
-        <span style="font-weight:600">Scale</span>
-        <select id="pointsScale" class="field" style="width:auto">
-          <option value="actual">Actual size</option>
-          <option value="fill">Fill the page</option>
-        </select>
+        <span style="font-weight:600">Format</span>
+        <select id="pointsFormat" class="field" style="width:auto"></select>
+        <span id="pointsGridOptsWrap" style="display:contents">
+          <span style="font-weight:600">Cards per page</span>
+          <select id="pointsPerPage" class="field" style="width:auto">
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+            <option value="4">4</option><option value="6">6</option><option value="8">8</option>
+            <option value="9">9</option><option value="12">12</option>
+          </select>
+          <span style="font-weight:600">Scale</span>
+          <select id="pointsScale" class="field" style="width:auto">
+            <option value="actual">Actual size</option>
+            <option value="fill">Fill the page</option>
+          </select>
+        </span>
       </div>
       <div class="toolbar">
         <span style="font-weight:600">Groups to print:</span>
@@ -781,6 +908,7 @@
       <button id="printPointsBtn" class="btn btn-primary">🖨 Print point cards</button>
     </div>
     <div id="pointsPrintGrid" style="display:none"></div>
+    <div id="pointsPrintAverySheet" class="avery-wrap" style="display:none"></div>
   </section>
 
 
@@ -1032,7 +1160,13 @@
       </div>
       <p class="view-note" id="teachNote">Tap any line to reveal its translation. Tap ✎ to edit a translation — your change also updates the Matching game.</p>
       <div id="teachPasuk" class="card pad" dir="rtl" style="font-size:1.6rem;line-height:2.1;text-align:right;margin-bottom:14px"></div>
-      <div id="teachLines" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div class="toolbar" id="teachPhraseNav" style="margin-bottom:10px">
+        <button class="btn btn-sm" id="teachPhrasePrev" title="Previous phrase (or ← key)">‹</button>
+        <button class="btn btn-sm" id="teachPhraseNext" title="Next phrase (or → key)">›</button>
+        <button class="btn btn-sm" id="teachRepeatToggle" title="Toggle repeat this pasuk vs. continue to the next">↻ Repeat pasuk</button>
+        <span class="grow" id="teachPhraseCount" style="text-align:right;color:var(--muted);font-size:.85rem"></span>
+      </div>
+      <div id="teachLines"></div>
       <div id="teachEditFooter" class="toolbar" style="display:none;margin-top:12px">
         <button class="btn btn-sm" id="teachAddPhrase">+ Add phrase</button>
         <button class="btn btn-sm btn-bad" id="teachResetPhrases">↺ Reset this pasuk</button>
@@ -1326,9 +1460,11 @@
       <h3 class="no-print" style="font-family:var(--serif);font-size:1.15rem;margin:0 0 6px">Activity menu</h3>
       <p class="view-note no-print">Print this and keep it on your clipboard. Scanning one of these <b>switches what you're scoring</b> and jumps you to the scan screen — it doesn't give points to anyone.</p>
       <div class="toolbar no-print">
+        <select id="menuLabelFormat" class="field" style="width:auto"></select>
         <button class="btn btn-primary" id="printMenu">🖨 Print activity menu</button>
       </div>
       <div class="labels-grid" id="menuGrid"></div>
+      <div id="menuAverySheet" class="avery-wrap"></div>
     </div>
 
     <div id="personalPagesBlock" style="margin-top:30px">
@@ -1336,6 +1472,9 @@
       <p class="view-note no-print">Each student gets their own page with a QR code for every activity, already linked to them — scan one code and it awards that activity to that student in a single scan, no separate student scan needed. The Custom card uses whatever amount is in the Custom box on the Scan tab at the moment it's scanned, not the amount at print time.</p>
       <div class="toolbar no-print">
         <select id="personalGroup" class="field" style="width:auto"><option value="">All groups</option></select>
+        <select id="personalFormat" class="field" style="width:auto">
+          <option value="pages">Full pages (one per student)</option>
+        </select>
         <select id="personalScale" class="field" style="width:auto">
           <option value="actual">Actual size</option>
           <option value="fill">Fill page</option>
@@ -1343,6 +1482,7 @@
         <button class="btn btn-primary" id="printPersonal">🖨 Print personal pages</button>
       </div>
       <div class="labels-grid" id="personalGrid" style="display:block"></div>
+      <div id="personalAverySheet" class="avery-wrap"></div>
     </div>
   </section>
 
@@ -1991,7 +2131,8 @@ function setupRoster() {
     if(!data.weekly) data.weekly={};
     if(typeof data.standingsActivity!=="string") data.standingsActivity="";
     if(typeof data.raffleActivity!=="string") data.raffleActivity="";
-    if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={perPage:9, scale:"actual", groupMode:"all", groupKeys:[]};
+    if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={perPage:9, scale:"actual", groupMode:"all", groupKeys:[], format:"grid"};
+    if(typeof data.pointsPrint.format!=="string") data.pointsPrint.format="grid";
     if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[];
     if(data.pointsPrint.groupMode!=="custom") data.pointsPrint.groupMode="all";
     data.pointsPrint.perPage=[1,2,3,4,6,8,9,12].indexOf(data.pointsPrint.perPage)>=0 ? data.pointsPrint.perPage : 9;
@@ -2017,6 +2158,10 @@ function setupRoster() {
     if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
     if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
     if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
+    ensureScanLayout();
+    if(typeof data.teachRepeatMode!=="boolean") data.teachRepeatMode=true;
+    if(typeof data.menuLabelFormat!=="string") data.menuLabelFormat="tiles";
+    if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages";
     if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
     if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
@@ -2119,6 +2264,7 @@ function setupRoster() {
     document.querySelectorAll(".act-btn").forEach(function(b){
       b.classList.toggle("selected", b.dataset.label===label && Number(b.dataset.delta)===delta);
     });
+    if(typeof renderHeaderScanContext==="function") renderHeaderScanContext();
   }
 
   /* ---------- TABS (grouped, with a subtab row) ---------- */
@@ -2208,6 +2354,7 @@ function setupRoster() {
     if(tab==="brachos"){ $("brRch").checked=false; $("brRchBox").style.display="none"; }
     if(tab==="spinner") renderSpinner();
     if(tab==="passes"){ renderPasses(); setTimeout(function(){ $("passScanInput").focus(); },50); }
+    renderHeaderScanContext();
   }
   // Called after a visibility checkbox changes in Settings — refreshes the nav,
   // and if the tab currently on screen was just hidden, moves to a visible one
@@ -2237,6 +2384,7 @@ function setupRoster() {
     if(l1) f.appendChild(el("div","who",l1));
     if(l2) f.appendChild(el("div","total",l2));
     clearTimeout(f._t); f._t=setTimeout(function(){ f.classList.remove("show"); },1500);
+    if(typeof headerFlash==="function") headerFlash(ok, [l1,l2].filter(Boolean).join("  "));
   }
   function passUsed(sid){ return !!(data.passes.used && data.passes.used[sid]); }
   function setPass(sid,on){
@@ -2354,6 +2502,61 @@ function setupRoster() {
   }
   var fpOpen=false, fpActId=null;
   function fpFlash(ok,msg){ var f=$("fsFlash"); f.className="fs-flash "+(ok?"good":"bad"); f.textContent=msg; clearTimeout(f._t); f._t=setTimeout(function(){ f.textContent=""; f.className="fs-flash"; },1600); }
+  var fpQrMode=false;
+  function fpSetQrMode(on){
+    fpQrMode=!!on;
+    $("floatScan").classList.toggle("qr-mode", fpQrMode);
+    $("fsQrMode").classList.toggle("on", fpQrMode);
+    $("fsBody").style.display = fpQrMode ? "none" : "";
+    $("fsQrPanel").style.display = fpQrMode ? "block" : "none";
+    if(fpQrMode) fpRenderQR();
+  }
+  function fpRenderQR(){
+    var panel=$("fsQrPanel"); panel.innerHTML="";
+    var hasQR=(typeof QRCode!=="undefined");
+    function makeQrCard(qrText, label, sub, big){
+      var card=el("div","fs-qr-card"+(big?" act-card":""));
+      var qw=el("div"); qw.style.cssText="width:"+(big?72:56)+"px;height:"+(big?72:56)+"px;display:flex;align-items:center;justify-content:center";
+      if(hasQR){
+        var holder=el("div");
+        try{ new QRCode(holder,{text:qrText,width:big?72:56,height:big?72:56,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ holder.textContent="QR?"; }
+        qw.appendChild(holder);
+      } else {
+        qw.style.cssText+="font-size:.6rem;color:var(--muted);text-align:center";
+        qw.textContent="(offline)";
+      }
+      card.appendChild(qw);
+      card.appendChild(el("div","fs-qr-label",label));
+      if(sub) card.appendChild(el("div","fs-qr-sub",sub));
+      return card;
+    }
+    // --- Activities section ---
+    if(data.activities.length){
+      var as=el("div","fs-qr-section");
+      as.appendChild(el("h4",null,"Activities — scan to arm"));
+      var ag=el("div","fs-qr-grid");
+      data.activities.filter(actVisibleInCurrentClass).forEach(function(a){
+        ag.appendChild(makeQrCard("ACT:"+a.id, a.name, fmt(a.pts)+" pts", true));
+      });
+      as.appendChild(ag); panel.appendChild(as);
+    }
+    // --- Students section ---
+    var studs=activeStudents().sort(function(a,b){ return a.name.localeCompare(b.name); });
+    if(studs.length){
+      var ss=el("div","fs-qr-section");
+      ss.appendChild(el("h4",null,"Students — scan to give points"));
+      var sg=el("div","fs-qr-grid");
+      studs.forEach(function(s){
+        sg.appendChild(makeQrCard(s.id, data.fpCompact?firstName(s.name):s.name, score(s.id)+" pts", false));
+      });
+      ss.appendChild(sg); panel.appendChild(ss);
+    }
+    if(!data.activities.length && !studs.length){
+      panel.appendChild(el("div","scan-hint","Add activities and students first."));
+    }
+  }
+  $("fsQrMode").addEventListener("click", function(){ fpSetQrMode(!fpQrMode); });
   function fpRenderActs(){
     var wrap=$("fsActs"); wrap.innerHTML="";
     if(!data.activities.length){ wrap.appendChild(el("div","scan-hint","Add an activity on the Activities tab.")); return; }
@@ -2394,6 +2597,8 @@ function setupRoster() {
     fpOpen = (show==null) ? !fpOpen : !!show;
     $("floatScan").style.display = fpOpen?"block":"none";
     if(fpOpen){ if(data.fsWidth) $("floatScan").style.width=data.fsWidth+"px"; $("floatScan").classList.remove("min"); $("fsCompact").classList.toggle("on", !!data.fpCompact); fpRenderActs(); fpRenderNames(); setTimeout(function(){ $("fsInput").focus(); },50); }
+    else { fpSetQrMode(false); }
+    renderHeaderScanContext();
   }
   $("fsBtn").addEventListener("click", function(){ fpToggle(); });
   $("fsClose").addEventListener("click", function(){ fpToggle(false); });
@@ -2569,10 +2774,23 @@ function setupRoster() {
   });
 
   /* ---------- SCAN ---------- */
+  function actVisibleInCurrentClass(a){
+    // If the activity has no group restriction, it's visible everywhere.
+    if(!a.groups || !a.groups.length) return true;
+    // Otherwise, at least one student in the current class must be in one of
+    // the allowed groups.
+    var studs = activeStudents();
+    for(var i=0;i<studs.length;i++){
+      if(a.groups.indexOf(studs[i].group||"")>=0) return true;
+    }
+    return false;
+  }
   function renderActButtons(){
     var wrap=$("actButtons"); wrap.innerHTML="";
+    var visible=data.activities.filter(actVisibleInCurrentClass);
     if(!data.activities.length){ wrap.appendChild(el("span","recent-empty","No activities yet — add some on the Activities tab.")); return; }
-    data.activities.forEach(function(a){
+    if(!visible.length){ wrap.appendChild(el("span","recent-empty","No activities are set up for this group — check the Activities tab.")); return; }
+    visible.forEach(function(a){
       var b=el("button","act-btn");
       b.dataset.label=a.name; b.dataset.delta=a.pts;
       var n=el("span","an",a.name);
@@ -2592,10 +2810,19 @@ function setupRoster() {
     if(line3) f.appendChild(el("div","total",line3));
     clearTimeout(f._t);
     f._t=setTimeout(function(){ f.classList.remove("show"); }, 1400);
+    if(typeof headerFlash==="function") headerFlash(ok, [line1,line2].filter(Boolean).join("  "));
   }
 
   function award(s){
     if(!armed){ flash(false,"Pick an activity first","",""); beep(false); return false; }
+    // If the armed activity has group restrictions, check this student belongs.
+    var armedAct=data.activities.filter(function(a){ return a.name===armed.label && a.pts===armed.delta; })[0];
+    if(armedAct && Array.isArray(armedAct.groups) && armedAct.groups.length>0){
+      if(armedAct.groups.indexOf(s.group||"")<0){
+        flash(false, s.name, "Not in this activity's groups", armedAct.groups.join(", ")+" only");
+        beep(false); return false;
+      }
+    }
     data.scores[s.id]=score(s.id)+armed.delta;
     if(armed.delta>0) recordEarn(s.id, armed.label, armed.delta);
     var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:armed.label, delta:armed.delta});
@@ -2659,6 +2886,15 @@ function setupRoster() {
       setArmed("Custom", neg2?-n2:n2);
       flash(true,"Now scoring","Custom  "+fmt(neg2?-n2:n2),"Scan a student next");
       beep(true);
+      return;
+    }
+    if(code==="CTRL:PASUKPREV" || code==="CTRL:PASUKNEXT"){
+      if($("view-pesukim").classList.contains("active") && pesukMode==="teach" && !teachEditing){
+        teachAdvance(code==="CTRL:PASUKNEXT" ? 1 : -1);
+        beep(true);
+      } else {
+        flash(false,"Not in Teach mode","","Open Pesukim → Teach to use this code"); beep(false);
+      }
       return;
     }
     if(code.indexOf("PA:")===0){
@@ -2730,6 +2966,12 @@ function setupRoster() {
   });
 
   function renderScanBoard(){
+    // Whenever the small scan-screen board refreshes (which happens after every
+    // scoring action), also refresh the full Leader Board tab if it's the one on
+    // screen — so it updates live after each scan instead of only on tab-switch.
+    if(typeof renderStandings==="function" && $("view-standings") && $("view-standings").classList.contains("active")){
+      renderStandings();
+    }
     var open = data.scanBoardOpen!==false;
     $("scanBoardBody").style.display = open ? "block" : "none";
     $("boardToggle").textContent = open ? "Hide" : "Show";
@@ -3000,11 +3242,173 @@ function setupRoster() {
     save(); renderTapPanel();
   });
 
+  /* ---------- Customizable Scan-tab layout ---------- */
+  var SCAN_PANELS=["activities","scanbar","recent","tappanel","leaderboard"];
+  // Layout is {cols:2|3, columns:[[...],[...],[...]]} — always three column
+  // arrays, but only the first `cols` are shown; the rest stay empty.
+  function defaultScanLayout(){ return {cols:2, columns:[["activities","scanbar","recent"],["leaderboard","tappanel"],[]]}; }
+  // Valid only if every known panel appears exactly once across the *active*
+  // columns and none sit in a hidden column — so applyScanLayout() can never
+  // lose, duplicate, or strand a panel. A corrupted pref falls back to default.
+  function validScanLayout(L){
+    if(!L||typeof L!=="object") return false;
+    if(L.cols!==2 && L.cols!==3) return false;
+    if(!Array.isArray(L.columns) || L.columns.length<3) return false;
+    var seen={}, count=0;
+    for(var c=0;c<L.columns.length;c++){
+      if(!Array.isArray(L.columns[c])) return false;
+      if(c>=L.cols && L.columns[c].length>0) return false;
+      for(var k=0;k<L.columns[c].length;k++){
+        var id=L.columns[c][k];
+        if(SCAN_PANELS.indexOf(id)<0 || seen[id]) return false;
+        seen[id]=1; count++;
+      }
+    }
+    return count===SCAN_PANELS.length;
+  }
+  function ensureScanLayout(){
+    var L=data.scanLayout;
+    // Migrate the old two-column {left,right} shape to the new columns model.
+    if(L && Array.isArray(L.left) && Array.isArray(L.right) && !L.columns){
+      data.scanLayout={cols:2, columns:[L.left.slice(), L.right.slice(), []]};
+    }
+    if(!validScanLayout(data.scanLayout)) data.scanLayout=defaultScanLayout();
+  }
+  function applyScanLayout(){
+    ensureScanLayout();
+    var cols=data.scanLayout.cols;
+    for(var c=0;c<3;c++){
+      var colEl=$("scanCol"+c); if(!colEl) continue;
+      colEl.style.display = (c<cols) ? "" : "none";
+    }
+    data.scanLayout.columns.forEach(function(ids,c){
+      var colEl=$("scanCol"+c); if(!colEl) return;
+      ids.forEach(function(id){ var p=$("panel-"+id); if(p) colEl.appendChild(p); });
+    });
+    updateScanColsToggle();
+  }
+  function panelColIndex(id){
+    for(var c=0;c<data.scanLayout.columns.length;c++){ if(data.scanLayout.columns[c].indexOf(id)>=0) return c; }
+    return -1;
+  }
+  function panelMove(id, dir){
+    ensureScanLayout();
+    var c=panelColIndex(id); if(c<0) return;
+    var arr=data.scanLayout.columns[c], i=arr.indexOf(id), j=i+dir;
+    if(j<0||j>=arr.length) return;
+    arr[i]=arr[j]; arr[j]=id;
+    save(); applyScanLayout();
+  }
+  function panelSwapCol(id){
+    // Cycle a panel to the next visible column (wraps around).
+    ensureScanLayout();
+    var c=panelColIndex(id); if(c<0) return;
+    var to=(c+1)%data.scanLayout.cols;
+    var arr=data.scanLayout.columns[c], i=arr.indexOf(id);
+    arr.splice(i,1); data.scanLayout.columns[to].push(id);
+    save(); applyScanLayout();
+  }
+  function panelPlaceBefore(dragId, targetId){
+    ensureScanLayout();
+    if(dragId===targetId) return;
+    data.scanLayout.columns.forEach(function(a){ var i=a.indexOf(dragId); if(i>=0) a.splice(i,1); });
+    var tc=panelColIndex(targetId);
+    if(tc<0){ data.scanLayout.columns[0].push(dragId); }
+    else { var ti=data.scanLayout.columns[tc].indexOf(targetId); data.scanLayout.columns[tc].splice(ti,0,dragId); }
+    save(); applyScanLayout();
+  }
+  function panelAppendToCol(dragId, colIndex){
+    ensureScanLayout();
+    if(colIndex<0||colIndex>=data.scanLayout.cols) return;
+    data.scanLayout.columns.forEach(function(a){ var i=a.indexOf(dragId); if(i>=0) a.splice(i,1); });
+    data.scanLayout.columns[colIndex].push(dragId);
+    save(); applyScanLayout();
+  }
+  function setScanCols(n){
+    ensureScanLayout();
+    n = (n===3) ? 3 : 2;
+    if(n<data.scanLayout.cols){
+      // Dropping from 3 to 2 columns: fold anything in the 3rd column into the 2nd
+      // so no panel is stranded in a now-hidden column.
+      var extra=data.scanLayout.columns[2].splice(0);
+      extra.forEach(function(id){ data.scanLayout.columns[1].push(id); });
+    }
+    data.scanLayout.cols=n;
+    save(); applyScanLayout();
+  }
+  function updateScanColsToggle(){
+    var t=$("scanColsToggle"); if(!t||!data.scanLayout) return;
+    t.querySelectorAll("button").forEach(function(b){ b.classList.toggle("active", parseInt(b.dataset.cols,10)===data.scanLayout.cols); });
+  }
+  var scanCustomizing=false;
+  function setScanCustomize(on){
+    scanCustomizing=!!on;
+    $("view-scan").classList.toggle("customizing", scanCustomizing);
+    var btn=$("scanCustomizeBtn");
+    btn.textContent = scanCustomizing ? "✓ Done" : "⚙ Customize layout";
+    btn.classList.toggle("btn-primary", scanCustomizing);
+    $("scanLayoutReset").style.display = scanCustomizing ? "" : "none";
+    $("scanCustomizeHint").style.display = scanCustomizing ? "" : "none";
+    $("scanColsToggle").style.display = scanCustomizing ? "" : "none";
+    if(scanCustomizing) updateScanColsToggle();
+    SCAN_PANELS.forEach(function(id){ var p=$("panel-"+id); if(p) p.setAttribute("draggable", scanCustomizing?"true":"false"); });
+    // Drop keyboard focus so the button doesn't keep a focus ring and look
+    // "still highlighted" after you finish.
+    if(btn && typeof btn.blur==="function") btn.blur();
+  }
+  $("scanCustomizeBtn").addEventListener("click", function(){ setScanCustomize(!scanCustomizing); });
+  $("scanLayoutReset").addEventListener("click", function(){ data.scanLayout=defaultScanLayout(); save(); applyScanLayout(); });
+  $("scanColsToggle").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; setScanCols(parseInt(b.dataset.cols,10)); });
+  // Move buttons (▲ ▼ ⇄) — delegated on the scan section.
+  $("view-scan").addEventListener("click", function(e){
+    var b=e.target.closest(".pt-btn"); if(!b) return;
+    var panel=b.closest(".panel"); if(!panel) return;
+    var id=panel.dataset.panel, op=b.dataset.pt;
+    if(op==="up") panelMove(id,-1);
+    else if(op==="down") panelMove(id,1);
+    else if(op==="swap") panelSwapCol(id);
+  });
+  // Native drag-and-drop as the primary interaction; the buttons above do the
+  // exact same moves and are a guaranteed fallback if drag misbehaves anywhere.
+  var dragPanelId=null;
+  $("view-scan").addEventListener("dragstart", function(e){
+    if(!scanCustomizing) return;
+    var p=e.target.closest(".panel"); if(!p) return;
+    dragPanelId=p.dataset.panel;
+    e.dataTransfer.effectAllowed="move";
+    try{ e.dataTransfer.setData("text/plain", dragPanelId); }catch(_){}
+  });
+  $("view-scan").addEventListener("dragover", function(e){
+    if(!scanCustomizing||!dragPanelId) return;
+    e.preventDefault(); e.dataTransfer.dropEffect="move";
+    var p=e.target.closest(".panel");
+    document.querySelectorAll("#view-scan .panel.drag-over").forEach(function(x){ if(x!==p) x.classList.remove("drag-over"); });
+    if(p && p.dataset.panel!==dragPanelId) p.classList.add("drag-over");
+  });
+  $("view-scan").addEventListener("drop", function(e){
+    if(!scanCustomizing||!dragPanelId) return;
+    e.preventDefault();
+    var p=e.target.closest(".panel");
+    if(p){ panelPlaceBefore(dragPanelId, p.dataset.panel); }
+    else { var col=e.target.closest(".scan-col"); if(col) panelAppendToCol(dragPanelId, parseInt(col.dataset.col,10)); }
+    dragPanelId=null;
+    document.querySelectorAll("#view-scan .panel.drag-over").forEach(function(x){ x.classList.remove("drag-over"); });
+  });
+  $("view-scan").addEventListener("dragend", function(){
+    dragPanelId=null;
+    document.querySelectorAll("#view-scan .panel.drag-over").forEach(function(x){ x.classList.remove("drag-over"); });
+  });
+
   function handleScannedCode(code){
     var c=(code||"").trim();
+    // A scan means "I'm scoring now, not rearranging" — so if the Scan tab's
+    // Customize-layout mode is still on, drop out of it first. (It's toggled on
+    // by the ⚙ button and normally off via "Done"; without this, scanning while
+    // still in customize mode would leave the rearrange outlines showing.)
+    if(typeof scanCustomizing!=="undefined" && scanCustomizing && typeof setScanCustomize==="function"){ setScanCustomize(false); }
     if(fpOpen){ fpScan(c); return; }
     if(/^ACT:/i.test(c)){ armActivityByCode(c); return; }
-    if($("view-auction").classList.contains("active")) return;
+    if($("view-auction").classList.contains("active")){ if(typeof headerFlash==="function") headerFlash(false,"Scanning isn't used on the Auction tab"); return; }
     if($("view-store").classList.contains("active")){ storeScan(c); return; }
     if($("view-passes").classList.contains("active")){ passScan(c); return; }
     if($("view-shorashim").classList.contains("active") && pendingSave){ recordScannedSave(c); return; }
@@ -3012,6 +3416,74 @@ function setupRoster() {
     if($("view-pesukim").classList.contains("active")) pesukMark(c);
     else processScan(c);
   }
+  // Mirrors handleScannedCode's own routing exactly, so the label shown next to
+  // the header scan bar is never out of sync with what a scan will actually do.
+  // Keep these two functions' conditions matching if handleScannedCode ever changes.
+  function scanContextLabel(){
+    if(fpOpen) return "↗ Floating panel";
+    if($("view-auction").classList.contains("active")) return "Auction (scan not used here)";
+    if($("view-store").classList.contains("active")) return "Store";
+    if($("view-passes").classList.contains("active")) return "Hall passes";
+    if($("view-shorashim").classList.contains("active") && pendingSave) return "Save board";
+    if($("view-shorashim").classList.contains("active") && gameScanArmed) return "Game Show";
+    if($("view-pesukim").classList.contains("active")) return "Pesukim (mark tested)";
+    return "Points";
+  }
+  function renderHeaderScanContext(){
+    var lbl=$("hsbContext"); if(!lbl) return;
+    var ctx=scanContextLabel();
+    var isPoints = (ctx==="Points");
+    lbl.classList.toggle("clickable", isPoints);
+    if(isPoints){
+      lbl.textContent = (armed ? (armed.label+"  "+fmt(armed.delta)) : "Pick an activity") + "  ▾";
+      lbl.title = "Click to arm a different activity";
+    } else {
+      lbl.textContent = ctx;
+      lbl.title = "";
+      hideHsbDropdown();
+    }
+  }
+  // Lets you arm a different activity right from the header, without needing
+  // to be on the Scan tab — mirrors the same activity list shown there.
+  function toggleHsbDropdown(){
+    var dd=$("hsbDropdown");
+    if(dd.style.display!=="none"){ hideHsbDropdown(); return; }
+    dd.innerHTML="";
+    if(!data.activities.length){
+      dd.appendChild(el("div","hd-empty","No activities yet — add some on the Activities tab."));
+    } else {
+      data.activities.forEach(function(a){
+        var b=el("button"); b.type="button";
+        b.appendChild(el("span",null,a.name));
+        b.appendChild(el("span","hd-pts"+(a.pts<0?" neg":""), fmt(a.pts)));
+        b.addEventListener("click", function(){ setArmed(a.name, a.pts); hideHsbDropdown(); $("headerScanInput").focus(); });
+        dd.appendChild(b);
+      });
+    }
+    dd.style.display="block";
+  }
+  function hideHsbDropdown(){ var dd=$("hsbDropdown"); if(dd) dd.style.display="none"; }
+  $("hsbContext").addEventListener("click", function(){
+    if(scanContextLabel()!=="Points") return;
+    toggleHsbDropdown();
+  });
+  document.addEventListener("click", function(e){
+    if(!e.target.closest("#hsbContextWrap")) hideHsbDropdown();
+  });
+  // Brief confirmation next to the header scan bar showing what a scan just did —
+  // wired into every existing per-context flash function below (flash, storeFlash,
+  // passFlash, pesukFlash, gameFlash, recordScannedSave), so it works no matter
+  // which context handled the scan, without duplicating any of their own logic.
+  function headerFlash(ok, text){
+    var f=$("hsbFlash"); if(!f) return;
+    f.textContent=text;
+    f.className="hsb-flash show "+(ok?"good":"bad");
+    clearTimeout(f._t);
+    f._t=setTimeout(function(){ f.classList.remove("show"); }, 1600);
+  }
+  $("headerScanInput").addEventListener("keydown", function(e){
+    if(e.key==="Enter"){ e.preventDefault(); var v=this.value; this.value=""; handleScannedCode(v); }
+  });
   function armActivityByCode(c){
     var id=c.slice(4).trim();
     var a=null;
@@ -3267,11 +3739,34 @@ function setupRoster() {
     return card;
   }
   function renderPointsPrint(){
+    var fsel=$("pointsFormat");
+    if(fsel.options.length!==LABEL_ORDER.length){
+      fsel.innerHTML='<option value="grid">Card grid (plain paper)</option>';
+      LABEL_ORDER.forEach(function(k){ if(k==="tiles") return; var o=el("option",null,LABEL_SPECS[k].name); o.value=k; fsel.appendChild(o); });
+    }
+    fsel.value=data.pointsPrint.format||"grid";
+    var avery = (data.pointsPrint.format||"grid")!=="grid";
+    document.body.classList.toggle("points-avery", avery);
+    $("pointsGridOptsWrap").style.display = avery?"none":"contents";
     $("pointsPerPage").value=String(data.pointsPrint.perPage);
     $("pointsScale").value=data.pointsPrint.scale;
     renderPointsGroupFilters();
-    var grid=$("pointsPrintGrid"); grid.innerHTML="";
+
+    var grid=$("pointsPrintGrid"), sheet=$("pointsPrintAverySheet");
+    grid.innerHTML=""; sheet.innerHTML="";
+
     var list=activeStudents().filter(studentAllowedInPoints).sort(function(a,b){ return (a.group||"").localeCompare(b.group||"") || a.name.localeCompare(b.name); });
+    if(!list.length){ (avery?sheet:grid).appendChild(el("div","empty-state","No students match the selected groups.")); return; }
+
+    if(avery){
+      var subLine = data.standingsActivity ? (data.standingsActivity+(standRange==="week"?" · this week":"")) : (standRange==="week"?"points this week":"total points");
+      var items=list.map(function(s){
+        return {line1:s.name, line2:standScoreFor(s)+" "+subLine, line3:s.group};
+      });
+      renderAverySheetGeneric(items, sheet, data.pointsPrint.format, false, true);
+      return;
+    }
+
     var layout=CARD_LAYOUTS[data.pointsPrint.perPage]||CARD_LAYOUTS[9];
     for(var i=0;i<list.length;i+=data.pointsPrint.perPage){
       var page=el("div","print-page"+(data.pointsPrint.scale==="fill"?" fill":""));
@@ -3280,8 +3775,8 @@ function setupRoster() {
       list.slice(i,i+data.pointsPrint.perPage).forEach(function(s){ page.appendChild(pointCardForStudent(s)); });
       grid.appendChild(page);
     }
-    if(!list.length) grid.appendChild(el("div","empty-state","No students match the selected groups."));
   }
+  $("pointsFormat").addEventListener("change", function(){ data.pointsPrint.format=this.value; save(); renderPointsPrint(); });
   $("pointsPerPage").addEventListener("change", function(){ data.pointsPrint.perPage=parseInt(this.value,10)||9; save(); renderPointsPrint(); });
   $("pointsScale").addEventListener("change", function(){ data.pointsPrint.scale=this.value; save(); renderPointsPrint(); });
   $("pointsGroupAll").addEventListener("change", function(){
@@ -3894,7 +4389,7 @@ function setupRoster() {
 
   /* ---------- PRIZE STORE ---------- */
   var storeStudentId=null;
-  function storeFlash(ok,l1,l2){ var f=$("storeFlash"); f.className="flash show "+(ok?"good":"bad"); f.innerHTML=""; if(l1) f.appendChild(el("div","who",l1)); if(l2) f.appendChild(el("div","total",l2)); clearTimeout(f._t); f._t=setTimeout(function(){ f.classList.remove("show"); },1600); }
+  function storeFlash(ok,l1,l2){ var f=$("storeFlash"); f.className="flash show "+(ok?"good":"bad"); f.innerHTML=""; if(l1) f.appendChild(el("div","who",l1)); if(l2) f.appendChild(el("div","total",l2)); clearTimeout(f._t); f._t=setTimeout(function(){ f.classList.remove("show"); },1600); if(typeof headerFlash==="function") headerFlash(ok, [l1,l2].filter(Boolean).join("  ")); }
   function renderStore(){
     if(!$("storeEmoji").options.length) fillEmojiSelect($("storeEmoji"), AU_EMOJIS[0]);
     var list=$("storeList"); list.innerHTML="";
@@ -4083,6 +4578,7 @@ function setupRoster() {
     if(l1) f.appendChild(el("div","who",l1));
     if(l2) f.appendChild(el("div","total",l2));
     clearTimeout(f._t); f._t=setTimeout(function(){ f.classList.remove("show"); },1500);
+    if(typeof headerFlash==="function") headerFlash(ok, [l1,l2].filter(Boolean).join("  "));
   }
   function pesukMark(code){
     code=(code||"").trim(); if(!code) return;
@@ -4150,9 +4646,9 @@ function setupRoster() {
   }
   $("pesukMode").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; pesukMode=b.dataset.pm; applyPesukMode(); });
 
-  var teachN=1, teachShowAll=false, teachEditing=false;
+  var teachN=1, teachShowAll=false, teachEditing=false, teachActiveIdx=null;
   function renderTeach(){
-    var nums=pmNumbers(); if(nums.indexOf(teachN)<0) teachN=nums[0];
+    var nums=pmNumbers(); if(nums.indexOf(teachN)<0){ teachN=nums[0]; teachActiveIdx=null; }
     $("teachLbl").textContent=itemLabel(teachN);
     $("teachPasuk").textContent=(data.pasukPointed&&data.pasukPointed[teachN])||"";
     $("teachToggle").style.display = teachEditing ? "none" : "";
@@ -4163,21 +4659,66 @@ function setupRoster() {
       ? "Tap the ✂ between two words to split a phrase there. “⬇ Join” merges a line into the one below it. Splits and translations here also drive the Matching game."
       : "Tap any line to reveal its translation. Tap ✎ to edit a translation — your change also updates the Matching game.";
     $("teachEditFooter").style.display = teachEditing ? "flex" : "none";
+    $("teachPhraseNav").style.display = teachEditing ? "none" : "flex";
+    var phrases=phrasesFor(teachN);
+    $("teachPhraseCount").textContent = teachActiveIdx==null
+      ? (phrases.length+" phrase"+(phrases.length===1?"":"s")+" · ← → to advance")
+      : ("phrase "+(teachActiveIdx+1)+" of "+phrases.length+" · ← → to advance");
+    $("teachRepeatToggle").innerHTML = data.teachRepeatMode
+      ? "↻ Repeat pasuk" : "→ Continue on";
+    $("teachRepeatToggle").title = data.teachRepeatMode
+      ? "Last phrase loops back to phrase 1 of this pasuk. Tap to switch to continuing on to the next pasuk instead."
+      : "Last phrase moves on to phrase 1 of the next pasuk. Tap to switch to repeating this pasuk instead.";
     var wrap=$("teachLines"); wrap.innerHTML="";
     if(teachEditing) renderTeachEdit(wrap); else renderTeachLines(wrap);
   }
   function renderTeachLines(wrap){
     phrasesFor(teachN).forEach(function(p,i){
-      var line=el("div","teach-line");
+      var passed = teachActiveIdx!=null && i<teachActiveIdx;
+      var active = teachActiveIdx===i;
+      var line=el("div","teach-line"+(active?" active":"")+(passed?" passed":""));
       var he=el("div","teach-he",p[0]); he.dir="rtl";
-      var en=el("div","teach-en"+(teachShowAll?" show":""),p[1]);
+      var en=el("div","teach-en"+((teachShowAll||active||passed)?" show":""),p[1]);
       var edit=el("button","btn btn-sm teach-edit","✎");
       edit.addEventListener("click", function(ev){ ev.stopPropagation(); var nv=prompt("Translation for this line:", p[1]); if(nv===null) return; setPhraseTranslation(teachN,i,nv.trim()||p[1]); renderTeach(); });
-      line.addEventListener("click", function(){ en.classList.toggle("show"); });
+      line.addEventListener("click", function(){ teachActiveIdx=i; en.classList.toggle("show"); renderTeach(); });
       line.appendChild(he); line.appendChild(en); line.appendChild(edit);
       wrap.appendChild(line);
     });
   }
+  // Advances (or steps back) through the current pasuk's phrases one at a time.
+  // At the boundary, either loops back to phrase 1 of the same pasuk (repeat mode)
+  // or rolls into phrase 1 of the next/previous pasuk (continue mode) — matching
+  // whatever #teachRepeatToggle is currently set to.
+  function teachAdvance(delta){
+    if(teachEditing) return;
+    var phrases=phrasesFor(teachN);
+    if(!phrases.length) return;
+    var cur = teachActiveIdx==null ? -1 : teachActiveIdx;
+    var next = cur+delta;
+    if(next>=phrases.length){
+      if(data.teachRepeatMode){ teachActiveIdx=0; }
+      else { teachGo(1); teachActiveIdx=0; }
+    } else if(next<0){
+      if(data.teachRepeatMode){ teachActiveIdx=phrases.length-1; }
+      else { teachGo(-1); var newPhrases=phrasesFor(teachN); teachActiveIdx=newPhrases.length-1; }
+    } else {
+      teachActiveIdx=next;
+    }
+    renderTeach();
+  }
+  $("teachPhrasePrev").addEventListener("click", function(){ teachAdvance(-1); });
+  $("teachPhraseNext").addEventListener("click", function(){ teachAdvance(1); });
+  $("teachRepeatToggle").addEventListener("click", function(){ data.teachRepeatMode=!data.teachRepeatMode; save(); renderTeach(); });
+  document.addEventListener("keydown", function(e){
+    if(!$("view-pesukim").classList.contains("active")) return;
+    if(pesukMode!=="teach" || teachEditing) return;
+    var ae=document.activeElement;
+    var editingField = ae && (ae.tagName==="INPUT"||ae.tagName==="TEXTAREA"||ae.tagName==="SELECT"||ae.isContentEditable);
+    if(editingField) return;
+    if(e.key==="ArrowLeft"){ e.preventDefault(); teachAdvance(-1); }
+    else if(e.key==="ArrowRight"){ e.preventDefault(); teachAdvance(1); }
+  });
   function renderTeachEdit(wrap){
     var arr=ensurePhrases(teachN);
     if(!arr.length){ wrap.appendChild(el("div","recent-empty","No phrases — use “+ Add phrase” below, or reset the pasuk.")); }
@@ -4649,20 +5190,22 @@ nameLine
     });
   }
   function fmtTime(e){ return e.v.toFixed(1)+"s"; }
-  function armSave(key, partial, lowerBetter, statusEl, onSaved){ pendingSave={key:key,partial:partial,lowerBetter:lowerBetter,statusEl:statusEl,onSaved:onSaved}; }
+  function armSave(key, partial, lowerBetter, statusEl, onSaved){ pendingSave={key:key,partial:partial,lowerBetter:lowerBetter,statusEl:statusEl,onSaved:onSaved}; renderHeaderScanContext(); }
   function recordScannedSave(code){
     if(!pendingSave) return;
     var s=studentById((code||"").trim());
-    if(!s){ beep(false); if(pendingSave.statusEl) pendingSave.statusEl.textContent="Unknown code — scan a student's QR."; return; }
+    if(!s){ beep(false); if(pendingSave.statusEl) pendingSave.statusEl.textContent="Unknown code — scan a student's QR."; if(typeof headerFlash==="function") headerFlash(false,"Unknown code"); return; }
     var entry={sid:s.id,name:s.name,ts:Date.now()};
     for(var k in pendingSave.partial) entry[k]=pendingSave.partial[k];
     addBoardEntry(pendingSave.key, entry, pendingSave.lowerBetter);
     beep(true);
     var st=pendingSave.statusEl, cb=pendingSave.onSaved; pendingSave=null;
+    renderHeaderScanContext();
     if(st) st.textContent="Saved for "+s.name+"! 🎉";
+    if(typeof headerFlash==="function") headerFlash(true, s.name+" — saved!");
     if(cb) cb();
   }
-  $("shorBoardsTog").addEventListener("change", function(){ shorBoards=this.checked; pendingSave=null; renderShorashim(); });
+  $("shorBoardsTog").addEventListener("change", function(){ shorBoards=this.checked; pendingSave=null; renderHeaderScanContext(); renderShorashim(); });
 
   function activeShorashim(){ return data.shorashim.filter(function(s){ return s.active; }); }
   function shorLabel(s){ return (shorEmoji && s.emoji) ? s.emoji : s.meaning; }
@@ -4682,7 +5225,7 @@ nameLine
   }
   $("shorMode").addEventListener("click", function(e){
     var b=e.target.closest("button"); if(!b) return;
-    gameScanArmed=false; pendingSave=null; if(typeof stopGameShow==="function") stopGameShow(); shorMode=b.dataset.m; renderShorashim();
+    gameScanArmed=false; pendingSave=null; if(typeof stopGameShow==="function") stopGameShow(); shorMode=b.dataset.m; renderShorashim(); renderHeaderScanContext();
   });
   $("shorEmojiTog").addEventListener("change", function(){ shorEmoji=this.checked; applyShorBig(); if(shorMode!=="words") renderShorashim(); });
   $("shorBigTog").addEventListener("change", function(){ shorBig=this.checked; applyShorBig(); });
@@ -4926,6 +5469,7 @@ nameLine
   var gameAutoTimer=null;
   function renderGame(){
     gameScanArmed=false;
+    renderHeaderScanContext();
     var stage=$("gameStage"); stage.innerHTML="";
     stage.appendChild(el("div","game-hint","Press \u201CNew question\u201D to begin. Read the four corners to the room, the boys run, the timer counts down, then reveal and scan the winners."));
     renderGameBoard();
@@ -4939,6 +5483,7 @@ nameLine
     var distract=shuffle(act.filter(function(s){return s.id!==correct.id;})).slice(0,3);
     gameQ={correct:correct, opts:shuffle([correct].concat(distract)), timer:null, t:gameSeconds()};
     gameScanArmed=false;
+    renderHeaderScanContext();
     renderGameStage(false);
     startTimer();
   }
@@ -4980,6 +5525,7 @@ nameLine
     clearInterval(gameQ.timer);
     renderGameStage(true);
     gameScanArmed=true;
+    renderHeaderScanContext();
     if(data.gameAuto){
       var secs=Math.max(1, data.gameAutoSecs||5);
       var hint=el("div","game-hint"); hint.id="gameAutoNote"; hint.style.fontWeight="700";
@@ -5000,6 +5546,7 @@ nameLine
   function gameFlash(ok,l1){
     var f=$("gameFlash"); f.className="flash show "+(ok?"good":"bad"); f.innerHTML="";
     f.appendChild(el("div","who",l1)); clearTimeout(f._t); f._t=setTimeout(function(){ f.classList.remove("show"); },1300);
+    if(typeof headerFlash==="function") headerFlash(ok, l1);
   }
   function gameAward(code){
     code=(code||"").trim(); if(!code) return;
@@ -5402,6 +5949,7 @@ nameLine
   }
   $("classSel").addEventListener("change", function(){
     data.currentClass=this.value; save();
+    renderActButtons();
     renderScanBoard(); renderTapPanel(); if(typeof fpOpen!=="undefined" && fpOpen) fpRenderNames();
     renderStandings(); renderPasses();
     if($("view-trends").classList.contains("active")) renderTrends();
@@ -5460,8 +6008,10 @@ nameLine
   function renderActivities(){
     var list=$("activityList"); list.innerHTML="";
     if(!data.activities.length){ list.appendChild(el("div","recent-empty","No activities yet.")); }
+    var allGroups=groups();
     data.activities.forEach(function(a){
-      var row=el("div","erow");
+      if(!Array.isArray(a.groups)) a.groups=[];
+      var row=el("div","erow act-erow");
       var name=el("input","field grow"); name.value=a.name; name.style.minWidth="120px";
       name.addEventListener("change", function(){ a.name=name.value.trim()||a.name; name.value=a.name; save(); renderActButtons(); refreshArmed(a); });
       var stp=el("span","stepper");
@@ -5478,7 +6028,39 @@ nameLine
       del.addEventListener("click", function(){
         data.activities=data.activities.filter(function(x){return x.id!==a.id;}); save(); renderActivities(); renderActButtons();
       });
-      row.appendChild(name); row.appendChild(stp); row.appendChild(ptsLbl); row.appendChild(del);
+      var controls=el("div","act-controls");
+      controls.appendChild(name); controls.appendChild(stp); controls.appendChild(ptsLbl); controls.appendChild(del);
+      row.appendChild(controls);
+      // Group checklist — "All groups" (unchecked = all, checked groups = restricted)
+      if(allGroups.length>0){
+        var gc=el("div","act-group-checks");
+        gc.appendChild(el("span","act-groups-lbl","Groups:"));
+        var allChk=el("label","act-group-all");
+        var allBox=el("input"); allBox.type="checkbox"; allBox.checked=(a.groups.length===0);
+        allChk.appendChild(allBox); allChk.appendChild(document.createTextNode(" All"));
+        allBox.addEventListener("change", function(){
+          if(allBox.checked){ a.groups=[]; save(); renderActButtons(); renderActivities(); }
+        });
+        gc.appendChild(allChk);
+        allGroups.forEach(function(g){
+          var lbl=el("label","act-group-opt");
+          var chk=el("input"); chk.type="checkbox"; chk.checked=(a.groups.indexOf(g)>=0);
+          lbl.appendChild(chk); lbl.appendChild(document.createTextNode(" "+g));
+          chk.addEventListener("change", function(){
+            if(chk.checked){
+              if(a.groups.indexOf(g)<0) a.groups.push(g);
+            } else {
+              a.groups=a.groups.filter(function(x){return x!==g;});
+            }
+            // If no groups checked, revert to "all"
+            if(a.groups.length===0) allBox.checked=true;
+            else allBox.checked=false;
+            save(); renderActButtons();
+          });
+          gc.appendChild(lbl);
+        });
+        row.appendChild(gc);
+      }
       list.appendChild(row);
     });
   }
@@ -5559,88 +6141,95 @@ nameLine
     avery5167:{name:"Avery 5167 / 8167 — ½\"×1¾\" — 80/sheet", cols:4, rows:20, w:1.75, h:0.5, padT:0.5, padS:0.3, colGap:0.3, rowGap:0}
   };
   var LABEL_ORDER=["avery5160","avery5161","avery5162","avery5163","avery5167","tiles"];
-  function renderAvery(list, hasQR){
-    var spec=LABEL_SPECS[data.labelFormat]||LABEL_SPECS.avery5160;
+  // Generic Avery-sheet renderer — takes flat {qrText, line1, line2, line3} items and
+  // lays them out across as many sheets as needed, using the same LABEL_SPECS geometry
+  // for every use of Avery printing in the app (students, activity menu, personal codes).
+  function renderAverySheetGeneric(items, wrapEl, format, hasQR, noQr){
+    var spec=LABEL_SPECS[format]||LABEL_SPECS.avery5160;
     var per=spec.cols*spec.rows;
     var qrIn=Math.max(0.34, Math.min(spec.h-0.14, 1.3));
     var nameSize = spec.h>=1 ? "12pt" : (spec.h>=0.7?"9.5pt":"7pt");
-    var showSub = spec.h>=0.9, showId = spec.h>=0.75;
-    var wrap=$("averySheet");
-    for(var i=0;i<list.length;i+=per){
+    var showLine2 = spec.h>=0.9, showLine3 = spec.h>=0.75;
+    wrapEl.innerHTML="";
+    for(var i=0;i<items.length;i+=per){
       var sheet=el("div","av-sheet");
       sheet.style.gridTemplateColumns="repeat("+spec.cols+","+spec.w+"in)";
       sheet.style.gridAutoRows=spec.h+"in";
       sheet.style.padding=spec.padT+"in "+spec.padS+"in";
       sheet.style.columnGap=spec.colGap+"in";
       sheet.style.rowGap=spec.rowGap+"in";
-      list.slice(i,i+per).forEach(function(s){
-        var cell=el("div","av-cell"); cell.style.width=spec.w+"in"; cell.style.height=spec.h+"in";
-        var q=el("div","av-qr"); q.style.width=qrIn+"in"; q.style.height=qrIn+"in";
-        if(hasQR){ var holder=el("div"); q.appendChild(holder); try{ new QRCode(holder,{text:s.id,width:220,height:220,correctLevel:QRCode.CorrectLevel.M}); } catch(e){ q.appendChild(el("div","av-id","QR?")); } }
-        else { q.appendChild(el("div","av-id","(QR offline)")); }
+      items.slice(i,i+per).forEach(function(it){
+        var cell=el("div","av-cell"+(noQr?" no-qr":"")); cell.style.width=spec.w+"in"; cell.style.height=spec.h+"in";
+        if(!noQr){
+          var q=el("div","av-qr"); q.style.width=qrIn+"in"; q.style.height=qrIn+"in";
+          if(hasQR){ var holder=el("div"); q.appendChild(holder); try{ new QRCode(holder,{text:it.qrText,width:220,height:220,correctLevel:QRCode.CorrectLevel.M}); } catch(e){ q.appendChild(el("div","av-id","QR?")); } }
+          else { q.appendChild(el("div","av-id","(QR offline)")); }
+          cell.appendChild(q);
+        }
         var info=el("div","av-info");
-        var nm=el("div","av-name",s.name); nm.style.fontSize=nameSize; info.appendChild(nm);
-        if(showSub && s.group) info.appendChild(el("div","av-sub",s.group));
-        if(showId) info.appendChild(el("div","av-id",s.id));
-        cell.appendChild(q); cell.appendChild(info);
+        var nm=el("div","av-name",it.line1||""); nm.style.fontSize=nameSize; info.appendChild(nm);
+        if(showLine2 && it.line2) info.appendChild(el("div","av-sub",it.line2));
+        if(showLine3 && it.line3) info.appendChild(el("div","av-id",it.line3));
+        cell.appendChild(info);
         sheet.appendChild(cell);
       });
-      wrap.appendChild(sheet);
+      wrapEl.appendChild(sheet);
     }
   }
+  function renderAvery(list, hasQR){
+    var items=list.map(function(s){ return {qrText:s.id, line1:s.name, line2:s.group, line3:s.id}; });
+    renderAverySheetGeneric(items, $("averySheet"), data.labelFormat, hasQR);
+  }
   $("labelFormat").addEventListener("change", function(){ data.labelFormat=this.value; save(); renderLabels(); });
+  $("menuLabelFormat").addEventListener("change", function(){ data.menuLabelFormat=this.value; save(); renderMenuLabels(); });
+  function menuLabelItems(){
+    // Flat {qrText, name, sub} list shared by both the tile view and Avery-sheet view,
+    // so the two formats can never drift out of sync with each other.
+    var items=data.activities.map(function(a){
+      return {qrText:"ACT:"+a.id, name:a.name, sub:(a.pts<0?"":"+")+a.pts+" pts"};
+    });
+    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount"});
+    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount"});
+    items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan"});
+    items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only"});
+    items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only"});
+    return items;
+  }
   function renderMenuLabels(hasQR){
     if(typeof hasQR==="undefined") hasQR=(typeof QRCode!=="undefined");
-    var mg=$("menuGrid"); mg.innerHTML="";
-    if(!data.activities.length){ mg.appendChild(el("div","empty-state","Add activities first, on the Activities tab.")); return; }
-    data.activities.forEach(function(a){
-      var card=el("div","label");
-      var qrw=el("div","qrwrap");
-      if(hasQR){
-        var holder=el("div"); qrw.appendChild(holder);
-        try{ new QRCode(holder,{text:"ACT:"+a.id,width:104,height:104,correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ qrw.appendChild(el("div","lc","(QR error)")); }
-      } else {
-        qrw.appendChild(el("div","lc","Connect to internet to show QR"));
-      }
-      card.appendChild(qrw);
-      card.appendChild(el("div","ln",a.name));
-      card.appendChild(el("div","lg",(a.pts<0?"":"+")+a.pts+" pts"));
-      mg.appendChild(card);
-    });
-    // Two "live" custom cards — the point value isn't baked into the QR, so whatever
-    // is currently in the Custom amount box on the Scan tab is what gets used at scan time.
-    [["CTRL:CUSTOM+","+Custom","arms the live Custom amount, to add"],
-     ["CTRL:CUSTOM-","−Custom","arms the live Custom amount, to subtract"]].forEach(function(row){
-      var card=el("div","label");
-      var qrw=el("div","qrwrap");
-      if(hasQR){
-        var holder=el("div"); qrw.appendChild(holder);
-        try{ new QRCode(holder,{text:row[0],width:104,height:104,correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ qrw.appendChild(el("div","lc","(QR error)")); }
-      } else {
-        qrw.appendChild(el("div","lc","Connect to internet to show QR"));
-      }
-      card.appendChild(qrw);
-      card.appendChild(el("div","ln",row[1]));
-      card.appendChild(el("div","lg",row[2]));
-      mg.appendChild(card);
-    });
-    // Scan this on the Scan page to reverse the most recent real scan —
-    // handy to keep printed right next to the point-value cards.
-    var undoCard=el("div","label");
-    var undoQrw=el("div","qrwrap");
-    if(hasQR){
-      var uHolder=el("div"); undoQrw.appendChild(uHolder);
-      try{ new QRCode(uHolder,{text:"CTRL:UNDO",width:104,height:104,correctLevel:QRCode.CorrectLevel.M}); }
-      catch(e){ undoQrw.appendChild(el("div","lc","(QR error)")); }
-    } else {
-      undoQrw.appendChild(el("div","lc","Connect to internet to show QR"));
+    var fsel=$("menuLabelFormat");
+    if(fsel.options.length!==LABEL_ORDER.length){
+      fsel.innerHTML="";
+      LABEL_ORDER.forEach(function(k){ var o=el("option",null, k==="tiles"?"Tiles (screen / cut-out)":LABEL_SPECS[k].name); o.value=k; fsel.appendChild(o); });
     }
-    undoCard.appendChild(undoQrw);
-    undoCard.appendChild(el("div","ln","Undo Last Scan"));
-    undoCard.appendChild(el("div","lg","↩ reverses last scan"));
-    mg.appendChild(undoCard);
+    fsel.value=data.menuLabelFormat||"tiles";
+    var avery = (data.menuLabelFormat||"tiles")!=="tiles";
+    var mg=$("menuGrid"), sheet=$("menuAverySheet");
+    mg.style.display = avery?"none":"grid";
+    sheet.style.display = avery?"block":"none";
+    mg.innerHTML=""; sheet.innerHTML="";
+    if(!data.activities.length){ (avery?sheet:mg).appendChild(el("div","empty-state","Add activities first, on the Activities tab.")); return; }
+    var items=menuLabelItems();
+    if(avery){
+      var averyItems=items.map(function(it){ return {qrText:it.qrText, line1:it.name, line2:it.sub}; });
+      renderAverySheetGeneric(averyItems, sheet, data.menuLabelFormat, hasQR);
+      return;
+    }
+    items.forEach(function(it){
+      var card=el("div","label");
+      var qrw=el("div","qrwrap");
+      if(hasQR){
+        var holder=el("div"); qrw.appendChild(holder);
+        try{ new QRCode(holder,{text:it.qrText,width:104,height:104,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ qrw.appendChild(el("div","lc","(QR error)")); }
+      } else {
+        qrw.appendChild(el("div","lc","Connect to internet to show QR"));
+      }
+      card.appendChild(qrw);
+      card.appendChild(el("div","ln",it.name));
+      card.appendChild(el("div","lg",it.sub));
+      mg.appendChild(card);
+    });
   }
   function addPersonalQrCard(grid, qrText, title, pointText, hint, negative, hasQR){
     var card=el("div","personal-qr-card");
@@ -5666,12 +6255,42 @@ nameLine
     groups().forEach(function(g){ var o=el("option",null,g); o.value=g; psel.appendChild(o); });
     psel.value=pcur;
     var pgrp=psel.value;
-    var scale = ($("personalScale")&&$("personalScale").value==="fill") ? "fill" : "actual";
-    var grid=$("personalGrid"); grid.innerHTML="";
+
+    var fsel=$("personalFormat");
+    if(fsel.options.length!==LABEL_ORDER.length){
+      fsel.innerHTML='<option value="pages">Full pages (one per student)</option>';
+      LABEL_ORDER.forEach(function(k){ if(k==="tiles") return; var o=el("option",null,LABEL_SPECS[k].name); o.value=k; fsel.appendChild(o); });
+    }
+    fsel.value=data.personalLabelFormat||"pages";
+    var avery = (data.personalLabelFormat||"pages")!=="pages";
+    var scaleSel=$("personalScale");
+    if(scaleSel) scaleSel.style.display = avery?"none":"";
+
+    var scale = (scaleSel&&scaleSel.value==="fill") ? "fill" : "actual";
+    var grid=$("personalGrid"), sheet=$("personalAverySheet");
+    grid.style.display = avery?"none":"block";
+    sheet.style.display = avery?"block":"none";
+    grid.innerHTML=""; sheet.innerHTML="";
+
     var list=data.students.filter(function(s){ return !pgrp || s.group===pgrp; })
       .sort(function(a,b){ return a.name.localeCompare(b.name); });
-    if(!list.length){ grid.appendChild(el("div","empty-state","Add students first, then come back to print their personal pages.")); return; }
-    if(!data.activities.length){ grid.appendChild(el("div","empty-state","Add activities first, on the Activities tab.")); return; }
+    if(!list.length){ (avery?sheet:grid).appendChild(el("div","empty-state","Add students first, then come back to print their personal pages.")); return; }
+    if(!data.activities.length){ (avery?sheet:grid).appendChild(el("div","empty-state","Add activities first, on the Activities tab.")); return; }
+
+    if(avery){
+      // One student's whole set stays together before the next student's starts,
+      // so cutting the sheet apart keeps each student's codes grouped.
+      var items=[];
+      list.forEach(function(s){
+        data.activities.forEach(function(a){
+          items.push({qrText:"PA:"+s.id+":"+a.id, line1:a.name, line2:s.name+" · "+(a.pts<0?"":"+")+a.pts+" pts"});
+        });
+        items.push({qrText:"PC:"+s.id, line1:"Custom", line2:s.name});
+      });
+      renderAverySheetGeneric(items, sheet, data.personalLabelFormat, hasQR);
+      return;
+    }
+
     list.forEach(function(s){
       var page=el("div","personal-page "+scale);
       page.appendChild(el("h3","personal-title",s.name));
@@ -5687,6 +6306,7 @@ nameLine
       grid.appendChild(page);
     });
   }
+  $("personalFormat").addEventListener("change", function(){ data.personalLabelFormat=this.value; save(); renderPersonalPages(); });
   $("labelGroup").addEventListener("change", renderLabels);
   $("labelWho").addEventListener("change", renderLabels);
   $("labelCopies").addEventListener("change", renderLabels);
@@ -5858,7 +6478,7 @@ nameLine
     r.readAsText(file);
     e.target.value="";
   });
-  function load2fix(){ ["students","activities","log"].forEach(function(k){ if(!Array.isArray(data[k])) data[k]=[]; }); if(!data.scores) data.scores={}; if(!data.school) data.school="Sample School"; if(!data.bunk) data.bunk="Sample Class 1"; if(typeof data.sheetUrl!=="string") data.sheetUrl=""; if(typeof data.autoSheet!=="boolean") data.autoSheet=true; if(!data.raffle||typeof data.raffle!=="object") data.raffle={mode:"auto",entries:{},winners:[]}; if(!data.raffle.entries) data.raffle.entries={}; if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[]; if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1}; if(!data.pesukimDone) data.pesukimDone={}; if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1}; if(!data.pasukGameBest) data.pasukGameBest={}; if(!data.pasukPhrases) data.pasukPhrases={}; if(!data.pasukPointed) data.pasukPointed={}; if(!Array.isArray(data.textSets)) data.textSets=[]; migrateSets(); if(!Array.isArray(data.shorashim)) data.shorashim=[]; if(!data.game||typeof data.game!=="object") data.game={points:{}}; if(!data.game.points) data.game.points={}; if(!data.shorMatchBest) data.shorMatchBest={}; if(!data.gameBoards) data.gameBoards={}; if(!data.auctions||typeof data.auctions!=="object") data.auctions={}; if(data.auction && typeof data.auction==="object" && !data.auctionsMigrated){ data.auctions[""]=data.auction; data.auctionsMigrated=true; } delete data.auction; if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]}; if(!Array.isArray(data.store.items)) data.store.items=[]; if(!Array.isArray(data.store.log)) data.store.log=[]; if(!data.earned) data.earned={}; if(!data.weekly) data.weekly={}; if(typeof data.standingsActivity!=="string") data.standingsActivity=""; if(typeof data.raffleActivity!=="string") data.raffleActivity=""; if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={perPage:9,scale:"actual",groupMode:"all",groupKeys:[]}; if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[]; if(typeof data.quizDelay!=="number") data.quizDelay=1; if(typeof data.gameAuto!=="boolean") data.gameAuto=false; if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5; if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()}; if(!data.passes.used) data.passes.used={}; if(typeof data.fpCompact!=="boolean") data.fpCompact=false; if(typeof data.currentClass!=="string") data.currentClass=""; if(typeof data.labelFormat!=="string") data.labelFormat="avery5160"; if(typeof data.promptStyle!=="string") data.promptStyle=""; if(typeof data.nameStyle!=="string") data.nameStyle="hashem"; if(!data.seating||typeof data.seating!=="object") data.seating={}; if(typeof data.tapViewMode!=="string") data.tapViewMode="list"; if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false; if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true; if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true; if(typeof data.seatArranging!=="boolean") data.seatArranging=false; if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600; if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false; if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}}; if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={}; if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={}; if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[]; if(data.spinnerMode!=="custom") data.spinnerMode="class"; if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true; }
+  function load2fix(){ ["students","activities","log"].forEach(function(k){ if(!Array.isArray(data[k])) data[k]=[]; }); if(!data.scores) data.scores={}; if(!data.school) data.school="Sample School"; if(!data.bunk) data.bunk="Sample Class 1"; if(typeof data.sheetUrl!=="string") data.sheetUrl=""; if(typeof data.autoSheet!=="boolean") data.autoSheet=true; if(!data.raffle||typeof data.raffle!=="object") data.raffle={mode:"auto",entries:{},winners:[]}; if(!data.raffle.entries) data.raffle.entries={}; if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[]; if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1}; if(!data.pesukimDone) data.pesukimDone={}; if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1}; if(!data.pasukGameBest) data.pasukGameBest={}; if(!data.pasukPhrases) data.pasukPhrases={}; if(!data.pasukPointed) data.pasukPointed={}; if(!Array.isArray(data.textSets)) data.textSets=[]; migrateSets(); if(!Array.isArray(data.shorashim)) data.shorashim=[]; if(!data.game||typeof data.game!=="object") data.game={points:{}}; if(!data.game.points) data.game.points={}; if(!data.shorMatchBest) data.shorMatchBest={}; if(!data.gameBoards) data.gameBoards={}; if(!data.auctions||typeof data.auctions!=="object") data.auctions={}; if(data.auction && typeof data.auction==="object" && !data.auctionsMigrated){ data.auctions[""]=data.auction; data.auctionsMigrated=true; } delete data.auction; if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]}; if(!Array.isArray(data.store.items)) data.store.items=[]; if(!Array.isArray(data.store.log)) data.store.log=[]; if(!data.earned) data.earned={}; if(!data.weekly) data.weekly={}; if(typeof data.standingsActivity!=="string") data.standingsActivity=""; if(typeof data.raffleActivity!=="string") data.raffleActivity=""; if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={perPage:9,scale:"actual",groupMode:"all",groupKeys:[],format:"grid"}; if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[]; if(typeof data.pointsPrint.format!=="string") data.pointsPrint.format="grid"; if(typeof data.quizDelay!=="number") data.quizDelay=1; if(typeof data.gameAuto!=="boolean") data.gameAuto=false; if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5; if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()}; if(!data.passes.used) data.passes.used={}; if(typeof data.fpCompact!=="boolean") data.fpCompact=false; if(typeof data.currentClass!=="string") data.currentClass=""; if(typeof data.labelFormat!=="string") data.labelFormat="avery5160"; if(typeof data.promptStyle!=="string") data.promptStyle=""; if(typeof data.nameStyle!=="string") data.nameStyle="hashem"; if(!data.seating||typeof data.seating!=="object") data.seating={}; if(typeof data.tapViewMode!=="string") data.tapViewMode="list"; if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false; if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true; if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true; ensureScanLayout(); if(typeof data.teachRepeatMode!=="boolean") data.teachRepeatMode=true; if(typeof data.menuLabelFormat!=="string") data.menuLabelFormat="tiles"; if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages"; if(typeof data.seatArranging!=="boolean") data.seatArranging=false; if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600; if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false; if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}}; if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={}; if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={}; if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[]; if(data.spinnerMode!=="custom") data.spinnerMode="class"; if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true; }
   $("resetScores").addEventListener("click", function(){
     if(confirm("Reset every student's score to zero? Roster and activities stay. This can't be undone.")){
       data.scores={}; data.log=[]; save(); renderRecent();
@@ -5913,12 +6533,14 @@ nameLine
   $("muteBtn").textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   showDate();
   applyHeaderShortcutsVisibility();
+  renderHeaderScanContext();
   renderActButtons();
   syncCustomButtons();
   if(data.activities.length) setArmed(data.activities[0].name, data.activities[0].pts);
   renderRecent();
   renderScanBoard();
   renderTapPanel();
+  applyScanLayout();
   renderClassSel();
   renderGroupTabs("scan"); renderSubTabs("scan","scan"); activeGroupName="scan"; activeTabName="scan";
   if(typeof serialTryAutoReconnect==="function") serialTryAutoReconnect();
