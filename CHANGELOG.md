@@ -8,6 +8,32 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 - **Minor (v1.0.0 → v1.1.0):** new features
 - **Patch (v1.0.0 → v1.0.1):** bug fixes only
 
+## [Unreleased] — v0.4.0
+
+### Added
+
+- **Scan history strip in the global header bar.** The old green/red flash box is replaced by an inline strip showing the 3 most recent scans (or however many fit the bar width) fading from bold to muted left-to-right. The most recent entry shows a running total ("→ 9 pts"). Each entry has its own ↩ Undo button. Activity-change events (arming a different activity) also appear inline as brass-colored chips, pushing older scans to the right. The strip fills the available bar width dynamically — wider screens show more entries.
+- **Contest history.** A "💾 Save to history" button saves any active contest as a snapshot. Contests are also auto-saved when cleared. The new **Past Contests** section (always visible at the bottom of the Contest tab) shows each saved contest as a card with: ranked per-student totals as chips, a student filter dropdown that shows that student's individual contest total prominently, a **Merge into main score** action (for contest-only contests), and a **Delete from history** action. The active contest's history list also gains a student filter with a running total banner.
+- **Learn section restructured into 5 proper sub-tabs** (Text / Chart / Pesukim / Mishnayos / Shorashim), replacing the old two-tab "Learn / Shorashim" layout. These appear in the main sub-tab nav bar — no more inline mode buttons inside the view.
+  - **Text tab** — the full import panel (AI prompt builder, CSV paste, set manager, stitch tool), accessible from one dedicated tab instead of always sitting above the chart.
+  - **Chart tab** — the testing chart, unchanged, showing all sets.
+  - **Pesukim tab** — Teach and Matching game, filtered to Pesukim (`kind="pasuk"`) sets only. Contains its own **Teach / Matching game** toggle. The teach view has a pasuk dropdown with ‹ › prev/next buttons; the matching game has the same.
+  - **Mishnayos tab** — same Teach and Matching game, filtered to Mishnayos (`kind="mishna"`) sets only. Shows "No Mishnayos sets yet — add one in the Text tab" when none exist.
+  - **Shorashim tab** — the existing Shorashim section, unchanged.
+  - The tap panel ("Tap a name to give points") is removed from the Pesukim and Mishnayos pages.
+- **Spinner: student selection and saved lists.** In Class names mode, each student now has a checkbox — uncheck to exclude from the spin. **All** / **None** quick-select buttons and a selected-count label ("14 selected") appear above the list. A **💾 Save selection as list…** button saves the current checked subset as a named list. The custom list box also has its own **💾 Save as list…** button. A new **Saved lists** mode shows all saved lists (class subsets and custom item lists), each with a **Use this list** button and a **Delete** button.
+- **Seating chart setup controls now collapsible.** In Seating chart view, the Rows/Cols inputs, Print button, and Arrange button sit behind a **⚙ Setup** toggle — the chart itself is always visible. Preference is saved.
+- **Scan bar hidden on all Setup tabs** (Students, Activities, Backup & Sheets, Settings) in addition to the Print tabs it was already hidden on.
+- **Teach and Shorashim tap panels: activity picker.** Both "Tap a name to give points" panels now have a dropdown to pick which activity to award on tap, instead of always using the globally armed activity. The first option ("current") uses the armed activity as before; selecting any other awards that activity regardless of what's armed elsewhere.
+
+### Changed
+
+- **Scan input bar halved in width** to give the history strip more room.
+- **Header scan bar 10% larger** — slightly bigger text and padding throughout.
+- **Print bug fix: scan bar and sub-tab icons no longer appear on any printed output.** The `#globalScanBar` element and the `.subtabs-row` / `.subtabs-icons` elements are now explicitly hidden in all `@media print` rules. Previously they leaked into every print job, appearing as stray icons at the top of the page.
+- **Seating chart print bug fix:** same class as above — the scan bar was appearing at the top of seating chart prints.
+- **Spinner: "No students selected" shown on empty wheel** instead of "No students in this class" when all students are unchecked.
+
 ## [0.3.0] — 2026-07-10
 
 ### Added
@@ -25,7 +51,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 - **Setting: "Tapping a student shows their points breakdown instead of giving points"** (Settings tab, off by default).
 - **Avery-label printing** for Print point cards, the Activity menu, and Personal scoring codes.
 - **Settings: "Show the Points / Timer / Picker shortcut buttons"** and **"Show the Hebrew date next to the regular date"** (both on by default).
-- **`data.version` field and a `migrateData()` function**, following the pattern already documented in CONTRIBUTING.md — closes out a TODO left open since v0.1.0. Every teacher's existing saved data gets stamped as version 1 the first time they load this release; there's no actual data-shape change in this release, so nothing else happens yet, but this establishes the foundation any future migration will build on.
+- **`data.version` field and a `migrateData()` function**, following the pattern already documented in CONTRIBUTING.md.
 
 ### Changed
 - **The custom-amount controls now live with the activity buttons**, under one "Activities" section.
