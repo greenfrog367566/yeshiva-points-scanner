@@ -27,7 +27,7 @@ Any Rebbi/teacher who wants a fast, low-friction way to track points without pay
 
 ## Recommended hardware
 
-Any USB barcode/QR scanner that acts as a keyboard (the cheap, common kind — no drivers, no setup) works with this app. If you want a **2D scanner** specifically (needed to read the QR codes this app generates, not just old-style 1D barcodes), we've used and can recommend the **[NETUM NT-1228BL](https://a.co/d/0eS4Qweq)** (2D Barcode Scanner, 2.4G Wireless/Bluetooth/USB Wired) — plug-and-play over USB, reads QR codes reliably.
+Any USB barcode/QR scanner that acts as a keyboard (the cheap, common kind — no drivers, no setup) works with this app. If you want a **2D scanner** specifically (needed to read the QR codes this app generates, not just old-style 1D barcodes), we've used and can recommend the **[Tera Wireless Barcode Scanner 1300 series](https://a.co/d/00s5Fr7u)** (1D/2D QR scanner, USB Wired/2.4G Wireless/Bluetooth) — plug-and-play over USB in its default keyboard-emulation mode, and also supports an advanced serial/COM connection mode if you want the app to read scans directly (see the user guide for setup).
 
 This is just what's worked well for us, not a paid endorsement or an exclusive recommendation — any 2D/QR-capable USB scanner should work the same way. See [docs/scanner-setup.md](docs/scanner-setup.md) for setup details and troubleshooting.
 

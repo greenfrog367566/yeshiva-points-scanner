@@ -1729,6 +1729,7 @@
       <p class="view-note no-print">Each student gets their own page with a QR code for every activity, already linked to them — scan one code and it awards that activity to that student in a single scan, no separate student scan needed. The Custom card uses whatever amount is in the Custom box on the Scan tab at the moment it's scanned, not the amount at print time.</p>
       <div class="toolbar no-print">
         <select id="personalGroup" class="field" style="width:auto"><option value="">All groups</option></select>
+        <select id="personalWho" class="field" style="width:auto"><option value="">Whole class</option></select>
         <select id="personalFormat" class="field" style="width:auto">
           <option value="pages">Full pages (one per student)</option>
         </select>
@@ -8952,6 +8953,21 @@ nameLine
       grid.appendChild(card);
     });
   }
+  // Same tile look as renderTiles(), but for arbitrary {qrText, line1, line2}
+  // items rather than a student list — used by Personal pages' Tiles option,
+  // which has multiple QR codes per student (one per activity) instead of one.
+  function renderTilesGeneric(items, wrapEl, hasQR){
+    items.forEach(function(it){
+      var card=el("div","label");
+      var qrw=el("div","qrwrap");
+      if(hasQR){ var holder=el("div"); qrw.appendChild(holder); try{ new QRCode(holder,{text:it.qrText,width:104,height:104,correctLevel:QRCode.CorrectLevel.M}); } catch(e){ qrw.appendChild(el("div","lc","(QR error)")); } }
+      else { qrw.appendChild(el("div","lc","Connect to internet to show QR")); }
+      card.appendChild(qrw);
+      card.appendChild(el("div","ln",it.line1));
+      if(it.line2) card.appendChild(el("div","lg",it.line2));
+      wrapEl.appendChild(card);
+    });
+  }
   var LABEL_SPECS={
     avery5160:{name:"Avery 5160 / 8160 — 1\"×2⅝\" — 30/sheet", cols:3, rows:10, w:2.625, h:1, padT:0.5, padS:0.1875, colGap:0.125, rowGap:0},
     avery5161:{name:"Avery 5161 / 8161 — 1\"×4\" — 20/sheet", cols:2, rows:10, w:4, h:1, padT:0.5, padS:0.15625, colGap:0.1875, rowGap:0},
@@ -9085,29 +9101,39 @@ nameLine
     var pgrp=psel.value;
 
     var fsel=$("personalFormat");
-    if(fsel.options.length!==LABEL_ORDER.length){
+    if(fsel.options.length!==LABEL_ORDER.length+1){
       fsel.innerHTML='<option value="pages">Full pages (one per student)</option>';
-      LABEL_ORDER.forEach(function(k){ if(k==="tiles") return; var o=el("option",null,LABEL_SPECS[k].name); o.value=k; fsel.appendChild(o); });
+      LABEL_ORDER.forEach(function(k){ var o=el("option",null, k==="tiles"?"Tiles (screen / cut-out)":LABEL_SPECS[k].name); o.value=k; fsel.appendChild(o); });
     }
     fsel.value=data.personalLabelFormat||"pages";
-    var avery = (data.personalLabelFormat||"pages")!=="pages";
+    var format=data.personalLabelFormat||"pages";
+    var avery = (format!=="pages" && format!=="tiles");
     var scaleSel=$("personalScale");
-    if(scaleSel) scaleSel.style.display = avery?"none":"";
+    if(scaleSel) scaleSel.style.display = (format==="pages")?"":"none";
 
     var scale = (scaleSel&&scaleSel.value==="fill") ? "fill" : "actual";
     var grid=$("personalGrid"), sheet=$("personalAverySheet");
-    grid.style.display = avery?"none":"block";
+    grid.style.display = avery?"none":(format==="tiles"?"grid":"block");
     sheet.style.display = avery?"block":"none";
     grid.innerHTML=""; sheet.innerHTML="";
 
     var list=data.students.filter(function(s){ return !pgrp || s.group===pgrp; })
       .sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+
+    var whoSel=$("personalWho"), whoCur=whoSel.value;
+    whoSel.innerHTML='<option value="">Whole class</option>';
+    list.forEach(function(s){ var o=el("option",null,s.name); o.value=s.id; whoSel.appendChild(o); });
+    if(list.some(function(s){return s.id===whoCur;})) whoSel.value=whoCur; else whoSel.value="";
+    var who=whoSel.value;
+    if(who) list=list.filter(function(s){ return s.id===who; });
+
     if(!list.length){ (avery?sheet:grid).appendChild(el("div","empty-state","Add students first, then come back to print their personal pages.")); return; }
     if(!data.activities.length){ (avery?sheet:grid).appendChild(el("div","empty-state","Add activities first, on the Activities tab.")); return; }
 
-    if(avery){
+    if(avery || format==="tiles"){
       // One student's whole set stays together before the next student's starts,
-      // so cutting the sheet apart keeps each student's codes grouped.
+      // so cutting the sheet apart (or reading down the tile grid) keeps each
+      // student's codes grouped.
       var items=[];
       list.forEach(function(s){
         data.activities.forEach(function(a){
@@ -9115,7 +9141,8 @@ nameLine
         });
         items.push({qrText:"PC:"+s.id, line1:"Custom", line2:s.name});
       });
-      renderAverySheetGeneric(items, sheet, data.personalLabelFormat, hasQR);
+      if(format==="tiles") renderTilesGeneric(items, grid, hasQR);
+      else renderAverySheetGeneric(items, sheet, format, hasQR);
       return;
     }
 
@@ -9147,6 +9174,7 @@ nameLine
   $("printLabels").addEventListener("click", function(){ document.body.classList.add("print-students"); window.print(); });
   $("printMenu").addEventListener("click", function(){ document.body.classList.add("print-menu"); window.print(); });
   $("personalGroup").addEventListener("change", renderLabels);
+  $("personalWho").addEventListener("change", renderLabels);
   $("personalScale").addEventListener("change", renderLabels);
   $("printPersonal").addEventListener("click", function(){ document.body.classList.add("print-personal"); window.print(); });
 
