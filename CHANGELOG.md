@@ -8,7 +8,11 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 - **Minor (v1.0.0 → v1.1.0):** new features
 - **Patch (v1.0.0 → v1.0.1):** bug fixes only
 
-## [Unreleased] — v0.4.0
+## [Unreleased]
+
+*(nothing yet)*
+
+## [0.4.0] — 2026-07-12
 
 ### Added
 
@@ -30,9 +34,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 - **Scan input bar halved in width** to give the history strip more room.
 - **Header scan bar 10% larger** — slightly bigger text and padding throughout.
+- **"No students selected" shown on empty wheel** instead of "No students in this class" when all students are unchecked in the Spinner (Class names mode).
+
+### Fixed
+
 - **Print bug fix: scan bar and sub-tab icons no longer appear on any printed output.** The `#globalScanBar` element and the `.subtabs-row` / `.subtabs-icons` elements are now explicitly hidden in all `@media print` rules. Previously they leaked into every print job, appearing as stray icons at the top of the page.
-- **Seating chart print bug fix:** same class as above — the scan bar was appearing at the top of seating chart prints.
-- **Spinner: "No students selected" shown on empty wheel** instead of "No students in this class" when all students are unchecked.
+- **Seating chart print bug fix:** the scan bar was appearing at the top of seating chart prints.
+- **Apps Script (Code 1): Leader Board tab never rebuilt after the first student.** The sort comparator inside `rebuildLeaderBoard()` called `lastFirstKey()`, which exists in the browser app but was never defined in the Apps Script. The function threw a `ReferenceError` on every `doPost` call once 2+ students existed — log rows were written correctly, but the Leader Board sheet tab silently never updated. `lastFirstKey` is now defined in Code 1 itself. Users who already deployed should re-paste Code 1 and redeploy (Manage deployments → ✏️ → New version; your URL stays the same).
+- **Undo buttons could reverse the wrong scan.** Deferred Undo buttons (Recent scans panel, History tab, scan strip, Contest views) captured a log array *index* at render time. `addLogEntry()` unshifts the array, so any scan that lands between render and click shifted all indices — the button would silently undo a different student's entry. All deferred handlers now look up the entry by its stable id at click time.
+- **History/contest dropdowns closed on clicks inside themselves.** The outside-click handler for the History and Activity dropdowns in the header bar used a selector (`#seatsScanTile`) that matched no element, so every bubbled click — including clicks on Undo rows *inside* the dropdown — was treated as "outside" and closed it. Fixed to correctly identify the dropdown containers.
+- **Duplicate event listener on the Contest tab's student filter.** The `#contestHistFilter` select had the same `change` handler registered twice. The second one re-rendered the entire Contest tab on every filter change, wiping each Past Contests card's own local student filter. Removed the redundant registration.
+- **Corrupted `localStorage` value crashed the entire app.** `JSON.parse` can succeed on a non-object (`"42"`, `"null"`, etc.); `load2fix()` then threw trying to assign properties to a primitive, producing a white screen with no way to recover. `load()` now only accepts a parsed plain object and falls back to defaults for anything else.
+- **Restoring a backup left half the UI showing pre-restore state.** After a JSON restore, the class dropdown still listed the old classes; the tap panel, live board, scan-tab layout, and settings-driven UI (full width, header shortcuts, Hebrew date) all kept the previous session's state until some unrelated action happened to re-render them. The restore handler now explicitly refreshes everything the restored data drives, and runs `migrateData()` for version stamping (same as the normal load path).
+- **"Resync all scans" could append duplicate rows to Google Sheets forever.** Log entries rebuilt from a Log CSV, and legacy entries predating the id field, had no `id`. The sheet's dedupe check keys on that field, so every Resync click re-appended id-less entries — there was no way to stop the accumulation. CSV-rebuilt entries now get a stable id at import time, and `load2fix()` backfills ids onto any legacy entries on first load.
+- **Game timers (Memory, Match, Quiz, Pesukim Matching) kept firing after navigating away.** The 100 ms tick intervals for the shorashim Memory, Match, and Quiz games, and the Pesukim Matching game, had no self-cancel guard. On a smartboard left running all day they accumulated, touching the DOM of hidden views each tick. Each timer now self-cancels when its view leaves the screen, matching the behavior the Game Show timer already had.
+- **Beep sounds silently dropped when the AudioContext was suspended.** Browser autoplay policy can leave a previously-created `AudioContext` in a `suspended` state (e.g. after backgrounding the tab). Subsequent calls to `beep()` produced no sound. `beep()` now resumes a suspended context before playing.
 
 ## [0.3.0] — 2026-07-10
 

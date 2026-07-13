@@ -19,18 +19,20 @@ For teachers, madrichim, and program staff — no tech background needed
 5. Activities & Point Values
 6. Standings (the Leader Board)
 7. Trends
-8. Raffle
-9. Chinese Auction
-10. Prize Store
-11. QR Labels
-12. Picker (Choosing a Turn)
-13. Bathroom Passes
-14. Learning Tools
-15. Syncing to Google Sheets
-16. Backup & Data Safety
-17. Settings
-18. Spinner
-19. Quick Reference: First-Day Checklist
+8. Contests
+9. Raffle
+10. Chinese Auction
+11. Prize Store
+12. QR Labels & Print
+13. Picker (Choosing a Turn)
+14. Bathroom Passes
+15. Learning Tools
+16. Attendance, Tracker & Homework
+17. Syncing to Google Sheets
+18. Backup & Data Safety
+19. Settings
+20. Spinner
+21. Quick Reference: First-Day Checklist
 
 ---
 
@@ -40,7 +42,7 @@ This program runs entirely in a web browser (like Chrome or Safari) — there is
 
 **NOTE** Because your data is saved on that specific computer/browser, always use the same device for the same class whenever possible. See the Backup chapter for how to move your data or protect it.
 
-**TIP — Which scanner to buy:** You need a **2D** scanner (not the older 1D kind) since the QR codes this program prints require one. Any USB "keyboard-emulation" 2D scanner works with no setup — just plug it in. We've personally used and can recommend the **[NETUM NT-1228BL](https://a.co/d/0eS4Qweq)** (2D Barcode Scanner, works over 2.4G Wireless, Bluetooth, or USB Wired). See Chapter 17.1 for advanced (serial/COM) scanner setup.
+**TIP — Which scanner to buy:** You need a **2D** scanner (not the older 1D kind) since the QR codes this program prints require one. Any USB "keyboard-emulation" 2D scanner works with no setup — just plug it in. We've personally used and can recommend the **[NETUM NT-1228BL](https://a.co/d/0eS4Qweq)** (2D Barcode Scanner, works over 2.4G Wireless, Bluetooth, or USB Wired). See Chapter 19.1 for advanced (serial/COM) scanner setup.
 
 ## 1.1 The Screen Layout
 
@@ -101,6 +103,8 @@ The scan box in the header is available on every tab. Next to it:
 - **The scan history strip** sits immediately to the right of the input, showing your last several scans inline. The most recent entry is bold and includes the student's running total ("Dovid Levy +2 Learning nicely → 9 pts"). Older entries fade progressively. Each entry has its own **↩ Undo** button. Activity-change events (switching to a different activity) appear as small brass chips in the strip. The strip fills the available bar width — on a wide screen you'll see 5–6 entries; narrower screens show 3–4.
 - The **History ▾** button opens a fuller dropdown list of recent scans.
 
+**NOTE** The scan bar is hidden on the Setup tabs (Students, Activities, Backup & Sheets, Settings) and all Print tabs, where scanning isn't needed. It's visible everywhere else, including the Seats tab, Standings, Pesukim, and other tools.
+
 ## 2.5 The Floating Points Scanner (↗)
 
 Tap **↗** in the header to open a small floating panel with its own scan box, activity buttons, and a tappable student list — handy while on a different tab.
@@ -124,7 +128,7 @@ Shows every student as a button, sorted alphabetically, each with their current 
 Lays students out in a grid matching your actual room.
 
 - Tap **Seating chart** to switch modes.
-- Tap **⚙ Setup** (a small toggle button) to reveal the configuration controls: **Rows**, **Cols**, **🖨 Print seating chart**, and **Arrange seats**. The chart itself is always visible whether Setup is open or not.
+- Tap **⚙ Setup** to reveal the configuration controls: **Rows**, **Cols**, **🖨 Print seating chart**, and **Arrange seats**. The chart itself is always visible whether Setup is open or not. Your preference (open or closed) is saved automatically.
 - Set Rows and Cols, then tap **Arrange seats** to place students — drag chips onto seats, or tap a chip then tap a seat.
 - Tap **Done arranging** when finished.
 
@@ -159,7 +163,7 @@ Then tap **Add all**.
 
 ## 4.3 Importing a Class List from Google Sheets
 
-Set up the Google Sheets connection once (Chapter 15), then use **"Import roster from sheet"** on the Students tab.
+Set up the Google Sheets connection once (Chapter 17), then use **"Import roster from sheet"** on the Students tab.
 
 ## 4.4 Editing or Searching Students
 
@@ -167,7 +171,7 @@ Use the search box and class filter at the top of the Students tab.
 
 ## 4.5 Points Breakdown by Activity
 
-Tap **"▾ Breakdown"** next to any student to expand a mini panel showing points broken down by activity — including deductions, Store purchases, and Auction tickets — with a **Net total** at the bottom.
+Tap **"▾ Breakdown"** next to any student to expand a mini panel showing points broken down by activity — including deductions, Store purchases, and Auction tickets — with a **Net total** at the bottom. A period selector at the top of the Students tab controls the time window for every open breakdown.
 
 ---
 
@@ -200,21 +204,55 @@ Trends (Scan group sub-tab) gives a lifetime record of everything earned — sep
 
 ---
 
-# 8. Raffle
+# 8. Contests
+
+Use the **Contest** sub-tab (under Scan) to run a timed point competition alongside the normal standings.
+
+## 8.1 Starting a Contest
+
+Tap **Start a contest…** (on the Standings tab or the Contest tab). Give it a name, set a start date and duration (1 week, 1 month, or a custom end date), and choose whether points count toward:
+
+- **Contest + main score** — scans during the contest also add to each student's regular total, same as always.
+- **Contest only** — scans count only for the contest leaderboard; regular scores are untouched unless you explicitly merge them in afterward.
+
+## 8.2 While a Contest Is Running
+
+- A **C badge** appears in the header scan bar to confirm contest-counting is active. Tap it to **pause** counting without ending the contest — scans work normally while paused. Tap again to resume.
+- The **Contest** sub-tab shows Class List, History, and By Student views for the current contest, with Undo support on individual entries.
+- The Standings tab gains a **🏆 Contest** range button to view the contest leaderboard.
+
+## 8.3 Ending a Contest
+
+Tap **End contest…** — you'll be asked whether you'd also like to reset all scores to zero at the same time (useful once prizes have been handed out; roster and activities are untouched either way).
+
+## 8.4 Merging Contest Points (Contest-Only Mode)
+
+If the contest ran in "contest only" mode, a **Merge into main score…** button appears once the contest ends. Tapping it adds each student's contest points to their regular score — a one-time, confirm-first action.
+
+## 8.5 Past Contests
+
+The **Past Contests** section at the bottom of the Contest tab shows every saved contest as a card, persisted across sessions:
+
+- **💾 Save to history** saves the current contest as a snapshot at any time. Contests are also auto-saved when you clear them.
+- Each card shows ranked per-student totals as chips, a student filter dropdown with a running total banner, a **Merge into main score** button (for unmerged contest-only contests), and a **Delete from history** button.
+
+---
+
+# 9. Raffle
 
 Use the **Raffle** tab (Rewards group) to spin a wheel and pick a winner.
 
-## 8.1 After a Winner Is Drawn
+## 9.1 After a Winner Is Drawn
 
 Choose: **Keep that ticket in the pool**, **Remove that one ticket**, or **Remove [name] from the pool**. An **"↺ Un-remove everyone"** button clears all removals.
 
-## 8.2 Spreading Tickets Around the Wheel
+## 9.2 Spreading Tickets Around the Wheel
 
 Check **"Spread each student's tickets around the wheel"** to spread tickets into individual thin slices shuffled around the wheel. Purely visual — odds are unchanged.
 
 ---
 
-# 9. Chinese Auction
+# 10. Chinese Auction
 
 Go to **Rewards → Auction**.
 
@@ -225,7 +263,7 @@ Go to **Rewards → Auction**.
 
 ---
 
-# 10. Prize Store
+# 11. Prize Store
 
 Go to **Rewards → Store**.
 
@@ -234,36 +272,36 @@ Go to **Rewards → Store**.
 
 ---
 
-# 11. QR Labels & Print
+# 12. QR Labels & Print
 
 Go to the **Print** group. Everything here follows whichever class is selected in the header.
 
-## 11.1 Seating Chart Print
+## 12.1 Seating Chart Print
 
 Print the current class's seating chart full-page — each seat shows the student's name and their scoring QR code. Choose **Portrait** or **Landscape**. Empty seats print blank.
 
 You can also trigger this from the Seats tab's **⚙ Setup** panel using the **🖨 Print seating chart** button.
 
-**New in this version:** a **Rebbi's view** option flips the chart 180° — front of room at the bottom, left and right mirrored — matching what a teacher sees standing at the front. Names stay right-side-up.
+A **Rebbi's view** option flips the chart 180° — front of room at the bottom, left and right mirrored — matching what a teacher sees standing at the front. Names stay right-side-up.
 
-## 11.2 Student QR Labels
+## 12.2 Student QR Labels
 
 Print one QR code label per student, designed for Avery-style label sheets including **Avery 5911** (business cards, 2"×3½").
 
-## 11.3 Personal Scoring Pages
+## 12.3 Personal Scoring Pages
 
 One full page per student, with a separate QR code for every activity already linked to that student. One scan does the whole thing — no arming step needed. Includes a Custom card.
 
 - Filter by group; choose **Actual size** or **Fill page**.
 - Format dropdown lets you print as Avery labels instead.
 
-## 11.4 Activity Menu
+## 12.4 Activity Menu
 
 The printable activity menu with all activity codes, Custom codes, Undo code, and Pesukim phrase-navigation codes. Format dropdown lets you print as Avery labels.
 
 ---
 
-# 12. Picker (Choosing a Turn)
+# 13. Picker (Choosing a Turn)
 
 Open the **Picker** from the **🎡** icon in the header or the Tools group.
 
@@ -274,17 +312,17 @@ Equal-chance spin — no points involved.
 
 ---
 
-# 13. Bathroom Passes
+# 14. Bathroom Passes
 
 **Tools → Passes.** Each student gets one pass per week. Scan their QR code when they use their pass. Reset at the start of each week.
 
 ---
 
-# 14. Learning Tools
+# 15. Learning Tools
 
 Go to the **Learn** group. It has five sub-tabs:
 
-## 14.1 Text Tab
+## 15.1 Text Tab
 
 Import Pesukim or Mishnayos text sets here.
 
@@ -293,7 +331,7 @@ Import Pesukim or Mishnayos text sets here.
 - Paste the CSV, give the set a name, and click **Import as new text set**.
 - Your sets are listed below. Check multiple sets and use **🧵 Stitch** to combine several sections into one teaching track.
 
-## 14.2 Chart Tab
+## 15.2 Chart Tab
 
 Track which students have been tested on which pesukim or mishnayos.
 
@@ -301,7 +339,7 @@ Track which students have been tested on which pesukim or mishnayos.
 - Tap any grid square to flip it on or off without scanning.
 - Award points automatically when marking: check **"Give X points when a student is marked tested"** and set the amount.
 
-## 14.3 Pesukim Tab
+## 15.3 Pesukim Tab
 
 Teach and practice Pesukim only. Contains a **Teach / Matching game** toggle:
 
@@ -319,22 +357,53 @@ Teach and practice Pesukim only. Contains a **Teach / Matching game** toggle:
 - Drag each translation onto its Hebrew phrase (or use Tap mode).
 - Race your best time; times are tracked per pasuk.
 
-## 14.4 Mishnayos Tab
+## 15.4 Mishnayos Tab
 
 Same as the Pesukim tab — Teach and Matching game — but filtered to show only Mishnayos text sets (`kind="mishna"`). If no Mishnayos sets exist yet, a message points you to the Text tab to import one.
 
-## 14.5 Shorashim Tab
+## 15.5 Shorashim Tab
 
 Practice Hebrew shorashim (root words) from the parsha.
 
 - Add roots from the word bank, or type your own.
 - Checking a shoresh marks it as "learned" — only checked ones appear in games.
 - Modes: **Words** (manage list), **Cards** (flashcards), **Memory** (matching pairs), **Match** (timed drag/tap), **Quiz** (multiple choice), **Game Show** (whole-class).
-- The **"Tap a name to give points"** panel appears above the games with an activity picker — choose which activity to award, then tap a student's name.
+- The **"Tap a name to give points"** panel appears above the games. It has its own **activity picker dropdown** — choose which activity to award, then tap a student's name. The first option ("current") uses whatever activity is currently armed in the header; pick any other to override it just for this panel.
 
 ---
 
-# 15. Syncing to Google Sheets
+# 16. Attendance, Tracker & Homework
+
+These three tools live in the **Tools** group and share a common design: a **By Date** view that steps through one day at a time, and a **By Student** view that shows a single student's full history.
+
+## 16.1 Attendance
+
+Record who is present, absent, or late each day.
+
+- Everyone defaults to **Present** — tap a name to mark them **Absent** or **Late** instead.
+- Tap **Send Attendance** to push the day's record to your Google Sheet. Any subsequent change auto-syncs on its own.
+- In **By Student** view, tap a student to see their full attendance history.
+
+## 16.2 Tracker
+
+Track non-point activities — "called on," "completed worksheet," or anything you want to count.
+
+- Add a tracked activity from the Activities tab (or via the **+ Add activity** button on the Tracker tab).
+- In **Class List** view, each student shows a count. Tap **+1** to log one more; tap the count to expand a timestamp breakdown; tap ↩ to undo the most recent one.
+- In **History** view, every log entry appears flat and chronological. In **By Student** view, filter to one student.
+- Use the **Show** dropdown to filter by All time, Today, A specific day, or A date range.
+
+## 16.3 Homework
+
+Mark homework as checked for each student each day.
+
+- In **By Date** view, tap a student to toggle their homework between **✓ checked** and **not yet**. The timestamp updates each time.
+- Scanning a student's QR code on the Homework tab marks them checked for today automatically. The **Homework Checked** personal QR code (on Personal scoring pages) also marks today regardless of which tab is open.
+- In **By Student** view, see a student's full homework history.
+
+---
+
+# 17. Syncing to Google Sheets
 
 **Setup → Backup & Sheets → Google Sheets section.**
 
@@ -345,17 +414,19 @@ Once connected, every scan and live standings are automatically sent to your own
 
 **TIP** Ask a tech-comfortable colleague to help with the one-time setup — after that, everything happens automatically.
 
+**NOTE (v0.4.0)** If you set up Google Sheets before v0.4.0, re-paste Code 1 and redeploy (Manage deployments → ✏️ → New version; your URL stays the same). A bug in the Apps Script caused the Leader Board sheet tab to silently stop rebuilding after the first student was synced. Your log rows are fine — only the Leader Board tab was affected.
+
 ---
 
-# 16. Backup & Data Safety
+# 18. Backup & Data Safety
 
 Your scores save automatically to the computer/browser you're using. Back up regularly.
 
-## 16.1 Making a Backup
+## 18.1 Making a Backup
 
 **Setup → Backup & Sheets → Backup section.** Tap the download button to save a copy of everything (students, activities, scores, settings) as a file.
 
-## 16.2 Restoring a Backup
+## 18.2 Restoring a Backup
 
 Use **"Restore from backup"** and select a previously saved file. This replaces everything currently in the program — use it carefully.
 
@@ -363,11 +434,11 @@ Use **"Restore from backup"** and select a previously saved file. This replaces 
 
 ---
 
-# 17. Settings
+# 19. Settings
 
 **Setup → Settings.**
 
-## 17.1 Barcode/QR Scanner — Serial/COM (Advanced)
+## 19.1 Barcode/QR Scanner — Serial/COM (Advanced)
 
 Only for scanners that connect as a serial/COM port device. Works in Chrome or Edge on a computer.
 
@@ -375,7 +446,7 @@ Only for scanners that connect as a serial/COM port device. Works in Chrome or E
 - Tap **"Connect scanner…"** and select your device.
 - The program remembers the scanner and reconnects automatically next time.
 
-## 17.2 Other Settings
+## 19.2 Other Settings
 
 | Setting | What it does |
 |---|---|
@@ -384,29 +455,29 @@ Only for scanners that connect as a serial/COM port device. Works in Chrome or E
 | **Show the Points / Timer / Picker shortcut buttons** | On by default. Turn off to simplify the header. |
 | **Show the Hebrew date** | On by default. Shown next to the regular date in the header. |
 | **Use the full width of the screen** | Off by default. Removes the centered-column width cap so content stretches to fill a wide monitor. |
+| **Flip arrow keys (Teach mode)** | Off by default. Reverses which arrow key advances through phrases — easier if you're not used to RTL navigation. |
+| **Flip columns (Teach mode)** | Off by default. Puts Hebrew on the right and English on the left for a more natural RTL layout. |
 | **Quiz delay** | How long the quiz waits after an answer before the next question. |
 | **Auto-advance timing** | Time before the next quiz question appears automatically. |
-| **Label format** | Which Avery label sheet layout to use when printing QR codes. |
-| **Name style** | Controls how the Divine Name appears in Hebrew text (leave as-is, or write as ה׳). |
 
 ---
 
-# 18. Spinner
+# 20. Spinner
 
 **Tools → Spinner.** A wheel you can spin to pick a random name or item.
 
 Three modes (buttons at the top):
 
-## 18.1 Class Names Mode
+## 20.1 Class Names Mode
 
 Spins from the current class roster.
 
-- **Checkboxes** next to each name let you include or exclude individual students. Unchecked names appear struck-through and are not put on the wheel.
+- **Checkboxes** next to each name let you include or exclude individual students. Unchecked names appear struck-through and are not put on the wheel. The wheel shows "No students selected" when all are unchecked.
 - **All** / **None** buttons select or deselect everyone at once.
 - A **selected count** ("14 selected") tells you how many are in the wheel.
 - **💾 Save selection as list…** — saves the current checked subset as a named list you can load later.
 
-## 18.2 Saved Lists Mode
+## 20.2 Saved Lists Mode
 
 Shows all your saved lists — both class-subset lists and custom-item lists.
 
@@ -414,26 +485,26 @@ Shows all your saved lists — both class-subset lists and custom-item lists.
 - **Use this list** — loads the list: class-subset lists switch to Class Names mode with those students selected; custom-item lists switch to Custom List mode with those items loaded.
 - **Delete** — removes the saved list (doesn't affect students or the spin log).
 
-## 18.3 Custom List Mode
+## 20.3 Custom List Mode
 
 Type your own items (activities, prizes, "who goes first") one at a time.
 
 - Type an item and click **Add** (or press Enter).
 - **Clear all** removes all items.
-- **💾 Save as list…** — saves the current items as a named list in the Saved Lists tab.
+- **💾 Save as list…** — saves the current items as a named list in Saved Lists mode.
 
 ---
 
-# 19. Quick Reference: First-Day Checklist
+# 21. Quick Reference: First-Day Checklist
 
 If you're setting this up for the very first time:
 
 1. **Add your students** (Chapter 4) — one at a time, in bulk, or imported from a sheet.
 2. **Review your Activities** and their point values; set up group restrictions if you manage more than one class (Chapter 5).
-3. **Print QR Labels** for your students (Chapter 11).
-4. (Optional) **Arrange a seating chart** so you can award points by tapping seats, and print it with QR codes (Chapters 3.2, 11.1).
-5. (Optional) **Set up Google Sheets syncing** for a backup record (Chapter 15).
+3. **Print QR Labels** for your students (Chapter 12).
+4. (Optional) **Arrange a seating chart** so you can award points by tapping seats, and print it with QR codes (Chapters 3.2, 12.1).
+5. (Optional) **Set up Google Sheets syncing** for a backup record (Chapter 17).
 6. **Start scanning** on the Scan tab (Chapter 2)!
-7. **Make a backup file** once everything is set up, and again periodically (Chapter 16).
+7. **Make a backup file** once everything is set up, and again periodically (Chapter 18).
 
 **TIP** Keep this guide handy for your first week or two — after that, the program becomes second nature very quickly.
