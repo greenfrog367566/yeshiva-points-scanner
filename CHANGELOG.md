@@ -10,7 +10,9 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ## [Unreleased]
 
-*(nothing yet)*
+### Fixed
+
+- **"✏️ Edit phrases" button (Teach view, Pesukim/Mishnayos) permanently invisible.** On first load the app defaults to Chart mode, which explicitly set `teachEditBtn.style.display = "none"` directly on the button. Switching into Teach mode afterward only restored visibility on the surrounding container, never on the button itself — so the phrase split/join editor was unreachable from a fresh page load, even though all of its underlying logic (word-splitting, joining, translation editing) was fully intact. Fixed by resetting the button's own inline `display` on every `renderTeach()` call, mirroring the existing reset already in place for the neighboring "Show all" button.
 
 ## [0.4.0] — 2026-07-12
 
