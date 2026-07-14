@@ -2927,6 +2927,10 @@ function setupRoster() {
   }
   function groups(){ var set={}; data.students.forEach(function(s){ if(s.group) set[s.group]=1; }); return Object.keys(set).sort(); }
   function activeStudents(){ return data.currentClass ? data.students.filter(function(s){ return (s.group||"")===data.currentClass; }) : data.students.slice(); }
+  // Phase 1 data-integrity guard: is this student in the currently-selected
+  // class? "All classes" (no class selected) always passes — restriction
+  // only applies once a teacher has actually picked a specific class.
+  function studentInCurrentClass(s){ return !data.currentClass || (s.group||"")===data.currentClass; }
 
   /* ---------- sound ---------- */
   var audioCtx=null;
@@ -3169,6 +3173,7 @@ function setupRoster() {
     code=(code||"").trim(); if(!code) return;
     var s=studentById(code);
     if(!s){ passFlash(false,"Unknown code","\u201C"+code+"\u201D isn't a student"); beep(false); return; }
+    if(!studentInCurrentClass(s)){ passFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D", "switch class to use this pass"); beep(false); return; }
     if(passUsed(s.id)){ passFlash(false, s.name+" already used their pass", "this week"); beep(false); renderPasses(); return; }
     setPass(s.id,true); passFlash(true, s.name+" — pass used", "that's their one for this week"); beep(true); renderPasses();
   }
@@ -3254,6 +3259,7 @@ function setupRoster() {
   function attendanceScan(code){
     var s=studentById(code);
     if(!s){ flash(false,"Unknown code","","\u201C"+code+"\u201D isn't a student"); beep(false); return; }
+    if(!studentInCurrentClass(s)){ flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student"); beep(false); return; }
     setAttendance(s.id, "present");
     flash(true, s.name, "Present", "Attendance marked");
     beep(true);
@@ -3429,6 +3435,7 @@ function setupRoster() {
   function trackerScan(code){
     var s=studentById(code);
     if(!s){ flash(false,"Unknown code","","\u201C"+code+"\u201D isn't a student"); beep(false); return; }
+    if(!studentInCurrentClass(s)){ flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student"); beep(false); return; }
     trackerAward(s);
   }
   function trackerDateKeyForTs(ts){ return new Date(ts-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10); }
@@ -3684,6 +3691,7 @@ function setupRoster() {
   function hwScan(code){
     var s=studentById(code);
     if(!s){ flash(false,"Unknown code","","\u201C"+code+"\u201D isn't a student"); beep(false); return; }
+    if(!studentInCurrentClass(s)){ flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student"); beep(false); return; }
     setHw(s.id, true);
     flash(true, s.name, "HW Checked", "Homework marked checked");
     beep(true);
@@ -3945,6 +3953,7 @@ function setupRoster() {
     }
     var s=studentById(code);
     if(!s){ fpFlash(false,"Unknown: \u201C"+code+"\u201D"); beep(false); return; }
+    if(!studentInCurrentClass(s)){ fpFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D"); beep(false); return; }
     fpAward(s);
   }
   function fpToggle(show){
@@ -4354,6 +4363,10 @@ function setupRoster() {
   }
   function award(s){
     if(!armed){ flash(false,"Pick an activity first","",""); beep(false); return false; }
+    if(!studentInCurrentClass(s)){
+      flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student");
+      beep(false); return false;
+    }
     // If the armed activity has group restrictions, check this student belongs.
     var armedAct=data.activities.filter(function(a){ return a.name===armed.label && a.pts===armed.delta; })[0];
     if(armedAct && Array.isArray(armedAct.groups) && armedAct.groups.length>0){
@@ -4402,6 +4415,10 @@ function setupRoster() {
   }
 
   function awardWith(s, label, delta){
+    if(!studentInCurrentClass(s)){
+      flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student");
+      beep(false); return false;
+    }
     var tag=contestTagForScan();
     if(tag.scoreToMain) data.scores[s.id]=score(s.id)+delta;
     if(delta>0 && tag.scoreToMain) recordEarn(s.id, label, delta);
@@ -4432,6 +4449,10 @@ function setupRoster() {
       var ps=studentById(psid), pa=actById(paid);
       if(!ps||!pa){ flash(false,"Unknown personal code","","\u201C"+code+"\u201D"); beep(false); return; }
       if(pa.tracked && pa.name==="Homework Checked"){
+        if(!studentInCurrentClass(ps)){
+          flash(false, ps.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to mark this student");
+          beep(false); return;
+        }
         markHwCheckedToday(ps.id);
         flash(true, ps.name, "HW Checked", "Homework marked checked (today)");
         beep(true);
@@ -7123,7 +7144,7 @@ function setupRoster() {
   $("storeStudPrev").addEventListener("click", function(){ storeStudGo(-1); });
   $("storeStudNext").addEventListener("click", function(){ storeStudGo(1); });
   $("storeClearHist").addEventListener("click", function(){ if(!confirm("Clear the purchase history? (This does NOT refund points.)")) return; data.store.log=[]; save(); renderStoreHistory(); });
-  function storeScan(code){ code=(code||"").trim(); if(!code) return; var s=studentById(code); if(!s){ storeFlash(false,"Unknown code","\u201C"+code+"\u201D isn't a student"); beep(false); return; } storeStudentId=s.id; renderStore(); storeFlash(true, s.name+" selected", fmtScore(s.id)+" to spend"); beep(true); }
+  function storeScan(code){ code=(code||"").trim(); if(!code) return; var s=studentById(code); if(!s){ storeFlash(false,"Unknown code","\u201C"+code+"\u201D isn't a student"); beep(false); return; } if(!studentInCurrentClass(s)){ storeFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D", "switch class to spend for this student"); beep(false); return; } storeStudentId=s.id; renderStore(); storeFlash(true, s.name+" selected", fmtScore(s.id)+" to spend"); beep(true); }
 
   /* ---------- PESUKIM ---------- */
   var selectedPasuk = 1;
@@ -7241,6 +7262,7 @@ function setupRoster() {
     code=(code||"").trim(); if(!code) return;
     var s=studentById(code);
     if(!s){ pesukFlash(false,"Unknown code","\u201C"+code+"\u201D isn't a student"); beep(false); return; }
+    if(!studentInCurrentClass(s)){ pesukFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D", "switch class to mark this student"); beep(false); return; }
     var already=pesukDone(s.id,selectedPasuk);
     markPasuk(s.id,selectedPasuk,true);
     if(data.autoSheet){ pushToSheet({type:"pasuk",ts:Date.now(),name:s.name,group:s.group||"",ref:data.pasukSet.ref,pasuk:selectedPasuk}); }
@@ -8138,6 +8160,7 @@ nameLine
     if(!pendingSave) return;
     var s=studentById((code||"").trim());
     if(!s){ beep(false); if(pendingSave.statusEl) pendingSave.statusEl.textContent="Unknown code — scan a student's QR."; return; }
+    if(!studentInCurrentClass(s)){ beep(false); if(pendingSave.statusEl) pendingSave.statusEl.textContent=s.name+" isn't in \u201C"+data.currentClass+"\u201D — switch class first."; return; }
     var entry={sid:s.id,name:s.name,ts:Date.now()};
     for(var k in pendingSave.partial) entry[k]=pendingSave.partial[k];
     addBoardEntry(pendingSave.key, entry, pendingSave.lowerBetter);
@@ -8502,6 +8525,7 @@ nameLine
     code=(code||"").trim(); if(!code) return;
     var s=studentById(code);
     if(!s){ gameFlash(false,"Unknown code"); beep(false); return; }
+    if(!studentInCurrentClass(s)){ gameFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D"); beep(false); return; }
     var pts=parseInt($("gamePts").value,10)||1;
     data.game.points[s.id]=(data.game.points[s.id]||0)+pts;
     if($("gameAlsoMain").checked){
