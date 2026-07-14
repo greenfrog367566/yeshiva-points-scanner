@@ -5527,6 +5527,13 @@ function setupRoster() {
     var a=null;
     for(var i=0;i<data.activities.length;i++){ if(data.activities[i].id.toUpperCase()===id.toUpperCase()){ a=data.activities[i]; break; } }
     if(!a){ flash(false,"Unknown activity code","","\u201C"+c+"\u201D"); beep(false); return; }
+    // Defends against an already-printed, pre-fix Activity Menu sheet still
+    // floating around a classroom \u2014 even if that paper QR code exists,
+    // scanning it must not silently arm Homework Checked as a plain activity.
+    if(a.name==="Homework Checked"){
+      flash(false, "Not scannable here", "Use the Homework tab", "or a student's own Homework Checked QR code");
+      beep(false); return;
+    }
     setArmed(a.name, a.pts);
     flash(true, "Now scoring", a.name+"  "+fmtDeltaBare(a.pts), "Scan students to give "+fmtDelta(a.pts));
     beep(true);
@@ -9455,7 +9462,13 @@ nameLine
     // activities that apply to the currently selected class (same group-restriction
     // logic the Scan tab's activity buttons already use) — the control codes below
     // (Custom, Undo, phrase-nav) aren't activity-specific, so they always show.
-    var items=data.activities.filter(actVisibleInCurrentClass).map(function(a){
+    // Homework Checked deliberately excluded from the printed Activity Menu —
+    // arming it here would let a teacher scan it as a normal 0-point activity,
+    // creating a plain data.log entry instead of actually marking homework
+    // checked in data.hw (the same disconnect already fixed for the Tracker
+    // tab's own dropdown). The Homework tab's own scan box and each student's
+    // personal "Homework Checked" QR code are the only supported ways to mark it.
+    var items=data.activities.filter(actVisibleInCurrentClass).filter(function(a){ return a.name!=="Homework Checked"; }).map(function(a){
       return {qrText:"ACT:"+a.id, name:a.name, sub:fmtDelta(a.pts)};
     });
     items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount"});
