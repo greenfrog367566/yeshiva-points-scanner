@@ -2251,7 +2251,15 @@ function setupRoster() {
     <div class="card pad"><div id="storeBuy" style="display:flex;flex-wrap:wrap;gap:8px"></div></div>
 
     <div class="card" id="storeHistoryCard" style="margin-top:16px">
-      <div class="board-head"><h3>Recent purchases</h3><button id="storeClearHist" class="btn btn-sm">Clear history</button></div>
+      <div class="board-head">
+        <h3>Recent purchases</h3>
+        <span id="storePendingCount" style="font-size:.82rem;color:var(--muted);margin-right:auto;margin-left:12px"></span>
+        <button id="storeClearHist" class="btn btn-sm">Clear history</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:7px;font-size:.85rem;color:var(--muted);padding:8px 14px 0;cursor:pointer">
+        <input type="checkbox" id="storeAutoReceived">
+        Auto-mark new purchases as received (prize handed over at time of purchase)
+      </label>
       <div id="storeHistory" class="row-list" style="padding:10px 14px"></div>
     </div>
   </section>
@@ -7120,6 +7128,7 @@ function setupRoster() {
   var storeStudentId=null;
   function storeFlash(ok,l1,l2){ var f=$("storeFlash"); f.className="flash show "+(ok?"good":"bad"); f.innerHTML=""; if(l1) f.appendChild(el("div","who",l1)); if(l2) f.appendChild(el("div","total",l2)); clearTimeout(f._t); f._t=setTimeout(function(){ f.classList.remove("show"); },1600); }
   function renderStore(){
+    var arEl=$("storeAutoReceived"); if(arEl) arEl.checked=!!data.store.autoReceived;
     if(!$("storeEmoji").options.length) fillEmojiSelect($("storeEmoji"), AU_EMOJIS[0]);
     var list=$("storeList"); list.innerHTML="";
     if(!data.store.items.length){ list.appendChild(el("div","recent-empty","No prizes yet — add some above.")); }
@@ -7162,7 +7171,7 @@ function setupRoster() {
     var s=studentById(sid); if(!s) return;
     if(score(sid) < it.cost){ storeFlash(false, isShulchani()?"Not enough coins":"Not enough points", s.name+" has "+fmtScore(sid)+", needs "+fmtVal(it.cost)); beep(false); return; }
     data.scores[sid]=score(sid)-it.cost;
-    data.store.log.unshift({sid:sid, name:s.name, itemName:it.name, emoji:it.emoji||"🎁", cost:it.cost, ts:Date.now()});
+    data.store.log.unshift({sid:sid, name:s.name, itemName:it.name, emoji:it.emoji||"🎁", cost:it.cost, ts:Date.now(), received:data.store.autoReceived===true});
     if(data.store.log.length>300) data.store.log.length=300;
     addLogEntry({ts:Date.now(), sid:sid, label:"Store: "+it.name, delta:-it.cost, kind:"spend"});
     save(); beep(true); storeFlash(true, s.name+" bought "+(it.emoji||"")+" "+it.name, (isShulchani()?formatCoins(it.cost,{signed:false})+" → ":"-"+it.cost+" → ")+fmtScore(sid));
@@ -7179,9 +7188,20 @@ function setupRoster() {
   function renderStoreHistory(){
     var h=$("storeHistory"); h.innerHTML="";
     if(!data.store.log.length){ h.appendChild(el("div","recent-empty","No purchases yet.")); return; }
+    var pending=data.store.log.filter(function(p){ return !p.received; }).length;
+    var pendEl=$("storePendingCount");
+    if(pendEl) pendEl.textContent = pending ? (pending+" prize"+(pending===1?"":"s")+" not yet picked up") : "";
     data.store.log.slice(0,40).forEach(function(p,idx){
       var row=el("div","erow");
+      var recLabel=el("label","store-received-toggle");
+      recLabel.style.cssText="display:flex;align-items:center;gap:5px;font-size:.82rem;color:var(--muted);cursor:pointer;margin-right:8px";
+      var recBox=el("input"); recBox.type="checkbox"; recBox.checked=!!p.received;
+      recBox.addEventListener("change", function(){ p.received=recBox.checked; save(); renderStoreHistory(); });
+      recLabel.appendChild(recBox);
+      recLabel.appendChild(document.createTextNode("Received"));
+      row.appendChild(recLabel);
       var nm=el("span","grow"); nm.textContent=(p.emoji||"")+" "+p.name+" — "+p.itemName;
+      if(!p.received) nm.style.fontWeight="700";
       row.appendChild(nm); row.appendChild(el("span","grp-tag","-"+fmtVal(p.cost)));
       var undo=el("button","btn btn-sm","Refund"); undo.addEventListener("click", function(){ refundPurchase(idx); });
       row.appendChild(undo); h.appendChild(row);
@@ -7200,6 +7220,7 @@ function setupRoster() {
   $("storeStudPrev").addEventListener("click", function(){ storeStudGo(-1); });
   $("storeStudNext").addEventListener("click", function(){ storeStudGo(1); });
   $("storeClearHist").addEventListener("click", function(){ if(!confirm("Clear the purchase history? (This does NOT refund points.)")) return; data.store.log=[]; save(); renderStoreHistory(); });
+  $("storeAutoReceived").addEventListener("change", function(){ data.store.autoReceived=this.checked; save(); });
   function storeScan(code){ code=(code||"").trim(); if(!code) return; var s=studentById(code); if(!s){ storeFlash(false,"Unknown code","\u201C"+code+"\u201D isn't a student"); beep(false); return; } if(!studentInCurrentClass(s)){ storeFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D", "switch class to spend for this student"); beep(false); return; } storeStudentId=s.id; renderStore(); storeFlash(true, s.name+" selected", fmtScore(s.id)+" to spend"); beep(true); }
 
   /* ---------- PESUKIM ---------- */
@@ -9974,6 +9995,14 @@ nameLine
     if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]};
     if(!Array.isArray(data.store.items)) data.store.items=[];
     if(!Array.isArray(data.store.log)) data.store.log=[];
+    // "Received" fulfillment tracking on Store purchases. Auto-checked on new
+    // purchases only if the teacher has turned that setting on (default off,
+    // since the whole point is usually to track prizes still owed). Any
+    // purchase logged before this feature existed is assumed already handed
+    // over — defaulting those to received:true avoids retroactively flagging
+    // old, already-resolved purchases as newly "pending."
+    if(typeof data.store.autoReceived!=="boolean") data.store.autoReceived=false;
+    data.store.log.forEach(function(p){ if(typeof p.received!=="boolean") p.received=true; });
     if(!data.earned) data.earned={};
     if(!data.weekly) data.weekly={};
     if(typeof data.standingsActivity!=="string") data.standingsActivity="";
@@ -10060,10 +10089,11 @@ nameLine
       data.activities.push({id:nextActId(), name:"Homework Checked", pts:0, tracked:true, groups:[]});
       data.hwActivitySeeded=true;
     }
-    if(!data.prizeActivitySeeded){
-      data.activities.push({id:nextActId(), name:"Prize Received", pts:0, tracked:true, groups:[]});
-      data.prizeActivitySeeded=true;
-    }
+    // "Prize Received" used to be a standalone tracked activity here, but that
+    // had no real link to an actual Store purchase. Superseded by a per-purchase
+    // "received" checkbox on the Store's own purchase log (see storeReceived
+    // backfill below). Any already-seeded copy from that earlier version is
+    // left alone if present — harmless, just no longer created for new data.
   }
   // Shared by the Backup tab's "Reset all scores" button and the "End
   // contest" flow's optional reset — one real implementation either way.
