@@ -1902,7 +1902,11 @@
   return ContentService.createTextOutput("Points sync is live.");
 }
 
-// Log columns are: Time, Student, Bunk/Group, Activity, Points, New total, ID, Undo Of.
+// Log columns are: Time, Student, Bunk/Group, Activity, Points, New total, ID,
+// Undo Of, Note. Note is appended at the very end deliberately — sheets that
+// were created before this column existed keep their original 8-column
+// header untouched; new rows simply carry a 9th value. Add a "Note" label to
+// I1 by hand on an older sheet if you'd like the column header to show it.
 // The ID column is how duplicate scans get caught — if the app sends the same
 // scan twice (a flaky connection, a manual resync), the second one is skipped.
 function logHasId(log, id) {
@@ -1959,11 +1963,31 @@ function doPost(e) {
   if (body.type === "scan" || body.type === "correction") {
     var log = ss.getSheetByName("Log") || ss.insertSheet("Log");
     if (log.getLastRow() === 0) {
-      log.appendRow(["Time", "Student", "Bunk/Group", "Activity", "Points", "New total", "ID", "Undo Of"]);
+      log.appendRow(["Time", "Student", "Bunk/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
     }
     if (!logHasId(log, body.id)) {
-      log.appendRow([new Date(body.ts), body.name, body.group, body.label, body.delta, body.total, body.id || "", body.undoOf || ""]);
+      log.appendRow([new Date(body.ts), body.name, body.group, body.label, body.delta, body.total, body.id || "", body.undoOf || "", body.note || ""]);
       rebuildLeaderBoard();
+    }
+  }
+
+  // A rebbi tagged an existing deduction with a note (e.g. "talked to Dovid")
+  // after the fact, from the app's History tab. Finds that scan's row by its
+  // ID (column G) and fills in column I (Note) — added at the END of the row
+  // so older, already-populated sheets are never shifted or reflowed.
+  if (body.type === "note") {
+    var nlog = ss.getSheetByName("Log");
+    if (nlog && body.id) {
+      var nlast = nlog.getLastRow();
+      if (nlast >= 2) {
+        var nids = nlog.getRange(2, 7, nlast - 1, 1).getValues(); // column G = ID
+        for (var ni = 0; ni < nids.length; ni++) {
+          if (nids[ni][0] === body.id) {
+            nlog.getRange(ni + 2, 9).setValue(body.note || ""); // column I = Note
+            break;
+          }
+        }
+      }
     }
   }
 
@@ -2035,9 +2059,9 @@ function testSetup() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var log = ss.getSheetByName("Log") || ss.insertSheet("Log");
   if (log.getLastRow() === 0) {
-    log.appendRow(["Time", "Student", "Bunk/Group", "Activity", "Points", "New total", "ID", "Undo Of"]);
+    log.appendRow(["Time", "Student", "Bunk/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
   }
-  log.appendRow([new Date(), "Test student", "Gimel 1", "Setup test", 0, 0, "test-" + Date.now(), ""]);
+  log.appendRow([new Date(), "Test student", "Gimel 1", "Setup test", 0, 0, "test-" + Date.now(), "", ""]);
   rebuildLeaderBoard();
 }
 
@@ -4757,13 +4781,45 @@ function setupRoster() {
       } else if(entry.undone){
         row.appendChild(el("span","undone-tag","undone"));
       }
+      // Deduction notes — a rebbi can tag *why* points were taken away (e.g.
+      // "talked to Dovid"), viewable here and synced to the Sheet's Log tab.
+      // Only offered on real negative-point entries (not undos/corrections).
+      if(!isCorrection && entry.delta<0){
+        var noteBtn=el("button","btn btn-sm", entry.note ? "📝 Edit note" : "📝 Add note");
+        noteBtn.style.marginLeft="6px";
+        noteBtn.addEventListener("click", (function(eid){ return function(){ setEntryNote(eid); }; })(entry.id));
+        row.appendChild(noteBtn);
+      }
       list.appendChild(row);
+      if(entry.note){
+        var noteRow=el("div","history-note");
+        noteRow.style.cssText="font-size:.82rem;color:var(--muted);padding:2px 0 8px 4px;font-style:italic";
+        noteRow.textContent="📝 "+entry.note;
+        list.appendChild(noteRow);
+      }
     });
     if(!shown) list.appendChild(el("div","recent-empty", data.log.length ? "No scans match your search." : "Scans will appear here."));
   }
   $("historySearch").addEventListener("input", renderHistoryTab);
   $("historyStudentFilter").addEventListener("change", renderHistoryTab);
   $("historyUndoLast").addEventListener("click", function(){ undoMostRecentScan(); });
+
+  // Attach or edit a free-text note on a deduction — e.g. "talked to Dovid".
+  // Saved on the log entry itself, shown here, and synced to the Sheet's Log
+  // tab (appended "Note" column) the next time this device has a connection.
+  function setEntryNote(id){
+    var entry=null;
+    for(var i=0;i<data.log.length;i++){ if(data.log[i].id===id){ entry=data.log[i]; break; } }
+    if(!entry) return;
+    var txt=prompt("Note for this deduction (e.g. \u201Ctalked to Dovid\u201D):", entry.note||"");
+    if(txt===null) return; // cancelled
+    entry.note=txt.trim();
+    save();
+    renderHistoryTab();
+    if(data.autoSheet && (data.sheetUrl||"").trim()){
+      pushToSheet({type:"note", id:entry.id, note:entry.note});
+    }
+  }
 
   function renderScanBoard(){
     // Whenever the small scan-screen board refreshes (which happens after every
@@ -10003,6 +10059,10 @@ nameLine
     if(!data.hwActivitySeeded){
       data.activities.push({id:nextActId(), name:"Homework Checked", pts:0, tracked:true, groups:[]});
       data.hwActivitySeeded=true;
+    }
+    if(!data.prizeActivitySeeded){
+      data.activities.push({id:nextActId(), name:"Prize Received", pts:0, tracked:true, groups:[]});
+      data.prizeActivitySeeded=true;
     }
   }
   // Shared by the Backup tab's "Reset all scores" button and the "End
