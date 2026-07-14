@@ -1066,6 +1066,12 @@
     <div class="toolbar no-print">
       <input id="historySearch" class="field" placeholder="Search a student…" style="max-width:260px">
       <select id="historyStudentFilter" class="field" style="width:auto"><option value="">All students</option></select>
+      <select id="historySort" class="field" style="width:auto">
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="highest">Highest points</option>
+        <option value="lowest">Lowest points</option>
+      </select>
       <span class="grow"></span>
       <button class="btn btn-bad" id="historyUndoLast">↩ Undo last scan</button>
     </div>
@@ -2362,7 +2368,17 @@ function setupRoster() {
     </div>
 
     <div id="trackerByActivity">
-      <div class="card pad"><div id="trackerActList" class="row-list"></div></div>
+      <div class="card pad">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <label style="font-size:.85rem;color:var(--muted)">Sort by:</label>
+          <select id="trackerSort" class="field" style="width:auto;font-size:.85rem">
+            <option value="name">Name (A–Z)</option>
+            <option value="most">Most completed</option>
+            <option value="least">Least completed</option>
+          </select>
+        </div>
+        <div id="trackerActList" class="row-list"></div>
+      </div>
     </div>
 
     <div id="trackerHistoryView" style="display:none">
@@ -3198,7 +3214,11 @@ function setupRoster() {
   function passUsed(sid){ return !!(data.passes.used && data.passes.used[sid]); }
   function setPass(sid,on){
     if(!data.passes.used) data.passes.used={};
-    if(on) data.passes.used[sid]=Date.now(); else delete data.passes.used[sid];
+    if(on){ data.passes.used[sid]=Date.now(); } else { delete data.passes.used[sid]; }
+    var s=studentById(sid);
+    var label=on?"Bathroom pass used":"Bathroom pass returned";
+    addLogEntry({ts:Date.now(), sid:sid, label:label, delta:0});
+    if(data.autoSheet && s) pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:0, total:score(sid)});
     save();
   }
   function passScan(code){
@@ -3229,7 +3249,14 @@ function setupRoster() {
   }
   $("passReset").addEventListener("click", function(){
     if(!confirm("Reset bathroom passes for a new week? Everyone gets their pass back.")) return;
-    data.passes.used={}; data.passes.reset=Date.now(); save(); renderPasses();
+    // Log one summary entry per student who used their pass before clearing
+    var now=Date.now();
+    Object.keys(data.passes.used||{}).forEach(function(sid){
+      var s=studentById(sid);
+      addLogEntry({ts:now, sid:sid, label:"Bathroom pass used (weekly reset)", delta:0});
+      if(data.autoSheet && s) pushToSheet({type:"scan", ts:now, name:s.name, group:s.group||"", label:"Bathroom pass used (weekly reset)", delta:0, total:score(sid)});
+    });
+    data.passes.used={}; data.passes.reset=now; save(); renderPasses();
     passFlash(true,"Passes reset","Everyone has their pass again");
   });
   $("passScanInput").addEventListener("keydown", function(e){
@@ -3558,6 +3585,7 @@ function setupRoster() {
     else if(trackerViewMode==="history") renderTrackerHistoryList();
     else renderTrackerByStudent();
   }
+  if($("trackerSort")) $("trackerSort").addEventListener("change", function(){ renderTracker(); });
   $("trackerViewMode").addEventListener("click", function(e){
     var b=e.target.closest("button"); if(!b) return;
     trackerViewMode=b.dataset.tvm; applyTrackerViewMode();
@@ -3591,7 +3619,13 @@ function setupRoster() {
   function renderTrackerByActivity(){
     var actId=$("trackerActSel").value;
     var list=$("trackerActList"); list.innerHTML="";
-    var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+    var trackerSortMode=$("trackerSort") ? $("trackerSort").value : "name";
+    var actId2=actId; // capture for sort closure
+    var studs=activeStudents().sort(function(a,b){
+      if(trackerSortMode==="most")  return trackerCountFor(b.id, actId2)-trackerCountFor(a.id, actId2);
+      if(trackerSortMode==="least") return trackerCountFor(a.id, actId2)-trackerCountFor(b.id, actId2);
+      return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name));
+    });
     if(!trackedActivities().length){ list.appendChild(el("div","recent-empty","Add a tracked activity above to get started.")); return; }
     if(!studs.length){ list.appendChild(el("div","recent-empty","Add students on the Students tab first.")); return; }
     studs.forEach(function(s){
@@ -4264,6 +4298,138 @@ function setupRoster() {
     data.gameAutoSecs=v; this.value=String(v); save();
   });
 
+  /* ---------- Ticket pool restore helper ---------- */
+  // Called after any backup restore. Checks whether the backup contains live
+  // raffle entries or auction tickets from drawn prizes — both represent a
+  // live event state that no longer makes sense in a restored context, because
+  // the points have already been deducted from scores. If found, offers to
+  // clear them so the restore is clean. "Clear" never touches scores — the
+  // deduction already happened and is preserved in data.log.
+  function clearStaleTicketPools() {
+    var raffleEntries = data.raffle && data.raffle.entries &&
+      Object.keys(data.raffle.entries).some(function(k){ return (data.raffle.entries[k]||0)>0; });
+
+    var lockedAuctionTickets = false;
+    var aus = data.auctions || {};
+    Object.keys(aus).forEach(function(key){
+      var au = aus[key];
+      if(!au || !au.tickets || !au.winners) return;
+      Object.keys(au.winners).forEach(function(pid){
+        // A won prize: tickets are locked — points already spent, prize already drawn
+        var hasTickets = Object.keys(au.tickets).some(function(sid){ return (au.tickets[sid]&&au.tickets[sid][pid])||0; });
+        if(hasTickets) lockedAuctionTickets = true;
+      });
+    });
+
+    if(!raffleEntries && !lockedAuctionTickets) return; // nothing stale
+
+    var parts = [];
+    if(raffleEntries)       parts.push("raffle ticket pool (manual mode)");
+    if(lockedAuctionTickets) parts.push("Chinese Auction tickets on already-drawn prizes");
+
+    var msg = "This backup contains a live " + parts.join(" and ") + ". " +
+      "The points for these tickets were already deducted from scores (correct). " +
+      "But the ticket entries will show as still active if kept. " +
+      "Clear them for a clean restore? " +
+      "(Scores are not affected \u2014 the deductions stay in the log.)";
+    if(!confirm(msg)) return;
+
+    // Clear raffle entries (not winners history, not scores)
+    if(raffleEntries && data.raffle && data.raffle.entries) {
+      data.raffle.entries = {};
+    }
+
+    // Clear tickets from won (locked) prizes only — undrawn prizes stay intact
+    // so an in-progress auction with some prizes still undrawn is preserved
+    Object.keys(aus).forEach(function(key){
+      var au = aus[key];
+      if(!au || !au.tickets || !au.winners) return;
+      var wonPids = Object.keys(au.winners);
+      if(!wonPids.length) return;
+      Object.keys(au.tickets).forEach(function(sid){
+        wonPids.forEach(function(pid){
+          if(au.tickets[sid]) delete au.tickets[sid][pid];
+        });
+      });
+    });
+
+    save();
+  }
+
+  /* ---------- Shulchani restore helper ---------- */
+  // Called by BOTH restore paths (file import and wizard bridge backup).
+  // If the backup's shulchaniMode matches the live setting, calls callback()
+  // immediately — no interruption. If they differ, shows a clear modal so
+  // the teacher can choose which mode to open in, then calls callback() with
+  // a modified copy of obj that has shulchaniMode set to whichever they picked.
+  // Scores are never silently wiped here — if the teacher picks a different
+  // mode, the modal's "Keep scores" option keeps them as raw numbers and
+  // just changes the display mode, while "Clear scores" wipes them (same
+  // as the normal Shulchani toggle behaviour).
+  function checkShulchaniModeOnRestore(obj, callback) {
+    var backupIsShulchani = !!obj.shulchaniMode;
+    var liveIsShulchani   = !!data.shulchaniMode;
+    if(backupIsShulchani === liveIsShulchani) { callback(obj); return; }
+
+    // Modes differ — ask the teacher
+    var modal = $("shulchaniModal");
+    var h3    = modal.querySelector("h3");
+    var p     = modal.querySelector("p");
+
+    if(backupIsShulchani && !liveIsShulchani){
+      // Backup was Shulchani, app is currently regular points
+      h3.textContent = "This backup uses Shulchani (coin) mode";
+      p.textContent  = "Your app is currently in regular points mode. How would you like to open this backup?";
+    } else {
+      // Backup was regular, app is currently Shulchani
+      h3.textContent = "This backup uses regular points mode";
+      p.textContent  = "Your app is currently in Shulchani (coin) mode. How would you like to open this backup?";
+    }
+
+    // Repurpose the existing buttons for this context
+    var clearBtn  = $("shulchaniClear");
+    var cancelBtn = $("shulchaniCancel");
+    var dlBtn     = $("shulchaniDl");
+
+    clearBtn.textContent  = backupIsShulchani ? "Open as Shulchani (keep coins)" : "Open as regular points (keep scores)";
+    cancelBtn.textContent = backupIsShulchani ? "Open as regular points (clear scores)" : "Open as Shulchani (clear scores)";
+    dlBtn.textContent     = "Cancel — don\'t restore";
+
+    // Keep-as-is: restore with backup\'s own mode, preserve scores
+    clearBtn.onclick = function() {
+      cleanup();
+      callback(obj);
+    };
+    // Switch mode: restore with backup data but flip mode and wipe scores
+    cancelBtn.onclick = function() {
+      cleanup();
+      var copy = JSON.parse(JSON.stringify(obj));
+      copy.shulchaniMode = !backupIsShulchani;
+      copy.scores = {};
+      copy.log    = [];
+      callback(copy);
+    };
+    // Cancel restore entirely
+    dlBtn.onclick = function() {
+      cleanup();
+    };
+
+    function cleanup() {
+      // Restore button labels to their defaults
+      clearBtn.textContent  = "Clear scores & switch";
+      cancelBtn.textContent = "Cancel";
+      dlBtn.textContent     = "⤵ Download backup first";
+      // Restore normal onclick handlers
+      clearBtn.onclick  = null;
+      cancelBtn.onclick = null;
+      dlBtn.onclick     = null;
+      // Re-attach normal listeners (delegated — they check current state fresh)
+      modal.style.display = "none";
+    }
+
+    modal.style.display = "flex";
+  }
+
   /* ---------- Shulchani mode toggle ---------- */
   function hasAnyScores(){
     return data.students.some(function(s){ return score(s.id)!==0; });
@@ -4765,9 +4931,18 @@ function setupRoster() {
 
     var term=($("historySearch").value||"").trim().toLowerCase();
     var studentFilter=sel.value;
+    var sortMode=$("historySort") ? $("historySort").value : "newest";
     var list=$("historyList"); list.innerHTML="";
     var shown=0;
-    data.log.forEach(function(entry, idx){
+    // Apply sort — default (newest) is already the order of data.log (unshifted
+    // on each scan). Only copy+sort for the other modes to avoid mutating the log.
+    var logView = (sortMode==="newest") ? data.log : data.log.slice().sort(function(a,b){
+      if(sortMode==="oldest")  return (a.ts||0)-(b.ts||0);
+      if(sortMode==="highest") return Math.abs(b.delta)-Math.abs(a.delta);
+      if(sortMode==="lowest")  return Math.abs(a.delta)-Math.abs(b.delta);
+      return 0;
+    });
+    logView.forEach(function(entry, idx){
       var s=studentById(entry.sid);
       var name = s ? s.name : entry.sid;
       if(studentFilter && entry.sid!==studentFilter) return;
@@ -4784,8 +4959,16 @@ function setupRoster() {
       row.appendChild(isCorrection ? el("span","rd undo","Undo") : el("span","rd "+(entry.delta<0?"neg":"pos"), fmt(entry.delta)));
       if(!isCorrection && !entry.undone){
         var u=el("button","btn btn-sm","↩");
-        u.title="Undo this"; u.addEventListener("click", function(){ undoEntryById(entry.id); });
+        u.title="Undo this"; u.addEventListener("click", (function(eid){ return function(){ undoEntryById(eid); }; })(entry.id));
         row.appendChild(u);
+        // Edit button — lets a rebbi change the point value of a past scan.
+        // Uses the same correction model as Undo: the original entry is marked
+        // undone and a new correction entry is logged for the DIFFERENCE, so
+        // data.scores, Sheet sync, and the full audit trail all stay consistent.
+        var editBtn=el("button","btn btn-sm","✏️ Edit");
+        editBtn.style.marginLeft="4px";
+        editBtn.addEventListener("click", (function(eid){ return function(){ editEntryPoints(eid); }; })(entry.id));
+        row.appendChild(editBtn);
       } else if(entry.undone){
         row.appendChild(el("span","undone-tag","undone"));
       }
@@ -4794,7 +4977,7 @@ function setupRoster() {
       // Only offered on real negative-point entries (not undos/corrections).
       if(!isCorrection && entry.delta<0){
         var noteBtn=el("button","btn btn-sm", entry.note ? "📝 Edit note" : "📝 Add note");
-        noteBtn.style.marginLeft="6px";
+        noteBtn.style.marginLeft="4px";
         noteBtn.addEventListener("click", (function(eid){ return function(){ setEntryNote(eid); }; })(entry.id));
         row.appendChild(noteBtn);
       }
@@ -4810,7 +4993,36 @@ function setupRoster() {
   }
   $("historySearch").addEventListener("input", renderHistoryTab);
   $("historyStudentFilter").addEventListener("change", renderHistoryTab);
+  if($("historySort")) $("historySort").addEventListener("change", renderHistoryTab);
   $("historyUndoLast").addEventListener("click", function(){ undoMostRecentScan(); });
+
+  // Edit the point value of a past scan entry.
+  // Never rewrites history — instead it marks the original entry undone and
+  // logs a correction entry for exactly the difference, identical to how
+  // regular Undo works. This keeps data.scores, Sheet sync, the audit trail,
+  // and any contest totals all consistent.
+  function editEntryPoints(id){
+    var entry=null;
+    for(var i=0;i<data.log.length;i++){ if(data.log[i].id===id){ entry=data.log[i]; break; } }
+    if(!entry || entry.undone || entry.kind==="correction") return;
+    var raw=prompt("Change points for this scan \u2014 \u201C"+entry.label+" / "+(studentById(entry.sid)||{name:entry.sid}).name+"\u201D  (current: "+(entry.delta>0?"+":"")+entry.delta+")  New value:", String(entry.delta));
+    if(raw===null) return; // cancelled
+    var newDelta=parseInt(raw,10);
+    if(isNaN(newDelta)){ alert("Please enter a whole number."); return; }
+    if(newDelta===entry.delta) return; // no change
+    // Difference between new and old. A correction entry with diff reverses
+    // the old value and installs the new one in a single net adjustment.
+    var diff=newDelta-entry.delta;
+    entry.undone=true;
+    data.scores[entry.sid]=score(entry.sid)-entry.delta; // reverse old
+    data.scores[entry.sid]=score(entry.sid)+newDelta;    // apply new
+    var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Edit: "+entry.label, delta:diff, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false});
+    save(); renderRecent(); renderScanBoard();
+    if($("view-standings").classList.contains("active")) renderStandings();
+    renderHistoryTab();
+    var s=studentById(entry.sid);
+    if(data.autoSheet && s){ pushToSheet({type:"correction", ts:Date.now(), name:s.name, group:s.group||"", label:corr.label, delta:corr.delta, total:score(entry.sid), id:corr.id, undoOf:entry.id}); }
+  }
 
   // Attach or edit a free-text note on a deduction — e.g. "talked to Dovid".
   // Saved on the log entry itself, shown here, and synced to the Sheet's Log
@@ -9889,18 +10101,21 @@ nameLine
         var obj=JSON.parse(r.result);
         if(!obj.students||!obj.activities){ throw new Error("not a valid backup"); }
         if(!confirm("This will replace everything currently here. Continue?")) return;
-        data=migrateData(obj); load2fix(); save();
-        $("schoolName").textContent=data.school;
-        $("bunkName").textContent=data.bunk;
-        $("sheetUrl").value=data.sheetUrl||"";
-        $("autoSheet").checked=(data.autoSheet!==false);
-        renderActButtons(); renderRecent(); renderStudents(); renderActivities();
-        // Refresh everything else the restored data drives — without these,
-        // the class dropdown, tap panel, live board, panel layout, and the
-        // settings-driven chrome all kept showing the PRE-restore state.
-        renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-        showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
-        alert("Backup restored.");
+        // If the backup's Shulchani setting differs from the live app, ask
+        // the teacher which mode to open in before committing any data.
+        checkShulchaniModeOnRestore(obj, function(resolvedObj){
+          data=migrateData(resolvedObj); load2fix(); save();
+          clearStaleTicketPools();
+          $("schoolName").textContent=data.school;
+          $("bunkName").textContent=data.bunk;
+          $("sheetUrl").value=data.sheetUrl||"";
+          $("autoSheet").checked=(data.autoSheet!==false);
+          renderActButtons(); renderRecent(); renderStudents(); renderActivities();
+          renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
+          showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
+          renderShulchaniStatus();
+          alert("Backup restored.");
+        });
       }catch(err){ alert("Sorry, that file couldn't be read as a backup."); }
     };
     r.readAsText(file);
@@ -9945,13 +10160,31 @@ nameLine
           fresh.students.push(s); byName[key]=s; fresh.scores[s.id]=0;
           return s;
         }
+        // Determine whether the "New total" column is reliable for this file.
+        // If it's present and consistent (non-null for >80% of rows) we use the
+        // last "New total" per student as the final score — this is always correct
+        // because it's what the app itself calculated at scan time, and handles
+        // Raffle tickets, Store purchases, Auction spends, and Undo operations
+        // exactly right. Summing deltas sounds intuitive but produces wrong scores
+        // whenever a spend/undo occurred (as this CSV demonstrated clearly).
+        var totalColCount=entries.filter(function(e){ return e.total!==null; }).length;
+        var useTotalCol = totalColCount > entries.length * 0.8;
+
+        // First pass: build students, log, activity list, and per-student latest total
+        var lastTotal={};
         entries.forEach(function(e){
           var s=findOrMakeStudent(e.name, e.group);
-          fresh.scores[s.id]=(fresh.scores[s.id]||0)+e.delta;
+          if(useTotalCol && e.total!==null) lastTotal[s.id]=e.total;
+          else fresh.scores[s.id]=(fresh.scores[s.id]||0)+e.delta; // fallback: sum deltas
           fresh.log.unshift({id:newId(), ts:e.ts, sid:s.id, label:e.label, delta:e.delta});
-          var actKey=e.label.replace(/\s*\([^)]*\)\s*$/,"").trim(); // strip "(Devarim 31:5)" etc for activity list
+          var actKey=e.label.replace(/\s*\([^)]*\)\s*$/,"").trim(); // strip "(Devarim 31:5)" etc
           if(actKey && !actSeen[actKey]){ actSeen[actKey]=1; fresh.activities.push({id:"a"+(fresh.activities.length+1), name:actKey, pts:Math.abs(e.delta)||1}); }
         });
+
+        // Second pass: apply the "New total" scores (last seen per student wins)
+        if(useTotalCol){
+          Object.keys(lastTotal).forEach(function(sid){ fresh.scores[sid]=lastTotal[sid]; });
+        }
         if(fresh.log.length>2000) fresh.log.length=2000;
         data=fresh; load2fix();
         // rebuild earned/weekly trend history from the full entry list (positive points only)
@@ -10184,7 +10417,12 @@ nameLine
           var hasExisting = Array.isArray(data.students) && data.students.length > 0;
           if (!hasExisting ||
               confirm("Import the classroom backup you chose during setup? This replaces your current data.")) {
-            data = obj;
+            // Check for Shulchani mode mismatch before committing
+            checkShulchaniModeOnRestore(obj, function(resolvedObj){
+              data = resolvedObj;
+              load2fix(); save();
+              clearStaleTicketPools();
+            });
             changed = true;
           }
         }
