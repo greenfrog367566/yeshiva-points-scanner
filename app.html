@@ -2565,7 +2565,7 @@ function setupRoster() {
       <button id="helpClose" style="background:none;border:none;color:#fff;font-size:1.4rem;cursor:pointer;line-height:1;padding:4px 8px">✕</button>
     </div>
     <!-- Modal body -->
-    <div id="helpBody" style="overflow-y:auto;padding:24px 28px;flex:1;font-size:.92rem;line-height:1.7;color:#1e293b"></div>
+    <div id="helpBody" style="flex:1;overflow:hidden;font-size:.92rem;line-height:1.7;color:#1e293b;display:flex;flex-direction:column;min-height:0"></div>
   </div>
 </div>
 
@@ -8996,16 +8996,57 @@ nameLine
     $("newName").value=""; save(); renderStudents(); renderClassSel(); $("newName").focus();
   });
   $("newName").addEventListener("keydown", function(e){ if(e.key==="Enter") $("addStudent").click(); });
-  $("bulkAdd").addEventListener("click", function(){
-    var lines=$("bulkBox").value.split("\n");
-    var added=0;
-    lines.forEach(function(ln){
-      ln=ln.trim(); if(!ln) return;
-      var parts=ln.split(","); var name=parts[0].trim(); var grp=(parts[1]||"").trim();
-      if(name){ data.students.push({id:nextStudentId(), name:name, group:grp}); added++; }
+  // Live preview for the paste textarea
+  $("bulkBox").addEventListener("input", function(){
+    var preview = $("bulkPreview");
+    if (!preview) return;
+    var parsed = parseBulkNames(this.value);
+    if (!parsed.length) { preview.textContent = ""; return; }
+    var names = parsed.slice(0,3).map(function(p){ return p.name; });
+    var more  = parsed.length > 3 ? " + "+(parsed.length-3)+" more" : "";
+    preview.textContent = "→ "+parsed.length+" student"+(parsed.length===1?"":"s")+" detected: "+names.join(", ")+more;
+  });
+
+  // Parse paste: newline-split, tab or comma separator, col 0 = name, col 1 = group
+  // Skips obvious header rows; deduplicates within the paste and against existing roster
+  function parseBulkNames(raw) {
+    var existingNames = {};
+    data.students.forEach(function(s){ existingNames[s.name.toLowerCase()] = true; });
+    var seen = {}, results = [];
+    raw.split("\n").forEach(function(line) {
+      line = line.trim();
+      if (!line || /^(name|student|first\s*name)/i.test(line)) return;
+      var cols = line.indexOf("\t") >= 0 ? line.split("\t") : line.split(",");
+      var name = (cols[0] || "").trim();
+      var grp  = (cols[1] || "").trim();
+      if (!name) return;
+      var key = name.toLowerCase();
+      if (seen[key]) return;
+      seen[key] = true;
+      results.push({ name: name, grp: grp, isDuplicate: !!existingNames[key] });
     });
-    $("bulkBox").value=""; save(); renderStudents(); renderClassSel();
-    if(added) alert("Added "+added+" student"+(added===1?"":"s")+".");
+    return results;
+  }
+
+  $("bulkAdd").addEventListener("click", function(){
+    var parsed = parseBulkNames($("bulkBox").value);
+    if (!parsed.length) { $("bulkBox").focus(); return; }
+    var added = 0, skipped = 0;
+    parsed.forEach(function(p) {
+      if (p.isDuplicate) { skipped++; return; }
+      data.students.push({id:nextStudentId(), name:p.name, group:p.grp});
+      added++;
+    });
+    $("bulkBox").value = "";
+    var preview = $("bulkPreview"); if (preview) preview.textContent = "";
+    save(); renderStudents(); renderClassSel();
+    var status = $("bulkStatus");
+    if (status) {
+      var msg = added ? "✅ Added "+added+" student"+(added===1?"":"s") : "";
+      if (skipped) msg += (msg ? " · " : "")+skipped+" already exist"+(skipped===1?"s":"")+" (skipped)";
+      status.textContent = msg;
+      setTimeout(function(){ status.textContent = ""; }, 4000);
+    }
   });
 
   /* ---------- CLASSES + ROSTER IMPORT ---------- */
@@ -10069,6 +10110,25 @@ nameLine
           }
           changed = true;
         }
+
+        /* Students from wizard — add any that aren't already in the roster */
+        if (Array.isArray(s.students) && s.students.length) {
+          var existingNames = {};
+          (data.students || []).forEach(function(st) {
+            existingNames[st.name.toLowerCase()] = true;
+          });
+          s.students.forEach(function(p) {
+            if (!p.name) return;
+            if (existingNames[p.name.toLowerCase()]) return;
+            data.students.push({
+              id: nextStudentId ? nextStudentId() : ('w' + Date.now() + Math.random()),
+              name: p.name,
+              group: p.grp || ''
+            });
+            existingNames[p.name.toLowerCase()] = true;
+          });
+          changed = true;
+        }
       } catch(e) {}
       try { localStorage.removeItem("menchmark_setup"); } catch(e) {}
     }
@@ -10107,7 +10167,7 @@ nameLine
     var TABS = {
       guide: {
         btn: "helpTabGuide",
-        content: function(){ return mdToHtml(GUIDE_MD); }
+        content: function(){ return mdToHtmlWithToc(GUIDE_MD); }
       },
       scanner: {
         btn: "helpTabScanner",
@@ -10126,32 +10186,28 @@ nameLine
       }
     };
 
-    // Minimal markdown → HTML (handles the headings, bold, tables, code, links, lists in our docs)
+    // Slug helper — turns heading text into a safe id
+    function slugify(txt) {
+      return txt.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }
+
+    // Core markdown → HTML (no TOC)
     function mdToHtml(md) {
       var h = md
-        // Escape HTML entities first
         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-        // Headings
-        .replace(/^#### (.+)$/gm,'<h4 style="margin:16px 0 6px;font-size:1rem">$1</h4>')
-        .replace(/^### (.+)$/gm,'<h3 style="margin:20px 0 8px;font-size:1.05rem;font-family:Georgia,serif">$1</h3>')
-        .replace(/^## (.+)$/gm,'<h2 style="margin:24px 0 10px;font-size:1.2rem;font-family:Georgia,serif;color:#0f1b33">$1</h2>')
-        .replace(/^# (.+)$/gm,'<h1 style="margin:0 0 16px;font-size:1.5rem;font-family:Georgia,serif;color:#0f1b33">$1</h1>')
-        // Bold + italic
+        .replace(/^#### (.+)$/gm, function(m,t){ var id=slugify(t); return '<h4 id="help-'+id+'" style="margin:16px 0 6px;font-size:1rem">'+t+'</h4>'; })
+        .replace(/^### (.+)$/gm,  function(m,t){ var id=slugify(t); return '<h3 id="help-'+id+'" style="margin:20px 0 8px;font-size:1.05rem;font-family:Georgia,serif">'+t+'</h3>'; })
+        .replace(/^## (.+)$/gm,   function(m,t){ var id=slugify(t); return '<h2 id="help-'+id+'" style="margin:24px 0 10px;font-size:1.2rem;font-family:Georgia,serif;color:#0f1b33">'+t+'</h2>'; })
+        .replace(/^# (.+)$/gm,    function(m,t){ var id=slugify(t); return '<h1 id="help-'+id+'" style="margin:0 0 16px;font-size:1.5rem;font-family:Georgia,serif;color:#0f1b33">'+t+'</h1>'; })
         .replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>')
         .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
         .replace(/\*(.+?)\*/g,'<em>$1</em>')
-        // Inline code
         .replace(/`([^`]+)`/g,'<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:.88em">$1</code>')
-        // Blockquotes
         .replace(/^&gt; \*\*(.+?)\*\*(.*)$/gm,'<blockquote style="border-left:3px solid #e8b321;margin:12px 0;padding:8px 14px;background:#fef9ec;border-radius:0 6px 6px 0"><strong>$1</strong>$2</blockquote>')
         .replace(/^&gt; (.+)$/gm,'<blockquote style="border-left:3px solid #94a3b8;margin:12px 0;padding:8px 14px;background:#f8fafc;border-radius:0 6px 6px 0">$1</blockquote>')
-        // Horizontal rules
         .replace(/^---$/gm,'<hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">')
-        // Links
         .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" style="color:#2563eb">$1</a>')
-        // Unordered lists
         .replace(/^- (.+)$/gm,'<li style="margin:4px 0">$1</li>')
-        // Tables — find header separator rows and wrap preceding/following in table markup
         .replace(/\|(.+)\|\n\|[-| ]+\|\n((?:\|.+\|\n?)+)/g, function(m, hdr, rows){
           var ths = hdr.split('|').filter(function(c){return c.trim();})
             .map(function(c){return '<th style="padding:6px 10px;background:#f1f5f9;font-weight:600;text-align:left">'+c.trim()+'</th>';}).join('');
@@ -10162,11 +10218,43 @@ nameLine
           }).join('');
           return '<table style="border-collapse:collapse;width:100%;margin:12px 0"><thead><tr>'+ths+'</tr></thead><tbody>'+trs+'</tbody></table>';
         })
-        // Paragraphs — wrap non-tagged lines
         .replace(/^(?!<[htblcui]|$)(.+)$/gm,'<p style="margin:6px 0">$1</p>')
-        // Wrap consecutive <li> in <ul>
         .replace(/(<li[^>]*>.*<\/li>\n?)+/g, function(m){ return '<ul style="margin:8px 0;padding-left:22px">'+m+'</ul>'; });
       return h;
+    }
+
+    // Guide-specific: build a clickable TOC sidebar + anchored content
+    function mdToHtmlWithToc(md) {
+      // Collect all h1/h2/h3 headings from the raw markdown
+      var tocEntries = [];
+      var headingRe = /^(#{1,3}) (.+)$/gm;
+      var m;
+      while ((m = headingRe.exec(md)) !== null) {
+        var level = m[1].length;
+        var text  = m[2];
+        var id    = slugify(text);
+        tocEntries.push({ level: level, text: text, id: id });
+      }
+
+      // Build TOC HTML — h1 = section, h2 = subsection, h3 = sub-sub
+      var tocHtml = '<nav id="helpToc" style="width:210px;min-width:210px;overflow-y:auto;padding:16px 12px;border-right:1px solid #e2e8f0;background:#f8fafc;font-size:.78rem;line-height:1.5">';
+      tocHtml += '<p style="font-weight:700;color:#0f1b33;margin:0 0 10px;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em">Contents</p>';
+      tocEntries.forEach(function(e) {
+        var indent = (e.level - 1) * 10;
+        var weight = e.level === 1 ? '700' : e.level === 2 ? '600' : '400';
+        var color  = e.level === 1 ? '#0f1b33' : '#374151';
+        tocHtml += '<a data-anchor="help-'+e.id+'" ' +
+          'style="display:block;padding:3px 6px 3px '+(8+indent)+'px;color:'+color+';font-weight:'+weight+';text-decoration:none;border-radius:4px;margin:1px 0;cursor:pointer" ' +
+          'onmouseover="this.style.background=\'#e2e8f0\'" onmouseout="this.style.background=\'\'">'+
+          e.text+'</a>';
+      });
+      tocHtml += '</nav>';
+
+      // Content HTML
+      var contentHtml = '<div id="helpContent" style="flex:1;overflow-y:auto;padding:24px 28px">'+mdToHtml(md)+'</div>';
+
+      // Wrap in a flex row so TOC and content sit side by side
+      return '<div style="display:flex;height:100%;min-height:0">'+tocHtml+contentHtml+'</div>';
     }
 
     var currentTab = 'guide';
@@ -11076,6 +11164,18 @@ The app remembers the last serial connection and will try to reconnect automatic
       // Keyboard: Escape closes
       document.addEventListener('keydown', function(e){
         if (e.key === 'Escape' && helpModal && helpModal.style.display !== 'none') closeHelp();
+      });
+      // TOC link clicks — delegated so they work after every renderHelpTab()
+      document.addEventListener('click', function(e) {
+        var anchor = e.target.closest ? e.target.closest('[data-anchor]') : null;
+        if (!anchor) return;
+        var targetId = anchor.getAttribute('data-anchor');
+        var content  = document.getElementById('helpContent');
+        var target   = content && document.getElementById(targetId);
+        if (target && content) {
+          e.preventDefault();
+          content.scrollTo({ top: target.offsetTop - 8, behavior: 'smooth' });
+        }
       });
     });
   })();
