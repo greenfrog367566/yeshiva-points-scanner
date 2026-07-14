@@ -1654,8 +1654,8 @@
 
   <!-- ============ ACTIVITIES ============ -->
   <section id="view-activities" class="view">
-    <h2 class="view-title">Activities &amp; point values</h2>
-    <p class="view-note">These are the buttons on the Scan screen. Change a point value right here — tap the +/– or type a number. Use a negative value for a deduction.</p>
+    <h2 class="view-title" id="actViewTitle">Activities &amp; point values</h2>
+    <p class="view-note" id="actViewNote">These are the buttons on the Scan screen. Change a point value right here — tap the +/– or type a number. Use a negative value for a deduction.</p>
 
     <div class="card pad" style="margin-bottom:20px">
       <div class="add-grid">
@@ -1664,8 +1664,9 @@
           <input id="newActName" class="field" placeholder="e.g. Bentching">
         </div>
         <div>
-          <label class="lbl">Points</label>
+          <label class="lbl" id="newActPtsLabel">Points</label>
           <input id="newActPts" type="number" class="field" value="2" step="1" style="width:100px">
+          <span id="newActPtsUnit" style="font-size:.82rem;color:var(--muted);margin-left:4px">pts</span>
         </div>
         <button class="btn btn-primary" id="addActivity">Add</button>
       </div>
@@ -1730,6 +1731,7 @@
       <div class="toolbar no-print">
         <select id="personalGroup" class="field" style="width:auto"><option value="">All groups</option></select>
         <select id="personalWho" class="field" style="width:auto"><option value="">Whole class</option></select>
+        <select id="personalActivity" class="field" style="width:auto"><option value="">All activities</option></select>
         <select id="personalFormat" class="field" style="width:auto">
           <option value="pages">Full pages (one per student)</option>
         </select>
@@ -2474,6 +2476,28 @@ function setupRoster() {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">🪙 Shulchani Mode</h3>
+      <p class="view-note" style="margin:0 0 10px">Replace numeric points with Talmudic coin denominations (Darkon, Sela, Dinar, Maah, Pundion, Isar, Prutah). Balances are stored as integer Prutot and displayed as the largest-coin breakdown.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setShulchani"> Use Shulchani Mode</label>
+      <label id="showPrutotRow" style="display:none;align-items:center;gap:8px;font-weight:600;margin-top:8px;padding-left:20px"><input type="checkbox" id="setShowPrutot"> Show Prutot total alongside coins</label>
+      <p id="showPrutotHint" class="view-note" style="display:none;margin:4px 0 0 20px">When off, students only see the coin breakdown — they have to do the math themselves to know their total.</p>
+      <div id="shulchaniStatus" class="pill-note" style="margin-top:8px;display:none"></div>
+    </div>
+
+    <!-- Shulchani mode-switch modal -->
+    <div id="shulchaniModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);align-items:center;justify-content:center">
+      <div class="card pad" style="max-width:420px;margin:auto;text-align:center">
+        <h3 style="font-family:var(--serif);margin:0 0 8px">Switch to Shulchani Mode?</h3>
+        <p style="font-size:.92rem;color:var(--muted);margin:0 0 14px">Students currently have point balances. Switching modes requires clearing all scores (points and coins use different scales). You can download your current data first.</p>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+          <button class="btn" id="shulchaniDl">⬇ Download backup first</button>
+          <button class="btn btn-primary" id="shulchaniClear">Clear &amp; switch</button>
+          <button class="btn" id="shulchaniCancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Scan Tab — Tap Panel</h3>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setTapBreakdown"> Tapping a student shows their points breakdown instead of giving points</label>
       <p class="view-note" style="margin:8px 0 0">Off by default. When on, tapping a name in the list or seating chart on the Scan tab pops up that student's points breakdown (same as the "▾ Breakdown" panel on the Students tab) instead of scoring them — handy if you want to use the Tap Panel to check on a student mid-class without accidentally giving or taking points. Scanning a QR code still always scores normally, even while this is on.</p>
@@ -2531,6 +2555,15 @@ function setupRoster() {
   "use strict";
   var KEY = "qrPointsData_v1";
 
+  /* ---------- first-run: route new users through setup wizard ---------- */
+  try {
+    if (!localStorage.getItem(KEY) &&
+        !localStorage.getItem("menchmark_setup_complete") &&
+        location.search.indexOf("skipSetup") < 0) {
+      location.replace("setup.html");
+    }
+  } catch(e) {}
+
   /* ---------- storage with graceful fallback ---------- */
   var canSave = true;
   try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); }
@@ -2583,7 +2616,9 @@ function setupRoster() {
     game: { points:{} },
     shorMatchBest: {},
     gameBoards: {},
-    muted: false
+    muted: false,
+    shulchaniMode: false,
+    showPrutot: false
   };
 
   var SHOR_BANK = [
@@ -2758,6 +2793,109 @@ function setupRoster() {
   }
   function score(id){ return data.scores[id]||0; }
   function fmt(n){ return (n>0?"+":"")+n; }
+
+  /* ---------- Shulchani coin system ---------- */
+  var COINS = [
+    {name:"Darkon", abbr:"Dk", prutot:1536, color:"#9B7B1C"},
+    {name:"Sela",   abbr:"S",  prutot:768,  color:"#A8772A"},
+    {name:"Dinar",  abbr:"Di", prutot:192,  color:"#B04432"},
+    {name:"Maah",   abbr:"M",  prutot:32,   color:"#2E7D6E"},
+    {name:"Pundion",abbr:"Pu", prutot:16,   color:"#3D5A98"},
+    {name:"Isar",   abbr:"I",  prutot:8,    color:"#6B4E9E"},
+    {name:"Prutah", abbr:"Pr", prutot:1,    color:"#6A7187"}
+  ];
+  var COIN_COLOR={}; COINS.forEach(function(c){ COIN_COLOR[c.abbr]=c.color; });
+
+  function convertPrutotToCoins(total){
+    var result={}, rem=Math.abs(total);
+    COINS.forEach(function(c){ result[c.abbr]=Math.floor(rem/c.prutot); rem%=c.prutot; });
+    return result;
+  }
+
+  /**
+   * formatCoins(total, opts)
+   *   opts.abbr   — use abbreviations (Dk, S, Di …)   default false
+   *   opts.top    — show only the N largest non-zero   default all
+   *   opts.signed — prepend +/−                        default false
+   */
+  function formatCoins(total, opts){
+    opts=opts||{};
+    var coins=convertPrutotToCoins(total);
+    var parts=[];
+    COINS.forEach(function(c){
+      if(coins[c.abbr]>0) parts.push(coins[c.abbr]+" "+(opts.abbr?c.abbr:c.name));
+    });
+    if(opts.top && parts.length>opts.top) parts=parts.slice(0,opts.top);
+    var str = parts.length ? parts.join(", ") : "0 Prutah";
+    if(opts.signed && total>0)  str = "+"+str;
+    if(opts.signed && total<0)  str = "\u2212"+str;   // minus sign
+    if(!opts.signed && total<0) str = "\u2212"+str;
+    return str;
+  }
+
+  /* Mode-aware display helpers — drop-in replacements for
+     the old  score(id)+" pts"  and  fmt(delta)+" pts"  patterns. */
+  function isShulchani(){ return !!data.shulchaniMode; }
+  function unitLabel(){ return isShulchani() ? "prutot" : "pts"; }
+
+  /** Returns HTML string with colored <span>s per denomination.
+   *  Same opts as formatCoins: abbr, top, signed.  */
+  function formatCoinsHtml(total, opts){
+    opts=opts||{};
+    var coins=convertPrutotToCoins(total);
+    var parts=[];
+    COINS.forEach(function(c){
+      if(coins[c.abbr]>0){
+        var label=opts.abbr?c.abbr:c.name;
+        parts.push('<span style="color:'+c.color+';font-weight:700">'+coins[c.abbr]+' '+label+'</span>');
+      }
+    });
+    if(opts.top && parts.length>opts.top) parts=parts.slice(0,opts.top);
+    var str = parts.length ? parts.join(', ') : '<span style="color:'+COINS[6].color+'">0 Prutah</span>';
+    if(opts.signed && total>0)  str = "+"+str;
+    if(total<0) str = "\u2212"+str;
+    return str;
+  }
+
+  /** Builds a DOM element showing coin score (colored, top-3, optional prutot).
+   *  cls — CSS class(es) for the wrapper span.  */
+  function coinScoreEl(id, cls){
+    var v=score(id);
+    if(!isShulchani()){
+      return el("span", cls, v+" pts");
+    }
+    var span=el("span", cls);
+    span.innerHTML=formatCoinsHtml(v,{abbr:true})
+      +(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+v+' pr)</span>':"");
+    span.title=formatCoins(v,{abbr:false})+(data.showPrutot?"  ("+v+" prutot)":"");
+    return span;
+  }
+  function fmtScore(id){
+    var v=score(id);
+    return isShulchani() ? formatCoins(v,{abbr:false}) : v+" pts";
+  }
+  function fmtScoreShort(id){
+    var v=score(id);
+    if(!isShulchani()) return v+" pts";
+    var short=formatCoins(v,{abbr:true});
+    return data.showPrutot ? short+" ("+v+" pr)" : short;
+  }
+  /** Full breakdown for tooltips — never truncated */
+  function fmtScoreFull(id){
+    var v=score(id);
+    if(!isShulchani()) return v+" pts";
+    var full=formatCoins(v,{abbr:false});
+    return data.showPrutot ? full+"  ("+v+" prutot)" : full;
+  }
+  function fmtDelta(n){
+    return isShulchani() ? formatCoins(n,{signed:true}) : fmt(n)+" pts";
+  }
+  function fmtDeltaBare(n){
+    return isShulchani() ? formatCoins(n,{signed:true}) : fmt(n);
+  }
+  function fmtVal(n){
+    return isShulchani() ? formatCoins(n) : n+" pts";
+  }
   function newId(){ return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
   // Central log writer: every scan/spend/refund/correction passes through here so each
   // entry gets a stable id (for Sheet dedupe) and undo/correction bookkeeping stays consistent.
@@ -2805,7 +2943,7 @@ function setupRoster() {
     }
     armed = {label:label, delta:delta};
     var pill=$("armedPill");
-    pill.textContent = label + "  " + fmt(delta);
+    pill.textContent = label + "  " + fmtDeltaBare(delta);
     pill.classList.toggle("neg", delta<0);
     // highlight matching activity button
     document.querySelectorAll(".act-btn").forEach(function(b){
@@ -3711,7 +3849,7 @@ function setupRoster() {
       as.appendChild(el("h4",null,"Activities — scan to arm"));
       var ag=el("div","fs-qr-grid");
       data.activities.filter(actVisibleInCurrentClass).forEach(function(a){
-        ag.appendChild(makeQrCard("ACT:"+a.id, a.name, fmt(a.pts)+" pts", true));
+        ag.appendChild(makeQrCard("ACT:"+a.id, a.name, fmtDelta(a.pts), true));
       });
       as.appendChild(ag); panel.appendChild(as);
     }
@@ -3722,7 +3860,7 @@ function setupRoster() {
       ss.appendChild(el("h4",null,"Students — scan to give points"));
       var sg=el("div","fs-qr-grid");
       studs.forEach(function(s){
-        sg.appendChild(makeQrCard(s.id, data.fpCompact?firstName(s.name):s.name, score(s.id)+" pts", false));
+        sg.appendChild(makeQrCard(s.id, data.fpCompact?firstName(s.name):s.name, fmtScoreShort(s.id), false));
       });
       ss.appendChild(sg); panel.appendChild(ss);
     }
@@ -3737,7 +3875,7 @@ function setupRoster() {
     if(!acts.length){ wrap.appendChild(el("div","scan-hint","Add an activity on the Activities tab.")); return; }
     if(!fpActId || !actById(fpActId)) fpActId=acts[0].id;
     acts.forEach(function(a){
-      var b=el("button","btn btn-sm"+((a.id===fpActId && !fpCustomAct)?" btn-primary":""), a.name+"  "+fmt(a.pts));
+      var b=el("button","btn btn-sm"+((a.id===fpActId && !fpCustomAct)?" btn-primary":""), a.name+"  "+fmtDeltaBare(a.pts));
       b.addEventListener("click", function(){ fpActId=a.id; fpCustomAct=null; fpRenderActs(); });
       wrap.appendChild(b);
     });
@@ -3748,8 +3886,8 @@ function setupRoster() {
     var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
     if(!studs.length){ wrap.appendChild(el("div","scan-hint","No students in this class. Pick a different class in the top corner, or add students.")); return; }
     studs.forEach(function(s){
-      var b=el("button","fs-name"); b.appendChild(document.createTextNode(data.fpCompact?firstName(s.name):s.name)); b.appendChild(el("span","pts",String(score(s.id))));
-      b.title=s.name;
+      var b=el("button","fs-name"); b.appendChild(document.createTextNode(data.fpCompact?firstName(s.name):s.name)); var fpPtsSpan=el("span","pts"); if(isShulchani()){ fpPtsSpan.innerHTML=formatCoinsHtml(score(s.id),{abbr:true})+(data.showPrutot?' <span style="color:var(--muted)">('+score(s.id)+' pr)</span>':""); } else { fpPtsSpan.textContent=String(score(s.id)); } b.appendChild(fpPtsSpan);
+      b.title=isShulchani()?s.name+"  —  "+formatCoins(score(s.id),{abbr:false})+(data.showPrutot?"  ("+score(s.id)+" prutot)":""):s.name;
       b.addEventListener("click", function(){ fpAward(s); });
       wrap.appendChild(b);
     });
@@ -3765,7 +3903,7 @@ function setupRoster() {
     var entry=awardPointsSilent(s, label, delta);
     fpLastLogId=entry.id;
     beep(delta>=0);
-    fpFlash(true, s.name+"  "+fmt(delta)+"  →  "+score(s.id)+" pts");
+    fpFlash(true, s.name+"  "+fmtDeltaBare(delta)+"  →  "+fmtScore(s.id));
     fpRenderNames();
   }
   function fpScan(code){
@@ -3781,7 +3919,7 @@ function setupRoster() {
       for(var i=0;i<data.activities.length;i++){ if(data.activities[i].id.toUpperCase()===id.toUpperCase()){ a=data.activities[i]; break; } }
       if(!a){ fpFlash(false,"Unknown activity code"); beep(false); return; }
       fpActId=a.id; fpCustomAct=null; fpRenderActs();
-      fpFlash(true, "Now scoring: "+a.name+"  "+fmt(a.pts));
+      fpFlash(true, "Now scoring: "+a.name+"  "+fmtDeltaBare(a.pts));
       beep(true);
       return;
     }
@@ -3994,6 +4132,8 @@ function setupRoster() {
   /* ---------- SETTINGS ---------- */
   function renderSettings(){
     $("setSound").checked = !data.muted;
+    $("setShulchani").checked = !!data.shulchaniMode;
+    renderShulchaniStatus();
     $("setTapBreakdown").checked = !!data.tapShowsBreakdown;
     $("setHeaderShortcuts").checked = data.showHeaderShortcuts!==false;
     $("setHebrewDate").checked = data.showHebrewDate!==false;
@@ -4063,6 +4203,80 @@ function setupRoster() {
     data.gameAutoSecs=v; this.value=String(v); save();
   });
 
+  /* ---------- Shulchani mode toggle ---------- */
+  function hasAnyScores(){
+    return data.students.some(function(s){ return score(s.id)!==0; });
+  }
+  function doShulchaniSwitch(newMode){
+    data.scores={}; data.log=[];
+    data.shulchaniMode=newMode;
+    save();
+    $("shulchaniModal").style.display="none";
+    $("setShulchani").checked=newMode;
+    renderShulchaniStatus();
+    renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities(); renderActButtons();
+    if(data.activities.length) setArmed(data.activities[0].name, data.activities[0].pts);
+  }
+  function renderShulchaniStatus(){
+    var box=$("shulchaniStatus");
+    if(!box) return;
+    var on=!!data.shulchaniMode;
+    if(on){
+      box.style.display="block";
+      box.textContent="Shulchani Mode is ON — all balances are stored as Prutot and displayed as coins.";
+    } else {
+      box.style.display="none";
+    }
+    // Show/hide the Prutot sub-toggle
+    var pr=$("showPrutotRow"), ph=$("showPrutotHint");
+    if(pr) pr.style.display=on?"flex":"none";
+    if(ph) ph.style.display=on?"block":"none";
+    var cb=$("setShowPrutot"); if(cb) cb.checked=!!data.showPrutot;
+  }
+  $("setShowPrutot").addEventListener("change", function(){
+    data.showPrutot=this.checked; save();
+    renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities();
+  });
+  $("setShulchani").addEventListener("change", function(){
+    var want=this.checked;
+    if(want===!!data.shulchaniMode) return; // no change
+    if(!want){
+      // Turning OFF — same modal logic
+      if(hasAnyScores()){
+        this.checked=true; // revert checkbox until confirmed
+        $("shulchaniModal").querySelector("h3").textContent="Switch back to Points?";
+        $("shulchaniModal").querySelector("p").textContent="Students currently have coin balances. Switching back requires clearing all scores. You can download your current data first.";
+        $("shulchaniModal").style.display="flex";
+        $("shulchaniClear").onclick=function(){ doShulchaniSwitch(false); };
+      } else {
+        data.shulchaniMode=false; save();
+        renderShulchaniStatus(); renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities(); renderActButtons();
+      }
+      return;
+    }
+    // Turning ON
+    if(hasAnyScores()){
+      this.checked=false; // revert checkbox until confirmed
+      $("shulchaniModal").querySelector("h3").textContent="Switch to Shulchani Mode?";
+      $("shulchaniModal").querySelector("p").textContent="Students currently have point balances. Switching modes requires clearing all scores (points and coins use different scales). You can download your current data first.";
+      $("shulchaniModal").style.display="flex";
+      $("shulchaniClear").onclick=function(){ doShulchaniSwitch(true); };
+    } else {
+      data.shulchaniMode=true; save();
+      renderShulchaniStatus(); renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities(); renderActButtons();
+    }
+  });
+  $("shulchaniCancel").addEventListener("click", function(){
+    $("shulchaniModal").style.display="none";
+    $("setShulchani").checked=!!data.shulchaniMode;
+  });
+  $("shulchaniDl").addEventListener("click", function(){
+    // Trigger the existing backup download
+    var blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+    var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+    a.download="points-backup-before-mode-switch.json"; a.click();
+  });
+
   /* ---------- SCAN ---------- */
   function actVisibleInCurrentClass(a){
     // If the activity has no group restriction, it's visible everywhere.
@@ -4084,7 +4298,7 @@ function setupRoster() {
       var b=el("button","act-btn");
       b.dataset.label=a.name; b.dataset.delta=a.pts;
       var n=el("span","an",a.name);
-      var v=el("span","av "+(a.pts<0?"neg":"pos"), fmt(a.pts)+" pts");
+      var v=el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts));
       b.appendChild(n); b.appendChild(v);
       b.addEventListener("click", function(){ setArmed(a.name, a.pts); $("scanInput").focus(); });
       wrap.appendChild(b);
@@ -4134,7 +4348,7 @@ function setupRoster() {
     var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:armed.label, delta:armed.delta, contestId:tag.contestId, contestOnly:tag.contestOnly});
     save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:armed.label, delta:armed.delta, total:score(s.id), id:logEntry.id}); }
-    flash(armed.delta>=0, s.name, fmt(armed.delta), armed.label+" · now "+score(s.id)+" pts"+(tag.contestOnly?"  (contest only)":""));
+    flash(armed.delta>=0, s.name, fmtDeltaBare(armed.delta), armed.label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
     beep(armed.delta>=0);
     renderRecent();
     renderScanBoard();
@@ -4145,7 +4359,7 @@ function setupRoster() {
     // show the same student), so every match gets updated, not just the first.
     if(data.tapPanelOpen!==false){
       document.querySelectorAll('.tap-btn[data-sid="'+s.id+'"], .seat[data-sid="'+s.id+'"]').forEach(function(tb){
-        var t=tb.querySelector(".ts"); if(t) t.textContent=score(s.id)+" pts";
+        var t=tb.querySelector(".ts"); if(t){ if(isShulchani()){ t.innerHTML=formatCoinsHtml(score(s.id),{abbr:true})+(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+score(s.id)+' pr)</span>':""); t.title=fmtScoreFull(s.id); } else { t.textContent=score(s.id)+" pts"; } }
         flashTapTile(tb, armed.delta);
       });
     }
@@ -4174,7 +4388,7 @@ function setupRoster() {
     var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly});
     save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
-    flash(delta>=0, s.name, fmt(delta), label+" · now "+score(s.id)+" pts"+(tag.contestOnly?"  (contest only)":""));
+    flash(delta>=0, s.name, fmtDeltaBare(delta), label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
     beep(delta>=0);
     renderRecent(); renderScanBoard();
     return true;
@@ -4322,7 +4536,7 @@ function setupRoster() {
           entryEl.appendChild(el("span","ss-label",entry.label+(entry.contestOnly?" Ⓒ":"")));
           if(isPrimary && stu){
             entryEl.appendChild(el("span","ss-arrow","→"));
-            entryEl.appendChild(el("span","ss-total",score(stu.id)+" pts"));
+            entryEl.appendChild(el("span","ss-total",fmtScore(stu.id)));
           }
           if(entry.undone){
             entryEl.appendChild(el("span","ss-label"," (undone)"));
@@ -4533,7 +4747,15 @@ function setupRoster() {
       name.appendChild(document.createTextNode(it.s.name+"  "));
       if(it.s.group) name.appendChild(el("span","grp-tag",it.s.group));
       row.appendChild(name);
-      row.appendChild(el("span","mini-score", it.sc));
+      var sc=el("span","mini-score");
+      if(isShulchani()){
+        sc.innerHTML=formatCoinsHtml(it.sc,{abbr:true})
+          +(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+it.sc+' pr)</span>':"");
+        sc.title=formatCoins(it.sc,{abbr:false})+(data.showPrutot?"  ("+it.sc+" prutot)":"");
+      } else {
+        sc.textContent=it.sc;
+      }
+      row.appendChild(sc);
       body.appendChild(row);
     });
   }
@@ -4678,7 +4900,7 @@ function setupRoster() {
       var b=el("button","tap-btn"); b.dataset.sid=s.id;
       b.appendChild(avatarEl(s, 30));
       b.appendChild(el("span",null,s.name));
-      b.appendChild(el("span","ts", score(s.id)+" pts"));
+      b.appendChild(coinScoreEl(s.id,"ts"));
       b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
@@ -4710,7 +4932,7 @@ function setupRoster() {
         seat.dataset.sid=s.id;
         seat.appendChild(avatarEl(s, 26));
         seat.appendChild(el("span","seat-name",s.name));
-        seat.appendChild(el("span","ts", score(s.id)+" pts"));
+        seat.appendChild(coinScoreEl(s.id,"ts"));
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
@@ -5178,7 +5400,7 @@ function setupRoster() {
       data.activities.forEach(function(a){
         var b=el("button"); b.type="button";
         b.appendChild(el("span",null,a.name));
-        b.appendChild(el("span","hd-pts"+(a.pts<0?" neg":""), fmt(a.pts)));
+        b.appendChild(el("span","hd-pts"+(a.pts<0?" neg":""), fmtDeltaBare(a.pts)));
         b.addEventListener("click", function(){
           setArmed(a.name, a.pts); closeFn();
           var f=$(focusInputId); if(f) f.focus();
@@ -5201,7 +5423,7 @@ function setupRoster() {
     for(var i=0;i<data.activities.length;i++){ if(data.activities[i].id.toUpperCase()===id.toUpperCase()){ a=data.activities[i]; break; } }
     if(!a){ flash(false,"Unknown activity code","","\u201C"+c+"\u201D"); beep(false); return; }
     setArmed(a.name, a.pts);
-    flash(true, "Now scoring", a.name+"  "+fmt(a.pts), "Scan students to give "+fmt(a.pts)+" pts");
+    flash(true, "Now scoring", a.name+"  "+fmtDeltaBare(a.pts), "Scan students to give "+fmtDelta(a.pts));
     beep(true);
   }
   // scan input (points)
@@ -5224,8 +5446,8 @@ function setupRoster() {
     var addBtn=$("customAdd"), subBtn=$("customSub");
     addBtn.dataset.label="Custom"; addBtn.dataset.delta=n;
     subBtn.dataset.label="Custom"; subBtn.dataset.delta=-n;
-    $("customAddVal").textContent="+"+n+" pts";
-    $("customSubVal").textContent="−"+n+" pts";
+    $("customAddVal").textContent=isShulchani()?"+"+n+" prutot":"+"+n+" pts";
+    $("customSubVal").textContent=isShulchani()?"−"+n+" prutot":"−"+n+" pts";
     if(armed && armed.label==="Custom"){
       addBtn.classList.toggle("selected", armed.delta===n);
       subBtn.classList.toggle("selected", armed.delta===-n);
@@ -5380,7 +5602,7 @@ function setupRoster() {
 
     var hero=el("div","lb-hero-compact");
     hero.appendChild(el("span","lb-kicker","Live"));
-    var leaderTxt = top ? ("👑 "+top.s.name+" — "+topScore+" pts") : "No students yet";
+    var leaderTxt = top ? ("👑 "+top.s.name+" — "+(isShulchani()?formatCoins(topScore,{abbr:true}):topScore+" pts")) : "No students yet";
     hero.appendChild(el("div","lb-hc-leader", leaderTxt));
     var hcStats=el("div","lb-hc-stats");
     [
@@ -5415,7 +5637,7 @@ function setupRoster() {
         var pct = topScore>0 ? Math.max(0, Math.min(100,(item.score/positiveMax)*100)) : 0;
         bar.style.width=pct+"%"; barWrap.appendChild(bar); main.appendChild(barWrap);
         row.appendChild(main);
-        row.appendChild(el("div","lb-score-c", String(item.score)));
+        row.appendChild(el("div","lb-score-c", isShulchani()?formatCoins(item.score,{abbr:true}):String(item.score)));
         compactList.appendChild(row);
       });
       stage.appendChild(compactList);
@@ -5428,7 +5650,7 @@ function setupRoster() {
     card.appendChild(el("div","lb-medal", medalForRank(rankIndex)));
     card.appendChild(avatarEl(item.s, rankIndex===0?64:52));
     card.appendChild(el("div","lb-podium-name", item.s.name));
-    card.appendChild(el("div","lb-podium-score", item.score+" pts"));
+    card.appendChild(el("div","lb-podium-score", isShulchani()?formatCoins(item.score,{abbr:true}):item.score+" pts"));
     card.appendChild(el("div","lb-podium-group", item.s.group ? item.s.group : rankTitle(rankIndex)));
     return card;
   }
@@ -5688,7 +5910,7 @@ function setupRoster() {
       var row=el("div","erow");
       var name=el("span","grow"); name.appendChild(document.createTextNode(s.name+"  ")); if(s.group) name.appendChild(el("span","grp-tag",s.group));
       row.appendChild(name);
-      var totEl=el("span",null,fmt(total)+" pts"); totEl.style.cssText="font-weight:800;color:"+(total<0?"var(--bad)":"var(--ink)")+";margin-right:8px";
+      var totEl=el("span",null,isShulchani()?formatCoins(total,{signed:true}):fmt(total)+" pts"); totEl.style.cssText="font-weight:800;color:"+(total<0?"var(--bad)":"var(--ink)")+";margin-right:8px";
       row.appendChild(totEl);
       var open=!!contestExpanded[s.id];
       var bdBtn=el("button","btn btn-sm", open?"▴ Breakdown":"▾ Breakdown");
@@ -5754,7 +5976,7 @@ function setupRoster() {
     var sumRow=el("div","card pad","");
     sumRow.style.cssText="margin-bottom:10px;display:flex;align-items:center;gap:10px;background:var(--brass-soft)";
     sumRow.appendChild(el("span",null,(s2?s2.name:sid)+" \u2014 contest total:"));
-    var tEl=el("span",null,fmt(totals[sid]||0)+" pts"); tEl.style.cssText="font-weight:800;font-size:1.1rem;color:var(--ink)";
+    var tEl=el("span",null,isShulchani()?formatCoins(totals[sid]||0,{signed:true}):fmt(totals[sid]||0)+" pts"); tEl.style.cssText="font-weight:800;font-size:1.1rem;color:var(--ink)";
     sumRow.appendChild(tEl); list.appendChild(sumRow);
     var entries=contestEntriesFor(c.id, sid);
     if(!entries.length){ list.appendChild(el("div","recent-empty","No scans yet for this student in this contest.")); return; }
@@ -5812,7 +6034,7 @@ function setupRoster() {
       var totals=contestTotalsById(c.id);
       var stuCount=Object.keys(totals).length;
       var totalPts=0; Object.keys(totals).forEach(function(sid){ totalPts+=totals[sid]; });
-      $("contestTabTotals").textContent=stuCount+" student"+(stuCount===1?"":"s")+" \u00b7 "+fmt(totalPts)+" total points";
+      $("contestTabTotals").textContent=stuCount+" student"+(stuCount===1?"":"s")+" \u00b7 "+(isShulchani()?formatCoins(totalPts,{signed:true})+" total":fmt(totalPts)+" total points");
 
       applyContestViewMode();
     }
@@ -5906,7 +6128,7 @@ function setupRoster() {
             if(fSid){
               var sumRow2=el("div","card pad",""); sumRow2.style.cssText="margin-bottom:8px;display:flex;align-items:center;gap:10px;background:var(--brass-soft)";
               var sN=studentById(fSid); sumRow2.appendChild(el("span",null,(sN?sN.name:fSid)+" \u2014 contest total:"));
-              var tEl2=el("span",null,fmt(tot[fSid]||0)+" pts"); tEl2.style.cssText="font-weight:800;font-size:1.1rem;color:var(--ink)";
+              var tEl2=el("span",null,isShulchani()?formatCoins(tot[fSid]||0,{signed:true}):fmt(tot[fSid]||0)+" pts"); tEl2.style.cssText="font-weight:800;font-size:1.1rem;color:var(--ink)";
               sumRow2.appendChild(tEl2); listEl.appendChild(sumRow2);
             }
             var shown=0;
@@ -6025,8 +6247,8 @@ function setupRoster() {
     var card=el("div","point-card");
     card.appendChild(el("div","pc-name", s.name));
     if(s.group) card.appendChild(el("div","pc-group", s.group));
-    card.appendChild(el("div","pc-num", String(standScoreFor(s))));
-    card.appendChild(el("div","pc-sub", data.standingsActivity ? (data.standingsActivity+(standRange==="week"?" · this week":"")) : (standRange==="week"?"points this week":"total points")));
+    card.appendChild(el("div","pc-num", isShulchani()?formatCoins(standScoreFor(s),{abbr:true}):String(standScoreFor(s))));
+    card.appendChild(el("div","pc-sub", data.standingsActivity ? (data.standingsActivity+(standRange==="week"?" · this week":"")) : (standRange==="week"?(isShulchani()?"coins this week":"points this week"):(isShulchani()?"total coins":"total points"))));
     return card;
   }
   function renderPointsPrint(){
@@ -6047,9 +6269,9 @@ function setupRoster() {
     if(!list.length){ (avery?sheet:grid).appendChild(el("div","empty-state","No students match the selected groups.")); return; }
 
     if(avery){
-      var subLine = data.standingsActivity ? (data.standingsActivity+(standRange==="week"?" · this week":"")) : (standRange==="week"?"points this week":"total points");
+      var subLine = data.standingsActivity ? (data.standingsActivity+(standRange==="week"?" · this week":"")) : (standRange==="week"?(isShulchani()?"coins this week":"points this week"):(isShulchani()?"total coins":"total points"));
       var items=list.map(function(s){
-        return {line1:s.name, line2:standScoreFor(s)+" "+subLine, line3:s.group};
+        return {line1:s.name, line2:(isShulchani()?formatCoins(standScoreFor(s),{abbr:true}):standScoreFor(s))+" "+subLine, line3:s.group};
       });
       renderAverySheetGeneric(items, sheet, data.pointsPrint.format, false, true);
       return;
@@ -6305,13 +6527,13 @@ function setupRoster() {
       var row=el("div","erow");
       var name=el("span","grow"); name.appendChild(document.createTextNode(s.name+"  "));
       if(s.group) name.appendChild(el("span","grp-tag",s.group));
-      var pts=el("span","pool-pts",have+" pts");
+      var pts=el("span","pool-pts",fmtScore(s.id));
       var inp=el("input","field"); inp.type="number"; inp.min="1"; inp.max=String(have); inp.placeholder="0"; inp.style.width="68px"; inp.style.textAlign="center";
       var spend=el("button","btn btn-sm","Spend");
       spend.addEventListener("click", function(){
         var n=parseInt(inp.value,10)||0;
         if(n<=0){ inp.focus(); return; }
-        if(n>score(s.id)){ alert(s.name+" only has "+score(s.id)+" point"+(score(s.id)===1?"":"s")+" to spend."); return; }
+        if(n>score(s.id)){ alert(s.name+" only has "+fmtScore(s.id)+" to spend."); return; }
         data.raffle.entries[s.id]=(data.raffle.entries[s.id]||0)+n;
         data.scores[s.id]=score(s.id)-n;
         addLogEntry({ts:Date.now(),sid:s.id,label:"Raffle tickets",delta:-n});
@@ -6808,8 +7030,8 @@ function setupRoster() {
       var row=el("div","erow");
       var emo=makeEmojiSelect(it.emoji||"🎁"); emo.addEventListener("change",function(){ it.emoji=emo.value; save(); renderStore(); });
       var nm=el("span","grow"); nm.textContent=it.name;
-      nm.appendChild(document.createTextNode("  ")); nm.appendChild(el("span","grp-tag", it.cost+" pt"+(it.cost===1?"":"s")));
-      var ren=el("button","btn btn-sm","Edit"); ren.addEventListener("click",function(){ var nn=prompt("Prize name:",it.name); if(nn===null) return; var nc=prompt("Cost (points):", String(it.cost)); if(nc===null) return; it.name=nn.trim()||it.name; it.cost=Math.max(0,parseInt(nc,10)||0); save(); renderStore(); });
+      nm.appendChild(document.createTextNode("  ")); nm.appendChild(el("span","grp-tag", fmtVal(it.cost)));
+      var ren=el("button","btn btn-sm","Edit"); ren.addEventListener("click",function(){ var nn=prompt("Prize name:",it.name); if(nn===null) return; var nc=prompt(isShulchani()?"Cost (prutot):":"Cost (points):", String(it.cost)); if(nc===null) return; it.name=nn.trim()||it.name; it.cost=Math.max(0,parseInt(nc,10)||0); save(); renderStore(); });
       var del=el("button","btn btn-sm btn-bad","✕"); del.addEventListener("click",function(){ if(!confirm("Delete \""+it.name+"\"?")) return; data.store.items=data.store.items.filter(function(x){return x.id!==it.id;}); save(); renderStore(); });
       row.appendChild(emo); row.appendChild(nm); row.appendChild(ren); row.appendChild(del);
       list.appendChild(row);
@@ -6825,15 +7047,15 @@ function setupRoster() {
     var balEl=$("storeBalance"); balEl.textContent="";
     balEl.appendChild(el("b",null,(s?s.name:"")));
     balEl.appendChild(document.createTextNode(" has "));
-    balEl.appendChild(el("b",null,String(score(sid))));
-    balEl.appendChild(document.createTextNode(" point"+(score(sid)===1?"":"s")+" to spend"));
+    balEl.appendChild(el("b",null,isShulchani()?formatCoins(score(sid),{abbr:true}):String(score(sid))));
+    balEl.appendChild(document.createTextNode(isShulchani()?" to spend":" point"+(score(sid)===1?"":"s")+" to spend"));
     var buy=$("storeBuy"); buy.innerHTML="";
     if(!data.store.items.length){ buy.appendChild(el("div","recent-empty","Add prizes above to start selling.")); }
     else data.store.items.forEach(function(it){
       var canAfford=score(sid)>=it.cost;
       var b=el("button","fs-name"+(canAfford?"":" store-cant"));
       b.appendChild(document.createTextNode((it.emoji||"🎁")+" "+it.name+"  "));
-      b.appendChild(el("span","pts", it.cost+"pt"));
+      b.appendChild(el("span","pts", isShulchani()?formatCoins(it.cost,{abbr:true}):it.cost+"pt"));
       b.addEventListener("click", function(){ storeBuy(sid, it); });
       buy.appendChild(b);
     });
@@ -6841,17 +7063,17 @@ function setupRoster() {
   }
   function storeBuy(sid, it){
     var s=studentById(sid); if(!s) return;
-    if(score(sid) < it.cost){ storeFlash(false, "Not enough points", s.name+" has "+score(sid)+", needs "+it.cost); beep(false); return; }
+    if(score(sid) < it.cost){ storeFlash(false, isShulchani()?"Not enough coins":"Not enough points", s.name+" has "+fmtScore(sid)+", needs "+fmtVal(it.cost)); beep(false); return; }
     data.scores[sid]=score(sid)-it.cost;
     data.store.log.unshift({sid:sid, name:s.name, itemName:it.name, emoji:it.emoji||"🎁", cost:it.cost, ts:Date.now()});
     if(data.store.log.length>300) data.store.log.length=300;
     addLogEntry({ts:Date.now(), sid:sid, label:"Store: "+it.name, delta:-it.cost, kind:"spend"});
-    save(); beep(true); storeFlash(true, s.name+" bought "+(it.emoji||"")+" "+it.name, "-"+it.cost+" → "+score(sid)+" pts");
+    save(); beep(true); storeFlash(true, s.name+" bought "+(it.emoji||"")+" "+it.name, (isShulchani()?formatCoins(it.cost,{signed:false})+" → ":"-"+it.cost+" → ")+fmtScore(sid));
     renderStore(); renderScanBoard();
   }
   function refundPurchase(idx){
     var p=data.store.log[idx]; if(!p) return;
-    if(!confirm("Refund "+p.name+"'s "+p.itemName+" ("+p.cost+" pts)?")) return;
+    if(!confirm("Refund "+p.name+"'s "+p.itemName+" ("+fmtVal(p.cost)+")?")) return;
     data.scores[p.sid]=score(p.sid)+p.cost;
     addLogEntry({ts:Date.now(), sid:p.sid, label:"Store refund: "+p.itemName, delta:p.cost, kind:"refund"});
     data.store.log.splice(idx,1);
@@ -6863,7 +7085,7 @@ function setupRoster() {
     data.store.log.slice(0,40).forEach(function(p,idx){
       var row=el("div","erow");
       var nm=el("span","grow"); nm.textContent=(p.emoji||"")+" "+p.name+" — "+p.itemName;
-      row.appendChild(nm); row.appendChild(el("span","grp-tag","-"+p.cost+" pt"+(p.cost===1?"":"s")));
+      row.appendChild(nm); row.appendChild(el("span","grp-tag","-"+fmtVal(p.cost)));
       var undo=el("button","btn btn-sm","Refund"); undo.addEventListener("click", function(){ refundPurchase(idx); });
       row.appendChild(undo); h.appendChild(row);
     });
@@ -6881,7 +7103,7 @@ function setupRoster() {
   $("storeStudPrev").addEventListener("click", function(){ storeStudGo(-1); });
   $("storeStudNext").addEventListener("click", function(){ storeStudGo(1); });
   $("storeClearHist").addEventListener("click", function(){ if(!confirm("Clear the purchase history? (This does NOT refund points.)")) return; data.store.log=[]; save(); renderStoreHistory(); });
-  function storeScan(code){ code=(code||"").trim(); if(!code) return; var s=studentById(code); if(!s){ storeFlash(false,"Unknown code","\u201C"+code+"\u201D isn't a student"); beep(false); return; } storeStudentId=s.id; renderStore(); storeFlash(true, s.name+" selected", score(s.id)+" points to spend"); beep(true); }
+  function storeScan(code){ code=(code||"").trim(); if(!code) return; var s=studentById(code); if(!s){ storeFlash(false,"Unknown code","\u201C"+code+"\u201D isn't a student"); beep(false); return; } storeStudentId=s.id; renderStore(); storeFlash(true, s.name+" selected", fmtScore(s.id)+" to spend"); beep(true); }
 
   /* ---------- PESUKIM ---------- */
   var selectedPasuk = 1;
@@ -7003,7 +7225,7 @@ function setupRoster() {
     markPasuk(s.id,selectedPasuk,true);
     if(data.autoSheet){ pushToSheet({type:"pasuk",ts:Date.now(),name:s.name,group:s.group||"",ref:data.pasukSet.ref,pasuk:selectedPasuk}); }
     var awarded = already ? 0 : maybeAwardPasuk(s, selectedPasuk);
-    pesukFlash(true, s.name, data.pasukSet.ref+":"+selectedPasuk+(already?" — already ✓":" ✓")+(awarded?"  +"+awarded+" pts":""));
+    pesukFlash(true, s.name, data.pasukSet.ref+":"+selectedPasuk+(already?" — already ✓":" ✓")+(awarded?"  +"+fmtVal(awarded):""));
     beep(true);
     renderPesukGrid();
   }
@@ -7441,6 +7663,9 @@ function setupRoster() {
         var txtBtn=el("button","btn btn-sm","\ud83d\udcc4 Text"); txtBtn.title="Download as a plain text file";
         txtBtn.addEventListener("click", function(){ exportSetText(this.dataset.id); }); txtBtn.dataset.id=s.id;
         row.appendChild(txtBtn);
+        var wordBtn=el("button","btn btn-sm","\ud83d\udcdd Word"); wordBtn.title="Download as a Word document";
+        wordBtn.addEventListener("click", function(){ exportSetWord(this.dataset.id); }); wordBtn.dataset.id=s.id;
+        row.appendChild(wordBtn);
         if(s.id!=="starter"){ var del=el("button","btn btn-sm btn-bad","Delete"); del.addEventListener("click", function(){ deleteTextSet(s.id); }); row.appendChild(del); }
         list.appendChild(row);
       });
@@ -7513,6 +7738,43 @@ function setupRoster() {
       + '</style></head><body><h1>'+esc(s.label)+'</h1><div class="ph-sub">'+esc(s.ref||"")+' &middot; '+(s.to-s.from+1)+' '+(s.kind==="mishna"?"mishnayos":"pesukim")+'</div>'+body+'</body></html>';
     w.document.open(); w.document.write(html); w.document.close();
     setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 300);
+  }
+  // Builds a Word-compatible document from the same content as printSetHandout().
+  // This is NOT a true .docx (that's a zip archive — building one from scratch
+  // needs a compression library, which would mean either an external
+  // dependency or vendoring in real zip code, pulling against this app's
+  // single-file, offline-first design). Instead this uses the well-established
+  // "HTML saved as .doc" trick: Word opens and fully edits this format natively,
+  // no plugins or conversion needed — the Word-specific namespace declarations
+  // below tell Word to treat it as a native document rather than a web page.
+  function exportSetWord(id){
+    var s=null; for(var i=0;i<data.textSets.length;i++){ if(data.textSets[i].id===id) s=data.textSets[i]; }
+    if(!s) return;
+    var esc=function(t){ return String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); };
+    var body="";
+    for(var n=s.from; n<=s.to; n++){
+      var full=(s.pointed&&s.pointed[n])||"";
+      var label=(s.labels&&s.labels[n]) || ((s.ref||"")+":"+n);
+      var phrases=(s.phrases&&s.phrases[n])||[];
+      body += '<p style="font-weight:bold;font-size:11pt;margin:14pt 0 2pt">'+esc(label)+'</p>';
+      if(full) body += '<p dir="rtl" style="font-size:16pt;margin:0 0 6pt;font-family:\'Times New Roman\',serif">'+esc(full)+'</p>';
+      if(phrases.length){
+        body += '<table style="width:100%;border-collapse:collapse;font-size:12pt" border="0" cellspacing="0" cellpadding="4">';
+        phrases.forEach(function(p){
+          body += '<tr><td dir="rtl" style="width:50%;border-bottom:1px solid #ddd;font-family:\'Times New Roman\',serif">'+esc(p[0])+'</td>'
+            + '<td style="width:50%;border-bottom:1px solid #ddd;color:#333">'+esc(p[1])+'</td></tr>';
+        });
+        body += '</table>';
+      }
+    }
+    var html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
+      + '<head><meta charset="utf-8"><title>'+esc(s.label)+'</title>'
+      + '<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]-->'
+      + '<style>body{font-family:Georgia,"Times New Roman",serif;color:#222}'
+      + 'h1{font-size:18pt;margin:0 0 2pt}.sub{color:#666;font-size:10pt;margin-bottom:14pt}</style>'
+      + '</head><body><h1>'+esc(s.label)+'</h1><div class="sub">'+esc(s.ref||"")+' &middot; '+(s.to-s.from+1)+' '+(s.kind==="mishna"?"mishnayos":"pesukim")+'</div>'
+      + body + '</body></html>';
+    download(slugify(s.label||"pesukim")+"-"+stamp()+".doc", html, "application/msword");
   }
   function slugify(t){ return String(t).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")||"set"; }
   function parseCSV(text){
@@ -8587,7 +8849,7 @@ nameLine
       var row=el("div","stud-breakdown-row");
       row.appendChild(el("span","stud-breakdown-label",L));
       row.appendChild(el("span","stud-breakdown-count","×"+agg[L].n));
-      row.appendChild(el("span","stud-breakdown-pts"+(agg[L].p<0?" neg":""), fmt(agg[L].p)+" pts"));
+      row.appendChild(el("span","stud-breakdown-pts"+(agg[L].p<0?" neg":""), isShulchani()?formatCoins(agg[L].p,{signed:true}):fmt(agg[L].p)+" pts"));
       wrap.appendChild(row);
     });
     if(auSpent.p>0){
@@ -8595,13 +8857,13 @@ nameLine
       var auRow=el("div","stud-breakdown-row");
       auRow.appendChild(el("span","stud-breakdown-label","Auction tickets (current, all-time)"));
       auRow.appendChild(el("span","stud-breakdown-count","×"+auSpent.n));
-      auRow.appendChild(el("span","stud-breakdown-pts neg", fmt(-auSpent.p)+" pts"));
+      auRow.appendChild(el("span","stud-breakdown-pts neg", isShulchani()?formatCoins(-auSpent.p,{signed:true}):fmt(-auSpent.p)+" pts"));
       wrap.appendChild(auRow);
     }
     var totalRow=el("div","stud-breakdown-row stud-breakdown-total");
     totalRow.appendChild(el("span","stud-breakdown-label","Net total"));
     totalRow.appendChild(el("span","stud-breakdown-count",""));
-    totalRow.appendChild(el("span","stud-breakdown-pts"+(totalP<0?" neg":""), fmt(totalP)+" pts"));
+    totalRow.appendChild(el("span","stud-breakdown-pts"+(totalP<0?" neg":""), isShulchani()?formatCoins(totalP,{signed:true}):fmt(totalP)+" pts"));
     wrap.appendChild(totalRow);
     if(auSpent.p>0 && period!=="all"){
       wrap.appendChild(el("div","recent-empty","Auction tickets aren't timestamped, so that line always shows the full current total, not just this period."));
@@ -8802,6 +9064,13 @@ nameLine
   /* ---------- ACTIVITIES ---------- */
   function renderActivities(){
     var list=$("activityList"); list.innerHTML="";
+    // Update the "Add" form labels for current mode
+    var lbl=$("newActPtsLabel"); if(lbl) lbl.textContent=isShulchani()?"Prutot":"Points";
+    var unit=$("newActPtsUnit"); if(unit) unit.textContent=isShulchani()?"prutot":"pts";
+    var vt=$("actViewTitle"); if(vt) vt.textContent=isShulchani()?"Activities & coin values":"Activities & point values";
+    var vn=$("actViewNote"); if(vn) vn.textContent=isShulchani()
+      ?"These are the buttons on the Scan screen. Values are in Prutot — tap +/– or type a number. Use a negative value for a deduction."
+      :"These are the buttons on the Scan screen. Change a point value right here — tap the +/– or type a number. Use a negative value for a deduction.";
     if(!data.activities.length){ list.appendChild(el("div","recent-empty","No activities yet.")); }
     var allGroups=groups();
     data.activities.forEach(function(a){
@@ -8830,7 +9099,7 @@ nameLine
       plus.addEventListener("click", function(){ setpts((parseInt(pts.value,10)||0)+1); });
       pts.addEventListener("change", function(){ setpts(parseInt(pts.value,10)||0); });
       stp.appendChild(minus); stp.appendChild(pts); stp.appendChild(plus);
-      var ptsLbl=el("span",null,"pts"); ptsLbl.style.color="var(--muted)"; ptsLbl.style.fontSize=".85rem";
+      var ptsLbl=el("span",null,isShulchani()?"prutot":"pts"); ptsLbl.style.color="var(--muted)"; ptsLbl.style.fontSize=".85rem";
       var del=el("button","btn btn-sm btn-bad","Delete");
       del.addEventListener("click", function(){
         data.activities=data.activities.filter(function(x){return x.id!==a.id;}); save(); renderActivities(); renderActButtons();
@@ -9025,7 +9294,7 @@ nameLine
     // logic the Scan tab's activity buttons already use) — the control codes below
     // (Custom, Undo, phrase-nav) aren't activity-specific, so they always show.
     var items=data.activities.filter(actVisibleInCurrentClass).map(function(a){
-      return {qrText:"ACT:"+a.id, name:a.name, sub:(a.pts<0?"":"+")+a.pts+" pts"};
+      return {qrText:"ACT:"+a.id, name:a.name, sub:fmtDelta(a.pts)};
     });
     items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount"});
     items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount"});
@@ -9127,6 +9396,17 @@ nameLine
     var who=whoSel.value;
     if(who) list=list.filter(function(s){ return s.id===who; });
 
+    var actSel=$("personalActivity"), actCur=actSel.value;
+    actSel.innerHTML='<option value="">All activities</option>';
+    data.activities.forEach(function(a){ var o=el("option",null,a.name); o.value=a.id; actSel.appendChild(o); });
+    if(data.activities.some(function(a){return a.id===actCur;})) actSel.value=actCur; else actSel.value="";
+    var actId=actSel.value;
+    // When a specific activity is picked, only that one prints — and the
+    // Custom card (which isn't tied to any one activity) is left out, since
+    // "just Homework Checked" should mean just that, nothing extra.
+    var actsToShow = actId ? data.activities.filter(function(a){ return a.id===actId; }) : data.activities;
+    var showCustom = !actId;
+
     if(!list.length){ (avery?sheet:grid).appendChild(el("div","empty-state","Add students first, then come back to print their personal pages.")); return; }
     if(!data.activities.length){ (avery?sheet:grid).appendChild(el("div","empty-state","Add activities first, on the Activities tab.")); return; }
 
@@ -9136,10 +9416,10 @@ nameLine
       // student's codes grouped.
       var items=[];
       list.forEach(function(s){
-        data.activities.forEach(function(a){
-          items.push({qrText:"PA:"+s.id+":"+a.id, line1:a.name, line2:s.name+" · "+(a.pts<0?"":"+")+a.pts+" pts"});
+        actsToShow.forEach(function(a){
+          items.push({qrText:"PA:"+s.id+":"+a.id, line1:a.name, line2:s.name+" · "+fmtDelta(a.pts)});
         });
-        items.push({qrText:"PC:"+s.id, line1:"Custom", line2:s.name});
+        if(showCustom) items.push({qrText:"PC:"+s.id, line1:"Custom", line2:s.name});
       });
       if(format==="tiles") renderTilesGeneric(items, grid, hasQR);
       else renderAverySheetGeneric(items, sheet, format, hasQR);
@@ -9151,17 +9431,18 @@ nameLine
       page.appendChild(el("h3","personal-title",s.name));
       page.appendChild(el("div","personal-sub",(s.group?s.group+" · ":"")+"Personal scoring QR codes"));
       var qgrid=el("div","personal-qr-grid");
-      data.activities.forEach(function(a){
-        addPersonalQrCard(qgrid, "PA:"+s.id+":"+a.id, a.name, (a.pts<0?"":"+")+a.pts+" pts",
+      actsToShow.forEach(function(a){
+        addPersonalQrCard(qgrid, "PA:"+s.id+":"+a.id, a.name, fmtDelta(a.pts),
           "Scan this to give "+s.name+" this activity.", a.pts<0, hasQR);
       });
-      addPersonalQrCard(qgrid, "PC:"+s.id, "Custom", "live custom amount",
+      if(showCustom) addPersonalQrCard(qgrid, "PC:"+s.id, "Custom", "live custom amount",
         "Uses the current Custom amount on the Scan tab when scanned, not the amount at print time.", false, hasQR);
       page.appendChild(qgrid);
       grid.appendChild(page);
     });
   }
   $("personalFormat").addEventListener("change", function(){ data.personalLabelFormat=this.value; save(); renderPersonalPages(); });
+  $("personalActivity").addEventListener("change", renderLabels);
   $("labelGroup").addEventListener("change", renderLabels);
   $("labelWho").addEventListener("change", renderLabels);
   $("labelCopies").addEventListener("input", renderLabels); // "input" covers typing, spinner arrows, and paste — a second "change" listener was double-rendering (QR generation is the expensive part)
@@ -9237,7 +9518,7 @@ nameLine
           seat.appendChild(pw);
         }
         seat.appendChild(el("span","seat-name",s.name));
-        if(showPts) seat.appendChild(el("span","seat-print-pts", score(s.id)+" pts"));
+        if(showPts) seat.appendChild(el("span","seat-print-pts", fmtScore(s.id)));
       } else {
         seat.textContent="Empty seat";
       }
@@ -9345,7 +9626,13 @@ nameLine
 
   /* ---------- BACKUP ---------- */
   function download(filename, text, type){
-    var blob=new Blob([text],{type:type||"text/plain"});
+    // A UTF-8 BOM is prepended for CSV specifically: without it, Excel on
+    // Windows guesses the file's encoding from the system's default codepage
+    // when you double-click it open, which garbles Hebrew (and other non-ASCII)
+    // text. The BOM makes Excel detect UTF-8 correctly every time. Other file
+    // types don't need this — it's a CSV/Excel-specific quirk.
+    var withBom = (type==="text/csv") ? "\uFEFF"+text : text;
+    var blob=new Blob([withBom],{type:type||"text/plain"});
     var url=URL.createObjectURL(blob);
     var a=el("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
     setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
@@ -9607,12 +9894,19 @@ nameLine
     if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
     if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
+    if(typeof data.grade!=="string") data.grade="";
+    if(!data.features||typeof data.features!=="object") data.features={};
+    if(typeof data.features.shulchani!=="boolean") data.features.shulchani=true;
+    if(typeof data.features.chavrusa!=="boolean") data.features.chavrusa=false;
+    if(typeof data.features.learningType!=="string") data.features.learningType="";
     if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}};
     if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={};
     if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={};
     if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
     if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
     if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
+    if(typeof data.shulchaniMode!=="boolean") data.shulchaniMode=false;
+    if(typeof data.showPrutot!=="boolean") data.showPrutot=false;
     if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerExcluded={};
     if(!Array.isArray(data.spinnerSavedLists)) data.spinnerSavedLists=[];
     // Attendance / Tracker / Homework tools
@@ -9682,8 +9976,89 @@ nameLine
     document.body.classList.toggle("full-width", !!data.fullWidth);
   }
 
+  /* ---------- setup wizard bridge ---------- */
+  function applySetupWizard() {
+    var rawSetup, pendingBackup, sheetFromImport;
+    try {
+      rawSetup        = localStorage.getItem("menchmark_setup");
+      pendingBackup   = localStorage.getItem("menchmark_backup_pending");
+      sheetFromImport = localStorage.getItem("menchmark_sheet_url");
+    } catch(e) { return; }
+    if (!rawSetup && !pendingBackup && !sheetFromImport) return;
+
+    var changed = false;
+
+    /* 1. Full backup import — highest priority */
+    if (pendingBackup) {
+      try {
+        var obj = JSON.parse(pendingBackup);
+        if (obj && obj.students && obj.activities) {
+          var hasExisting = Array.isArray(data.students) && data.students.length > 0;
+          if (!hasExisting ||
+              confirm("Import the classroom backup you chose during setup? This replaces your current data.")) {
+            data = obj;
+            changed = true;
+          }
+        }
+      } catch(e) {}
+      try { localStorage.removeItem("menchmark_backup_pending"); } catch(e) {}
+    }
+
+    /* 2. Sheet URL — only fills if app has none yet */
+    if (sheetFromImport) {
+      if (typeof data.sheetUrl !== "string" || !data.sheetUrl.trim()) {
+        data.sheetUrl = sheetFromImport;
+        changed = true;
+      }
+      try { localStorage.removeItem("menchmark_sheet_url"); } catch(e) {}
+    }
+
+    /* 3. Quick Setup decisions */
+    if (rawSetup) {
+      try {
+        var s = JSON.parse(rawSetup);
+        if (s.className)  { data.bunk   = s.className;  changed = true; }
+        if (s.schoolName) { data.school = s.schoolName; changed = true; }
+        if (s.grade)      { data.grade  = s.grade;      changed = true; }
+
+        if (s.features && typeof s.features === "object") {
+          /* Shulchani Mode — honour the wizard toggle directly */
+          if (typeof s.features.shulchani === "boolean") {
+            data.shulchaniMode = s.features.shulchani;
+          }
+          /* Store other feature flags for subsystems to read */
+          if (!data.features || typeof data.features !== "object") data.features = {};
+          data.features.chavrusa = s.features.chavrusa === true;
+          if (s.learning && s.learning.type) data.features.learningType = s.learning.type;
+
+          /* Nav visibility — reversible via Settings */
+          if (!data.navHidden || typeof data.navHidden !== "object") data.navHidden = {groups:{},tabs:{}};
+          if (!data.navHidden.groups) data.navHidden.groups = {};
+          if (!data.navHidden.tabs)   data.navHidden.tabs   = {};
+          if (s.features.teams    === false) data.navHidden.groups.leaderboard = true;
+          if (s.features.learning === false) data.navHidden.groups.learn       = true;
+          if (s.features.qr       === false) data.navHidden.tabs.labels        = true;
+          changed = true;
+        }
+
+        /* Serial scanner */
+        if (s.hardware && s.hardware.scanner === true) {
+          data.serialAutoConnect = true;
+          if ([9600,19200,38400,57600,115200].indexOf(s.hardware.baud) >= 0) {
+            data.serialBaud = s.hardware.baud;
+          }
+          changed = true;
+        }
+      } catch(e) {}
+      try { localStorage.removeItem("menchmark_setup"); } catch(e) {}
+    }
+
+    if (changed) { load2fix(); save(); }
+  }
+
   /* ---------- init ---------- */
   load();
+  applySetupWizard();
   $("schoolName").textContent=data.school;
   $("bunkName").textContent=data.bunk;
   $("sheetUrl").value=data.sheetUrl||"";
