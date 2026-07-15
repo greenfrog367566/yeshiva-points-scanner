@@ -1159,6 +1159,14 @@
     </div>
 
     <div id="autoNote" class="pill-note">Each student's current points are their tickets. Points are <b>not</b> spent — this is just a draw, so the wheel always reflects the live standings.</div>
+    <div id="raffleSourceRow" class="toolbar">
+      <span style="font-weight:600">Tickets count:</span>
+      <span class="seg mini" id="raffleSourceMode">
+        <button data-rsm="all" class="active">All-time points</button>
+        <button data-rsm="activity">By activity</button>
+        <button data-rsm="contest">Current contest</button>
+      </span>
+    </div>
     <div id="raffleActivityRow" class="toolbar">
       <span style="font-weight:600">Tickets from:</span>
       <select id="raffleActivity" class="field" style="width:auto"><option value="">All activities (total points)</option></select>
@@ -6608,6 +6616,11 @@ function setupRoster() {
     $("contestInactive").style.display = has ? "none" : "flex";
     $("contestActiveWrap").style.display = has ? "flex" : "none";
     $("standRangeContestBtn").style.display = has ? "" : "none";
+    // Keeps Raffle's "Current contest" ticket-source option live as contest
+    // state changes, even while the Raffle tab isn't the active view — this
+    // runs regardless of `has` since both "no contest at all" and "contest
+    // just ended" mean the same thing for that option's availability.
+    updateRaffleSourceModeAvailability();
     if(!has) return;
     $("contestName").textContent = "🏆 "+data.contest.name;
     var now=Date.now(), start=data.contest.startTs, end=data.contest.endTs;
@@ -7158,7 +7171,19 @@ function setupRoster() {
     } else {
       var act=data.raffleActivity;
       data.students.forEach(function(s){
-        var t = act ? pointsForActivity(s.id, act, "all") : score(s.id);
+        var t;
+        // "Current contest" and "By activity" are mutually exclusive raffle
+        // ticket sources — contestScoreFor() already correctly sums both
+        // contest modes ("both" and "contestOnly", the latter never touching
+        // data.scores at all), so it must be checked first and used directly
+        // rather than falling through to score()/pointsForActivity().
+        if(data.raffleSourceMode==="contest" && data.contest && !data.contest.ended){
+          t = contestScoreFor(s.id, data.contest.id);
+        } else if(data.raffleSourceMode==="activity" && act){
+          t = pointsForActivity(s.id, act, "all");
+        } else {
+          t = score(s.id);
+        }
         if(t>0) arr.push({sid:s.id,name:s.name,tickets:t});
       });
     }
@@ -7175,11 +7200,29 @@ function setupRoster() {
     return arr.filter(function(e){ return e.tickets>0; });
   }
 
+  // Keeps the "Current contest" raffle source option's disabled state (and
+  // tooltip) in sync with whether a contest is actually running — same
+  // active-contest check renderContestBanner() already uses. Also falls back
+  // to all-time points if "contest" was selected but the contest since ended,
+  // so Raffle never keeps showing frozen/stale contest numbers.
+  function updateRaffleSourceModeAvailability(){
+    var contestBtn = document.querySelector('#raffleSourceMode button[data-rsm="contest"]');
+    if(!contestBtn) return;
+    var hasActiveContest = !!(data.contest && data.contest.startTs && !data.contest.ended);
+    contestBtn.disabled = !hasActiveContest;
+    contestBtn.title = hasActiveContest ? "" : "No contest is currently running.";
+    if(!hasActiveContest && data.raffleSourceMode==="contest"){
+      data.raffleSourceMode="all"; save();
+    }
+  }
   function renderRaffle(){
     var mode=data.raffle.mode||"auto";
     document.querySelectorAll("#raffleMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.mode===mode); });
     $("autoNote").style.display = mode==="auto"?"block":"none";
-    $("raffleActivityRow").style.display = mode==="auto"?"flex":"none";
+    $("raffleSourceRow").style.display = mode==="auto"?"flex":"none";
+    updateRaffleSourceModeAvailability();
+    document.querySelectorAll("#raffleSourceMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.rsm===(data.raffleSourceMode||"all")); });
+    $("raffleActivityRow").style.display = (mode==="auto" && data.raffleSourceMode==="activity")?"flex":"none";
     if(mode==="auto"){
       var sel=$("raffleActivity"), cur=sel.value||data.raffleActivity;
       sel.innerHTML='<option value="">All activities (total points)</option>';
@@ -7195,6 +7238,10 @@ function setupRoster() {
     renderWinners();
   }
   $("raffleActivity").addEventListener("change", function(){ data.raffleActivity=this.value; save(); renderWheel(); renderWinners(); });
+  $("raffleSourceMode").addEventListener("click", function(e){
+    var b=e.target.closest("button"); if(!b || b.disabled) return;
+    data.raffleSourceMode=b.dataset.rsm; save(); renderRaffle(); renderWheel(); renderWinners();
+  });
   $("raffleSpread").addEventListener("change", function(){ data.raffle.spreadTickets=this.checked; save(); renderWheel(); });
   $("raffleAdjustReset").addEventListener("click", function(){
     if(!confirm("Clear all after-win removals from this raffle? Everyone becomes eligible again with their full ticket count.")) return;
@@ -11321,6 +11368,7 @@ nameLine
     if(!data.weekly) data.weekly={};
     if(typeof data.standingsActivity!=="string") data.standingsActivity="";
     if(typeof data.raffleActivity!=="string") data.raffleActivity="";
+    if(["all","activity","contest"].indexOf(data.raffleSourceMode)<0) data.raffleSourceMode="all";
     if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={groupMode:"all", groupKeys:[], format:"tiles"};
     if(typeof data.pointsPrint.format!=="string" || data.pointsPrint.format==="grid") data.pointsPrint.format="tiles";
     if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[];
