@@ -10791,6 +10791,24 @@ nameLine
   var _snapshotTimer = null;
   var _snapshotBusy = false;
 
+  // Builds the JSON string sent to the Sheet for a snapshot push. Shared by
+  // the normal debounced push and the tab-close push, so both always send
+  // the exact same shape of data.
+  function buildSnapshotPayload() {
+    var clone = JSON.parse(JSON.stringify(data));
+    delete clone.sheetUrl; // don't store credentials/links inside the snapshot itself
+    return JSON.stringify({
+      type: "snapshot",
+      deviceId: deviceId,
+      snapshot: JSON.stringify(clone)
+    });
+  }
+
+  // True while the app has unsaved changes that haven't yet been confirmed
+  // pushed to the Sheet — used to decide whether a tab-close snapshot is
+  // worth attempting at all.
+  var _snapshotDirty = false;
+
   function pushSnapshot(silent) {
     var url = (data.sheetUrl || "").trim();
     if (!url) {
@@ -10813,15 +10831,7 @@ nameLine
     var statusEl = $("snapshotStatus");
     if (!silent && statusEl) statusEl.textContent = "Saving to sheet…";
 
-    // Clone data and strip the sheetUrl (don't store credentials in the snapshot)
-    var clone = JSON.parse(JSON.stringify(data));
-    delete clone.sheetUrl;
-
-    var payload = JSON.stringify({
-      type: "snapshot",
-      deviceId: deviceId,
-      snapshot: JSON.stringify(clone)
-    });
+    var payload = buildSnapshotPayload();
 
     fetch(url, {
       method: "POST",
@@ -10831,6 +10841,7 @@ nameLine
     }).then(function() {
       if (!silent && statusEl) statusEl.textContent = "Saved to your Google Sheet (" + new Date().toLocaleTimeString() + ").";
       data._lastSnapshotAt = Date.now();
+      _snapshotDirty = false;
       save();
     }).catch(function(err) {
       if (!silent && statusEl) statusEl.textContent = "Couldn't reach your sheet. Check your connection and try again.";
@@ -10895,10 +10906,52 @@ nameLine
   function scheduleAutoSnapshot() {
     if (_snapshotTimer) clearTimeout(_snapshotTimer);
     if (!(data.sheetUrl || "").trim()) return;
+    _snapshotDirty = true;
     _snapshotTimer = setTimeout(function() {
       pushSnapshot(true); // silent
     }, 30000);
   }
+
+  // Fires a best-effort final snapshot if the tab is being closed/hidden
+  // while a debounced snapshot is still pending. Uses fetch with
+  // keepalive:true rather than sendBeacon, since sendBeacon caps payloads
+  // around 64KB and a real snapshot can run well past that. keepalive has
+  // no such limit and is designed for exactly this "survive page unload"
+  // case — the browser guarantees the request is sent even after JS
+  // execution on the page stops.
+  function pushSnapshotOnClose() {
+    if (!_snapshotDirty) return; // nothing pending, nothing to do
+    var url = (data.sheetUrl || "").trim();
+    if (!url) return;
+    var looksEmpty = (!data.students || data.students.length === 0)
+      && (!data.log || data.log.length === 0);
+    if (looksEmpty) return;
+    try {
+      var payload = buildSnapshotPayload();
+      fetch(url, {
+        method: "POST",
+        mode: "no-cors",
+        keepalive: true,
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: payload
+      });
+      // Can't confirm success here — the page may already be gone by the
+      // time any response would arrive. This is a best-effort safety net,
+      // not a guaranteed-delivery mechanism.
+    } catch (e) {
+      // Nothing more we can do if this throws — the tab is closing regardless.
+    }
+  }
+
+  // "visibilitychange" firing to "hidden" covers tab close, browser close,
+  // switching tabs, and minimizing — the most reliable signal across
+  // browsers for "the user may be leaving." "pagehide" is a second safety
+  // net for cases visibilitychange might miss (e.g. some mobile browser
+  // back/forward cache scenarios).
+  document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === "hidden") pushSnapshotOnClose();
+  });
+  window.addEventListener("pagehide", pushSnapshotOnClose);
 
   /* ---------- BACKUP ---------- */
   function download(filename, text, type){
