@@ -8322,7 +8322,16 @@ nameLine
     var heArr=Array.isArray(json.he) ? json.he : [json.he];
     var verses=[];
     heArr.forEach(function(he,i){
-      var clean=(he||"").replace(/<[^>]+>/g,"").trim(); // strip Sefaria's inline markup (e.g. <br>)
+      var clean=(he||"")
+        .replace(/<[^>]+>/g,"")          // strip HTML tags (e.g. <br>)
+        .replace(/\*\([^)]*\)/g,"")      // strip Sefaria variant notes: *(בספרי תימן ...)
+        .replace(/[\u0591-\u05C7]/g,function(c){
+          // Strip trop (cantillation marks U+0591-U+05AF) but KEEP nikud
+          // (vowel points U+05B0-U+05C7). Trop code points are U+0591-U+05AF.
+          var cp=c.codePointAt(0);
+          return (cp>=0x0591 && cp<=0x05AF) ? "" : c;
+        })
+        .trim();
       if(clean) verses.push({num: from+i, he: clean});
     });
     if(!verses.length) throw new Error("Sefaria returned no text for "+rangeRef);
