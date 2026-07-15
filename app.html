@@ -1828,6 +1828,17 @@
     <h2 class="view-title">Backup &amp; Sheets</h2>
     <p class="view-note">Your scores save automatically on this computer. Back up regularly so nothing is ever lost — and optionally sync to your own Google Sheet below for a permanent, view-anywhere record.</p>
     <div class="backup-grid">
+      <div class="card pad bk-card" style="border-left:4px solid var(--brass)">
+        <h3>☁ Save everything to your Google Sheet</h3>
+        <p>Pushes a full snapshot of your data — students, activities, scores, settings, passes, pesukim, <i>everything</i> — to a "Snapshot" tab on your connected Google Sheet. This also happens automatically in the background every 30 seconds.</p>
+        <button class="btn btn-primary" id="pushSnapshotBtn">Save to Sheet now</button>
+        <div id="snapshotStatus" style="margin-top:8px;font-size:.85rem;color:var(--muted)"></div>
+      </div>
+      <div class="card pad bk-card" style="border-left:4px solid var(--brass)">
+        <h3>☁ Restore everything from your Google Sheet</h3>
+        <p>Lost your data? Switched devices? Pull back the latest snapshot saved on your Google Sheet. This replaces everything currently here.</p>
+        <button class="btn" id="pullSnapshotBtn">Restore from Sheet</button>
+      </div>
       <div class="card pad bk-card">
         <h3>Back up everything</h3>
         <p>Save a file with your full roster, activities, and scores. Keep it somewhere safe.</p>
@@ -1889,7 +1900,10 @@
     <details class="card pad" id="sheetHelp">
       <summary style="cursor:pointer;font-family:var(--serif);font-size:1.1rem;font-weight:600">First-time setup — do this once (about 5 minutes)</summary>
       <ol style="font-size:.92rem;line-height:1.75;padding-left:20px;margin-top:14px">
-        <li>Open <b>sheets.google.com</b> and make a new blank sheet. Name it (e.g. "Sample Class 1 Points").</li>
+        <li>Open <b>sheets.google.com</b> and make a <b>new blank sheet</b>. Name it (e.g. "Sample Class 1 Points").<br>
+          <span style="display:block;margin-top:8px;padding:8px 12px;background:var(--brass-soft);border-radius:8px;font-size:.85rem;line-height:1.6">
+            <b>⚠️ Every teacher needs their own sheet.</b> Do not paste another teacher's link here — your scans, scores, and backups would mix together and overwrite each other. Each teacher creates one sheet and gets their own link.
+          </span></li>
         <li>In that sheet's menu: <b>Extensions → Apps Script</b>.</li>
         <li>At the top-left, click <b>Untitled project</b> and rename it (e.g. "Sample Class 1 Points") so the permission screen later looks familiar, not anonymous.</li>
         <li>Delete any code in the editor and paste in <b>Code 1</b> below.</li>
@@ -1941,6 +1955,39 @@
     return ContentService.createTextOutput(JSON.stringify(out))
       .setMimeType(ContentService.MimeType.JSON);
   }
+
+  // --- Snapshot pull (Phase 1) ---
+  if (e && e.parameter && e.parameter.action === "snapshot") {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName("Snapshot");
+    if (!sh || sh.getLastRow() < 2) {
+      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "No snapshots found." }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    // Optional: pull snapshot for a specific device
+    var deviceId = (e.parameter.deviceId || "").trim();
+    var lastRow = sh.getLastRow();
+    var lastCol = sh.getLastColumn();
+    // Walk backward from the bottom to find the newest matching row
+    for (var r = lastRow; r >= 2; r--) {
+      var row = sh.getRange(r, 1, 1, lastCol).getValues()[0];
+      var rowDevice = (row[1] || "").toString().trim();
+      if (deviceId && rowDevice !== deviceId) continue;
+      // Reassemble JSON from chunks (columns C onward)
+      var chunks = [];
+      for (var c = 2; c < row.length; c++) {
+        var chunk = (row[c] || "").toString();
+        if (chunk) chunks.push(chunk);
+      }
+      if (!chunks.length) continue;
+      var json = chunks.join("");
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, deviceId: rowDevice, snapshot: json }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "No snapshot found" + (deviceId ? " for device " + deviceId : "") + "." }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   return ContentService.createTextOutput("Points sync is live.");
 }
 
@@ -1992,6 +2039,51 @@ function rebuildLeaderBoard() {
   lb.setFrozenRows(1);
 }
 
+// ---- Snapshot helpers (Phase 1) ----
+
+// Google Sheets cells have a ~50,000 character limit. We chunk the JSON
+// across columns C, D, E… so even large data objects (with big logs or
+// photo data-URLs) are stored safely.
+var SNAPSHOT_CHUNK_SIZE = 45000;
+var SNAPSHOT_MAX_PER_DEVICE = 5;
+
+function saveSnapshot(ss, deviceId, jsonString) {
+  var sh = ss.getSheetByName("Snapshot") || ss.insertSheet("Snapshot");
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(["Time", "Device ID", "Data →"]);
+    sh.setFrozenRows(1);
+  }
+  // Build row: [timestamp, deviceId, chunk1, chunk2, …]
+  var row = [new Date(), deviceId];
+  for (var i = 0; i < jsonString.length; i += SNAPSHOT_CHUNK_SIZE) {
+    row.push(jsonString.substring(i, i + SNAPSHOT_CHUNK_SIZE));
+  }
+  sh.appendRow(row);
+
+  // Trim old snapshots for this device — keep only the newest N
+  trimSnapshots(sh, deviceId);
+}
+
+function trimSnapshots(sh, deviceId) {
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return;
+  var deviceCol = sh.getRange(2, 2, lastRow - 1, 1).getValues();
+  var matchingRows = [];
+  for (var i = 0; i < deviceCol.length; i++) {
+    if ((deviceCol[i][0] || "").toString().trim() === deviceId) {
+      matchingRows.push(i + 2); // 1-indexed sheet row
+    }
+  }
+  // If this device has more than SNAPSHOT_MAX_PER_DEVICE snapshots, delete oldest
+  if (matchingRows.length > SNAPSHOT_MAX_PER_DEVICE) {
+    var toDelete = matchingRows.slice(0, matchingRows.length - SNAPSHOT_MAX_PER_DEVICE);
+    // Delete from bottom up so row numbers don't shift
+    for (var j = toDelete.length - 1; j >= 0; j--) {
+      sh.deleteRow(toDelete[j]);
+    }
+  }
+}
+
 function doPost(e) {
   if (!e || !e.postData) {
     return ContentService.createTextOutput(
@@ -2001,6 +2093,15 @@ function doPost(e) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var body = JSON.parse(e.postData.contents);
+
+  // --- Snapshot save (Phase 1) ---
+  if (body.type === "snapshot") {
+    var deviceId = (body.deviceId || "unknown").toString().trim();
+    var snapshot = body.snapshot || "{}";
+    // snapshot is the full JSON string of the app's data object
+    saveSnapshot(ss, deviceId, snapshot);
+    return ContentService.createTextOutput("ok");
+  }
 
   if (body.type === "scan" || body.type === "correction") {
     var log = ss.getSheetByName("Log") || ss.insertSheet("Log");
@@ -2831,7 +2932,7 @@ function setupRoster() {
     data = migrateData(data);
     load2fix();
   }
-  function save(){ if(canSave){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} } }
+  function save(){ if(canSave){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} } scheduleAutoSnapshot(); }
 
   /* ---------- helpers ---------- */
   var pipWin = null; // set while the floating scanner is popped out into a real OS window
@@ -10683,6 +10784,111 @@ nameLine
   $("copyManifest").addEventListener("click", function(){ copyPre("manifestCode", this); });
   function fallbackCopy(txt){ var ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(e){} document.body.removeChild(ta); }
 
+  /* ---------- SNAPSHOT SYNC (Phase 1) ---------- */
+  // Pushes the entire data object to the Sheet's "Snapshot" tab.
+  // The Apps Script stores it chunked across cells and keeps the last 5
+  // snapshots per device, so there's always a recent version to restore from.
+  var _snapshotTimer = null;
+  var _snapshotBusy = false;
+
+  function pushSnapshot(silent) {
+    var url = (data.sheetUrl || "").trim();
+    if (!url) {
+      if (!silent && $("snapshotStatus")) $("snapshotStatus").textContent = "No Google Sheet connected — add one on the Sync to Google Sheets section first.";
+      return;
+    }
+    if (_snapshotBusy) return;
+    _snapshotBusy = true;
+    var statusEl = $("snapshotStatus");
+    if (!silent && statusEl) statusEl.textContent = "Saving to sheet…";
+
+    // Clone data and strip the sheetUrl (don't store credentials in the snapshot)
+    var clone = JSON.parse(JSON.stringify(data));
+    delete clone.sheetUrl;
+
+    var payload = JSON.stringify({
+      type: "snapshot",
+      deviceId: deviceId,
+      snapshot: JSON.stringify(clone)
+    });
+
+    fetch(url, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: payload
+    }).then(function() {
+      if (!silent && statusEl) statusEl.textContent = "Saved to your Google Sheet (" + new Date().toLocaleTimeString() + ").";
+      data._lastSnapshotAt = Date.now();
+      save();
+    }).catch(function(err) {
+      if (!silent && statusEl) statusEl.textContent = "Couldn't reach your sheet. Check your connection and try again.";
+    }).finally(function() {
+      _snapshotBusy = false;
+    });
+  }
+
+  function pullSnapshot() {
+    var url = (data.sheetUrl || "").trim();
+    var statusEl = $("snapshotStatus");
+    if (!url) {
+      if (statusEl) statusEl.textContent = "No Google Sheet connected — add one on the Sync to Google Sheets section first.";
+      return;
+    }
+    if (statusEl) statusEl.textContent = "Loading from sheet…";
+    var fetchUrl = url + (url.indexOf("?") >= 0 ? "&" : "?") + "action=snapshot&deviceId=" + encodeURIComponent(deviceId);
+    fetch(fetchUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(resp) {
+        if (!resp.ok) {
+          if (statusEl) statusEl.textContent = resp.error || "No snapshot found on your sheet.";
+          return;
+        }
+        var obj;
+        try { obj = JSON.parse(resp.snapshot); } catch(e) {
+          if (statusEl) statusEl.textContent = "The snapshot on your sheet couldn't be read — it may be corrupted.";
+          return;
+        }
+        if (!obj.students || !obj.activities) {
+          if (statusEl) statusEl.textContent = "That snapshot doesn't look like valid Menchmark data.";
+          return;
+        }
+        if (!confirm("This will replace everything currently here with the version saved on your Google Sheet. Continue?")) {
+          if (statusEl) statusEl.textContent = "";
+          return;
+        }
+        // Preserve the current sheetUrl — don't overwrite it from the snapshot
+        var currentSheetUrl = data.sheetUrl;
+        data = migrateData(obj);
+        data.sheetUrl = currentSheetUrl;
+        load2fix();
+        save();
+        // Refresh all views (same as JSON restore)
+        $("schoolName").textContent = data.school;
+        $("bunkName").textContent = data.bunk;
+        $("sheetUrl").value = data.sheetUrl || "";
+        $("autoSheet").checked = (data.autoSheet !== false);
+        renderActButtons(); renderRecent(); renderStudents(); renderActivities();
+        renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
+        showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
+        if (statusEl) statusEl.textContent = "";
+        alert("Restored from Google Sheet.");
+      })
+      .catch(function(err) {
+        if (statusEl) statusEl.textContent = "Couldn't reach your sheet. Check your connection and try again.";
+      });
+  }
+
+  // Auto-snapshot: after every save(), wait 30 seconds of inactivity,
+  // then silently push a snapshot if the Sheet is connected.
+  function scheduleAutoSnapshot() {
+    if (_snapshotTimer) clearTimeout(_snapshotTimer);
+    if (!(data.sheetUrl || "").trim()) return;
+    _snapshotTimer = setTimeout(function() {
+      pushSnapshot(true); // silent
+    }, 30000);
+  }
+
   /* ---------- BACKUP ---------- */
   function download(filename, text, type){
     // A UTF-8 BOM is prepended for CSV specifically: without it, Excel on
@@ -10697,6 +10903,8 @@ nameLine
     setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
   }
   function stamp(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  $("pushSnapshotBtn").addEventListener("click", function(){ pushSnapshot(false); });
+  $("pullSnapshotBtn").addEventListener("click", function(){ pullSnapshot(); });
   $("exportJson").addEventListener("click", function(){
     download("points-backup-"+stamp()+".json", JSON.stringify(data,null,2), "application/json");
   });
@@ -11182,6 +11390,21 @@ nameLine
 
   /* ---------- init ---------- */
   load();
+  // --- Device ID for snapshot scoping (Phase 1) ---
+  // Each browser gets a stable random ID so snapshots on a shared Sheet
+  // stay separated per device. Generated once, persists in localStorage.
+  var DEVICE_ID_KEY = "menchmark-device-id";
+  var deviceId = (function(){
+    try {
+      var stored = localStorage.getItem(DEVICE_ID_KEY);
+      if (stored) return stored;
+      var id = "dev-" + Date.now().toString(36) + "-" + Math.random().toString(36).substring(2, 8);
+      localStorage.setItem(DEVICE_ID_KEY, id);
+      return id;
+    } catch(e) {
+      return "dev-unknown";
+    }
+  })();
   applySetupWizard();
   $("schoolName").textContent=data.school;
   $("bunkName").textContent=data.bunk;
