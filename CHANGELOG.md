@@ -33,6 +33,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Fixed
 
+- **Sticky scan bar could cover the top line after jumping to a new pasuk** (Pesukim/Mishnayos phrase navigation), especially on long pesukim scrolled far down before navigating. Fixed by scrolling directly to the pasuk content with `scrollIntoView()` and a `scroll-margin-top` sized to the scan bar's actual height, instead of scrolling to the document's absolute top — which didn't account for the sticky bar sitting on top of it.
 - **"Restore from Sheet" pulled the wrong device's snapshot, or none at all.** The restore request was scoped to the current device's own ID, which is empty by definition on any device that hasn't synced before — exactly the case restore exists for. Restore now always pulls the single most recent snapshot in the Sheet, regardless of which device saved it. Device ID scoping is still used on save, so multiple devices sharing a Sheet don't overwrite each other's snapshot history.
 - **Auto-snapshot no longer pushes essentially-empty state** (a fresh device with no students/log yet) in the background, reducing noise in the Sheet's Snapshot tab. Manually clicking "Save to Sheet now" still works regardless of how much data exists.
 - **Clarified setup instructions** to prevent teachers from accidentally sharing a single Google Sheet link, which would cause data conflicts.

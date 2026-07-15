@@ -100,6 +100,12 @@
      .seats-scanbar's existing styling, just stretched full-width and pinned
      instead of sitting as a rounded, inset card. ---- */
   #globalScanBar{position:sticky;top:0;z-index:45;border-radius:0;margin:0;border-left:none;border-right:none;border-top:none;box-shadow:0 2px 8px rgba(20,25,45,.08)}
+  /* Any element that gets scrollIntoView()'d as a navigation target should
+     clear the sticky scan bar rather than land underneath it. Using a CSS
+     custom property (set/read from JS) instead of a hardcoded px value,
+     since the bar's real height can vary (e.g. wrapping to two lines on a
+     narrow screen) and a hardcoded number would silently drift out of sync. */
+  .scroll-clear-bar{scroll-margin-top:var(--scan-bar-height, 60px)}
   #globalScanBar.hidden-on-tab{display:none!important}
 
   main{max-width:1040px;margin:0 auto;padding:22px 20px 60px}
@@ -1443,7 +1449,7 @@
       <!-- Teach sub-panel -->
       <div id="pesukSubTeach">
         <p class="view-note" id="teachNote">Tap any line to reveal its translation. Tap ✎ to edit a translation — your change also updates the Matching game.</p>
-        <div id="teachPasuk" class="card pad" dir="rtl" style="font-size:1.6rem;line-height:2.1;text-align:right;margin-bottom:14px"></div>
+        <div id="teachPasuk" class="card pad scroll-clear-bar" dir="rtl" style="font-size:1.6rem;line-height:2.1;text-align:right;margin-bottom:14px"></div>
         <div class="toolbar" id="teachPhraseNav" style="margin-bottom:10px">
           <button class="btn btn-sm" id="teachPhrasePrev" title="Next phrase (or ← key) — this side advances, since the text reads right-to-left">‹</button>
           <button class="btn btn-sm" id="teachPhraseNext" title="Previous phrase (or → key)">›</button>
@@ -5843,6 +5849,18 @@ function setupRoster() {
     });
     updateScanColsToggle();
   }
+  // Keeps --scan-bar-height in sync with the sticky scan bar's real
+  // rendered height, so .scroll-clear-bar's scroll-margin-top never drifts
+  // out of sync (e.g. if the bar wraps to two lines on a narrow screen, or
+  // its content changes).
+  function syncScanBarHeight(){
+    var bar=$("globalScanBar");
+    if(!bar) return;
+    var h = (bar.offsetParent !== null) ? bar.getBoundingClientRect().height : 0;
+    document.documentElement.style.setProperty("--scan-bar-height", h + "px");
+  }
+  window.addEventListener("resize", syncScanBarHeight);
+  window.addEventListener("load", syncScanBarHeight);
   // Measures the real, currently-rendered distance from the top of a no-scroll
   // dashboard section down to the bottom of the viewport, and sets its height
   // to exactly that — deliberately NOT a guessed CSS calc(100vh - Npx). The
@@ -8217,7 +8235,7 @@ function setupRoster() {
   $("teachPhrasePrev").addEventListener("click", function(){ teachAdvance(1); });
   $("teachPhraseNext").addEventListener("click", function(){ teachAdvance(-1); });
   $("teachRepeatToggle").addEventListener("click", function(){ data.teachRepeatMode=!data.teachRepeatMode; save(); renderTeach(); });
-  $("teachPasukSel").addEventListener("change", function(){ teachN=parseInt(this.value,10); teachManualShow={}; teachActiveIdx=null; navigateToPasuk(); window.scrollTo({top:0, behavior:"smooth"}); });
+  $("teachPasukSel").addEventListener("change", function(){ teachN=parseInt(this.value,10); teachManualShow={}; teachActiveIdx=null; navigateToPasuk(); var target=$("teachPasuk"); if(target) target.scrollIntoView({behavior:"smooth", block:"start"}); else window.scrollTo({top:0, behavior:"smooth"}); });
   document.addEventListener("keydown", function(e){
     if(!$("view-pesukim").classList.contains("active")) return;
     var _isTeachSub=(pesukMode==="pesukim"||pesukMode==="mishnayos")&&pesukSubMode==="teach";
@@ -9032,7 +9050,9 @@ nameLine
     var nums=pmNumbers(); var idx=nums.indexOf(teachN); if(idx<0) idx=0;
     idx=(idx+delta+nums.length)%nums.length; teachN=nums[idx]; teachManualShow={};
     navigateToPasuk();
-    window.scrollTo({top:0, behavior:"smooth"});
+    var target=$("teachPasuk");
+    if(target) target.scrollIntoView({behavior:"smooth", block:"start"});
+    else window.scrollTo({top:0, behavior:"smooth"}); // fallback if the element isn't found
   }
   $("teachPrev").addEventListener("click", function(){ teachGo(-1); });
   $("teachNext").addEventListener("click", function(){ teachGo(1); });
@@ -11486,6 +11506,7 @@ nameLine
   renderScanBoard();
   renderTapPanel();
   applyScanLayout();
+  syncScanBarHeight();
   renderClassSel();
   renderGroupTabs("scan"); renderSubTabs("scan","scan"); activeGroupName="scan"; activeTabName="scan";
   applyGlobalScanBarVisibility("scan");
