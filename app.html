@@ -5703,8 +5703,41 @@ function setupRoster() {
       setupRow.appendChild(printWrap);
 
       var arrangeBtn=el("button","btn btn-sm seat-arrange-toggle", data.seatArranging?"Done arranging":"Arrange seats");
-      arrangeBtn.addEventListener("click", function(){ data.seatArranging=!data.seatArranging; save(); renderTapPanel(); });
+      arrangeBtn.addEventListener("click", function(){
+        data.seatArranging=!data.seatArranging;
+        // Belt-and-suspenders: force Rebbi's view off the moment arranging
+        // turns on, rather than only disabling its button going forward —
+        // guarantees the two never overlap even if Rebbi's view was already
+        // on before arranging started. See rebbiBtn below for why this
+        // first pass keeps them strictly mutually exclusive.
+        if(data.seatArranging) data.seatLiveRebbiView=false;
+        save(); renderTapPanel();
+      });
       setupRow.appendChild(arrangeBtn);
+
+      // "Rebbi's view" for the LIVE chart — same 180° flip as the print
+      // option, but this one is interactive (click-to-award, drag-to-
+      // arrange), unlike print's static page. Disabled while arranging is
+      // active: arranging mode's drag/drop and clear-seat logic write
+      // directly into lay.seats by true array index, and while that's now
+      // correctly threaded through a reversed DISPLAY order (see
+      // renderSeatGrid's trueIdx handling below), this is deliberately kept
+      // as a hard restriction for this first pass rather than relying on
+      // that threading alone — don't relax without extensive testing.
+      // No static id here (unlike the print toggle) since this panel is
+      // rendered twice into two different containers (Scan tab + Dashboard);
+      // a shared id would collide, so — matching arrangeBtn/setupToggle
+      // above — it's referenced only via its own closure, not $(id).
+      var rebbiBtn=el("button","btn btn-sm seat-arrange-toggle", data.seatLiveRebbiView?"↩ Normal view":"🔄 Rebbi's view");
+      rebbiBtn.disabled = !!data.seatArranging;
+      rebbiBtn.title = data.seatArranging
+        ? "Turn off arranging mode to flip the view."
+        : "Flips the chart 180° to match what you see facing the class — same as the print option.";
+      rebbiBtn.addEventListener("click", function(){
+        if(data.seatArranging) return; // extra guard; button is also disabled
+        data.seatLiveRebbiView=!data.seatLiveRebbiView; save(); renderTapPanel();
+      });
+      setupRow.appendChild(rebbiBtn);
 
       setupToggle.addEventListener("click", function(){
         data.seatSetupOpen=!data.seatSetupOpen; save();
@@ -5751,10 +5784,24 @@ function setupRoster() {
     grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
     grid.style.gridTemplateRows="repeat("+lay.rows+", 1fr)";
 
-    lay.seats.forEach(function(sid, idx){
+    // Rebbi's view for the LIVE chart must never reverse lay.seats itself —
+    // arranging mode's drag/drop and clear-seat logic write directly to
+    // lay.seats[idx] using the render loop's own index, so reordering the
+    // underlying array would make those writes target the wrong seat the
+    // moment Rebbi's view is on during arranging. Instead, build a list of
+    // {sid, trueIdx} pairs in DISPLAY order, and use trueIdx (never the
+    // display-loop's own position) for every mutation. arrangeBtn's handler
+    // additionally forces seatLiveRebbiView off the moment arranging turns
+    // on, so in practice `arranging && data.seatLiveRebbiView` should never
+    // both be true — this trueIdx threading is the second layer regardless.
+    var displayOrder = lay.seats.map(function(sid, trueIdx){ return {sid:sid, trueIdx:trueIdx}; });
+    if(data.seatLiveRebbiView) displayOrder = displayOrder.slice().reverse();
+
+    displayOrder.forEach(function(item){
+      var sid=item.sid, trueIdx=item.trueIdx;
       var s = sid ? byId[sid] : null;
       var seat=el("div","seat"+(s?"":" empty"));
-      seat.dataset.idx=idx;
+      seat.dataset.idx=trueIdx;
       if(s){
         seat.dataset.sid=s.id;
         seat.appendChild(avatarEl(s, 26));
@@ -5763,7 +5810,7 @@ function setupRoster() {
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
-          clearBtn.addEventListener("click", function(ev){ ev.stopPropagation(); lay.seats[idx]=null; save(); renderTapPanel(); });
+          clearBtn.addEventListener("click", function(ev){ ev.stopPropagation(); lay.seats[trueIdx]=null; save(); renderTapPanel(); });
           seat.appendChild(clearBtn);
         }
       } else {
@@ -5774,7 +5821,7 @@ function setupRoster() {
         seat.draggable=true;
         seat.addEventListener("dragstart", function(ev){
           seat.classList.add("dragging");
-          ev.dataTransfer.setData("text/plain", JSON.stringify({from:idx}));
+          ev.dataTransfer.setData("text/plain", JSON.stringify({from:trueIdx}));
           ev.dataTransfer.effectAllowed="move";
         });
         seat.addEventListener("dragend", function(){ seat.classList.remove("dragging"); });
@@ -5784,7 +5831,7 @@ function setupRoster() {
           ev.preventDefault(); seat.classList.remove("drag-over");
           var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
           var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
-          var toIdx=idx;
+          var toIdx=trueIdx;
           if(payload.from!=null){
             var fromIdx=payload.from;
             var tmp=lay.seats[toIdx];
@@ -5800,7 +5847,7 @@ function setupRoster() {
         // tap-to-place fallback for touch devices: tap an empty seat, then tap an unplaced name
         if(!s){
           seat.addEventListener("click", function(){
-            if(seatGridPending){ lay.seats[idx]=seatGridPending; seatGridPending=null; save(); renderTapPanel(); }
+            if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); renderTapPanel(); }
           });
         }
       } else if(s){
@@ -11424,6 +11471,7 @@ nameLine
     if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages";
     if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
     if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
+    if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
     if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
     if(typeof data.grade!=="string") data.grade="";
