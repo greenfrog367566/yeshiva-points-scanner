@@ -1317,16 +1317,26 @@
         <summary style="cursor:pointer;font-weight:600;color:var(--muted)">⚡ Or auto-fetch from Sefaria + generate with AI (optional)</summary>
         <div style="margin-top:10px">
           <p class="view-note" style="margin:0 0 10px">Pulls the exact Hebrew straight from Sefaria, then asks AI to build the phrase-by-phrase flashcard CSV automatically — no copy-pasting into a chat window, no account needed on this device.</p>
-          <div class="toolbar">
+          <div class="toolbar" style="margin-bottom:10px">
             <select id="autoKind" class="field" style="width:auto">
               <option value="pasuk">Pesukim</option>
               <option value="mishna">Mishnayos</option>
             </select>
-            <select id="autoSefer" class="field" style="width:auto;max-width:200px"></select>
-            <input id="autoPerek" type="number" min="1" step="1" class="field" style="width:70px" placeholder="Perek">
-            <input id="autoFrom" type="number" min="1" step="1" class="field" style="width:60px" placeholder="From">
-            <span>–</span>
-            <input id="autoTo" type="number" min="1" step="1" class="field" style="width:60px" placeholder="To">
+            <select id="autoParshaSel" class="field" style="width:auto;max-width:200px">
+              <option value="">— select Parsha —</option>
+            </select>
+            <select id="autoMesechtaSel" class="field" style="display:none;width:auto;max-width:200px">
+              <option value="">— select Mesechta —</option>
+            </select>
+            <!-- hidden inputs still used by fetchSefariaVerses -->
+            <input id="autoSefer" type="hidden">
+            <input id="autoPerek" type="hidden" value="1">
+            <input id="autoFrom" type="hidden" value="1">
+            <input id="autoTo"   type="hidden" value="1">
+          </div>
+          <div id="autoChapterRow" style="display:none;margin-bottom:8px">
+            <label class="lbl" style="margin-bottom:6px" id="autoChapterLabel">Chapters</label>
+            <div id="autoChapterChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
           </div>
           <div class="toolbar" style="margin-top:8px">
             <button class="btn btn-sm btn-primary" id="autoFetchBtn">⚡ Fetch &amp; generate</button>
@@ -4496,23 +4506,35 @@ function setupRoster() {
       label=sel.mesechtaLabel; seferRef=sel.mesechtaRef; perek=sel.selectedPerakim[0]; kind="mishna";
     }
     if (!label) return;
-    var kindEl=$("autoKind"), seferEl=$("autoSefer"), perekEl=$("autoPerek"), labelEl=$("setLabel");
+    var kindEl=$("autoKind"), labelEl=$("setLabel");
     if (kindEl && kindEl.value!==kind) { kindEl.value=kind; kindEl.dispatchEvent(new Event("change")); }
     setTimeout(function(){
-      if (seferEl) {
-        for (var i=0;i<seferEl.options.length;i++) {
-          if ((seferEl.options[i].value||"").toLowerCase()===seferRef.toLowerCase()) {
-            seferEl.value=seferEl.options[i].value; break;
+      // Select the right Parsha or Mesechta in the new dropdown
+      if (kind==="pasuk") {
+        var pSel=$("autoParshaSel");
+        if (pSel) {
+          for (var i=0;i<PARSHA_DATA.length;i++) {
+            if (PARSHA_DATA[i].ref===seferRef && PARSHA_DATA[i].label===label) {
+              pSel.value=i; pSel.dispatchEvent(new Event("change")); break;
+            }
+          }
+        }
+      } else {
+        var mSel=$("autoMesechtaSel");
+        if (mSel) {
+          for (var i=0;i<mSel.options.length;i++) {
+            if ((mSel.options[i].value||"").toLowerCase()===seferRef.toLowerCase()) {
+              mSel.value=mSel.options[i].value; mSel.dispatchEvent(new Event("change")); break;
+            }
           }
         }
       }
-      if (perekEl && !perekEl.value) perekEl.value=perek;
       if (labelEl && !labelEl.value.trim()) labelEl.value=label+" "+perek;
       var hint=$("autoFetchStatus");
       if (hint && !hint.textContent) {
-        hint.textContent="Your setup selection ("+label+" "+perek+") is pre-filled — hit ⚡ Fetch & generate when ready.";
+        hint.textContent="Your setup selection ("+label+" "+perek+") is pre-filled — select a chapter then hit ⚡ Fetch & generate.";
       }
-    }, 80);
+    }, 150);
   }
 
   /* ---------- Auto-generate text set from wizard selection ---------- */
@@ -4570,8 +4592,25 @@ function setupRoster() {
 
       setMsg("🤖", "Generating flashcards for " + refLabel + "…");
       var hebrewOnly = sel.hebrewOnly === true;
-      var promptText = hebrewOnly ? buildHebrewOnlyPrompt(kind, refLabel, verses) : buildAutoImportPrompt(kind, refLabel, verses);
-      var csvText = stripCodeFence(await callAiProxy(promptText));
+      // Batch by 8 pesukim to avoid AI proxy timeouts on long ranges
+      var AUTO_BATCH = 8;
+      var allParts = [], batches2 = [];
+      for(var bi2=0; bi2<verses.length; bi2+=AUTO_BATCH) batches2.push(verses.slice(bi2, bi2+AUTO_BATCH));
+      for(var bi2=0; bi2<batches2.length; bi2++){
+        var bv=batches2[bi2];
+        var bl=refLabel+(batches2.length>1?" ("+(bi2+1)+"/"+batches2.length+")":"");
+        setMsg("🤖", "Generating"+(batches2.length>1?" part "+(bi2+1)+" of "+batches2.length:"")+" for "+refLabel+"…");
+        var bp=hebrewOnly ? buildHebrewOnlyPrompt(kind, bl, bv) : buildAutoImportPrompt(kind, bl, bv);
+        var bcsv=stripCodeFence(await callAiProxy(bp));
+        if(bi2>0){
+          var blines=bcsv.split("\n");
+          var bhi=blines.findIndex(function(l){return /^num[,\t]/i.test(l.trim());});
+          if(bhi>=0) blines.splice(bhi,1);
+          bcsv=blines.join("\n");
+        }
+        allParts.push(bcsv.trim());
+      }
+      var csvText = allParts.join("\n");
 
       setMsg("📥", "Importing " + refLabel + "…");
       var parsed = parseTextSetCSV(csvText);
@@ -8497,6 +8536,82 @@ nameLine
      If Sefaria or the proxy can't be reached (offline, proxy not deployed
      yet, etc.) this degrades gracefully to the existing manual copy/paste
      flow, seeded with whatever real text it did manage to fetch. */
+  // Parsha-level data: display label, Sefaria book ref, and chapter list
+  var PARSHA_DATA=[
+    {label:"Bereishis",      ref:"Genesis",      chapters:[1,2,3,4,5,6]},
+    {label:"Noach",          ref:"Genesis",      chapters:[6,7,8,9,10,11]},
+    {label:"Lech Lecha",     ref:"Genesis",      chapters:[12,13,14,15,16,17]},
+    {label:"Vayeira",        ref:"Genesis",      chapters:[18,19,20,21,22]},
+    {label:"Chayei Sara",    ref:"Genesis",      chapters:[23,24,25]},
+    {label:"Toldos",         ref:"Genesis",      chapters:[25,26,27,28]},
+    {label:"Vayeitzei",      ref:"Genesis",      chapters:[28,29,30,31,32]},
+    {label:"Vayishlach",     ref:"Genesis",      chapters:[32,33,34,35,36]},
+    {label:"Vayeishev",      ref:"Genesis",      chapters:[37,38,39,40]},
+    {label:"Mikeitz",        ref:"Genesis",      chapters:[41,42,43,44]},
+    {label:"Vayigash",       ref:"Genesis",      chapters:[44,45,46,47]},
+    {label:"Vayechi",        ref:"Genesis",      chapters:[47,48,49,50]},
+    {label:"Shemos",         ref:"Exodus",       chapters:[1,2,3,4,5,6]},
+    {label:"Va'eira",        ref:"Exodus",       chapters:[6,7,8,9]},
+    {label:"Bo",             ref:"Exodus",       chapters:[10,11,12,13]},
+    {label:"Beshalach",      ref:"Exodus",       chapters:[13,14,15,16,17]},
+    {label:"Yisro",          ref:"Exodus",       chapters:[18,19,20]},
+    {label:"Mishpatim",      ref:"Exodus",       chapters:[21,22,23,24]},
+    {label:"Terumah",        ref:"Exodus",       chapters:[25,26,27]},
+    {label:"Tetzaveh",       ref:"Exodus",       chapters:[27,28,29,30]},
+    {label:"Ki Sisa",        ref:"Exodus",       chapters:[30,31,32,33,34]},
+    {label:"Vayakhel",       ref:"Exodus",       chapters:[35,36,37,38]},
+    {label:"Pekudei",        ref:"Exodus",       chapters:[38,39,40]},
+    {label:"Vayikra",        ref:"Leviticus",    chapters:[1,2,3,4,5]},
+    {label:"Tzav",           ref:"Leviticus",    chapters:[6,7,8]},
+    {label:"Shemini",        ref:"Leviticus",    chapters:[9,10,11]},
+    {label:"Tazria",         ref:"Leviticus",    chapters:[12,13]},
+    {label:"Metzora",        ref:"Leviticus",    chapters:[14,15]},
+    {label:"Acharei Mos",    ref:"Leviticus",    chapters:[16,17,18]},
+    {label:"Kedoshim",       ref:"Leviticus",    chapters:[19,20]},
+    {label:"Emor",           ref:"Leviticus",    chapters:[21,22,23,24]},
+    {label:"Behar",          ref:"Leviticus",    chapters:[25,26]},
+    {label:"Bechukosai",     ref:"Leviticus",    chapters:[26,27]},
+    {label:"Bamidbar",       ref:"Numbers",      chapters:[1,2,3,4]},
+    {label:"Naso",           ref:"Numbers",      chapters:[4,5,6,7]},
+    {label:"Beha'alosecha",  ref:"Numbers",      chapters:[8,9,10,11,12]},
+    {label:"Shlach",         ref:"Numbers",      chapters:[13,14,15]},
+    {label:"Korach",         ref:"Numbers",      chapters:[16,17,18]},
+    {label:"Chukas",         ref:"Numbers",      chapters:[19,20,21,22]},
+    {label:"Balak",          ref:"Numbers",      chapters:[22,23,24,25]},
+    {label:"Pinchas",        ref:"Numbers",      chapters:[25,26,27,28,29,30]},
+    {label:"Matos",          ref:"Numbers",      chapters:[30,31,32]},
+    {label:"Masei",          ref:"Numbers",      chapters:[33,34,35,36]},
+    {label:"Devarim",        ref:"Deuteronomy",  chapters:[1,2,3]},
+    {label:"Va'eschanan",    ref:"Deuteronomy",  chapters:[3,4,5,6,7]},
+    {label:"Eikev",          ref:"Deuteronomy",  chapters:[7,8,9,10,11]},
+    {label:"Reeh",           ref:"Deuteronomy",  chapters:[11,12,13,14,15,16]},
+    {label:"Shoftim",        ref:"Deuteronomy",  chapters:[16,17,18,19,20,21]},
+    {label:"Ki Seitzei",     ref:"Deuteronomy",  chapters:[21,22,23,24,25]},
+    {label:"Ki Savo",        ref:"Deuteronomy",  chapters:[26,27,28,29]},
+    {label:"Nitzavim",       ref:"Deuteronomy",  chapters:[29,30]},
+    {label:"Vayelech",       ref:"Deuteronomy",  chapters:[31]},
+    {label:"Ha'azinu",       ref:"Deuteronomy",  chapters:[32]},
+    {label:"Vzos Habracha",  ref:"Deuteronomy",  chapters:[33,34]}
+  ];
+  // Mishnayos: label, Sefaria ref, number of perakim
+  var MISHNA_PERAKIM={
+    "Mishnah Berakhot":9,"Mishnah Peah":8,"Mishnah Demai":7,"Mishnah Kilayim":9,
+    "Mishnah Sheviit":10,"Mishnah Terumot":11,"Mishnah Maasrot":5,"Mishnah Maaser Sheni":5,
+    "Mishnah Challah":4,"Mishnah Orlah":3,"Mishnah Bikkurim":3,"Mishnah Shabbat":24,
+    "Mishnah Eruvin":10,"Mishnah Pesachim":10,"Mishnah Shekalim":8,"Mishnah Yoma":8,
+    "Mishnah Sukkah":5,"Mishnah Beitzah":5,"Mishnah Rosh Hashanah":4,"Mishnah Taanit":4,
+    "Mishnah Megillah":4,"Mishnah Moed Katan":3,"Mishnah Chagigah":3,"Mishnah Yevamot":16,
+    "Mishnah Ketubot":13,"Mishnah Nedarim":11,"Mishnah Nazir":9,"Mishnah Sotah":9,
+    "Mishnah Gittin":9,"Mishnah Kiddushin":4,"Mishnah Bava Kamma":10,"Mishnah Bava Metzia":10,
+    "Mishnah Bava Batra":10,"Mishnah Sanhedrin":11,"Mishnah Makkot":3,"Mishnah Shevuot":8,
+    "Mishnah Eduyot":8,"Mishnah Avodah Zarah":5,"Mishnah Avot":6,"Mishnah Horayot":3,
+    "Mishnah Zevachim":14,"Mishnah Menachot":13,"Mishnah Chullin":12,"Mishnah Bekhorot":9,
+    "Mishnah Arakhin":9,"Mishnah Temurah":7,"Mishnah Keritot":6,"Mishnah Meilah":6,
+    "Mishnah Tamid":7,"Mishnah Middot":5,"Mishnah Kinnim":3,"Mishnah Kelim":30,
+    "Mishnah Oholot":18,"Mishnah Negaim":14,"Mishnah Parah":12,"Mishnah Tahorot":10,
+    "Mishnah Mikvaot":10,"Mishnah Niddah":10,"Mishnah Makhshirin":6,"Mishnah Zavim":5,
+    "Mishnah Tevul Yom":4,"Mishnah Yadayim":4,"Mishnah Oktzin":3
+  };
   var CHUMASH_BOOKS=[
     {label:"Bereishis", ref:"Genesis"},
     {label:"Shemos",    ref:"Exodus"},
@@ -8522,24 +8637,85 @@ nameLine
   // Fill in after deploying the proxy (see docs/ai-proxy-worker.js). Blank
   // means auto-generate always falls straight back to the manual prompt box.
   var AI_PROXY_URL="https://pesukim-ai-proxy.bsteinerman.workers.dev/";
-  function renderAutoSeferOptions(){
-    var kind=$("autoKind").value, sel=$("autoSefer");
-    sel.innerHTML="";
-    if(kind==="mishna"){
-      MISHNAYOS_SEDARIM.forEach(function(grp){
-        var og=document.createElement("optgroup"); og.label=grp.seder;
-        grp.tractates.forEach(function(t,i){
-          var label=(grp.labels&&grp.labels[i])||t;
-          var o=el("option",null,label); o.value="Mishnah "+t; og.appendChild(o);
-        });
-        sel.appendChild(og);
-      });
-    } else {
-      CHUMASH_BOOKS.forEach(function(b){ var o=el("option",null,b.label); o.value=b.ref; sel.appendChild(o); });
-    }
+  // Populate the Parsha dropdown (one-time)
+  function populateAppParshaDropdown(){
+    var sel=$("autoParshaSel"); if(!sel||sel.options.length>1) return;
+    PARSHA_DATA.forEach(function(p,i){
+      var o=el("option",null,p.label); o.value=i; sel.appendChild(o);
+    });
   }
-  $("autoKind").addEventListener("change", renderAutoSeferOptions);
-  renderAutoSeferOptions();
+  // Populate the Mesechta dropdown (one-time)
+  function populateAppMesechtaDropdown(){
+    var sel=$("autoMesechtaSel"); if(!sel||sel.options.length>1) return;
+    MISHNAYOS_SEDARIM.forEach(function(grp){
+      var og=document.createElement("optgroup"); og.label=grp.seder;
+      grp.tractates.forEach(function(t,i){
+        var label=(grp.labels&&grp.labels[i])||t;
+        var o=el("option",null,label); o.value="Mishnah "+t; og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+  }
+  // Render chapter/perek chip pickers for the selected parsha or mesechta
+  function renderAutoChapterChips(){
+    var kind=$("autoKind").value;
+    var chips=$("autoChapterChips"); var row=$("autoChapterRow");
+    var lbl=$("autoChapterLabel");
+    if(!chips||!row) return;
+    chips.innerHTML=""; row.style.display="none";
+    var items=[], seferRef="";
+    if(kind==="pasuk"){
+      var pSel=$("autoParshaSel"); if(!pSel||!pSel.value) return;
+      var p=PARSHA_DATA[parseInt(pSel.value,10)]; if(!p) return;
+      items=p.chapters; seferRef=p.ref;
+      lbl.textContent="Chapters";
+    } else {
+      var mSel=$("autoMesechtaSel"); if(!mSel||!mSel.value) return;
+      var count=MISHNA_PERAKIM[mSel.value]||1;
+      for(var i=1;i<=count;i++) items.push(i);
+      seferRef=mSel.value;
+      lbl.textContent="Perakim";
+    }
+    $("autoSefer").value=seferRef;
+    row.style.display="";
+    // Track selected chapters/perakim in a closure array
+    var selected=[];
+    function syncHidden(){
+      if(!selected.length){ $("autoPerek").value=""; $("autoFrom").value=""; $("autoTo").value=""; return; }
+      var sorted=selected.slice().sort(function(a,b){return a-b;});
+      $("autoPerek").value=sorted[0];
+      $("autoFrom").value=sorted[0];
+      $("autoTo").value=sorted[sorted.length-1];
+    }
+    items.forEach(function(val){
+      var chip=el("button","btn btn-sm");
+      chip.textContent=val; chip.type="button";
+      chip.style.cssText="min-width:36px;font-weight:600";
+      chip.addEventListener("click",function(){
+        var idx=selected.indexOf(val);
+        if(idx>=0){ selected.splice(idx,1); chip.classList.remove("btn-primary"); }
+        else { selected.push(val); chip.classList.add("btn-primary"); }
+        syncHidden();
+      });
+      chips.appendChild(chip);
+    });
+  }
+  // Show/hide the right dropdown when kind changes
+  function onAutoKindChange(){
+    var kind=$("autoKind").value;
+    var pSel=$("autoParshaSel"), mSel=$("autoMesechtaSel");
+    if(pSel) pSel.style.display=kind==="pasuk"?"":"none";
+    if(mSel) mSel.style.display=kind==="mishna"?"":"none";
+    if(kind==="pasuk") populateAppParshaDropdown();
+    else populateAppMesechtaDropdown();
+    // Clear chips when switching kinds
+    var chips=$("autoChapterChips"); if(chips) chips.innerHTML="";
+    var row=$("autoChapterRow"); if(row) row.style.display="none";
+  }
+  $("autoKind").addEventListener("change", onAutoKindChange);
+  $("autoParshaSel").addEventListener("change", renderAutoChapterChips);
+  $("autoMesechtaSel").addEventListener("change", renderAutoChapterChips);
+  onAutoKindChange(); // init
 
   async function fetchSefariaVerses(seferRef, perek, from, to){
     var rangeRef=seferRef+"."+perek+"."+(from===to ? from : from+"-"+to);
