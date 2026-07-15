@@ -1881,7 +1881,7 @@
       </div>
       <div class="card pad bk-card danger-zone">
         <h3>Clear ALL data</h3>
-        <p>Wipes everything — institution &amp; class name, students, activities, scores, scan log, raffle history, and the saved Google Sheet link. Use this to start completely fresh (a new bunk, a new summer). Download a backup first if you're not sure.</p>
+        <p>Wipes everything — institution &amp; class name, students, activities, scores, scan log, raffle history, and the saved Google Sheet link. Use this to start completely fresh (a new class, a new year). Download a backup first if you're not sure.</p>
         <button class="btn btn-bad" id="clearAllData">Clear ALL data…</button>
       </div>
     </div>
@@ -1997,7 +1997,7 @@
   return ContentService.createTextOutput("Points sync is live.");
 }
 
-// Log columns are: Time, Student, Bunk/Group, Activity, Points, New total, ID,
+// Log columns are: Time, Student, Class/Group, Activity, Points, New total, ID,
 // Undo Of, Note. Note is appended at the very end deliberately — sheets that
 // were created before this column existed keep their original 8-column
 // header untouched; new rows simply carry a 9th value. Add a "Note" label to
@@ -2040,7 +2040,7 @@ function rebuildLeaderBoard() {
   list.sort(function (a, b) { return b.total - a.total || lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
   var lb = ss.getSheetByName("Leader Board") || ss.insertSheet("Leader Board");
   lb.clear();
-  lb.appendRow(["Rank", "Student", "Bunk/Group", "Points"]);
+  lb.appendRow(["Rank", "Student", "Class/Group", "Points"]);
   list.forEach(function (it, i) { lb.appendRow([i + 1, it.name, it.group, it.total]); });
   lb.setFrozenRows(1);
 }
@@ -2112,7 +2112,7 @@ function doPost(e) {
   if (body.type === "scan" || body.type === "correction") {
     var log = ss.getSheetByName("Log") || ss.insertSheet("Log");
     if (log.getLastRow() === 0) {
-      log.appendRow(["Time", "Student", "Bunk/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
+      log.appendRow(["Time", "Student", "Class/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
     }
     if (!logHasId(log, body.id)) {
       log.appendRow([new Date(body.ts), body.name, body.group, body.label, body.delta, body.total, body.id || "", body.undoOf || "", body.note || ""]);
@@ -2143,14 +2143,14 @@ function doPost(e) {
   if (body.type === "standings") {
     var st = ss.getSheetByName("Standings") || ss.insertSheet("Standings");
     st.clear();
-    st.appendRow(["Rank", "Student", "Bunk/Group", "Points"]);
+    st.appendRow(["Rank", "Student", "Class/Group", "Points"]);
     (body.rows || []).forEach(function (r) { st.appendRow(r); });
   }
 
   if (body.type === "pasuk") {
     var pl = ss.getSheetByName("Pesukim Log") || ss.insertSheet("Pesukim Log");
     if (pl.getLastRow() === 0) {
-      pl.appendRow(["Time", "Student", "Bunk/Group", "Pasuk"]);
+      pl.appendRow(["Time", "Student", "Class/Group", "Pasuk"]);
     }
     pl.appendRow([new Date(body.ts), body.name, body.group, body.ref + ":" + body.pasuk]);
   }
@@ -2158,7 +2158,7 @@ function doPost(e) {
   if (body.type === "pasukgrid") {
     var pc = ss.getSheetByName("Pesukim Chart") || ss.insertSheet("Pesukim Chart");
     pc.clear();
-    var header = ["Student", "Bunk/Group"];
+    var header = ["Student", "Class/Group"];
     for (var v = body.from; v <= body.to; v++) { header.push(body.ref + ":" + v); }
     header.push("Done");
     pc.appendRow(header);
@@ -2177,7 +2177,7 @@ function doPost(e) {
   if (body.type === "attendance") {
     var att = ss.getSheetByName("Attendance Log") || ss.insertSheet("Attendance Log");
     if (att.getLastRow() === 0) {
-      att.appendRow(["Time", "Date", "Student", "Bunk/Group", "Status"]);
+      att.appendRow(["Time", "Date", "Student", "Class/Group", "Status"]);
     }
     att.appendRow([new Date(body.ts), body.date, body.name, body.group, body.status]);
   }
@@ -2185,7 +2185,7 @@ function doPost(e) {
   if (body.type === "tracker") {
     var trk = ss.getSheetByName("Tracker Log") || ss.insertSheet("Tracker Log");
     if (trk.getLastRow() === 0) {
-      trk.appendRow(["Time", "Student", "Bunk/Group", "Activity"]);
+      trk.appendRow(["Time", "Student", "Class/Group", "Activity"]);
     }
     trk.appendRow([new Date(body.ts), body.name, body.group, body.activity]);
   }
@@ -2193,7 +2193,7 @@ function doPost(e) {
   if (body.type === "hw") {
     var hwl = ss.getSheetByName("Homework Log") || ss.insertSheet("Homework Log");
     if (hwl.getLastRow() === 0) {
-      hwl.appendRow(["Time", "Date", "Student", "Bunk/Group", "Checked"]);
+      hwl.appendRow(["Time", "Date", "Student", "Class/Group", "Checked"]);
     }
     hwl.appendRow([new Date(body.ts), body.date, body.name, body.group, body.checked ? "Yes" : "No"]);
   }
@@ -2208,7 +2208,7 @@ function testSetup() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var log = ss.getSheetByName("Log") || ss.insertSheet("Log");
   if (log.getLastRow() === 0) {
-    log.appendRow(["Time", "Student", "Bunk/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
+    log.appendRow(["Time", "Student", "Class/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
   }
   log.appendRow([new Date(), "Test student", "Gimel 1", "Setup test", 0, 0, "test-" + Date.now(), "", ""]);
   rebuildLeaderBoard();
@@ -2784,7 +2784,7 @@ function setupRoster() {
 
   var defaults = {
     school: "Sample School",
-    bunk: "Sample Class 1",
+    className: "Sample Class 1",
     students: [],   // {id, name, group}
     activities: [
       {id:"a1", name:"On time", pts:1},
@@ -2908,17 +2908,24 @@ function setupRoster() {
     if(!data.weekly[wk][sid][L]) data.weekly[wk][sid][L]={p:0,n:0};
     data.weekly[wk][sid][L].p+=p; data.weekly[wk][sid][L].n++;
   }
-  // Data-version scaffolding, per CONTRIBUTING.md's documented pattern. This is
-  // the FIRST release to carry a version number, so there's no real migration
-  // to run yet — migrateData() just stamps existing (pre-versioning) saved data
-  // as version 1, establishing the baseline every future migration will count
-  // up from. Bump DATA_VERSION and add a new `if(data.version===N)` branch
-  // here whenever a future release actually changes the shape of stored data.
-  var DATA_VERSION = 1;
+  // Data-version scaffolding, per CONTRIBUTING.md's documented pattern.
+  // migrateData() stamps existing (pre-versioning) saved data as version 1,
+  // establishing the baseline every migration counts up from. Bump
+  // DATA_VERSION and add a new `if(data.version===N)` branch here whenever a
+  // future release changes the shape of stored data.
+  var DATA_VERSION = 2;
   function migrateData(d){
     if(!d.version) d.version = 1;
-    // future migrations go here, e.g.:
-    // if(d.version===1){ d.someNewField = d.someNewField || {}; d.version=2; }
+    // v1 -> v2: rename data.bunk to data.className. This app is a Yeshiva/
+    // Day School tool, not a camp app — "bunk" was leftover terminology
+    // from an earlier direction. Existing teachers' saved class names are
+    // preserved by copying the value over; the old field is removed so
+    // nothing accidentally reads stale data from it going forward.
+    if(d.version===1){
+      if(typeof d.bunk==="string" && typeof d.className!=="string") d.className = d.bunk;
+      delete d.bunk;
+      d.version = 2;
+    }
     return d;
   }
   function load(){
@@ -8027,7 +8034,7 @@ function setupRoster() {
   });
   $("psCsv").addEventListener("click", function(){
     var from=data.pasukSet.from, to=data.pasukSet.to, ref=data.pasukSet.ref;
-    var header=["Student","Bunk/Group"]; for(var v=from; v<=to; v++) header.push(ref+":"+v); header.push("Done");
+    var header=["Student","Class/Group"]; for(var v=from; v<=to; v++) header.push(ref+":"+v); header.push("Done");
     var rows=[header].concat(pesukGridRows("yes"));
     var csv=rows.map(function(r){ return r.map(function(c){ c=String(c); return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c; }).join(","); }).join("\n");
     download("pesukim-chart-"+stamp()+".csv", csv, "text/csv");
@@ -10927,7 +10934,7 @@ nameLine
         save();
         // Refresh all views (same as JSON restore)
         $("schoolName").textContent = data.school;
-        $("bunkName").textContent = data.bunk;
+        $("bunkName").textContent = data.className;
         $("sheetUrl").value = data.sheetUrl || "";
         $("autoSheet").checked = (data.autoSheet !== false);
         renderActButtons(); renderRecent(); renderStudents(); renderActivities();
@@ -11091,7 +11098,7 @@ nameLine
           data=migrateData(resolvedObj); load2fix(); save();
           clearStaleTicketPools();
           $("schoolName").textContent=data.school;
-          $("bunkName").textContent=data.bunk;
+          $("bunkName").textContent=data.className;
           $("sheetUrl").value=data.sheetUrl||"";
           $("autoSheet").checked=(data.autoSheet!==false);
           renderActButtons(); renderRecent(); renderStudents(); renderActivities();
@@ -11113,7 +11120,7 @@ nameLine
       try{
         var rows=parseCSV(r.result).filter(function(row){ return row.some(function(c){ return (c||"").trim(); }); });
         if(!rows.length) throw new Error("empty");
-        // detect & skip a header row (Time, Student, Bunk/Group, Activity, Points, New total)
+        // detect & skip a header row (Time, Student, Class/Group, Activity, Points, New total)
         var h=rows[0].map(function(c){ return (c||"").trim().toLowerCase(); });
         var start = (h[0]==="time"||h[1]==="student"||h.indexOf("activity")>=0) ? 1 : 0;
         var entries=[];
@@ -11131,7 +11138,7 @@ nameLine
 
         entries.sort(function(a,b){ return a.ts-b.ts; }); // chronological, so totals & history land in order
 
-        var fresh={ school:data&&data.school||"Sample School", bunk:data&&data.bunk||"Sample Class 1",
+        var fresh={ school:data&&data.school||"Sample School", className:data&&data.className||"Sample Class 1",
           students:[], activities:[], scores:{}, log:[], sheetUrl:(data&&data.sheetUrl)||"", autoSheet:(data&&data.autoSheet)!==false,
           earned:{}, weekly:{}, earnedSeeded:true };
         var byName={}, actSeen={};
@@ -11174,13 +11181,13 @@ nameLine
         // rebuild earned/weekly trend history from the full entry list (positive points only)
         entries.forEach(function(e){ if(e.delta>0){ var s=byName[e.name.toLowerCase()]; if(s) recordEarn(s.id, e.label, e.delta, e.ts); } });
         save();
-        $("schoolName").textContent=data.school; $("bunkName").textContent=data.bunk;
+        $("schoolName").textContent=data.school; $("bunkName").textContent=data.className;
         $("sheetUrl").value=data.sheetUrl||""; $("autoSheet").checked=(data.autoSheet!==false);
         renderActButtons(); renderRecent(); renderStudents(); renderActivities(); renderClassSel();
         $("logCsvStatus").textContent="Restored "+fresh.students.length+" students, "+fresh.activities.length+" activities, and "+entries.length+" log entries.";
         alert("Restored from Log CSV: "+fresh.students.length+" students, "+entries.length+" scan entries.");
       }catch(err){
-        $("logCsvStatus").textContent="Couldn't read that as a Log CSV. Make sure it's the export of your sheet's Log tab (Time, Student, Bunk/Group, Activity, Points, New total).";
+        $("logCsvStatus").textContent="Couldn't read that as a Log CSV. Make sure it's the export of your sheet's Log tab (Time, Student, Class/Group, Activity, Points, New total).";
       }
     };
     r.readAsText(file);
@@ -11194,7 +11201,7 @@ nameLine
     data.log.forEach(function(e){ if(e && !e.id) e.id=newId(); });
     if(!data.scores) data.scores = {};
     if(!data.school) data.school = "Sample School";
-    if(!data.bunk) data.bunk = "Sample Class 1";
+    if(!data.className) data.className = "Sample Class 1";
     if(typeof data.sheetUrl!=="string") data.sheetUrl="";
     if(typeof data.autoSheet!=="boolean") data.autoSheet=true;
     if(!data.raffle) data.raffle={mode:"auto",entries:{},winners:[]};
@@ -11342,7 +11349,7 @@ nameLine
   // history, and the saved Sheet link. Type-to-confirm since this is the one
   // action here with no way back short of a backup file.
   $("clearAllData").addEventListener("click", function(){
-    var typed=prompt("This permanently erases the institution name, class/bunk name, students, activities, scores, scan log, raffle history, and your saved Google Sheet link on this device. This cannot be undone.\n\nType CLEAR to confirm:");
+    var typed=prompt("This permanently erases the institution name, class name, students, activities, scores, scan log, raffle history, and your saved Google Sheet link on this device. This cannot be undone.\n\nType CLEAR to confirm:");
     if(typed===null) return;
     if(typed.trim().toUpperCase()!=="CLEAR"){ alert("Not cleared — typed text didn't match \u201CCLEAR\u201D."); return; }
     data=JSON.parse(JSON.stringify(defaults));
@@ -11353,7 +11360,7 @@ nameLine
   /* ---------- school name + mute + date ---------- */
   $("schoolName").addEventListener("blur", function(){ data.school=this.textContent.trim()||"My School"; this.textContent=data.school; save(); });
   $("schoolName").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); this.blur(); } });
-  $("bunkName").addEventListener("blur", function(){ data.bunk=this.textContent.trim()||"Sample Class 1"; this.textContent=data.bunk; save(); });
+  $("bunkName").addEventListener("blur", function(){ data.className=this.textContent.trim()||"Sample Class 1"; this.textContent=data.className; save(); });
   $("bunkName").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); this.blur(); } });
   $("muteBtn").addEventListener("click", function(){ data.muted=!data.muted; this.textContent=data.muted?"🔇 Sound off":"🔊 Sound on"; var ss=$("setSound"); if(ss) ss.checked=!data.muted; save(); });
   function showDate(){
@@ -11429,7 +11436,7 @@ nameLine
     if (rawSetup) {
       try {
         var s = JSON.parse(rawSetup);
-        if (s.className)  { data.bunk   = s.className;  changed = true; }
+        if (s.className)  { data.className = s.className; changed = true; }
         if (s.schoolName) { data.school = s.schoolName; changed = true; }
         if (s.grade)      { data.grade  = s.grade;      changed = true; }
 
@@ -11523,7 +11530,7 @@ nameLine
   })();
   applySetupWizard();
   $("schoolName").textContent=data.school;
-  $("bunkName").textContent=data.bunk;
+  $("bunkName").textContent=data.className;
   $("sheetUrl").value=data.sheetUrl||"";
   $("autoSheet").checked=(data.autoSheet!==false);
   $("muteBtn").textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
@@ -11700,7 +11707,7 @@ This program runs entirely in a web browser (like Chrome or Safari) — there is
 Every screen in the program now shares a three-part header:
 
 
-- A top bar with your school/bunk name on the left, the main section tabs in the middle (Scan, Rewards, Learn, Tools, Print, Setup), and the class dropdown on the right — tap the school/bunk name to rename it.
+- A top bar with your school/class name on the left, the main section tabs in the middle (Scan, Rewards, Learn, Tools, Print, Setup), and the class dropdown on the right — tap the school/class name to rename it.
 
 
 - A second row just below it with the sub-tabs for whichever section you're in (for example, under Scan you'll see Dashboard, Seats, History, Leader Board, Trends, Contest), plus a row of quick icons.

@@ -46,6 +46,10 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 - **"✏️ Edit phrases" button (Teach view, Pesukim/Mishnayos) permanently invisible.** On first load the app defaults to Chart mode, which explicitly set `teachEditBtn.style.display = "none"` directly on the button. Switching into Teach mode afterward only restored visibility on the surrounding container, never on the button itself — so the phrase split/join editor was unreachable from a fresh page load, even though all of its underlying logic (word-splitting, joining, translation editing) was fully intact. Fixed by resetting the button's own inline `display` on every `renderTeach()` call, mirroring the existing reset already in place for the neighboring "Show all" button.
 - **Pasuk dropdown didn't update when navigating in the Matching game.** `navigateToPasuk()` routed Teach-mode navigation through `renderTeach()`, which re-syncs the pasuk dropdown as a side effect — but routed Match-mode navigation straight to `loadPmPasuk()`, which never touches the dropdown. Result: tapping ‹ Previous / Next › while in the Matching game correctly advanced to the next pasuk (the game content updated fine), but the dropdown kept showing the old selection. Fixed by syncing the dropdown once at the top of `navigateToPasuk()`, before branching into either sub-mode.
 
+### Changed
+
+- **Renamed "Bunk" to "Class" throughout the app.** This is a Yeshiva/Day School classroom tool, not a camp app — "Bunk" was leftover terminology. Existing teachers' saved class names are preserved automatically via a one-time migration; nothing needs to be re-entered. Google Sheets already created keep their existing "Bunk/Group" column headers (unchanged, to avoid touching live data); brand-new sheets going forward use "Class/Group."
+
 ## [0.4.0] — 2026-07-12
 
 ### Added
