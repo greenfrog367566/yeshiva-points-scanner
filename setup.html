@@ -327,7 +327,7 @@ tailwind.config = {
           <button onclick="goTo('screen-step2','back')" class="px-5 py-3.5 rounded-xl border-2 border-slate-200 text-slate-500 font-semibold text-sm hover:bg-slate-50 transition-colors">
             Back
           </button>
-          <button onclick="saveProgress(); goTo('screen-step4')" class="text-sm font-semibold text-slate-400 hover:text-slate-600 px-4 py-3.5 transition-colors">
+          <button onclick="saveProgress(); goTo('screen-step3')" class="text-sm font-semibold text-slate-400 hover:text-slate-600 px-4 py-3.5 transition-colors">
             Skip
           </button>
           <button onclick="confirmWizardStudents()" class="flex-1 bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold rounded-xl px-6 py-3.5 text-sm transition-colors">
@@ -377,26 +377,86 @@ tailwind.config = {
           </div>
         </div>
 
-        <!-- Optional data input (collapsed by default) -->
-        <div id="learn-data-section" class="hidden">
-          <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Paste content or upload CSV <span class="text-slate-300 normal-case tracking-normal font-normal">(optional)</span></label>
-          <textarea id="inp-learn-data" rows="3" placeholder="Paste vocabulary, pesukim, or content here…"
-                    class="w-full border-2 border-slate-200 focus:border-gold-400 rounded-xl px-4 py-3 text-sm outline-none transition-colors resize-none mb-2"></textarea>
-          <label class="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-500 cursor-pointer transition-colors">
-            <i data-lucide="upload" class="w-4 h-4"></i>
-            Upload CSV
-            <input type="file" accept=".csv,.txt" class="hidden" onchange="handleLearnFile(this)" />
-          </label>
+        <!-- Parsha / Mishnayos picker (shown when Pesukim or Mishnayos selected) -->
+        <div id="learn-text-picker" class="hidden">
+          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 mb-4">
+
+            <!-- Pesukim: Parsha dropdown + chapter -->
+            <div id="learn-parsha-section" class="hidden space-y-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Parsha</label>
+                <select id="learn-parsha-sel" class="w-full border-2 border-slate-200 focus:border-gold-400 rounded-xl px-4 py-3 text-sm outline-none transition-colors bg-white" onchange="onLearnParshaChange()">
+                  <option value="">— select a Parsha —</option>
+                </select>
+              </div>
+              <div id="learn-perek-row" class="hidden">
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Chapter(s) to learn</label>
+                <div id="learn-perek-chips" class="flex flex-wrap gap-2"></div>
+                <p class="text-xs text-slate-400 mt-1.5">Tap to select. You can add more chapters later.</p>
+              </div>
+            </div>
+
+            <!-- Shorashim: just a text input for the parsha/topic -->
+            <div id="learn-shorashim-section" class="hidden space-y-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">What parsha or topic are the shorashim from?</label>
+                <input id="learn-shorashim-topic" type="text" placeholder="e.g. Vayeira, Bava Metzia, Tefillah…"
+                  class="w-full border-2 border-slate-200 focus:border-gold-400 rounded-xl px-4 py-3 text-sm outline-none transition-colors" />
+                <p class="text-xs text-slate-400 mt-1.5">You can set up shorashim manually in the Learn → Shorashim tab after setup.</p>
+              </div>
+            </div>
+
+            <!-- Mishnayos: Mesechta dropdown + perek -->
+            <div id="learn-mishna-section" class="hidden space-y-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Mesechta</label>
+                <select id="learn-mesechta-sel" class="w-full border-2 border-slate-200 focus:border-gold-400 rounded-xl px-4 py-3 text-sm outline-none transition-colors bg-white" onchange="onLearnMesechtaChange()">
+                  <option value="">— select a Mesechta —</option>
+                </select>
+              </div>
+              <div id="learn-mishna-perek-row" class="hidden">
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Perek(s) to learn</label>
+                <div id="learn-mishna-perek-chips" class="flex flex-wrap gap-2"></div>
+                <p class="text-xs text-slate-400 mt-1.5">Tap to select. You can add more later.</p>
+              </div>
+            </div>
+
+            <!-- Hebrew-only option — shown when Pesukim or Mishnayos selected -->
+            <div id="learn-hebrew-only-row" class="hidden border-t border-slate-200 pt-3 mt-1">
+              <label class="flex items-start gap-3 cursor-pointer select-none">
+                <input type="checkbox" id="learn-hebrew-only" class="mt-0.5 shrink-0" onchange="setup.learning.hebrewOnly = this.checked">
+                <div>
+                  <p class="text-sm font-semibold text-navy-700">Hebrew phrases only</p>
+                  <p class="text-xs text-slate-400">Generate the Hebrew broken into short phrases — I'll add my own translations in the app.</p>
+                </div>
+              </label>
+            </div>
+
+            <!-- Auto-generate toggle — shown once a Parsha/Mishnayos + chapters are selected -->
+            <div id="learn-autogen-row" class="hidden pt-1">
+              <label class="flex items-center gap-3 cursor-pointer select-none">
+                <div class="relative shrink-0">
+                  <input type="checkbox" id="learn-autogen-toggle" class="sr-only" checked onchange="setup.learning.autoGenerate = this.checked">
+                  <div class="w-10 h-6 bg-slate-200 rounded-full transition-colors" id="learn-autogen-track"></div>
+                  <div class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform" id="learn-autogen-thumb"></div>
+                </div>
+                <div>
+                  <p class="text-sm font-semibold text-navy-700">Automatically populate my texts</p>
+                  <p class="text-xs text-slate-400">We'll generate the flashcard CSV from Sefaria the first time you open the app — no extra steps.</p>
+                </div>
+              </label>
+            </div>
+          </div>
         </div>
 
-        <div class="mt-8 flex gap-3">
-          <button onclick="goTo('screen-step2','back')" class="px-5 py-3.5 rounded-xl border-2 border-slate-200 text-slate-500 font-semibold text-sm hover:bg-slate-50 transition-colors">
+        <div class="mt-4 flex gap-3">
+          <button onclick="goTo('screen-step-students','back')" class="px-5 py-3.5 rounded-xl border-2 border-slate-200 text-slate-500 font-semibold text-sm hover:bg-slate-50 transition-colors">
             Back
           </button>
-          <button onclick="goTo('screen-step4')" class="text-sm font-semibold text-slate-400 hover:text-slate-600 px-4 py-3.5 transition-colors">
+          <button onclick="saveProgress(); goTo('screen-step4')" class="text-sm font-semibold text-slate-400 hover:text-slate-600 px-4 py-3.5 transition-colors">
             Skip
           </button>
-          <button onclick="goTo('screen-step4')" class="flex-1 bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold rounded-xl px-6 py-3.5 text-sm transition-colors">
+          <button onclick="confirmLearnSelection()" class="flex-1 bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold rounded-xl px-6 py-3.5 text-sm transition-colors">
             Next
           </button>
         </div>
@@ -598,6 +658,7 @@ var setup = {
   },
   students: []  // [{name, grp}]
 };
+setup.learning.autoGenerate = true; // default on
 
 function saveProgress() {
   setup.schoolName = (document.getElementById('inp-school').value || '').trim();
@@ -720,10 +781,285 @@ function goToStep3() {
 
 /* ── Step 3 learning ── */
 function selectLearnType(card) {
-  document.querySelectorAll('.learn-card').forEach(function (c) { c.classList.remove('selected'); });
+  document.querySelectorAll('.learn-card').forEach(function(c) { c.classList.remove('selected'); });
   card.classList.add('selected');
   setup.learning.type = card.dataset.type;
-  document.getElementById('learn-data-section').classList.remove('hidden');
+
+  var picker   = document.getElementById('learn-text-picker');
+  var parshaS  = document.getElementById('learn-parsha-section');
+  var mishnaS  = document.getElementById('learn-mishna-section');
+  var hint     = document.getElementById('learn-picker-hint');
+  if (hint) hint.classList.add('hidden');
+
+  var shorS = document.getElementById('learn-shorashim-section');
+  var heRow = document.getElementById('learn-hebrew-only-row');
+
+  if (card.dataset.type === 'pesukim') {
+    picker.classList.remove('hidden');
+    parshaS.classList.remove('hidden');
+    mishnaS.classList.add('hidden');
+    if (shorS) shorS.classList.add('hidden');
+    if (heRow) heRow.classList.remove('hidden');
+    populateParshaDropdown();
+  } else if (card.dataset.type === 'mishnayos') {
+    picker.classList.remove('hidden');
+    parshaS.classList.add('hidden');
+    mishnaS.classList.remove('hidden');
+    if (shorS) shorS.classList.add('hidden');
+    if (heRow) heRow.classList.remove('hidden');
+    populateMesechtaDropdown();
+  } else if (card.dataset.type === 'shoreshim') {
+    picker.classList.remove('hidden');
+    parshaS.classList.add('hidden');
+    mishnaS.classList.add('hidden');
+    if (shorS) shorS.classList.remove('hidden');
+    if (heRow) heRow.classList.add('hidden');
+  } else {
+    picker.classList.add('hidden');
+    if (heRow) heRow.classList.add('hidden');
+  }
+}
+
+// ── Parsha data ──────────────────────────────────────────────────────────
+var PARSHA_DATA = [
+  {label:"Bereishis",      ref:"Genesis",      chapters:[1,2,3,4,5,6]},
+  {label:"Noach",          ref:"Genesis",      chapters:[6,7,8,9,10,11]},
+  {label:"Lech Lecha",     ref:"Genesis",      chapters:[12,13,14,15,16,17]},
+  {label:"Vayeira",        ref:"Genesis",      chapters:[18,19,20,21,22]},
+  {label:"Chayei Sara",    ref:"Genesis",      chapters:[23,24,25]},
+  {label:"Toldos",         ref:"Genesis",      chapters:[25,26,27,28]},
+  {label:"Vayeitzei",      ref:"Genesis",      chapters:[28,29,30,31,32]},
+  {label:"Vayishlach",     ref:"Genesis",      chapters:[32,33,34,35,36]},
+  {label:"Vayeishev",      ref:"Genesis",      chapters:[37,38,39,40]},
+  {label:"Mikeitz",        ref:"Genesis",      chapters:[41,42,43,44]},
+  {label:"Vayigash",       ref:"Genesis",      chapters:[44,45,46,47]},
+  {label:"Vayechi",        ref:"Genesis",      chapters:[47,48,49,50]},
+  {label:"Shemos",         ref:"Exodus",       chapters:[1,2,3,4,5,6]},
+  {label:"Va'eira",        ref:"Exodus",       chapters:[6,7,8,9]},
+  {label:"Bo",             ref:"Exodus",       chapters:[10,11,12,13]},
+  {label:"Beshalach",      ref:"Exodus",       chapters:[13,14,15,16,17]},
+  {label:"Yisro",          ref:"Exodus",       chapters:[18,19,20]},
+  {label:"Mishpatim",      ref:"Exodus",       chapters:[21,22,23,24]},
+  {label:"Terumah",        ref:"Exodus",       chapters:[25,26,27]},
+  {label:"Tetzaveh",       ref:"Exodus",       chapters:[27,28,29,30]},
+  {label:"Ki Sisa",        ref:"Exodus",       chapters:[30,31,32,33,34]},
+  {label:"Vayakhel",       ref:"Exodus",       chapters:[35,36,37,38]},
+  {label:"Pekudei",        ref:"Exodus",       chapters:[38,39,40]},
+  {label:"Vayikra",        ref:"Leviticus",    chapters:[1,2,3,4,5]},
+  {label:"Tzav",           ref:"Leviticus",    chapters:[6,7,8]},
+  {label:"Shemini",        ref:"Leviticus",    chapters:[9,10,11]},
+  {label:"Tazria",         ref:"Leviticus",    chapters:[12,13]},
+  {label:"Metzora",        ref:"Leviticus",    chapters:[14,15]},
+  {label:"Acharei Mos",    ref:"Leviticus",    chapters:[16,17,18]},
+  {label:"Kedoshim",       ref:"Leviticus",    chapters:[19,20]},
+  {label:"Emor",           ref:"Leviticus",    chapters:[21,22,23,24]},
+  {label:"Behar",          ref:"Leviticus",    chapters:[25,26]},
+  {label:"Bechukosai",     ref:"Leviticus",    chapters:[26,27]},
+  {label:"Bamidbar",       ref:"Numbers",      chapters:[1,2,3,4]},
+  {label:"Naso",           ref:"Numbers",      chapters:[4,5,6,7]},
+  {label:"Beha'alosecha",  ref:"Numbers",      chapters:[8,9,10,11,12]},
+  {label:"Shlach",         ref:"Numbers",      chapters:[13,14,15]},
+  {label:"Korach",         ref:"Numbers",      chapters:[16,17,18]},
+  {label:"Chukas",         ref:"Numbers",      chapters:[19,20,21,22]},
+  {label:"Balak",          ref:"Numbers",      chapters:[22,23,24,25]},
+  {label:"Pinchas",        ref:"Numbers",      chapters:[25,26,27,28,29,30]},
+  {label:"Matos",          ref:"Numbers",      chapters:[30,31,32]},
+  {label:"Masei",          ref:"Numbers",      chapters:[33,34,35,36]},
+  {label:"Devarim",        ref:"Deuteronomy",  chapters:[1,2,3]},
+  {label:"Va'eschanan",    ref:"Deuteronomy",  chapters:[3,4,5,6,7]},
+  {label:"Eikev",          ref:"Deuteronomy",  chapters:[7,8,9,10,11]},
+  {label:"Reeh",           ref:"Deuteronomy",  chapters:[11,12,13,14,15,16]},
+  {label:"Shoftim",        ref:"Deuteronomy",  chapters:[16,17,18,19,20,21]},
+  {label:"Ki Seitzei",     ref:"Deuteronomy",  chapters:[21,22,23,24,25]},
+  {label:"Ki Savo",        ref:"Deuteronomy",  chapters:[26,27,28,29]},
+  {label:"Nitzavim",       ref:"Deuteronomy",  chapters:[29,30]},
+  {label:"Vayelech",       ref:"Deuteronomy",  chapters:[31]},
+  {label:"Ha'azinu",       ref:"Deuteronomy",  chapters:[32]},
+  {label:"Vzos Habracha",  ref:"Deuteronomy",  chapters:[33,34]}
+];
+
+var MISHNA_DATA = [
+  {label:"Brachos",       ref:"Mishnah Berakhot",     perakim:9},
+  {label:"Peah",          ref:"Mishnah Peah",          perakim:8},
+  {label:"Demai",         ref:"Mishnah Demai",         perakim:7},
+  {label:"Kilayim",       ref:"Mishnah Kilayim",       perakim:9},
+  {label:"Sheviis",       ref:"Mishnah Sheviit",       perakim:10},
+  {label:"Terumos",       ref:"Mishnah Terumot",       perakim:11},
+  {label:"Maasros",       ref:"Mishnah Maasrot",       perakim:5},
+  {label:"Maaser Sheni",  ref:"Mishnah Maaser Sheni",  perakim:5},
+  {label:"Challah",       ref:"Mishnah Challah",       perakim:4},
+  {label:"Orlah",         ref:"Mishnah Orlah",         perakim:3},
+  {label:"Bikkurim",      ref:"Mishnah Bikkurim",      perakim:3},
+  {label:"Shabbos",       ref:"Mishnah Shabbat",       perakim:24},
+  {label:"Eiruvin",       ref:"Mishnah Eruvin",        perakim:10},
+  {label:"Pesachim",      ref:"Mishnah Pesachim",      perakim:10},
+  {label:"Shekalim",      ref:"Mishnah Shekalim",      perakim:8},
+  {label:"Yoma",          ref:"Mishnah Yoma",          perakim:8},
+  {label:"Sukkah",        ref:"Mishnah Sukkah",        perakim:5},
+  {label:"Beitzah",       ref:"Mishnah Beitzah",       perakim:5},
+  {label:"Rosh Hashana",  ref:"Mishnah Rosh Hashanah", perakim:4},
+  {label:"Taanis",        ref:"Mishnah Taanit",        perakim:4},
+  {label:"Megillah",      ref:"Mishnah Megillah",      perakim:4},
+  {label:"Moed Koton",    ref:"Mishnah Moed Katan",    perakim:3},
+  {label:"Chagigah",      ref:"Mishnah Chagigah",      perakim:3},
+  {label:"Yevamos",       ref:"Mishnah Yevamot",       perakim:16},
+  {label:"Kesubos",       ref:"Mishnah Ketubot",       perakim:13},
+  {label:"Nedarim",       ref:"Mishnah Nedarim",       perakim:11},
+  {label:"Nazir",         ref:"Mishnah Nazir",         perakim:9},
+  {label:"Sotah",         ref:"Mishnah Sotah",         perakim:9},
+  {label:"Gittin",        ref:"Mishnah Gittin",        perakim:9},
+  {label:"Kiddushin",     ref:"Mishnah Kiddushin",     perakim:4},
+  {label:"Bava Kamma",    ref:"Mishnah Bava Kamma",    perakim:10},
+  {label:"Bava Metzia",   ref:"Mishnah Bava Metzia",   perakim:10},
+  {label:"Bava Basra",    ref:"Mishnah Bava Batra",    perakim:10},
+  {label:"Sanhedrin",     ref:"Mishnah Sanhedrin",     perakim:11},
+  {label:"Makkos",        ref:"Mishnah Makkot",        perakim:3},
+  {label:"Shevuos",       ref:"Mishnah Shevuot",       perakim:8},
+  {label:"Eduyos",        ref:"Mishnah Eduyot",        perakim:8},
+  {label:"Avodah Zarah",  ref:"Mishnah Avodah Zarah",  perakim:5},
+  {label:"Avos",          ref:"Mishnah Avot",          perakim:6},
+  {label:"Horayos",       ref:"Mishnah Horayot",       perakim:3},
+  {label:"Zevachim",      ref:"Mishnah Zevachim",      perakim:14},
+  {label:"Menachos",      ref:"Mishnah Menachot",      perakim:13},
+  {label:"Chulin",        ref:"Mishnah Chullin",       perakim:12},
+  {label:"Bechoros",      ref:"Mishnah Bekhorot",      perakim:9},
+  {label:"Erchin",        ref:"Mishnah Arakhin",       perakim:9},
+  {label:"Temurah",       ref:"Mishnah Temurah",       perakim:7},
+  {label:"Krisus",        ref:"Mishnah Keritot",       perakim:6},
+  {label:"Meilah",        ref:"Mishnah Meilah",        perakim:6},
+  {label:"Tomid",         ref:"Mishnah Tamid",         perakim:7},
+  {label:"Midos",         ref:"Mishnah Middot",        perakim:5},
+  {label:"Kinnim",        ref:"Mishnah Kinnim",        perakim:3},
+  {label:"Keilim",        ref:"Mishnah Kelim",         perakim:30},
+  {label:"Ohalos",        ref:"Mishnah Oholot",        perakim:18},
+  {label:"Negaim",        ref:"Mishnah Negaim",        perakim:14},
+  {label:"Parah",         ref:"Mishnah Parah",         perakim:12},
+  {label:"Taharos",       ref:"Mishnah Tahorot",       perakim:10},
+  {label:"Mikvaos",       ref:"Mishnah Mikvaot",       perakim:10},
+  {label:"Niddah",        ref:"Mishnah Niddah",        perakim:10},
+  {label:"Machshirin",    ref:"Mishnah Makhshirin",    perakim:6},
+  {label:"Zavim",         ref:"Mishnah Zavim",         perakim:5},
+  {label:"Tevul Yom",     ref:"Mishnah Tevul Yom",     perakim:4},
+  {label:"Yadayim",       ref:"Mishnah Yadayim",       perakim:4},
+  {label:"Uktzin",        ref:"Mishnah Oktzin",        perakim:3}
+];
+
+function populateParshaDropdown() {
+  var sel = document.getElementById('learn-parsha-sel');
+  if (!sel || sel.options.length > 1) return;
+  PARSHA_DATA.forEach(function(p, i) {
+    var o = document.createElement('option');
+    o.value = i; o.textContent = p.label;
+    sel.appendChild(o);
+  });
+}
+
+function populateMesechtaDropdown() {
+  var sel = document.getElementById('learn-mesechta-sel');
+  if (!sel || sel.options.length > 1) return;
+  MISHNA_DATA.forEach(function(m, i) {
+    var o = document.createElement('option');
+    o.value = i; o.textContent = m.label;
+    sel.appendChild(o);
+  });
+}
+
+function renderChipPicker(containerId, items, storeKey) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  var selected = setup.learning[storeKey] || [];
+  items.forEach(function(val) {
+    var chip = document.createElement('button');
+    chip.type = 'button';
+    chip.textContent = val;
+    var isOn = selected.indexOf(val) >= 0;
+    chip.className = 'px-3 py-1.5 rounded-lg text-sm font-semibold border-2 transition-colors ' +
+      (isOn ? 'border-gold-400 bg-gold-50 text-navy-700' : 'border-slate-200 bg-white text-slate-500');
+    chip.addEventListener('click', function() {
+      var arr = setup.learning[storeKey] || [];
+      var idx = arr.indexOf(val);
+      if (idx >= 0) arr.splice(idx, 1); else arr.push(val);
+      setup.learning[storeKey] = arr;
+      renderChipPicker(containerId, items, storeKey);
+      updateAutoGenRow();
+    });
+    container.appendChild(chip);
+  });
+  updateAutoGenRow();
+}
+
+function updateAutoGenRow() {
+  var row = document.getElementById('learn-autogen-row');
+  if (!row) return;
+  var hasChapters = ((setup.learning.selectedChapters  || []).length > 0) ||
+                    ((setup.learning.selectedPerakim    || []).length > 0);
+  row.classList.toggle('hidden', !hasChapters);
+  // Sync toggle visual state
+  var cb    = document.getElementById('learn-autogen-toggle');
+  var track = document.getElementById('learn-autogen-track');
+  var thumb = document.getElementById('learn-autogen-thumb');
+  if (cb && track && thumb) {
+    var on = cb.checked;
+    track.style.background = on ? '#e8b321' : '';
+    thumb.style.transform  = on ? 'translateX(16px)' : '';
+  }
+}
+
+// Keep toggle visual in sync when clicked
+document.addEventListener('change', function(e) {
+  if (e.target && e.target.id === 'learn-autogen-toggle') {
+    setup.learning.autoGenerate = e.target.checked;
+    updateAutoGenRow();
+  }
+});
+
+function onLearnParshaChange() {
+  var sel = document.getElementById('learn-parsha-sel');
+  var row = document.getElementById('learn-perek-row');
+  if (!sel || !sel.value) { if (row) row.classList.add('hidden'); return; }
+  var parsha = PARSHA_DATA[parseInt(sel.value, 10)];
+  if (!parsha) return;
+  setup.learning.parshaIdx     = parseInt(sel.value, 10);
+  setup.learning.parshaLabel   = parsha.label;
+  setup.learning.parshaRef     = parsha.ref;
+  setup.learning.selectedChapters = [];
+  row.classList.remove('hidden');
+  renderChipPicker('learn-perek-chips', parsha.chapters, 'selectedChapters');
+}
+
+function onLearnMesechtaChange() {
+  var sel = document.getElementById('learn-mesechta-sel');
+  var row = document.getElementById('learn-mishna-perek-row');
+  if (!sel || !sel.value) { if (row) row.classList.add('hidden'); return; }
+  var mData = MISHNA_DATA[parseInt(sel.value, 10)];
+  if (!mData) return;
+  setup.learning.mesechtaIdx   = parseInt(sel.value, 10);
+  setup.learning.mesechtaLabel = mData.label;
+  setup.learning.mesechtaRef   = mData.ref;
+  setup.learning.selectedPerakim = [];
+  var pereks = [];
+  for (var i = 1; i <= mData.perakim; i++) pereks.push(i);
+  row.classList.remove('hidden');
+  renderChipPicker('learn-mishna-perek-chips', pereks, 'selectedPerakim');
+}
+
+function confirmLearnSelection() {
+  saveProgress();
+  var hint = document.getElementById('learn-picker-hint');
+  var type = setup.learning.type;
+  // Save shorashim topic if present
+  if (type === 'shoreshim') {
+    var topicEl = document.getElementById('learn-shorashim-topic');
+    if (topicEl) setup.learning.shorashimTopic = topicEl.value.trim();
+  }
+
+  var hasSelection =
+    (type === 'pesukim'   && setup.learning.parshaLabel   && (setup.learning.selectedChapters  ||[]).length) ||
+    (type === 'mishnayos' && setup.learning.mesechtaLabel && (setup.learning.selectedPerakim   ||[]).length) ||
+    (type === 'shoreshim' && setup.learning.shorashimTopic);
+  if (hasSelection && hint) hint.classList.remove('hidden');
+  goTo('screen-step4');
 }
 
 function handleLearnFile(input) {
@@ -741,11 +1077,7 @@ function toggleScanner(card) {
 
 function goBackFromStep4() {
   saveProgress();
-  if (setup.features.learning) {
-    goTo('screen-step3', 'back');
-  } else {
-    goTo('screen-step-students', 'back');
-  }
+  goTo('screen-step3', 'back'); // always go back through Learning step
 }
 
 /* ── Step 3: Students ── */
@@ -791,11 +1123,7 @@ function confirmWizardStudents() {
 }
 
 function goToStep3Learning() {
-  if (setup.features.learning) {
-    goTo('screen-step3');
-  } else {
-    goTo('screen-step4');
-  }
+  goTo('screen-step3'); // always show Learning step — it's always worth offering
 }
 
 /* ── Finish ── */

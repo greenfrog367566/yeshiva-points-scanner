@@ -3186,6 +3186,8 @@ function setupRoster() {
       pesukMode=modeMap[tab]||"chart";
       applyPesukMode(); renderTapPanel();
       setTimeout(function(){ if(pesukMode==="chart") $("pesukScanInput") && $("pesukScanInput").focus(); },50);
+      // Option A: show wizard banner if a text set was selected during setup
+      setTimeout(function(){ if(typeof showLearnWizardBanner==="function") showLearnWizardBanner(); }, 300);
     }
     if(tab==="learn-shorashim"){
       var vsh=$("view-shorashim"); if(vsh) vsh.classList.add("active");
@@ -4478,6 +4480,126 @@ function setupRoster() {
     });
 
     save();
+  }
+
+  // Pre-fill the auto-fetch form whenever the teacher opens Text mode,
+  // as long as a wizard selection exists and hasn't been generated yet.
+  function prefillWizardLearning() {
+    var sel = data.wizardLearning;
+    if (!sel || data._wizardTextGenDone) return;
+    var label=null, seferRef=null, perek=null, kind=null;
+    if (sel.type==="pesukim" && sel.parshaLabel && sel.parshaRef &&
+        sel.selectedChapters && sel.selectedChapters.length) {
+      label=sel.parshaLabel; seferRef=sel.parshaRef; perek=sel.selectedChapters[0]; kind="pasuk";
+    } else if (sel.type==="mishnayos" && sel.mesechtaLabel && sel.mesechtaRef &&
+        sel.selectedPerakim && sel.selectedPerakim.length) {
+      label=sel.mesechtaLabel; seferRef=sel.mesechtaRef; perek=sel.selectedPerakim[0]; kind="mishna";
+    }
+    if (!label) return;
+    var kindEl=$("autoKind"), seferEl=$("autoSefer"), perekEl=$("autoPerek"), labelEl=$("setLabel");
+    if (kindEl && kindEl.value!==kind) { kindEl.value=kind; kindEl.dispatchEvent(new Event("change")); }
+    setTimeout(function(){
+      if (seferEl) {
+        for (var i=0;i<seferEl.options.length;i++) {
+          if ((seferEl.options[i].value||"").toLowerCase()===seferRef.toLowerCase()) {
+            seferEl.value=seferEl.options[i].value; break;
+          }
+        }
+      }
+      if (perekEl && !perekEl.value) perekEl.value=perek;
+      if (labelEl && !labelEl.value.trim()) labelEl.value=label+" "+perek;
+      var hint=$("autoFetchStatus");
+      if (hint && !hint.textContent) {
+        hint.textContent="Your setup selection ("+label+" "+perek+") is pre-filled — hit ⚡ Fetch & generate when ready.";
+      }
+    }, 80);
+  }
+
+  /* ---------- Auto-generate text set from wizard selection ---------- */
+  // Runs once after init. Fetches Hebrew from Sefaria, calls the AI proxy
+  // to generate the phrase-by-phrase CSV, imports it into data.textSets,
+  // then flashes a "Your texts are ready" toast. Falls back silently if
+  // offline or the proxy is unreachable — no blocking, no error dialogs.
+  async function autoGenerateWizardTextSet() {
+    if (data._wizardTextGenDone) return;
+
+    var sel = data.wizardLearning || null;
+    if (!sel) return;
+
+    var label=null, seferRef=null, perek=null, kind=null;
+    if (sel.type==="pesukim" && sel.parshaLabel && sel.parshaRef &&
+        sel.selectedChapters && sel.selectedChapters.length) {
+      label=sel.parshaLabel; seferRef=sel.parshaRef;
+      perek=sel.selectedChapters[0]; kind="pasuk";
+    } else if (sel.type==="mishnayos" && sel.mesechtaLabel && sel.mesechtaRef &&
+        sel.selectedPerakim && sel.selectedPerakim.length) {
+      label=sel.mesechtaLabel; seferRef=sel.mesechtaRef;
+      perek=sel.selectedPerakim[0]; kind="mishna";
+    }
+    if (!label) return;
+
+    var refLabel = label + " " + perek;
+
+    // ── Toast ──────────────────────────────────────────────────────────────
+    var toast = document.createElement("div");
+    toast.id = "wizardGenToast";
+    toast.style.cssText = [
+      "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999",
+      "background:#0f1b33;color:#fff;border-radius:12px;padding:14px 20px",
+      "font-size:.9rem;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,.25)",
+      "display:flex;align-items:center;gap:10px;min-width:280px;max-width:90vw",
+      "transition:opacity .5s ease"
+    ].join(";");
+    var ico = document.createElement("span"); ico.style.fontSize="1.2rem";
+    var msg = document.createElement("span"); msg.style.flex="1";
+    toast.appendChild(ico); toast.appendChild(msg);
+    document.body.appendChild(toast);
+
+    function setMsg(icon, text){ ico.textContent=icon; msg.textContent=text; }
+    function fadeOut(delay){
+      setTimeout(function(){
+        toast.style.opacity="0";
+        setTimeout(function(){ if(toast.parentNode) toast.remove(); }, 600);
+      }, delay||3500);
+    }
+
+    try {
+      setMsg("🌐", "Fetching " + refLabel + " from Sefaria…");
+      var verses = await fetchSefariaVerses(seferRef, perek, 1, 999);
+      if (verses.length > 30) verses = verses.slice(0, 30);
+
+      setMsg("🤖", "Generating flashcards for " + refLabel + "…");
+      var hebrewOnly = sel.hebrewOnly === true;
+      var promptText = hebrewOnly ? buildHebrewOnlyPrompt(kind, refLabel, verses) : buildAutoImportPrompt(kind, refLabel, verses);
+      var csvText = stripCodeFence(await callAiProxy(promptText));
+
+      setMsg("📥", "Importing " + refLabel + "…");
+      var parsed = parseTextSetCSV(csvText);
+      if (!parsed) throw new Error("Empty result");
+
+      var newId = "wz-" + Date.now();
+      data.textSets.push({
+        id:newId, label:label, ref:refLabel, kind:kind,
+        from:parsed.from, to:parsed.to,
+        phrases:parsed.phrases, pointed:parsed.pointed,
+        done:{}, best:{}, labels:parsed.labels||{}
+      });
+      loadTextSet(newId);
+      data._wizardTextGenDone = true;
+      data.wizardLearning = null;
+      save();
+      if (typeof renderPesukSets==="function") renderPesukSets();
+
+      // ── Success flash ──
+      toast.style.background = "#10b981";
+      setMsg("✅", "Your texts are ready! “" + label + "” is now in the Learn tab.");
+      fadeOut(5000);
+
+    } catch(err) {
+      toast.style.background = "#64748b";
+      setMsg("⚠️", "Couldn't auto-generate " + refLabel + " — try Learn → Text manually.");
+      fadeOut(6000);
+    }
   }
 
   /* ---------- Shulchani restore helper ---------- */
@@ -7811,7 +7933,7 @@ function setupRoster() {
 
     if(pesukMode==="chart") renderPesukim();
     else if(isTeachMode){ applyPesukSubMode(); }
-    else if(pesukMode==="text") { renderPesukSets(); }
+    else if(pesukMode==="text") { renderPesukSets(); prefillWizardLearning(); }
   }
   $("pesukMode").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; pesukMode=b.dataset.pm; applyPesukMode(); });
 
@@ -8534,9 +8656,10 @@ nameLine
       return;
     }
 
-    var prompt=buildAutoImportPrompt(kind, refLabel, verses);
+    var hebrewOnly=$("autoHebrewOnly") && $("autoHebrewOnly").checked;
+    var prompt=hebrewOnly ? buildHebrewOnlyPrompt(kind, refLabel, verses) : buildAutoImportPrompt(kind, refLabel, verses);
     try{
-      statusEl.textContent="Asking AI to build the flashcard CSV…";
+      statusEl.textContent=hebrewOnly ? "Asking AI to split into Hebrew phrases…" : "Asking AI to build the flashcard CSV…";
       var csvText=stripCodeFence(await callAiProxy(prompt));
       $("csvBox").value=csvText;
       statusEl.textContent="Done — review the CSV below, then click \"Import as new text set.\"";
@@ -10653,6 +10776,7 @@ nameLine
     if(typeof data.features.shulchani!=="boolean") data.features.shulchani=true;
     if(typeof data.features.chavrusa!=="boolean") data.features.chavrusa=false;
     if(typeof data.features.learningType!=="string") data.features.learningType="";
+    if(typeof data.wizardLearning==="undefined") data.wizardLearning=null;
     if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}};
     if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={};
     if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={};
@@ -10794,7 +10918,12 @@ nameLine
           /* Store other feature flags for subsystems to read */
           if (!data.features || typeof data.features !== "object") data.features = {};
           data.features.chavrusa = s.features.chavrusa === true;
-          if (s.learning && s.learning.type) data.features.learningType = s.learning.type;
+          if (s.learning && s.learning.type) {
+            data.features.learningType = s.learning.type;
+            if (s.learning.parshaLabel || s.learning.mesechtaLabel) {
+              data.wizardLearning = s.learning;
+            }
+          }
 
           /* Nav visibility — reversible via Settings */
           if (!data.navHidden || typeof data.navHidden !== "object") data.navHidden = {groups:{},tabs:{}};
@@ -10864,6 +10993,10 @@ nameLine
   applyGlobalScanBarVisibility("scan");
   if(typeof serialTryAutoReconnect==="function") serialTryAutoReconnect();
   if(typeof window._refreshSnackBtn==="function") window._refreshSnackBtn();
+  // Auto-generate text set from wizard learning selection — runs once, async,
+  // 1.5s delay so the full app is rendered before the toast appears.
+  // Auto-generate only if teacher opted in (default: true)
+  if (data.wizardLearning && data.wizardLearning.autoGenerate !== false) setTimeout(function(){ autoGenerateWizardTextSet(); }, 1500);
   setTimeout(function(){ $("scanInput").focus(); },80);
 })();
 
