@@ -1074,12 +1074,17 @@
     <div class="toolbar no-print">
       <input id="historySearch" class="field" placeholder="Search a student…" style="max-width:260px">
       <select id="historyStudentFilter" class="field" style="width:auto"><option value="">All students</option></select>
+      <select id="historyActivityFilter" class="field" style="width:auto"><option value="">All activities</option></select>
       <select id="historySort" class="field" style="width:auto">
         <option value="newest">Newest first</option>
         <option value="oldest">Oldest first</option>
         <option value="highest">Highest points</option>
         <option value="lowest">Lowest points</option>
       </select>
+      <span class="seg mini" id="historyViewMode">
+        <button data-hvm="row" class="active">Recent</button>
+        <button data-hvm="ranked">Most given</button>
+      </span>
       <span class="grow"></span>
       <button class="btn btn-bad" id="historyUndoLast">↩ Undo last scan</button>
     </div>
@@ -3394,9 +3399,17 @@ function setupRoster() {
       var row=el("div","erow");
       var name=el("span","grow"); name.appendChild(document.createTextNode(s.name+"  ")); if(s.group) name.appendChild(el("span","grp-tag",s.group));
       var badge=el("span", on?"au-win":"au-rem", on?"✓ used":"available");
+      row.appendChild(name); row.appendChild(badge);
+      // Reuses the same absolute-clock-time format already established in
+      // Tracker (fmtClockTime) and History (history-ts class), so passes
+      // look consistent with the rest of the app rather than introducing a
+      // new time format.
+      if(on && data.passes.used[s.id]){
+        row.appendChild(el("span","history-ts", fmtClockTime(data.passes.used[s.id])));
+      }
       var btn=el("button","btn btn-sm"+(on?"":" btn-primary"), on?"Give back":"Mark used");
       btn.addEventListener("click", function(){ setPass(s.id,!on); renderPasses(); });
-      row.appendChild(name); row.appendChild(badge); row.appendChild(btn);
+      row.appendChild(btn);
       list.appendChild(row);
     });
   }
@@ -5345,6 +5358,20 @@ function setupRoster() {
   $("undoLast").addEventListener("click", function(){ undoMostRecentScan(); });
 
   /* ---------- History tab: the full scan log, searchable ---------- */
+  var historyViewMode = "row"; // "row" (recent, existing sorts) or "ranked" (grouped totals)
+  // Mirrors renderStandActivitySelect()'s pattern (line ~6310) — same
+  // allEarnedLabels() source, so History's activity list always matches
+  // what Standings offers.
+  function renderHistoryActivitySelect(){
+    var sel=$("historyActivityFilter"); if(!sel) return;
+    var cur=sel.value;
+    sel.innerHTML="";
+    var allOpt=el("option",null,"All activities"); allOpt.value=""; sel.appendChild(allOpt);
+    allEarnedLabels().forEach(function(label){
+      var o=el("option",null,label); o.value=label; sel.appendChild(o);
+    });
+    sel.value = cur || "";
+  }
   function renderHistoryTab(){
     var sel=$("historyStudentFilter");
     var curSel=sel.value;
@@ -5353,15 +5380,37 @@ function setupRoster() {
       var o=el("option",null,s.name); o.value=s.id; sel.appendChild(o);
     });
     sel.value=curSel;
+    renderHistoryActivitySelect();
 
     var term=($("historySearch").value||"").trim().toLowerCase();
     var studentFilter=sel.value;
+    var activityFilter=$("historyActivityFilter") ? $("historyActivityFilter").value : "";
     var sortMode=$("historySort") ? $("historySort").value : "newest";
+    document.querySelectorAll("#historyViewMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.hvm===historyViewMode); });
+    if($("historySort")) $("historySort").style.display = historyViewMode==="ranked" ? "none" : "";
+
+    // Base filter (student + text search + activity) — shared by both the
+    // row view's sorts and the ranked view's per-student totals, so all
+    // three filters narrow the same underlying set together (AND'd).
+    var filtered = data.log.filter(function(entry){
+      var s=studentById(entry.sid);
+      var name = s ? s.name : entry.sid;
+      if(studentFilter && entry.sid!==studentFilter) return false;
+      if(term && name.toLowerCase().indexOf(term)<0) return false;
+      if(activityFilter && entry.label!==activityFilter) return false;
+      return true;
+    });
+
+    if(historyViewMode==="ranked"){
+      renderHistoryRanked(filtered, activityFilter);
+      return;
+    }
+
     var list=$("historyList"); list.innerHTML="";
     var shown=0;
     // Apply sort — default (newest) is already the order of data.log (unshifted
     // on each scan). Only copy+sort for the other modes to avoid mutating the log.
-    var logView = (sortMode==="newest") ? data.log : data.log.slice().sort(function(a,b){
+    var logView = (sortMode==="newest") ? filtered : filtered.slice().sort(function(a,b){
       if(sortMode==="oldest")  return (a.ts||0)-(b.ts||0);
       if(sortMode==="highest") return Math.abs(b.delta)-Math.abs(a.delta);
       if(sortMode==="lowest")  return Math.abs(a.delta)-Math.abs(b.delta);
@@ -5370,8 +5419,6 @@ function setupRoster() {
     logView.forEach(function(entry, idx){
       var s=studentById(entry.sid);
       var name = s ? s.name : entry.sid;
-      if(studentFilter && entry.sid!==studentFilter) return;
-      if(term && name.toLowerCase().indexOf(term)<0) return;
       shown++;
       var isCorrection = entry.kind==="correction";
       var row=el("div","recent-item history-item"+(entry.undone?" undone":"")+(isCorrection?" correction":""));
@@ -5416,9 +5463,39 @@ function setupRoster() {
     });
     if(!shown) list.appendChild(el("div","recent-empty", data.log.length ? "No scans match your search." : "Scans will appear here."));
   }
+  // "Most given" ranked view — groups the already-filtered log by student and
+  // sums points, mirroring pointsInRange()'s exclusion rules (skips undone
+  // entries and corrections) so the ranking matches what Standings would show
+  // for the same activity. With no activity selected, filteredLog already
+  // spans every activity, so this naturally ranks by combined total across
+  // all activities — same as "All activities" being a valid state elsewhere.
+  function renderHistoryRanked(filteredLog, activityLabel){
+    var totals={}; // sid -> sum
+    filteredLog.forEach(function(e){
+      if(e.undone || e.kind==="correction") return;
+      totals[e.sid] = (totals[e.sid]||0) + (e.delta||0);
+    });
+    var rows=Object.keys(totals).map(function(sid){
+      var s=studentById(sid);
+      return {sid:sid, name:s?s.name:sid, total:totals[sid]};
+    }).sort(function(a,b){ return b.total-a.total; });
+    var box=$("historyList"); box.innerHTML="";
+    if(!rows.length){ box.appendChild(el("div","recent-empty", activityLabel ? "No entries yet for "+activityLabel+"." : "No scans match your search.")); return; }
+    rows.forEach(function(r,i){
+      var row=el("div","erow");
+      row.appendChild(el("span","grow", (i+1)+". "+r.name));
+      row.appendChild(el("span",null, fmt(r.total)));
+      box.appendChild(row);
+    });
+  }
   $("historySearch").addEventListener("input", renderHistoryTab);
   $("historyStudentFilter").addEventListener("change", renderHistoryTab);
+  $("historyActivityFilter").addEventListener("change", renderHistoryTab);
   if($("historySort")) $("historySort").addEventListener("change", renderHistoryTab);
+  $("historyViewMode").addEventListener("click", function(e){
+    var b=e.target.closest("button"); if(!b) return;
+    historyViewMode=b.dataset.hvm; renderHistoryTab();
+  });
   $("historyUndoLast").addEventListener("click", function(){ undoMostRecentScan(); });
 
   // Edit the point value of a past scan entry.

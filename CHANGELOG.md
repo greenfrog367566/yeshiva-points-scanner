@@ -12,6 +12,9 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **History: filter by activity, and a "Most given" ranked view.** Narrow History to a single activity, then choose between the existing chronological/point-value sorts or a new ranked view showing which students received that activity most. With no activity selected, ranked mode totals points across all activities combined.
+- **Bathroom Passes now show when each pass was used**, not just whether it's been used this week — reuses the same clock-time format already shown in Tracker and History.
+
 - **Onboarding now auto-restores from a Google Sheet.** Pasting a Sheet URL on the Restore/Import screen during setup now immediately pulls the latest snapshot and loads it — students, scores, settings, everything — instead of just saving the link and requiring a separate manual "Restore from Sheet" step once inside the app. Falls back gracefully to a blank profile if the sheet has no snapshot yet or can't be reached.
 - **Full-snapshot sync to Google Sheet.** The app now saves a complete copy of all data — students, activities, scores, settings, passes, pesukim, seating, homework, attendance, everything — to a "Snapshot" tab on your connected Google Sheet. This happens automatically in the background every 30 seconds, and you can trigger it manually from the Backup & Sheets tab. Restore from a snapshot when switching devices, recovering from data loss, or after a browser wipe. Each device's snapshots are kept separate (up to 5 per device) so multiple devices sharing a Sheet don't overwrite each other.
 - **"Restore from Google Sheet" button** on the Backup & Sheets tab. Pulls the latest snapshot and restores the full app state — same pipeline as JSON file restore, but from the cloud.
