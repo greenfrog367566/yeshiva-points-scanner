@@ -4832,7 +4832,21 @@ function setupRoster() {
     // (points and Prutot are both plain integers, so no math is needed —
     // just don't clear them). convert=false/omitted keeps the old
     // wipe-on-switch behaviour.
-    if(!convert){ data.scores={}; data.log=[]; }
+    if(!convert){
+      // Destructive path — wipes every balance and the entire scan history,
+      // with no undo. Two cheap layers of protection: an automatic backup
+      // download, and a typed confirmation instead of a single accidental
+      // click.
+      var confirmText = prompt('Type "CLEAR" to confirm wiping all scores and scan history. This cannot be undone (a backup file will also be downloaded automatically).');
+      if (confirmText !== "CLEAR") return; // any other input (including Cancel) aborts the wipe entirely
+      // Safety net: always drop a backup file right before any full
+      // data/log wipe triggered by a Shulchani mode switch, so an
+      // accidental confirmation is recoverable via Backup & Sheets →
+      // Restore from a backup. Reuses the exact same export logic as the
+      // manual "Download backup file" button.
+      download("points-backup-before-shulchani-switch-" + stamp() + ".json", JSON.stringify(data, null, 2), "application/json");
+      data.scores={}; data.log=[];
+    }
     data.shulchaniMode=newMode;
     save();
     $("shulchaniModal").style.display="none";
@@ -11414,9 +11428,21 @@ nameLine
         if (s.grade)      { data.grade  = s.grade;      changed = true; }
 
         if (s.features && typeof s.features === "object") {
-          /* Shulchani Mode — honour the wizard toggle directly */
-          if (typeof s.features.shulchani === "boolean") {
-            data.shulchaniMode = s.features.shulchani;
+          /* Shulchani Mode — route through the same safety check used by
+             the Settings toggle; never flip it as a bare assignment. If
+             the teacher has existing balances and the wizard's chosen
+             mode differs from the current one, this preserves data
+             (non-destructive switch) rather than silently reinterpreting
+             every balance into a different unit. The wizard is a
+             first-run/setup context, so if there's no existing data yet,
+             this is a no-op confirmation-wise and behaves identically to
+             the old direct assignment. */
+          if (typeof s.features.shulchani === "boolean" && data.shulchaniMode !== s.features.shulchani) {
+            if (hasAnyScores()) {
+              doShulchaniSwitch(s.features.shulchani, true); // true = preserve data, never wizard-initiated wipe
+            } else {
+              data.shulchaniMode = s.features.shulchani; // nothing to protect — safe to set directly
+            }
           }
           /* Store other feature flags for subsystems to read */
           if (!data.features || typeof data.features !== "object") data.features = {};
