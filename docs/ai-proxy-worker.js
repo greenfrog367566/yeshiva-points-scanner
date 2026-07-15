@@ -26,7 +26,11 @@
  * back to the manual copy/paste flow when this proxy can't be reached.
  */
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+// Pinned to a specific stable version rather than a "-latest" alias, which
+// can silently change out from under you. Update this if/when Google
+// deprecates it — check https://ai.google.dev/gemini-api/docs/models for
+// the current stable Flash model before picking a replacement.
+const GEMINI_MODEL = "gemini-3.5-flash";
 
 export default {
   async fetch(request, env) {
