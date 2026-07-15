@@ -10797,6 +10797,17 @@ nameLine
       if (!silent && $("snapshotStatus")) $("snapshotStatus").textContent = "No Google Sheet connected — add one on the Sync to Google Sheets section first.";
       return;
     }
+    // Don't push a snapshot of essentially-empty/default state — this happens
+    // on first load of a brand-new device before any real data exists, and
+    // would otherwise pollute the Sheet's snapshot history for no benefit.
+    var looksEmpty = (!data.students || data.students.length === 0)
+      && (!data.log || data.log.length === 0);
+    if (looksEmpty && silent) {
+      // Silent (auto) pushes skip empty state entirely. Manual "Save to Sheet
+      // now" clicks still go through — if a teacher explicitly clicks it,
+      // respect that even if the class roster happens to be empty right now.
+      return;
+    }
     if (_snapshotBusy) return;
     _snapshotBusy = true;
     var statusEl = $("snapshotStatus");
@@ -10836,7 +10847,7 @@ nameLine
       return;
     }
     if (statusEl) statusEl.textContent = "Loading from sheet…";
-    var fetchUrl = url + (url.indexOf("?") >= 0 ? "&" : "?") + "action=snapshot&deviceId=" + encodeURIComponent(deviceId);
+    var fetchUrl = url + (url.indexOf("?") >= 0 ? "&" : "?") + "action=snapshot";
     fetch(fetchUrl)
       .then(function(r) { return r.json(); })
       .then(function(resp) {
