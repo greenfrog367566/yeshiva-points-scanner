@@ -1438,6 +1438,8 @@
           <button class="btn btn-sm" id="teachPhrasePrev" title="Next phrase (or ← key) — this side advances, since the text reads right-to-left">‹</button>
           <button class="btn btn-sm" id="teachPhraseNext" title="Previous phrase (or → key)">›</button>
           <button class="btn btn-sm" id="teachRepeatToggle" title="Toggle repeat vs. continue to the next">↻ Repeat</button>
+          <button class="btn btn-sm no-print" id="teachPrintBtn" title="Print this pasuk/mishna">🖨 Print</button>
+          <button class="btn btn-sm no-print" id="teachWordBtn" title="Download this pasuk/mishna as a Word document">📝 Word</button>
           <span class="grow" id="teachPhraseCount" style="text-align:right;color:var(--muted);font-size:.85rem"></span>
         </div>
         <div id="teachLines"></div>
@@ -4330,6 +4332,84 @@ function setupRoster() {
   $("setHeaderShortcuts").addEventListener("change", function(){ data.showHeaderShortcuts=this.checked; save(); applyHeaderShortcutsVisibility(); });
   $("setHebrewDate").addEventListener("change", function(){ data.showHebrewDate=this.checked; save(); showDate(); });
   $("setFullWidth").addEventListener("change", function(){ data.fullWidth=this.checked; save(); applyFullWidth(); });
+  function escHtml(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+  $("teachWordBtn").addEventListener("click", function(){
+    var as=activeSet(); if(!as) return;
+    var phrases=phrasesFor(teachN);
+    var fullHe=(data.pasukPointed&&data.pasukPointed[teachN])||"";
+    var label=itemLabel(teachN);
+    var setLabel=as.label||as.ref||"";
+    var isFlipped=!!data.teachFlipCols;
+    var esc=escHtml;
+
+    var rows=phrases.map(function(p){
+      var he="<td dir=\"rtl\" style=\"width:50%;border-bottom:1px solid #ddd;font-family:'Times New Roman',serif;font-size:14pt\">"+esc(p[0])+"</td>";
+      var en="<td style=\"width:50%;border-bottom:1px solid #ddd;font-size:12pt;color:#333\">"+esc(p[1])+"</td>";
+      return "<tr>"+(isFlipped?en+he:he+en)+"</tr>";
+    }).join("");
+
+    var html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
+      +'<head><meta charset="utf-8"><title>'+esc(setLabel)+" "+esc(label)+'</title>'
+      +'<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]-->'
+      +'<style>body{font-family:Georgia,"Times New Roman",serif;color:#222}'
+      +'h1{font-size:16pt;margin:0 0 2pt}.sub{color:#666;font-size:10pt;margin-bottom:10pt}'
+      +'.full-he{font-size:18pt;direction:rtl;text-align:right;margin:6pt 0 10pt;font-family:"Times New Roman",serif}'
+      +'</style></head><body>'
+      +'<h1>'+esc(setLabel)+'</h1>'
+      +'<div class="sub">'+esc(label)+'</div>'
+      +(fullHe ? '<p class="full-he">'+esc(fullHe)+'</p>' : '')
+      +'<table style="width:100%;border-collapse:collapse" border="0" cellspacing="0" cellpadding="4">'
+      +rows
+      +'</table></body></html>';
+
+    download(slugify((setLabel+"-"+label)||"pasuk")+"-"+stamp()+".doc", html, "application/msword");
+  });
+
+  $("teachPrintBtn").addEventListener("click", function(){
+    var as=activeSet(); if(!as) return;
+    var phrases=phrasesFor(teachN);
+    var fullHe=(data.pasukPointed&&data.pasukPointed[teachN])||"";
+    var label=itemLabel(teachN);
+    var setLabel=as.label||as.ref||"";
+    var isFlipped=!!data.teachFlipCols;
+
+    // Build print HTML
+    var rows=phrases.map(function(p){
+      var he="<td dir='rtl' style='text-align:right;padding:6px 10px;border:1px solid #ddd;font-size:1.1rem;line-height:1.8'>"+escHtml(p[0])+"</td>";
+      var en="<td style='padding:6px 10px;border:1px solid #ddd;font-size:1rem'>"+escHtml(p[1])+"</td>";
+      return "<tr>"+(isFlipped?en+he:he+en)+"</tr>";
+    }).join("");
+
+    var hdrHe="<th dir='rtl' style='text-align:right;padding:6px 10px;border:1px solid #ddd;background:#f1f5f9'>Hebrew</th>";
+    var hdrEn="<th style='padding:6px 10px;border:1px solid #ddd;background:#f1f5f9'>English</th>";
+
+    var html=[
+      "<!DOCTYPE html><html><head><meta charset='UTF-8'>",
+      "<title>"+escHtml(setLabel)+" "+escHtml(label)+"</title>",
+      "<style>",
+      "  body{font-family:Arial,sans-serif;margin:30px;color:#111}",
+      "  h1{font-size:1.3rem;margin:0 0 4px}",
+      "  h2{font-size:1rem;font-weight:normal;color:#555;margin:0 0 14px}",
+      "  .full-he{font-size:1.4rem;line-height:2;direction:rtl;text-align:right;border:1px solid #ddd;border-radius:6px;padding:10px 14px;margin-bottom:16px;background:#fafafa}",
+      "  table{border-collapse:collapse;width:100%}",
+      "  @media print{body{margin:15px}}",
+      "</style></head><body>",
+      "<h1>"+escHtml(setLabel)+"</h1>",
+      "<h2>"+escHtml(label)+"</h2>",
+      fullHe ? "<div class='full-he'>"+escHtml(fullHe)+"</div>" : "",
+      "<table>",
+      "<thead><tr>"+(isFlipped?hdrEn+hdrHe:hdrHe+hdrEn)+"</tr></thead>",
+      "<tbody>"+rows+"</tbody>",
+      "</table>",
+      "<script>window.onload=function(){window.print()}<\/script>",
+      "</body></html>"
+    ].join("\n");
+
+    var w=window.open("","_blank","width=750,height=600");
+    if(w){ w.document.write(html); w.document.close(); }
+  });
+
   $("setTeachFlipKeys").addEventListener("change", function(){ data.teachFlipKeys=this.checked; save(); });
   $("setTeachFlipCols").addEventListener("change", function(){ data.teachFlipCols=this.checked; save(); if(typeof renderTeach==="function") renderTeach(); });
   $("setQuizDelay").addEventListener("change", function(){
@@ -8061,6 +8141,21 @@ function setupRoster() {
         var wordBtn=el("button","btn btn-sm","\ud83d\udcdd Word"); wordBtn.title="Download as a Word document";
         wordBtn.addEventListener("click", function(){ exportSetWord(this.dataset.id); }); wordBtn.dataset.id=s.id;
         row.appendChild(wordBtn);
+        var renBtn=el("button","btn btn-sm","✏️ Rename"); renBtn.title="Rename this text set";
+        (function(sid){
+          renBtn.addEventListener("click", function(){
+            var ts=data.textSets.find(function(x){ return x.id===sid; }); if(!ts) return;
+            var newLabel=prompt("Name for this set:", ts.label||"");
+            if(newLabel===null) return;
+            if(newLabel.trim()) ts.label=newLabel.trim();
+            var newRef=prompt("Reference (e.g. Bereishis 1:1-10):", ts.ref||"");
+            if(newRef===null) return;
+            if(newRef.trim()) ts.ref=newRef.trim();
+            save(); renderPesukSets();
+            var sel2=$("pesukSetSel"); if(sel2) { sel2.innerHTML=""; data.textSets.forEach(function(s2){ var o=el("option",null,s2.label); o.value=s2.id; sel2.appendChild(o); }); sel2.value=data.activeSetId; }
+          });
+        })(s.id);
+        row.appendChild(renBtn);
         if(s.id!=="starter"){ var del=el("button","btn btn-sm btn-bad","Delete"); del.addEventListener("click", function(){ deleteTextSet(s.id); }); row.appendChild(del); }
         list.appendChild(row);
       });
@@ -8287,13 +8382,20 @@ nameLine
     {label:"Bamidbar",  ref:"Numbers"},
     {label:"Devarim",   ref:"Deuteronomy"}
   ];
+  // tractates = Sefaria API ref (must match exactly); labels = Yeshivish display names
   var MISHNAYOS_SEDARIM=[
-    {seder:"Zeraim",   tractates:["Berakhot","Peah","Demai","Kilayim","Sheviit","Terumot","Maasrot","Maaser Sheni","Challah","Orlah","Bikkurim"]},
-    {seder:"Moed",     tractates:["Shabbat","Eruvin","Pesachim","Shekalim","Yoma","Sukkah","Beitzah","Rosh Hashanah","Taanit","Megillah","Moed Katan","Chagigah"]},
-    {seder:"Nashim",   tractates:["Yevamot","Ketubot","Nedarim","Nazir","Sotah","Gittin","Kiddushin"]},
-    {seder:"Nezikin",  tractates:["Bava Kamma","Bava Metzia","Bava Batra","Sanhedrin","Makkot","Shevuot","Eduyot","Avodah Zarah","Avot","Horayot"]},
-    {seder:"Kodashim", tractates:["Zevachim","Menachot","Chullin","Bekhorot","Arakhin","Temurah","Keritot","Meilah","Tamid","Middot","Kinnim"]},
-    {seder:"Taharot",  tractates:["Kelim","Oholot","Negaim","Parah","Tahorot","Mikvaot","Niddah","Makhshirin","Zavim","Tevul Yom","Yadayim","Oktzin"]}
+    {seder:"Zeraim",   tractates:["Berakhot","Peah","Demai","Kilayim","Sheviit","Terumot","Maasrot","Maaser Sheni","Challah","Orlah","Bikkurim"],
+                       labels:   ["Brachos", "Peah","Demai","Kilayim","Sheviis","Terumos","Maasros","Maaser Sheni","Challah","Orlah","Bikkurim"]},
+    {seder:"Moed",     tractates:["Shabbat","Eruvin","Pesachim","Shekalim","Yoma","Sukkah","Beitzah","Rosh Hashanah","Taanit","Megillah","Moed Katan","Chagigah"],
+                       labels:   ["Shabbos","Eiruvin","Pesachim","Shekalim","Yoma","Sukkah","Beitzah","Rosh Hashana","Taanis","Megillah","Moed Koton","Chagigah"]},
+    {seder:"Nashim",   tractates:["Yevamot","Ketubot","Nedarim","Nazir","Sotah","Gittin","Kiddushin"],
+                       labels:   ["Yevamos","Kesubos","Nedarim","Nazir","Sotah","Gittin","Kiddushin"]},
+    {seder:"Nezikin",  tractates:["Bava Kamma","Bava Metzia","Bava Batra","Sanhedrin","Makkot","Shevuot","Eduyot","Avodah Zarah","Avot","Horayot"],
+                       labels:   ["Bava Kamma","Bava Metzia","Bava Basra","Sanhedrin","Makkos","Shevuos","Eduyos","Avodah Zarah","Avos","Horayos"]},
+    {seder:"Kodashim", tractates:["Zevachim","Menachot","Chullin","Bekhorot","Arakhin","Temurah","Keritot","Meilah","Tamid","Middot","Kinnim"],
+                       labels:   ["Zevachim","Menachos","Chulin","Bechoros","Erchin","Temurah","Krisus","Meilah","Tomid","Midos","Kinnim"]},
+    {seder:"Taharot",  tractates:["Kelim","Oholot","Negaim","Parah","Tahorot","Mikvaot","Niddah","Makhshirin","Zavim","Tevul Yom","Yadayim","Oktzin"],
+                       labels:   ["Keilim","Ohalos","Negaim","Parah","Taharos","Mikvaos","Niddah","Machshirin","Zavim","Tevul Yom","Yadayim","Uktzin"]}
   ];
   // Fill in after deploying the proxy (see docs/ai-proxy-worker.js). Blank
   // means auto-generate always falls straight back to the manual prompt box.
@@ -8304,7 +8406,10 @@ nameLine
     if(kind==="mishna"){
       MISHNAYOS_SEDARIM.forEach(function(grp){
         var og=document.createElement("optgroup"); og.label=grp.seder;
-        grp.tractates.forEach(function(t){ var o=el("option",null,t); o.value="Mishnah "+t; og.appendChild(o); });
+        grp.tractates.forEach(function(t,i){
+          var label=(grp.labels&&grp.labels[i])||t;
+          var o=el("option",null,label); o.value="Mishnah "+t; og.appendChild(o);
+        });
         sel.appendChild(og);
       });
     } else {
