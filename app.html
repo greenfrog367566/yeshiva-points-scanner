@@ -8784,28 +8784,63 @@ nameLine
   }
   async function callAiProxy(promptText){
     if(!AI_PROXY_URL) throw new Error("AI proxy not configured yet");
-    var res=await fetch(AI_PROXY_URL, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({prompt: promptText})
-    });
-    var json=null; try{ json=await res.json(); }catch(e){}
-    if(!res.ok) throw new Error((json&&json.error) || ("AI proxy request failed ("+res.status+")"));
-    if(!json||!json.text) throw new Error("AI proxy returned an empty response");
+    // 55-second timeout — Gemini can be slow on large prompts; this gives it
+    // plenty of time while still failing clearly rather than hanging forever.
+    var controller=new AbortController();
+    var timer=setTimeout(function(){ controller.abort(); }, 55000);
+    var res, json=null;
+    try{
+      res=await fetch(AI_PROXY_URL, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({prompt: promptText}),
+        signal: controller.signal
+      });
+    } catch(e){
+      clearTimeout(timer);
+      if(e.name==="AbortError") throw new Error("AI request timed out after 55s — try a smaller range or use manual prompt");
+      throw new Error("Network error reaching AI proxy: "+e.message);
+    }
+    clearTimeout(timer);
+    try{ json=await res.json(); }catch(e){}
+    if(!res.ok){
+      var errMsg=(json&&json.error)||(json&&json.message)||("HTTP "+res.status);
+      throw new Error("AI proxy error: "+errMsg);
+    }
+    if(!json||!json.text) throw new Error("AI proxy returned an empty response (status "+res.status+")");
     return json.text;
   }
 
   $("autoFetchBtn").addEventListener("click", async function(){
     var statusEl=$("autoFetchStatus"), btn=this;
-    var kind=$("autoKind").value, seferRef=$("autoSefer").value;
+    var kind=$("autoKind").value;
+    // autoSefer is now a hidden input set by the chip picker
+    var seferRef=$("autoSefer").value;
     var perek=parseInt($("autoPerek").value,10);
     var from=parseInt($("autoFrom").value,10);
     var to=parseInt($("autoTo").value,10); if(isNaN(to)) to=from;
-    if(!seferRef || isNaN(perek) || isNaN(from)){
-      statusEl.textContent="Fill in Sefer, Perek, and at least a starting "+(kind==="mishna"?"mishna":"pasuk")+".";
+
+    // Give a clear message if no selection has been made yet
+    if(!seferRef){
+      var pickEl=kind==="pasuk" ? $("autoParshaSel") : $("autoMesechtaSel");
+      statusEl.textContent="Please select a "+(kind==="mishna"?"mesechta":"parsha")+" and then tap at least one "+(kind==="mishna"?"perek":"chapter")+"."; 
+      if(pickEl) pickEl.focus();
+      return;
+    }
+    if(isNaN(perek) || isNaN(from)){
+      statusEl.textContent="Tap at least one "+(kind==="mishna"?"perek":"chapter")+" to continue.";
       return;
     }
     if(to<from) to=from;
-    var seferLabel=$("autoSefer").selectedOptions[0].textContent;
+
+    // Build a readable label from the selected Parsha/Mesechta + chapter
+    var seferLabel="";
+    if(kind==="pasuk"){
+      var pSel=$("autoParshaSel");
+      seferLabel=pSel && pSel.selectedOptions[0] ? pSel.selectedOptions[0].textContent : seferRef;
+    } else {
+      var mSel=$("autoMesechtaSel");
+      seferLabel=mSel && mSel.selectedOptions[0] ? mSel.selectedOptions[0].textContent : seferRef;
+    }
     var refLabel=seferLabel+" "+perek+":"+(from===to?from:from+"-"+to);
 
     btn.disabled=true;
