@@ -20,9 +20,9 @@ Any Rebbi/teacher who wants a fast, low-friction way to track points without pay
 
 ## Quick start (use it today, no setup)
 
-1. Download `index.html` from this repo (or open the [live version](https://<your-org>.github.io/<your-repo>/)).
-2. Open it in any browser.
-3. Set your school/class name in the header, add students and activities, and start scanning.
+1. Open the [live version](https://greenfrog367566.github.io/yeshiva-points-scanner/) — or clone the repo and open `index.html` (the landing page) locally.
+2. Click **Get Started** to run through the 2-minute setup wizard, or **Skip & Start Now** to jump straight in.
+3. Set your school/class name, add students, and start scanning.
 4. Your data is saved locally in your browser (`localStorage`) — nothing is sent anywhere unless you turn on Google Sheets sync yourself.
 
 ## Recommended hardware
@@ -64,7 +64,9 @@ The app ships with **no parsha pre-loaded** — you add your own text set(s) rig
 ## Project structure
 
 ```
-index.html          the app (currently a single file)
+index.html          landing/marketing page — what visitors see first
+app.html            the actual classroom app (single file)
+setup.html          first-run setup wizard — routes new users through onboarding
 sample-backup.json  demo backup with sample scan/Store/Raffle history — safe template, no real data
 samples/
   vayelech-parsha-sample.csv   example text set, ready to import via the Pesukim tab
@@ -76,11 +78,28 @@ CONTRIBUTING.md      how to propose changes safely
 LICENSE              MIT license
 ```
 
-As the app grows, code may get split into `/src` (`app.js`, `scanner.js`, `qr.js`, `storage.js`, `sheets.js`, `raffle.js`) and `/styles`. No need to do that yet — start simple.
+**Branches:**
+- `main` — the safe, tested version. Only promote here when something is confirmed working in production.
+- `dev` — active development and experiments. All new features, Claude Code sessions, and untested changes go here first.
+- Feature branches — short-lived, named `steinerman/description` or `fix/description`, branched off `dev` and merged back into `dev`. Only merge to `main` deliberately.
+
+**Never work directly on `main`.** If something breaks on `dev` and you need to reset it:
+```bash
+git checkout dev
+git reset --hard main
+git push origin dev --force
+```
 
 ## Contributing
 
-We welcome bug reports, feature suggestions, and pull requests from other teachers and developers. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first — the short version is: **don't edit `main` directly, work in a branch, open a pull request.**
+We welcome bug reports, feature suggestions, and pull requests from other teachers and developers. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+
+**Short version:**
+- Never commit directly to `main`
+- Branch off `dev` for new work (`steinerman/feature-name`, `fix/bug-name`)
+- Test on `dev` before promoting to `main`
+- Open a pull request from your branch → `dev`, then `dev` → `main` when ready
+- **Data safety rule:** never break `migrateData()` / `load2fix()` — teachers' localStorage must survive every update
 
 ## License
 
