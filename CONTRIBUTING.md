@@ -25,9 +25,10 @@ This is what stops one person's update from silently overwriting someone else's 
    git checkout -b levi/activity-filters
    ```
 2. **Make your changes** in that branch only.
-3. **Test locally** — just open `index.html` in a browser and click through the feature you changed. Check that:
-   - Existing features still work (Scan, Raffle, QR labels, Sheets sync, Backup/Restore, Settings)
+3. **Test locally** — open `app.html` in a browser and click through the feature you changed. Check that:
+   - Existing features still work (Scan, Standings, Rewards, Manage, Learn, Sheets sync, Backup/Restore)
    - Nothing in `localStorage` gets wiped when the app loads
+   - If you changed the landing page (`index.html`), open that too and verify links work
 4. **Commit and push** your branch:
    ```
    git add .
