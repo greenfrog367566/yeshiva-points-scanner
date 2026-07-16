@@ -10,6 +10,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ## [Unreleased]
 
+- **Menchmark branding in the app** — M mark in the header beside the school name, favicon, and page title updated from "Davening & Learning Points" to "Menchmark".
+
 ### Added
 - **Phase 0: Migration test harness** (`test-migration.html`) — a standalone page that runs `migrateData()` + `load2fix()` against test data blobs (8 built-in scenarios plus paste/drop a real backup) and reports whether data survives intact. Run it before any data-model change. Its copies of the migration functions must be kept in sync with app.html.
 - **Seating chart full-screen pop-out** — a "⛶ Full screen" button on the Dashboard's Class list card expands the seating chart to fill the screen below the top bar (which stays usable, including the scan bar's activity-pill and History dropdowns). Grows out of the card and shrinks back into it on close; background scrolling is locked while open; chrome is trimmed in full-screen so the chart gets the space. Respects reduced-motion.
