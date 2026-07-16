@@ -209,7 +209,7 @@ Draft it, show it, wait for a yes. Don't just pick.
 
 ## 📚 DECISION RECORD (authoritative — read before planning any feature)
 
-These docs are the settled design. They answer most "should we..." questions — check them before asking the maintainer. They live in the repo (or project) as:
+These docs are the settled design. They answer most "should we..." questions — check them before asking the maintainer. They live in `docs/`:
 
 - **Menchmark_UI_Redesign_Summary.md** — the full tab-by-tab restructure: 5-group nav (Scan / Standings / Rewards / Manage / Learn), every per-tab decision, the Gradebook/Tracked-Items consolidation, Chavrusa spec, Shulchani Coin Deposit/Withdraw, etc.
 - **Library_Review_Wizard_Spec.md** — the shared text library (draft/partial/reviewed status), per-pasuk Review Wizard, reviewed-version callback. Share-back is deliberately deferred.
