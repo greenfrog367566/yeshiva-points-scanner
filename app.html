@@ -822,6 +822,12 @@
   .seat-print-preview .seat-print-photo .avatar{width:40px!important;height:40px!important;font-size:15px!important}
   .seat-print-preview .seat-name{font-weight:600;font-size:.82rem;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .seat-print-preview .seat-print-pts{font-size:.7rem;color:var(--muted);margin-top:2px;display:block}
+  .seat-print-preview .seat-print-activities-footer{margin-top:16px;border-top:2px solid var(--line);padding-top:10px}
+  .seat-print-preview .seat-print-activities-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;margin-bottom:6px}
+  .seat-print-preview .seat-print-activities-grid{display:flex;flex-wrap:wrap;gap:6px}
+  .seat-print-preview .seat-print-act-card{border:1px solid var(--line);border-radius:6px;padding:4px 6px;text-align:center;width:70px;font-size:.62rem;line-height:1.2}
+  .seat-print-preview .seat-print-act-label{font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seat-print-preview .seat-print-act-sub{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -1755,10 +1761,12 @@
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem"><input type="checkbox" id="seatPrintShowPoints"> Points</label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Flips the chart 180° — front of room at the bottom, left/right mirrored — matching what you actually see facing the class. Names stay right-side-up and readable."><input type="checkbox" id="seatPrintRebbiView"> Rebbi's view</label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Adds a compact row of activity QR codes at the bottom of the page, for a one-page classroom reference."><input type="checkbox" id="seatPrintShowActivities"> Activities footer</label>
       <button class="btn btn-primary" id="printSeatChart">🖨 Print seating chart</button>
     </div>
     <p class="view-note no-print" style="margin:4px 0 10px">Preview — this is what will print:</p>
     <div id="seatChartGrid" class="seat-print-preview"></div>
+    <div id="seatPrintFitWarning" class="pill-note no-print" style="display:none;margin-top:10px;background:var(--bad-soft);color:#7c2d1c">This may not fit on one printed page with the current settings — try hiding photos, turning off the activities footer, or switching to Landscape.</div>
   </section>
 
   <!-- ============ PRINT: STUDENTS (labels + personal pages) ============ -->
@@ -3337,6 +3345,7 @@ function setupRoster() {
       $("seatPrintAvatarMode").value = data.seatPrintOpts.avatarMode;
       $("seatPrintShowPoints").checked = data.seatPrintOpts.showPoints;
       $("seatPrintRebbiView").checked = data.seatPrintOpts.rebbiView;
+      $("seatPrintShowActivities").checked = data.seatPrintOpts.showActivities;
       renderSeatChartPrint();
     }
     if(tab==="printPoints") renderPointsPrint();
@@ -10847,6 +10856,35 @@ nameLine
   $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); renderSeatChartPrint(); });
   $("seatPrintShowPoints").addEventListener("change", function(){ data.seatPrintOpts.showPoints=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); renderSeatChartPrint(); });
+  $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); renderSeatChartPrint(); });
+  // Compact activity-code footer for the seating-chart printout — distinct
+  // from renderMenuLabels()'s full-size (104x104) cards, which are too
+  // large to reliably fit alongside a seating chart on one page. Reuses
+  // menuLabelItems() for the underlying data ({qrText, name, sub} per
+  // activity — confirmed against the actual function, not assumed) but
+  // renders at a much smaller, denser size.
+  function renderSeatPrintActivitiesFooter(wrap){
+    var items = menuLabelItems();
+    if(!items || !items.length) return;
+    var hasQR=(typeof QRCode!=="undefined");
+    var footer=el("div","seat-print-activities-footer");
+    footer.appendChild(el("div","seat-print-activities-title","Activity Codes"));
+    var grid=el("div","seat-print-activities-grid");
+    items.forEach(function(it){
+      var card=el("div","seat-print-act-card");
+      if(hasQR){
+        var holder=el("div"); card.appendChild(holder);
+        try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ card.appendChild(document.createTextNode("QR?")); }
+      }
+      var label=el("div","seat-print-act-label", it.name);
+      var sub=el("div","seat-print-act-sub", it.sub);
+      card.appendChild(label); card.appendChild(sub);
+      grid.appendChild(card);
+    });
+    footer.appendChild(grid);
+    wrap.appendChild(footer);
+  }
   function renderSeatChartPrint(){
     var wrap=$("seatChartGrid"); wrap.innerHTML="";
     var lay=seatLayout();
@@ -10904,6 +10942,21 @@ nameLine
     });
     wrap.appendChild(grid);
     if(rebbiView) wrap.appendChild(el("div","seat-front","Front of room"));
+    if(data.seatPrintOpts.showActivities){
+      renderSeatPrintActivitiesFooter(wrap);
+    }
+    // Heuristic, non-blocking fit check — printed page dimensions don't map
+    // exactly to on-screen pixels, so this is an estimate to give the
+    // teacher a heads-up, not a guarantee. Letter portrait usable height
+    // after margins is roughly 10in; landscape roughly 7.5in. Using 96px/in
+    // as a rough screen-to-print approximation.
+    var warnEl=$("seatPrintFitWarning");
+    if(warnEl){
+      var usableInches = seatPrintOrient==="landscape" ? 7.5 : 10;
+      var usablePx = usableInches * 96;
+      var fits = wrap.scrollHeight <= usablePx;
+      warnEl.style.display = fits ? "none" : "block";
+    }
   }
   // @page can't be scoped by a body class, so landscape mode is applied by
   // briefly injecting its own <style> tag around the print action, removed
@@ -11450,6 +11503,7 @@ nameLine
     delete data.seatPrintOpts.showQR;
     if(typeof data.seatPrintOpts.showPoints!=="boolean") data.seatPrintOpts.showPoints=false;
     if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
+    if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
     if(!Array.isArray(data.pastContests)) data.pastContests=[];
     if(data.contest!==null && (typeof data.contest!=="object" || !data.contest.startTs)) data.contest=null;
     if(data.contest){
