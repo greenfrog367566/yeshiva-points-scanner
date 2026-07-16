@@ -49,7 +49,7 @@ This program runs entirely in a web browser (like Chrome or Safari) — there is
 Every screen in the program now shares a three-part header:
 
 
-- A top bar with your school/bunk name on the left, the main section tabs in the middle (Scan, Rewards, Learn, Tools, Print, Setup), and the class dropdown on the right — tap the school/bunk name to rename it.
+- A top bar with your school/class name on the left, the main section tabs in the middle (Scan, Rewards, Learn, Tools, Print, Setup), and the class dropdown on the right — tap the school/class name to rename it.
 
 
 - A second row just below it with the sub-tabs for whichever section you're in (for example, under Scan you'll see Dashboard, Seats, History, Leader Board, Trends, Contest), plus a row of quick icons.

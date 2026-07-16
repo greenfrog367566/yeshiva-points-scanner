@@ -100,6 +100,12 @@
      .seats-scanbar's existing styling, just stretched full-width and pinned
      instead of sitting as a rounded, inset card. ---- */
   #globalScanBar{position:sticky;top:0;z-index:45;border-radius:0;margin:0;border-left:none;border-right:none;border-top:none;box-shadow:0 2px 8px rgba(20,25,45,.08)}
+  /* Any element that gets scrollIntoView()'d as a navigation target should
+     clear the sticky scan bar rather than land underneath it. Using a CSS
+     custom property (set/read from JS) instead of a hardcoded px value,
+     since the bar's real height can vary (e.g. wrapping to two lines on a
+     narrow screen) and a hardcoded number would silently drift out of sync. */
+  .scroll-clear-bar{scroll-margin-top:var(--scan-bar-height, 60px)}
   #globalScanBar.hidden-on-tab{display:none!important}
 
   main{max-width:1040px;margin:0 auto;padding:22px 20px 60px}
@@ -816,6 +822,12 @@
   .seat-print-preview .seat-print-photo .avatar{width:40px!important;height:40px!important;font-size:15px!important}
   .seat-print-preview .seat-name{font-weight:600;font-size:.82rem;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .seat-print-preview .seat-print-pts{font-size:.7rem;color:var(--muted);margin-top:2px;display:block}
+  .seat-print-preview .seat-print-activities-footer{margin-top:16px;border-top:2px solid var(--line);padding-top:10px}
+  .seat-print-preview .seat-print-activities-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;margin-bottom:6px}
+  .seat-print-preview .seat-print-activities-grid{display:flex;flex-wrap:wrap;gap:6px}
+  .seat-print-preview .seat-print-act-card{border:1px solid var(--line);border-radius:6px;padding:4px 6px;text-align:center;width:70px;font-size:.62rem;line-height:1.2}
+  .seat-print-preview .seat-print-act-label{font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seat-print-preview .seat-print-act-sub{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -1068,12 +1080,17 @@
     <div class="toolbar no-print">
       <input id="historySearch" class="field" placeholder="Search a student…" style="max-width:260px">
       <select id="historyStudentFilter" class="field" style="width:auto"><option value="">All students</option></select>
+      <select id="historyActivityFilter" class="field" style="width:auto"><option value="">All activities</option></select>
       <select id="historySort" class="field" style="width:auto">
         <option value="newest">Newest first</option>
         <option value="oldest">Oldest first</option>
         <option value="highest">Highest points</option>
         <option value="lowest">Lowest points</option>
       </select>
+      <span class="seg mini" id="historyViewMode">
+        <button data-hvm="row" class="active">Recent</button>
+        <button data-hvm="ranked">Most given</button>
+      </span>
       <span class="grow"></span>
       <button class="btn btn-bad" id="historyUndoLast">↩ Undo last scan</button>
     </div>
@@ -1148,6 +1165,14 @@
     </div>
 
     <div id="autoNote" class="pill-note">Each student's current points are their tickets. Points are <b>not</b> spent — this is just a draw, so the wheel always reflects the live standings.</div>
+    <div id="raffleSourceRow" class="toolbar">
+      <span style="font-weight:600">Tickets count:</span>
+      <span class="seg mini" id="raffleSourceMode">
+        <button data-rsm="all" class="active">All-time points</button>
+        <button data-rsm="activity">By activity</button>
+        <button data-rsm="contest">Current contest</button>
+      </span>
+    </div>
     <div id="raffleActivityRow" class="toolbar">
       <span style="font-weight:600">Tickets from:</span>
       <select id="raffleActivity" class="field" style="width:auto"><option value="">All activities (total points)</option></select>
@@ -1317,16 +1342,26 @@
         <summary style="cursor:pointer;font-weight:600;color:var(--muted)">⚡ Or auto-fetch from Sefaria + generate with AI (optional)</summary>
         <div style="margin-top:10px">
           <p class="view-note" style="margin:0 0 10px">Pulls the exact Hebrew straight from Sefaria, then asks AI to build the phrase-by-phrase flashcard CSV automatically — no copy-pasting into a chat window, no account needed on this device.</p>
-          <div class="toolbar">
+          <div class="toolbar" style="margin-bottom:10px">
             <select id="autoKind" class="field" style="width:auto">
               <option value="pasuk">Pesukim</option>
               <option value="mishna">Mishnayos</option>
             </select>
-            <select id="autoSefer" class="field" style="width:auto;max-width:200px"></select>
-            <input id="autoPerek" type="number" min="1" step="1" class="field" style="width:70px" placeholder="Perek">
-            <input id="autoFrom" type="number" min="1" step="1" class="field" style="width:60px" placeholder="From">
-            <span>–</span>
-            <input id="autoTo" type="number" min="1" step="1" class="field" style="width:60px" placeholder="To">
+            <select id="autoParshaSel" class="field" style="width:auto;max-width:200px">
+              <option value="">— select Parsha —</option>
+            </select>
+            <select id="autoMesechtaSel" class="field" style="display:none;width:auto;max-width:200px">
+              <option value="">— select Mesechta —</option>
+            </select>
+            <!-- hidden inputs still used by fetchSefariaVerses -->
+            <input id="autoSefer" type="hidden">
+            <input id="autoPerek" type="hidden" value="1">
+            <input id="autoFrom" type="hidden" value="1">
+            <input id="autoTo"   type="hidden" value="1">
+          </div>
+          <div id="autoChapterRow" style="display:none;margin-bottom:8px">
+            <label class="lbl" style="margin-bottom:6px" id="autoChapterLabel">Chapters</label>
+            <div id="autoChapterChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
           </div>
           <div class="toolbar" style="margin-top:8px">
             <button class="btn btn-sm btn-primary" id="autoFetchBtn">⚡ Fetch &amp; generate</button>
@@ -1433,11 +1468,13 @@
       <!-- Teach sub-panel -->
       <div id="pesukSubTeach">
         <p class="view-note" id="teachNote">Tap any line to reveal its translation. Tap ✎ to edit a translation — your change also updates the Matching game.</p>
-        <div id="teachPasuk" class="card pad" dir="rtl" style="font-size:1.6rem;line-height:2.1;text-align:right;margin-bottom:14px"></div>
+        <div id="teachPasuk" class="card pad scroll-clear-bar" dir="rtl" style="font-size:1.6rem;line-height:2.1;text-align:right;margin-bottom:14px"></div>
         <div class="toolbar" id="teachPhraseNav" style="margin-bottom:10px">
           <button class="btn btn-sm" id="teachPhrasePrev" title="Next phrase (or ← key) — this side advances, since the text reads right-to-left">‹</button>
           <button class="btn btn-sm" id="teachPhraseNext" title="Previous phrase (or → key)">›</button>
           <button class="btn btn-sm" id="teachRepeatToggle" title="Toggle repeat vs. continue to the next">↻ Repeat</button>
+          <button class="btn btn-sm no-print" id="teachPrintBtn" title="Print this pasuk/mishna">🖨 Print</button>
+          <button class="btn btn-sm no-print" id="teachWordBtn" title="Download this pasuk/mishna as a Word document">📝 Word</button>
           <span class="grow" id="teachPhraseCount" style="text-align:right;color:var(--muted);font-size:.85rem"></span>
         </div>
         <div id="teachLines"></div>
@@ -1724,10 +1761,12 @@
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem"><input type="checkbox" id="seatPrintShowPoints"> Points</label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Flips the chart 180° — front of room at the bottom, left/right mirrored — matching what you actually see facing the class. Names stay right-side-up and readable."><input type="checkbox" id="seatPrintRebbiView"> Rebbi's view</label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Adds a compact row of activity QR codes at the bottom of the page, for a one-page classroom reference."><input type="checkbox" id="seatPrintShowActivities"> Activities footer</label>
       <button class="btn btn-primary" id="printSeatChart">🖨 Print seating chart</button>
     </div>
     <p class="view-note no-print" style="margin:4px 0 10px">Preview — this is what will print:</p>
     <div id="seatChartGrid" class="seat-print-preview"></div>
+    <div id="seatPrintFitWarning" class="pill-note no-print" style="display:none;margin-top:10px;background:var(--bad-soft);color:#7c2d1c">This may not fit on one printed page with the current settings — try hiding photos, turning off the activities footer, or switching to Landscape.</div>
   </section>
 
   <!-- ============ PRINT: STUDENTS (labels + personal pages) ============ -->
@@ -1816,6 +1855,17 @@
     <h2 class="view-title">Backup &amp; Sheets</h2>
     <p class="view-note">Your scores save automatically on this computer. Back up regularly so nothing is ever lost — and optionally sync to your own Google Sheet below for a permanent, view-anywhere record.</p>
     <div class="backup-grid">
+      <div class="card pad bk-card" style="border-left:4px solid var(--brass)">
+        <h3>☁ Save everything to your Google Sheet</h3>
+        <p>Pushes a full snapshot of your data — students, activities, scores, settings, passes, pesukim, <i>everything</i> — to a "Snapshot" tab on your connected Google Sheet. This also happens automatically in the background every 30 seconds.</p>
+        <button class="btn btn-primary" id="pushSnapshotBtn">Save to Sheet now</button>
+        <div id="snapshotStatus" style="margin-top:8px;font-size:.85rem;color:var(--muted)"></div>
+      </div>
+      <div class="card pad bk-card" style="border-left:4px solid var(--brass)">
+        <h3>☁ Restore everything from your Google Sheet</h3>
+        <p>Lost your data? Switched devices? Pull back the latest snapshot saved on your Google Sheet. This replaces everything currently here.</p>
+        <button class="btn" id="pullSnapshotBtn">Restore from Sheet</button>
+      </div>
       <div class="card pad bk-card">
         <h3>Back up everything</h3>
         <p>Save a file with your full roster, activities, and scores. Keep it somewhere safe.</p>
@@ -1852,7 +1902,7 @@
       </div>
       <div class="card pad bk-card danger-zone">
         <h3>Clear ALL data</h3>
-        <p>Wipes everything — institution &amp; class name, students, activities, scores, scan log, raffle history, and the saved Google Sheet link. Use this to start completely fresh (a new bunk, a new summer). Download a backup first if you're not sure.</p>
+        <p>Wipes everything — institution &amp; class name, students, activities, scores, scan log, raffle history, and the saved Google Sheet link. Use this to start completely fresh (a new class, a new year). Download a backup first if you're not sure.</p>
         <button class="btn btn-bad" id="clearAllData">Clear ALL data…</button>
       </div>
     </div>
@@ -1877,7 +1927,10 @@
     <details class="card pad" id="sheetHelp">
       <summary style="cursor:pointer;font-family:var(--serif);font-size:1.1rem;font-weight:600">First-time setup — do this once (about 5 minutes)</summary>
       <ol style="font-size:.92rem;line-height:1.75;padding-left:20px;margin-top:14px">
-        <li>Open <b>sheets.google.com</b> and make a new blank sheet. Name it (e.g. "Sample Class 1 Points").</li>
+        <li>Open <b>sheets.google.com</b> and make a <b>new blank sheet</b>. Name it (e.g. "Sample Class 1 Points").<br>
+          <span style="display:block;margin-top:8px;padding:8px 12px;background:var(--brass-soft);border-radius:8px;font-size:.85rem;line-height:1.6">
+            <b>⚠️ Every teacher needs their own sheet.</b> Do not paste another teacher's link here — your scans, scores, and backups would mix together and overwrite each other. Each teacher creates one sheet and gets their own link.
+          </span></li>
         <li>In that sheet's menu: <b>Extensions → Apps Script</b>.</li>
         <li>At the top-left, click <b>Untitled project</b> and rename it (e.g. "Sample Class 1 Points") so the permission screen later looks familiar, not anonymous.</li>
         <li>Delete any code in the editor and paste in <b>Code 1</b> below.</li>
@@ -1929,10 +1982,43 @@
     return ContentService.createTextOutput(JSON.stringify(out))
       .setMimeType(ContentService.MimeType.JSON);
   }
+
+  // --- Snapshot pull (Phase 1) ---
+  if (e && e.parameter && e.parameter.action === "snapshot") {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName("Snapshot");
+    if (!sh || sh.getLastRow() < 2) {
+      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "No snapshots found." }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    // Optional: pull snapshot for a specific device
+    var deviceId = (e.parameter.deviceId || "").trim();
+    var lastRow = sh.getLastRow();
+    var lastCol = sh.getLastColumn();
+    // Walk backward from the bottom to find the newest matching row
+    for (var r = lastRow; r >= 2; r--) {
+      var row = sh.getRange(r, 1, 1, lastCol).getValues()[0];
+      var rowDevice = (row[1] || "").toString().trim();
+      if (deviceId && rowDevice !== deviceId) continue;
+      // Reassemble JSON from chunks (columns C onward)
+      var chunks = [];
+      for (var c = 2; c < row.length; c++) {
+        var chunk = (row[c] || "").toString();
+        if (chunk) chunks.push(chunk);
+      }
+      if (!chunks.length) continue;
+      var json = chunks.join("");
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, deviceId: rowDevice, snapshot: json }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "No snapshot found" + (deviceId ? " for device " + deviceId : "") + "." }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   return ContentService.createTextOutput("Points sync is live.");
 }
 
-// Log columns are: Time, Student, Bunk/Group, Activity, Points, New total, ID,
+// Log columns are: Time, Student, Class/Group, Activity, Points, New total, ID,
 // Undo Of, Note. Note is appended at the very end deliberately — sheets that
 // were created before this column existed keep their original 8-column
 // header untouched; new rows simply carry a 9th value. Add a "Note" label to
@@ -1975,9 +2061,54 @@ function rebuildLeaderBoard() {
   list.sort(function (a, b) { return b.total - a.total || lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
   var lb = ss.getSheetByName("Leader Board") || ss.insertSheet("Leader Board");
   lb.clear();
-  lb.appendRow(["Rank", "Student", "Bunk/Group", "Points"]);
+  lb.appendRow(["Rank", "Student", "Class/Group", "Points"]);
   list.forEach(function (it, i) { lb.appendRow([i + 1, it.name, it.group, it.total]); });
   lb.setFrozenRows(1);
+}
+
+// ---- Snapshot helpers (Phase 1) ----
+
+// Google Sheets cells have a ~50,000 character limit. We chunk the JSON
+// across columns C, D, E… so even large data objects (with big logs or
+// photo data-URLs) are stored safely.
+var SNAPSHOT_CHUNK_SIZE = 45000;
+var SNAPSHOT_MAX_PER_DEVICE = 5;
+
+function saveSnapshot(ss, deviceId, jsonString) {
+  var sh = ss.getSheetByName("Snapshot") || ss.insertSheet("Snapshot");
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(["Time", "Device ID", "Data →"]);
+    sh.setFrozenRows(1);
+  }
+  // Build row: [timestamp, deviceId, chunk1, chunk2, …]
+  var row = [new Date(), deviceId];
+  for (var i = 0; i < jsonString.length; i += SNAPSHOT_CHUNK_SIZE) {
+    row.push(jsonString.substring(i, i + SNAPSHOT_CHUNK_SIZE));
+  }
+  sh.appendRow(row);
+
+  // Trim old snapshots for this device — keep only the newest N
+  trimSnapshots(sh, deviceId);
+}
+
+function trimSnapshots(sh, deviceId) {
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return;
+  var deviceCol = sh.getRange(2, 2, lastRow - 1, 1).getValues();
+  var matchingRows = [];
+  for (var i = 0; i < deviceCol.length; i++) {
+    if ((deviceCol[i][0] || "").toString().trim() === deviceId) {
+      matchingRows.push(i + 2); // 1-indexed sheet row
+    }
+  }
+  // If this device has more than SNAPSHOT_MAX_PER_DEVICE snapshots, delete oldest
+  if (matchingRows.length > SNAPSHOT_MAX_PER_DEVICE) {
+    var toDelete = matchingRows.slice(0, matchingRows.length - SNAPSHOT_MAX_PER_DEVICE);
+    // Delete from bottom up so row numbers don't shift
+    for (var j = toDelete.length - 1; j >= 0; j--) {
+      sh.deleteRow(toDelete[j]);
+    }
+  }
 }
 
 function doPost(e) {
@@ -1990,10 +2121,19 @@ function doPost(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var body = JSON.parse(e.postData.contents);
 
+  // --- Snapshot save (Phase 1) ---
+  if (body.type === "snapshot") {
+    var deviceId = (body.deviceId || "unknown").toString().trim();
+    var snapshot = body.snapshot || "{}";
+    // snapshot is the full JSON string of the app's data object
+    saveSnapshot(ss, deviceId, snapshot);
+    return ContentService.createTextOutput("ok");
+  }
+
   if (body.type === "scan" || body.type === "correction") {
     var log = ss.getSheetByName("Log") || ss.insertSheet("Log");
     if (log.getLastRow() === 0) {
-      log.appendRow(["Time", "Student", "Bunk/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
+      log.appendRow(["Time", "Student", "Class/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
     }
     if (!logHasId(log, body.id)) {
       log.appendRow([new Date(body.ts), body.name, body.group, body.label, body.delta, body.total, body.id || "", body.undoOf || "", body.note || ""]);
@@ -2024,14 +2164,14 @@ function doPost(e) {
   if (body.type === "standings") {
     var st = ss.getSheetByName("Standings") || ss.insertSheet("Standings");
     st.clear();
-    st.appendRow(["Rank", "Student", "Bunk/Group", "Points"]);
+    st.appendRow(["Rank", "Student", "Class/Group", "Points"]);
     (body.rows || []).forEach(function (r) { st.appendRow(r); });
   }
 
   if (body.type === "pasuk") {
     var pl = ss.getSheetByName("Pesukim Log") || ss.insertSheet("Pesukim Log");
     if (pl.getLastRow() === 0) {
-      pl.appendRow(["Time", "Student", "Bunk/Group", "Pasuk"]);
+      pl.appendRow(["Time", "Student", "Class/Group", "Pasuk"]);
     }
     pl.appendRow([new Date(body.ts), body.name, body.group, body.ref + ":" + body.pasuk]);
   }
@@ -2039,7 +2179,7 @@ function doPost(e) {
   if (body.type === "pasukgrid") {
     var pc = ss.getSheetByName("Pesukim Chart") || ss.insertSheet("Pesukim Chart");
     pc.clear();
-    var header = ["Student", "Bunk/Group"];
+    var header = ["Student", "Class/Group"];
     for (var v = body.from; v <= body.to; v++) { header.push(body.ref + ":" + v); }
     header.push("Done");
     pc.appendRow(header);
@@ -2058,7 +2198,7 @@ function doPost(e) {
   if (body.type === "attendance") {
     var att = ss.getSheetByName("Attendance Log") || ss.insertSheet("Attendance Log");
     if (att.getLastRow() === 0) {
-      att.appendRow(["Time", "Date", "Student", "Bunk/Group", "Status"]);
+      att.appendRow(["Time", "Date", "Student", "Class/Group", "Status"]);
     }
     att.appendRow([new Date(body.ts), body.date, body.name, body.group, body.status]);
   }
@@ -2066,7 +2206,7 @@ function doPost(e) {
   if (body.type === "tracker") {
     var trk = ss.getSheetByName("Tracker Log") || ss.insertSheet("Tracker Log");
     if (trk.getLastRow() === 0) {
-      trk.appendRow(["Time", "Student", "Bunk/Group", "Activity"]);
+      trk.appendRow(["Time", "Student", "Class/Group", "Activity"]);
     }
     trk.appendRow([new Date(body.ts), body.name, body.group, body.activity]);
   }
@@ -2074,7 +2214,7 @@ function doPost(e) {
   if (body.type === "hw") {
     var hwl = ss.getSheetByName("Homework Log") || ss.insertSheet("Homework Log");
     if (hwl.getLastRow() === 0) {
-      hwl.appendRow(["Time", "Date", "Student", "Bunk/Group", "Checked"]);
+      hwl.appendRow(["Time", "Date", "Student", "Class/Group", "Checked"]);
     }
     hwl.appendRow([new Date(body.ts), body.date, body.name, body.group, body.checked ? "Yes" : "No"]);
   }
@@ -2089,7 +2229,7 @@ function testSetup() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var log = ss.getSheetByName("Log") || ss.insertSheet("Log");
   if (log.getLastRow() === 0) {
-    log.appendRow(["Time", "Student", "Bunk/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
+    log.appendRow(["Time", "Student", "Class/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
   }
   log.appendRow([new Date(), "Test student", "Gimel 1", "Setup test", 0, 0, "test-" + Date.now(), "", ""]);
   rebuildLeaderBoard();
@@ -2665,7 +2805,7 @@ function setupRoster() {
 
   var defaults = {
     school: "Sample School",
-    bunk: "Sample Class 1",
+    className: "Sample Class 1",
     students: [],   // {id, name, group}
     activities: [
       {id:"a1", name:"On time", pts:1},
@@ -2789,17 +2929,24 @@ function setupRoster() {
     if(!data.weekly[wk][sid][L]) data.weekly[wk][sid][L]={p:0,n:0};
     data.weekly[wk][sid][L].p+=p; data.weekly[wk][sid][L].n++;
   }
-  // Data-version scaffolding, per CONTRIBUTING.md's documented pattern. This is
-  // the FIRST release to carry a version number, so there's no real migration
-  // to run yet — migrateData() just stamps existing (pre-versioning) saved data
-  // as version 1, establishing the baseline every future migration will count
-  // up from. Bump DATA_VERSION and add a new `if(data.version===N)` branch
-  // here whenever a future release actually changes the shape of stored data.
-  var DATA_VERSION = 1;
+  // Data-version scaffolding, per CONTRIBUTING.md's documented pattern.
+  // migrateData() stamps existing (pre-versioning) saved data as version 1,
+  // establishing the baseline every migration counts up from. Bump
+  // DATA_VERSION and add a new `if(data.version===N)` branch here whenever a
+  // future release changes the shape of stored data.
+  var DATA_VERSION = 2;
   function migrateData(d){
     if(!d.version) d.version = 1;
-    // future migrations go here, e.g.:
-    // if(d.version===1){ d.someNewField = d.someNewField || {}; d.version=2; }
+    // v1 -> v2: rename data.bunk to data.className. This app is a Yeshiva/
+    // Day School tool, not a camp app — "bunk" was leftover terminology
+    // from an earlier direction. Existing teachers' saved class names are
+    // preserved by copying the value over; the old field is removed so
+    // nothing accidentally reads stale data from it going forward.
+    if(d.version===1){
+      if(typeof d.bunk==="string" && typeof d.className!=="string") d.className = d.bunk;
+      delete d.bunk;
+      d.version = 2;
+    }
     return d;
   }
   function load(){
@@ -2819,7 +2966,7 @@ function setupRoster() {
     data = migrateData(data);
     load2fix();
   }
-  function save(){ if(canSave){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} } }
+  function save(){ if(canSave){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} } scheduleAutoSnapshot(); }
 
   /* ---------- helpers ---------- */
   var pipWin = null; // set while the floating scanner is popped out into a real OS window
@@ -3184,6 +3331,8 @@ function setupRoster() {
       pesukMode=modeMap[tab]||"chart";
       applyPesukMode(); renderTapPanel();
       setTimeout(function(){ if(pesukMode==="chart") $("pesukScanInput") && $("pesukScanInput").focus(); },50);
+      // Option A: show wizard banner if a text set was selected during setup
+      setTimeout(function(){ if(typeof showLearnWizardBanner==="function") showLearnWizardBanner(); }, 300);
     }
     if(tab==="learn-shorashim"){
       var vsh=$("view-shorashim"); if(vsh) vsh.classList.add("active");
@@ -3196,6 +3345,7 @@ function setupRoster() {
       $("seatPrintAvatarMode").value = data.seatPrintOpts.avatarMode;
       $("seatPrintShowPoints").checked = data.seatPrintOpts.showPoints;
       $("seatPrintRebbiView").checked = data.seatPrintOpts.rebbiView;
+      $("seatPrintShowActivities").checked = data.seatPrintOpts.showActivities;
       renderSeatChartPrint();
     }
     if(tab==="printPoints") renderPointsPrint();
@@ -3266,9 +3416,17 @@ function setupRoster() {
       var row=el("div","erow");
       var name=el("span","grow"); name.appendChild(document.createTextNode(s.name+"  ")); if(s.group) name.appendChild(el("span","grp-tag",s.group));
       var badge=el("span", on?"au-win":"au-rem", on?"✓ used":"available");
+      row.appendChild(name); row.appendChild(badge);
+      // Reuses the same absolute-clock-time format already established in
+      // Tracker (fmtClockTime) and History (history-ts class), so passes
+      // look consistent with the rest of the app rather than introducing a
+      // new time format.
+      if(on && data.passes.used[s.id]){
+        row.appendChild(el("span","history-ts", fmtClockTime(data.passes.used[s.id])));
+      }
       var btn=el("button","btn btn-sm"+(on?"":" btn-primary"), on?"Give back":"Mark used");
       btn.addEventListener("click", function(){ setPass(s.id,!on); renderPasses(); });
-      row.appendChild(name); row.appendChild(badge); row.appendChild(btn);
+      row.appendChild(btn);
       list.appendChild(row);
     });
   }
@@ -4330,6 +4488,84 @@ function setupRoster() {
   $("setHeaderShortcuts").addEventListener("change", function(){ data.showHeaderShortcuts=this.checked; save(); applyHeaderShortcutsVisibility(); });
   $("setHebrewDate").addEventListener("change", function(){ data.showHebrewDate=this.checked; save(); showDate(); });
   $("setFullWidth").addEventListener("change", function(){ data.fullWidth=this.checked; save(); applyFullWidth(); });
+  function escHtml(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+  $("teachWordBtn").addEventListener("click", function(){
+    var as=activeSet(); if(!as) return;
+    var phrases=phrasesFor(teachN);
+    var fullHe=(data.pasukPointed&&data.pasukPointed[teachN])||"";
+    var label=itemLabel(teachN);
+    var setLabel=as.label||as.ref||"";
+    var isFlipped=!!data.teachFlipCols;
+    var esc=escHtml;
+
+    var rows=phrases.map(function(p){
+      var he="<td dir=\"rtl\" style=\"width:50%;border-bottom:1px solid #ddd;font-family:'Times New Roman',serif;font-size:14pt\">"+esc(p[0])+"</td>";
+      var en="<td style=\"width:50%;border-bottom:1px solid #ddd;font-size:12pt;color:#333\">"+esc(p[1])+"</td>";
+      return "<tr>"+(isFlipped?en+he:he+en)+"</tr>";
+    }).join("");
+
+    var html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
+      +'<head><meta charset="utf-8"><title>'+esc(setLabel)+" "+esc(label)+'</title>'
+      +'<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]-->'
+      +'<style>body{font-family:Georgia,"Times New Roman",serif;color:#222}'
+      +'h1{font-size:16pt;margin:0 0 2pt}.sub{color:#666;font-size:10pt;margin-bottom:10pt}'
+      +'.full-he{font-size:18pt;direction:rtl;text-align:right;margin:6pt 0 10pt;font-family:"Times New Roman",serif}'
+      +'</style></head><body>'
+      +'<h1>'+esc(setLabel)+'</h1>'
+      +'<div class="sub">'+esc(label)+'</div>'
+      +(fullHe ? '<p class="full-he">'+esc(fullHe)+'</p>' : '')
+      +'<table style="width:100%;border-collapse:collapse" border="0" cellspacing="0" cellpadding="4">'
+      +rows
+      +'</table></body></html>';
+
+    download(slugify((setLabel+"-"+label)||"pasuk")+"-"+stamp()+".doc", html, "application/msword");
+  });
+
+  $("teachPrintBtn").addEventListener("click", function(){
+    var as=activeSet(); if(!as) return;
+    var phrases=phrasesFor(teachN);
+    var fullHe=(data.pasukPointed&&data.pasukPointed[teachN])||"";
+    var label=itemLabel(teachN);
+    var setLabel=as.label||as.ref||"";
+    var isFlipped=!!data.teachFlipCols;
+
+    // Build print HTML
+    var rows=phrases.map(function(p){
+      var he="<td dir='rtl' style='text-align:right;padding:6px 10px;border:1px solid #ddd;font-size:1.1rem;line-height:1.8'>"+escHtml(p[0])+"</td>";
+      var en="<td style='padding:6px 10px;border:1px solid #ddd;font-size:1rem'>"+escHtml(p[1])+"</td>";
+      return "<tr>"+(isFlipped?en+he:he+en)+"</tr>";
+    }).join("");
+
+    var hdrHe="<th dir='rtl' style='text-align:right;padding:6px 10px;border:1px solid #ddd;background:#f1f5f9'>Hebrew</th>";
+    var hdrEn="<th style='padding:6px 10px;border:1px solid #ddd;background:#f1f5f9'>English</th>";
+
+    var html=[
+      "<!DOCTYPE html><html><head><meta charset='UTF-8'>",
+      "<title>"+escHtml(setLabel)+" "+escHtml(label)+"</title>",
+      "<style>",
+      "  body{font-family:Arial,sans-serif;margin:30px;color:#111}",
+      "  h1{font-size:1.3rem;margin:0 0 4px}",
+      "  h2{font-size:1rem;font-weight:normal;color:#555;margin:0 0 14px}",
+      "  .full-he{font-size:1.4rem;line-height:2;direction:rtl;text-align:right;border:1px solid #ddd;border-radius:6px;padding:10px 14px;margin-bottom:16px;background:#fafafa}",
+      "  table{border-collapse:collapse;width:100%}",
+      "  @media print{body{margin:15px}}",
+      "</style></head><body>",
+      "<h1>"+escHtml(setLabel)+"</h1>",
+      "<h2>"+escHtml(label)+"</h2>",
+      fullHe ? "<div class='full-he'>"+escHtml(fullHe)+"</div>" : "",
+      "<table>",
+      "<thead><tr>"+(isFlipped?hdrEn+hdrHe:hdrHe+hdrEn)+"</tr></thead>",
+      "<tbody>"+rows+"</tbody>",
+      "</table>",
+      "<script>window.onload=function(){window.print()}<\/script>",
+      "</body></html>"
+    ].join("\n");
+
+    var w=window.open("","_blank","width=750,height=600");
+    if(w){ w.document.write(html); w.document.close(); }
+  });
+
   $("setTeachFlipKeys").addEventListener("change", function(){ data.teachFlipKeys=this.checked; save(); });
   $("setTeachFlipCols").addEventListener("change", function(){ data.teachFlipCols=this.checked; save(); if(typeof renderTeach==="function") renderTeach(); });
   $("setQuizDelay").addEventListener("change", function(){
@@ -4398,6 +4634,155 @@ function setupRoster() {
     });
 
     save();
+  }
+
+  // Pre-fill the auto-fetch form whenever the teacher opens Text mode,
+  // as long as a wizard selection exists and hasn't been generated yet.
+  function prefillWizardLearning() {
+    var sel = data.wizardLearning;
+    if (!sel || data._wizardTextGenDone) return;
+    var label=null, seferRef=null, perek=null, kind=null;
+    if (sel.type==="pesukim" && sel.parshaLabel && sel.parshaRef &&
+        sel.selectedChapters && sel.selectedChapters.length) {
+      label=sel.parshaLabel; seferRef=sel.parshaRef; perek=sel.selectedChapters[0]; kind="pasuk";
+    } else if (sel.type==="mishnayos" && sel.mesechtaLabel && sel.mesechtaRef &&
+        sel.selectedPerakim && sel.selectedPerakim.length) {
+      label=sel.mesechtaLabel; seferRef=sel.mesechtaRef; perek=sel.selectedPerakim[0]; kind="mishna";
+    }
+    if (!label) return;
+    var kindEl=$("autoKind"), labelEl=$("setLabel");
+    if (kindEl && kindEl.value!==kind) { kindEl.value=kind; kindEl.dispatchEvent(new Event("change")); }
+    setTimeout(function(){
+      // Select the right Parsha or Mesechta in the new dropdown
+      if (kind==="pasuk") {
+        var pSel=$("autoParshaSel");
+        if (pSel) {
+          for (var i=0;i<PARSHA_DATA.length;i++) {
+            if (PARSHA_DATA[i].ref===seferRef && PARSHA_DATA[i].label===label) {
+              pSel.value=i; pSel.dispatchEvent(new Event("change")); break;
+            }
+          }
+        }
+      } else {
+        var mSel=$("autoMesechtaSel");
+        if (mSel) {
+          for (var i=0;i<mSel.options.length;i++) {
+            if ((mSel.options[i].value||"").toLowerCase()===seferRef.toLowerCase()) {
+              mSel.value=mSel.options[i].value; mSel.dispatchEvent(new Event("change")); break;
+            }
+          }
+        }
+      }
+      if (labelEl && !labelEl.value.trim()) labelEl.value=label+" "+perek;
+      var hint=$("autoFetchStatus");
+      if (hint && !hint.textContent) {
+        hint.textContent="Your setup selection ("+label+" "+perek+") is pre-filled — select a chapter then hit ⚡ Fetch & generate.";
+      }
+    }, 150);
+  }
+
+  /* ---------- Auto-generate text set from wizard selection ---------- */
+  // Runs once after init. Fetches Hebrew from Sefaria, calls the AI proxy
+  // to generate the phrase-by-phrase CSV, imports it into data.textSets,
+  // then flashes a "Your texts are ready" toast. Falls back silently if
+  // offline or the proxy is unreachable — no blocking, no error dialogs.
+  async function autoGenerateWizardTextSet() {
+    if (data._wizardTextGenDone) return;
+
+    var sel = data.wizardLearning || null;
+    if (!sel) return;
+
+    var label=null, seferRef=null, perek=null, kind=null;
+    if (sel.type==="pesukim" && sel.parshaLabel && sel.parshaRef &&
+        sel.selectedChapters && sel.selectedChapters.length) {
+      label=sel.parshaLabel; seferRef=sel.parshaRef;
+      perek=sel.selectedChapters[0]; kind="pasuk";
+    } else if (sel.type==="mishnayos" && sel.mesechtaLabel && sel.mesechtaRef &&
+        sel.selectedPerakim && sel.selectedPerakim.length) {
+      label=sel.mesechtaLabel; seferRef=sel.mesechtaRef;
+      perek=sel.selectedPerakim[0]; kind="mishna";
+    }
+    if (!label) return;
+
+    var refLabel = label + " " + perek;
+
+    // ── Toast ──────────────────────────────────────────────────────────────
+    var toast = document.createElement("div");
+    toast.id = "wizardGenToast";
+    toast.style.cssText = [
+      "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999",
+      "background:#0f1b33;color:#fff;border-radius:12px;padding:14px 20px",
+      "font-size:.9rem;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,.25)",
+      "display:flex;align-items:center;gap:10px;min-width:280px;max-width:90vw",
+      "transition:opacity .5s ease"
+    ].join(";");
+    var ico = document.createElement("span"); ico.style.fontSize="1.2rem";
+    var msg = document.createElement("span"); msg.style.flex="1";
+    toast.appendChild(ico); toast.appendChild(msg);
+    document.body.appendChild(toast);
+
+    function setMsg(icon, text){ ico.textContent=icon; msg.textContent=text; }
+    function fadeOut(delay){
+      setTimeout(function(){
+        toast.style.opacity="0";
+        setTimeout(function(){ if(toast.parentNode) toast.remove(); }, 600);
+      }, delay||3500);
+    }
+
+    try {
+      setMsg("🌐", "Fetching " + refLabel + " from Sefaria…");
+      var verses = await fetchSefariaVerses(seferRef, perek, 1, 999);
+      if (verses.length > 30) verses = verses.slice(0, 30);
+
+      setMsg("🤖", "Generating flashcards for " + refLabel + "…");
+      var hebrewOnly = sel.hebrewOnly === true;
+      // Batch by 8 pesukim to avoid AI proxy timeouts on long ranges
+      var AUTO_BATCH = 8;
+      var allParts = [], batches2 = [];
+      for(var bi2=0; bi2<verses.length; bi2+=AUTO_BATCH) batches2.push(verses.slice(bi2, bi2+AUTO_BATCH));
+      for(var bi2=0; bi2<batches2.length; bi2++){
+        var bv=batches2[bi2];
+        var bl=refLabel+(batches2.length>1?" ("+(bi2+1)+"/"+batches2.length+")":"");
+        setMsg("🤖", "Generating"+(batches2.length>1?" part "+(bi2+1)+" of "+batches2.length:"")+" for "+refLabel+"…");
+        var bp=hebrewOnly ? buildHebrewOnlyPrompt(kind, bl, bv) : buildAutoImportPrompt(kind, bl, bv);
+        var bcsv=stripCodeFence(await callAiProxy(bp));
+        if(bi2>0){
+          var blines=bcsv.split("\n");
+          var bhi=blines.findIndex(function(l){return /^num[,\t]/i.test(l.trim());});
+          if(bhi>=0) blines.splice(bhi,1);
+          bcsv=blines.join("\n");
+        }
+        allParts.push(bcsv.trim());
+      }
+      var csvText = allParts.join("\n");
+
+      setMsg("📥", "Importing " + refLabel + "…");
+      var parsed = parseTextSetCSV(csvText);
+      if (!parsed) throw new Error("Empty result");
+
+      var newId = "wz-" + Date.now();
+      data.textSets.push({
+        id:newId, label:label, ref:refLabel, kind:kind,
+        from:parsed.from, to:parsed.to,
+        phrases:parsed.phrases, pointed:parsed.pointed,
+        done:{}, best:{}, labels:parsed.labels||{}
+      });
+      loadTextSet(newId);
+      data._wizardTextGenDone = true;
+      data.wizardLearning = null;
+      save();
+      if (typeof renderPesukSets==="function") renderPesukSets();
+
+      // ── Success flash ──
+      toast.style.background = "#10b981";
+      setMsg("✅", "Your texts are ready! “" + label + "” is now in the Learn tab.");
+      fadeOut(5000);
+
+    } catch(err) {
+      toast.style.background = "#64748b";
+      setMsg("⚠️", "Couldn't auto-generate " + refLabel + " — try Learn → Text manually.");
+      fadeOut(6000);
+    }
   }
 
   /* ---------- Shulchani restore helper ---------- */
@@ -4484,7 +4869,21 @@ function setupRoster() {
     // (points and Prutot are both plain integers, so no math is needed —
     // just don't clear them). convert=false/omitted keeps the old
     // wipe-on-switch behaviour.
-    if(!convert){ data.scores={}; data.log=[]; }
+    if(!convert){
+      // Destructive path — wipes every balance and the entire scan history,
+      // with no undo. Two cheap layers of protection: an automatic backup
+      // download, and a typed confirmation instead of a single accidental
+      // click.
+      var confirmText = prompt('Type "CLEAR" to confirm wiping all scores and scan history. This cannot be undone (a backup file will also be downloaded automatically).');
+      if (confirmText !== "CLEAR") return; // any other input (including Cancel) aborts the wipe entirely
+      // Safety net: always drop a backup file right before any full
+      // data/log wipe triggered by a Shulchani mode switch, so an
+      // accidental confirmation is recoverable via Backup & Sheets →
+      // Restore from a backup. Reuses the exact same export logic as the
+      // manual "Download backup file" button.
+      download("points-backup-before-shulchani-switch-" + stamp() + ".json", JSON.stringify(data, null, 2), "application/json");
+      data.scores={}; data.log=[];
+    }
     data.shulchaniMode=newMode;
     save();
     $("shulchaniModal").style.display="none";
@@ -4976,6 +5375,20 @@ function setupRoster() {
   $("undoLast").addEventListener("click", function(){ undoMostRecentScan(); });
 
   /* ---------- History tab: the full scan log, searchable ---------- */
+  var historyViewMode = "row"; // "row" (recent, existing sorts) or "ranked" (grouped totals)
+  // Mirrors renderStandActivitySelect()'s pattern (line ~6310) — same
+  // allEarnedLabels() source, so History's activity list always matches
+  // what Standings offers.
+  function renderHistoryActivitySelect(){
+    var sel=$("historyActivityFilter"); if(!sel) return;
+    var cur=sel.value;
+    sel.innerHTML="";
+    var allOpt=el("option",null,"All activities"); allOpt.value=""; sel.appendChild(allOpt);
+    allEarnedLabels().forEach(function(label){
+      var o=el("option",null,label); o.value=label; sel.appendChild(o);
+    });
+    sel.value = cur || "";
+  }
   function renderHistoryTab(){
     var sel=$("historyStudentFilter");
     var curSel=sel.value;
@@ -4984,15 +5397,37 @@ function setupRoster() {
       var o=el("option",null,s.name); o.value=s.id; sel.appendChild(o);
     });
     sel.value=curSel;
+    renderHistoryActivitySelect();
 
     var term=($("historySearch").value||"").trim().toLowerCase();
     var studentFilter=sel.value;
+    var activityFilter=$("historyActivityFilter") ? $("historyActivityFilter").value : "";
     var sortMode=$("historySort") ? $("historySort").value : "newest";
+    document.querySelectorAll("#historyViewMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.hvm===historyViewMode); });
+    if($("historySort")) $("historySort").style.display = historyViewMode==="ranked" ? "none" : "";
+
+    // Base filter (student + text search + activity) — shared by both the
+    // row view's sorts and the ranked view's per-student totals, so all
+    // three filters narrow the same underlying set together (AND'd).
+    var filtered = data.log.filter(function(entry){
+      var s=studentById(entry.sid);
+      var name = s ? s.name : entry.sid;
+      if(studentFilter && entry.sid!==studentFilter) return false;
+      if(term && name.toLowerCase().indexOf(term)<0) return false;
+      if(activityFilter && entry.label!==activityFilter) return false;
+      return true;
+    });
+
+    if(historyViewMode==="ranked"){
+      renderHistoryRanked(filtered, activityFilter);
+      return;
+    }
+
     var list=$("historyList"); list.innerHTML="";
     var shown=0;
     // Apply sort — default (newest) is already the order of data.log (unshifted
     // on each scan). Only copy+sort for the other modes to avoid mutating the log.
-    var logView = (sortMode==="newest") ? data.log : data.log.slice().sort(function(a,b){
+    var logView = (sortMode==="newest") ? filtered : filtered.slice().sort(function(a,b){
       if(sortMode==="oldest")  return (a.ts||0)-(b.ts||0);
       if(sortMode==="highest") return Math.abs(b.delta)-Math.abs(a.delta);
       if(sortMode==="lowest")  return Math.abs(a.delta)-Math.abs(b.delta);
@@ -5001,8 +5436,6 @@ function setupRoster() {
     logView.forEach(function(entry, idx){
       var s=studentById(entry.sid);
       var name = s ? s.name : entry.sid;
-      if(studentFilter && entry.sid!==studentFilter) return;
-      if(term && name.toLowerCase().indexOf(term)<0) return;
       shown++;
       var isCorrection = entry.kind==="correction";
       var row=el("div","recent-item history-item"+(entry.undone?" undone":"")+(isCorrection?" correction":""));
@@ -5047,9 +5480,39 @@ function setupRoster() {
     });
     if(!shown) list.appendChild(el("div","recent-empty", data.log.length ? "No scans match your search." : "Scans will appear here."));
   }
+  // "Most given" ranked view — groups the already-filtered log by student and
+  // sums points, mirroring pointsInRange()'s exclusion rules (skips undone
+  // entries and corrections) so the ranking matches what Standings would show
+  // for the same activity. With no activity selected, filteredLog already
+  // spans every activity, so this naturally ranks by combined total across
+  // all activities — same as "All activities" being a valid state elsewhere.
+  function renderHistoryRanked(filteredLog, activityLabel){
+    var totals={}; // sid -> sum
+    filteredLog.forEach(function(e){
+      if(e.undone || e.kind==="correction") return;
+      totals[e.sid] = (totals[e.sid]||0) + (e.delta||0);
+    });
+    var rows=Object.keys(totals).map(function(sid){
+      var s=studentById(sid);
+      return {sid:sid, name:s?s.name:sid, total:totals[sid]};
+    }).sort(function(a,b){ return b.total-a.total; });
+    var box=$("historyList"); box.innerHTML="";
+    if(!rows.length){ box.appendChild(el("div","recent-empty", activityLabel ? "No entries yet for "+activityLabel+"." : "No scans match your search.")); return; }
+    rows.forEach(function(r,i){
+      var row=el("div","erow");
+      row.appendChild(el("span","grow", (i+1)+". "+r.name));
+      row.appendChild(el("span",null, fmt(r.total)));
+      box.appendChild(row);
+    });
+  }
   $("historySearch").addEventListener("input", renderHistoryTab);
   $("historyStudentFilter").addEventListener("change", renderHistoryTab);
+  $("historyActivityFilter").addEventListener("change", renderHistoryTab);
   if($("historySort")) $("historySort").addEventListener("change", renderHistoryTab);
+  $("historyViewMode").addEventListener("click", function(e){
+    var b=e.target.closest("button"); if(!b) return;
+    historyViewMode=b.dataset.hvm; renderHistoryTab();
+  });
   $("historyUndoLast").addEventListener("click", function(){ undoMostRecentScan(); });
 
   // Edit the point value of a past scan entry.
@@ -5249,8 +5712,41 @@ function setupRoster() {
       setupRow.appendChild(printWrap);
 
       var arrangeBtn=el("button","btn btn-sm seat-arrange-toggle", data.seatArranging?"Done arranging":"Arrange seats");
-      arrangeBtn.addEventListener("click", function(){ data.seatArranging=!data.seatArranging; save(); renderTapPanel(); });
+      arrangeBtn.addEventListener("click", function(){
+        data.seatArranging=!data.seatArranging;
+        // Belt-and-suspenders: force Rebbi's view off the moment arranging
+        // turns on, rather than only disabling its button going forward —
+        // guarantees the two never overlap even if Rebbi's view was already
+        // on before arranging started. See rebbiBtn below for why this
+        // first pass keeps them strictly mutually exclusive.
+        if(data.seatArranging) data.seatLiveRebbiView=false;
+        save(); renderTapPanel();
+      });
       setupRow.appendChild(arrangeBtn);
+
+      // "Rebbi's view" for the LIVE chart — same 180° flip as the print
+      // option, but this one is interactive (click-to-award, drag-to-
+      // arrange), unlike print's static page. Disabled while arranging is
+      // active: arranging mode's drag/drop and clear-seat logic write
+      // directly into lay.seats by true array index, and while that's now
+      // correctly threaded through a reversed DISPLAY order (see
+      // renderSeatGrid's trueIdx handling below), this is deliberately kept
+      // as a hard restriction for this first pass rather than relying on
+      // that threading alone — don't relax without extensive testing.
+      // No static id here (unlike the print toggle) since this panel is
+      // rendered twice into two different containers (Scan tab + Dashboard);
+      // a shared id would collide, so — matching arrangeBtn/setupToggle
+      // above — it's referenced only via its own closure, not $(id).
+      var rebbiBtn=el("button","btn btn-sm seat-arrange-toggle", data.seatLiveRebbiView?"↩ Normal view":"🔄 Rebbi's view");
+      rebbiBtn.disabled = !!data.seatArranging;
+      rebbiBtn.title = data.seatArranging
+        ? "Turn off arranging mode to flip the view."
+        : "Flips the chart 180° to match what you see facing the class — same as the print option.";
+      rebbiBtn.addEventListener("click", function(){
+        if(data.seatArranging) return; // extra guard; button is also disabled
+        data.seatLiveRebbiView=!data.seatLiveRebbiView; save(); renderTapPanel();
+      });
+      setupRow.appendChild(rebbiBtn);
 
       setupToggle.addEventListener("click", function(){
         data.seatSetupOpen=!data.seatSetupOpen; save();
@@ -5297,10 +5793,24 @@ function setupRoster() {
     grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
     grid.style.gridTemplateRows="repeat("+lay.rows+", 1fr)";
 
-    lay.seats.forEach(function(sid, idx){
+    // Rebbi's view for the LIVE chart must never reverse lay.seats itself —
+    // arranging mode's drag/drop and clear-seat logic write directly to
+    // lay.seats[idx] using the render loop's own index, so reordering the
+    // underlying array would make those writes target the wrong seat the
+    // moment Rebbi's view is on during arranging. Instead, build a list of
+    // {sid, trueIdx} pairs in DISPLAY order, and use trueIdx (never the
+    // display-loop's own position) for every mutation. arrangeBtn's handler
+    // additionally forces seatLiveRebbiView off the moment arranging turns
+    // on, so in practice `arranging && data.seatLiveRebbiView` should never
+    // both be true — this trueIdx threading is the second layer regardless.
+    var displayOrder = lay.seats.map(function(sid, trueIdx){ return {sid:sid, trueIdx:trueIdx}; });
+    if(data.seatLiveRebbiView) displayOrder = displayOrder.slice().reverse();
+
+    displayOrder.forEach(function(item){
+      var sid=item.sid, trueIdx=item.trueIdx;
       var s = sid ? byId[sid] : null;
       var seat=el("div","seat"+(s?"":" empty"));
-      seat.dataset.idx=idx;
+      seat.dataset.idx=trueIdx;
       if(s){
         seat.dataset.sid=s.id;
         seat.appendChild(avatarEl(s, 26));
@@ -5309,7 +5819,7 @@ function setupRoster() {
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
-          clearBtn.addEventListener("click", function(ev){ ev.stopPropagation(); lay.seats[idx]=null; save(); renderTapPanel(); });
+          clearBtn.addEventListener("click", function(ev){ ev.stopPropagation(); lay.seats[trueIdx]=null; save(); renderTapPanel(); });
           seat.appendChild(clearBtn);
         }
       } else {
@@ -5320,7 +5830,7 @@ function setupRoster() {
         seat.draggable=true;
         seat.addEventListener("dragstart", function(ev){
           seat.classList.add("dragging");
-          ev.dataTransfer.setData("text/plain", JSON.stringify({from:idx}));
+          ev.dataTransfer.setData("text/plain", JSON.stringify({from:trueIdx}));
           ev.dataTransfer.effectAllowed="move";
         });
         seat.addEventListener("dragend", function(){ seat.classList.remove("dragging"); });
@@ -5330,7 +5840,7 @@ function setupRoster() {
           ev.preventDefault(); seat.classList.remove("drag-over");
           var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
           var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
-          var toIdx=idx;
+          var toIdx=trueIdx;
           if(payload.from!=null){
             var fromIdx=payload.from;
             var tmp=lay.seats[toIdx];
@@ -5346,7 +5856,7 @@ function setupRoster() {
         // tap-to-place fallback for touch devices: tap an empty seat, then tap an unplaced name
         if(!s){
           seat.addEventListener("click", function(){
-            if(seatGridPending){ lay.seats[idx]=seatGridPending; seatGridPending=null; save(); renderTapPanel(); }
+            if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); renderTapPanel(); }
           });
         }
       } else if(s){
@@ -5501,6 +6011,18 @@ function setupRoster() {
     });
     updateScanColsToggle();
   }
+  // Keeps --scan-bar-height in sync with the sticky scan bar's real
+  // rendered height, so .scroll-clear-bar's scroll-margin-top never drifts
+  // out of sync (e.g. if the bar wraps to two lines on a narrow screen, or
+  // its content changes).
+  function syncScanBarHeight(){
+    var bar=$("globalScanBar");
+    if(!bar) return;
+    var h = (bar.offsetParent !== null) ? bar.getBoundingClientRect().height : 0;
+    document.documentElement.style.setProperty("--scan-bar-height", h + "px");
+  }
+  window.addEventListener("resize", syncScanBarHeight);
+  window.addEventListener("load", syncScanBarHeight);
   // Measures the real, currently-rendered distance from the top of a no-scroll
   // dashboard section down to the bottom of the viewport, and sets its height
   // to exactly that — deliberately NOT a guessed CSS calc(100vh - Npx). The
@@ -6150,6 +6672,11 @@ function setupRoster() {
     $("contestInactive").style.display = has ? "none" : "flex";
     $("contestActiveWrap").style.display = has ? "flex" : "none";
     $("standRangeContestBtn").style.display = has ? "" : "none";
+    // Keeps Raffle's "Current contest" ticket-source option live as contest
+    // state changes, even while the Raffle tab isn't the active view — this
+    // runs regardless of `has` since both "no contest at all" and "contest
+    // just ended" mean the same thing for that option's availability.
+    updateRaffleSourceModeAvailability();
     if(!has) return;
     $("contestName").textContent = "🏆 "+data.contest.name;
     var now=Date.now(), start=data.contest.startTs, end=data.contest.endTs;
@@ -6700,7 +7227,19 @@ function setupRoster() {
     } else {
       var act=data.raffleActivity;
       data.students.forEach(function(s){
-        var t = act ? pointsForActivity(s.id, act, "all") : score(s.id);
+        var t;
+        // "Current contest" and "By activity" are mutually exclusive raffle
+        // ticket sources — contestScoreFor() already correctly sums both
+        // contest modes ("both" and "contestOnly", the latter never touching
+        // data.scores at all), so it must be checked first and used directly
+        // rather than falling through to score()/pointsForActivity().
+        if(data.raffleSourceMode==="contest" && data.contest && !data.contest.ended){
+          t = contestScoreFor(s.id, data.contest.id);
+        } else if(data.raffleSourceMode==="activity" && act){
+          t = pointsForActivity(s.id, act, "all");
+        } else {
+          t = score(s.id);
+        }
         if(t>0) arr.push({sid:s.id,name:s.name,tickets:t});
       });
     }
@@ -6717,11 +7256,29 @@ function setupRoster() {
     return arr.filter(function(e){ return e.tickets>0; });
   }
 
+  // Keeps the "Current contest" raffle source option's disabled state (and
+  // tooltip) in sync with whether a contest is actually running — same
+  // active-contest check renderContestBanner() already uses. Also falls back
+  // to all-time points if "contest" was selected but the contest since ended,
+  // so Raffle never keeps showing frozen/stale contest numbers.
+  function updateRaffleSourceModeAvailability(){
+    var contestBtn = document.querySelector('#raffleSourceMode button[data-rsm="contest"]');
+    if(!contestBtn) return;
+    var hasActiveContest = !!(data.contest && data.contest.startTs && !data.contest.ended);
+    contestBtn.disabled = !hasActiveContest;
+    contestBtn.title = hasActiveContest ? "" : "No contest is currently running.";
+    if(!hasActiveContest && data.raffleSourceMode==="contest"){
+      data.raffleSourceMode="all"; save();
+    }
+  }
   function renderRaffle(){
     var mode=data.raffle.mode||"auto";
     document.querySelectorAll("#raffleMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.mode===mode); });
     $("autoNote").style.display = mode==="auto"?"block":"none";
-    $("raffleActivityRow").style.display = mode==="auto"?"flex":"none";
+    $("raffleSourceRow").style.display = mode==="auto"?"flex":"none";
+    updateRaffleSourceModeAvailability();
+    document.querySelectorAll("#raffleSourceMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.rsm===(data.raffleSourceMode||"all")); });
+    $("raffleActivityRow").style.display = (mode==="auto" && data.raffleSourceMode==="activity")?"flex":"none";
     if(mode==="auto"){
       var sel=$("raffleActivity"), cur=sel.value||data.raffleActivity;
       sel.innerHTML='<option value="">All activities (total points)</option>';
@@ -6737,6 +7294,10 @@ function setupRoster() {
     renderWinners();
   }
   $("raffleActivity").addEventListener("change", function(){ data.raffleActivity=this.value; save(); renderWheel(); renderWinners(); });
+  $("raffleSourceMode").addEventListener("click", function(e){
+    var b=e.target.closest("button"); if(!b || b.disabled) return;
+    data.raffleSourceMode=b.dataset.rsm; save(); renderRaffle(); renderWheel(); renderWinners();
+  });
   $("raffleSpread").addEventListener("change", function(){ data.raffle.spreadTickets=this.checked; save(); renderWheel(); });
   $("raffleAdjustReset").addEventListener("click", function(){
     if(!confirm("Clear all after-win removals from this raffle? Everyone becomes eligible again with their full ticket count.")) return;
@@ -7653,7 +8214,7 @@ function setupRoster() {
   });
   $("psCsv").addEventListener("click", function(){
     var from=data.pasukSet.from, to=data.pasukSet.to, ref=data.pasukSet.ref;
-    var header=["Student","Bunk/Group"]; for(var v=from; v<=to; v++) header.push(ref+":"+v); header.push("Done");
+    var header=["Student","Class/Group"]; for(var v=from; v<=to; v++) header.push(ref+":"+v); header.push("Done");
     var rows=[header].concat(pesukGridRows("yes"));
     var csv=rows.map(function(r){ return r.map(function(c){ c=String(c); return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c; }).join(","); }).join("\n");
     download("pesukim-chart-"+stamp()+".csv", csv, "text/csv");
@@ -7731,7 +8292,7 @@ function setupRoster() {
 
     if(pesukMode==="chart") renderPesukim();
     else if(isTeachMode){ applyPesukSubMode(); }
-    else if(pesukMode==="text") { renderPesukSets(); }
+    else if(pesukMode==="text") { renderPesukSets(); prefillWizardLearning(); }
   }
   $("pesukMode").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; pesukMode=b.dataset.pm; applyPesukMode(); });
 
@@ -7812,7 +8373,13 @@ function setupRoster() {
       var active = teachActiveIdx===i;
       var autoShow = teachShowAll||active||passed;
       var show = teachManualShow.hasOwnProperty(i) ? teachManualShow[i] : autoShow;
-      var line=el("div","teach-line"+(active?" active":"")+(passed?" passed":""));
+      // scroll-clear-bar: every phrase line can potentially become the
+      // active/scrolled-to line (including after a repeat-mode loop back
+      // to phrase 1), so scroll-margin-top needs to be on all of them —
+      // not just the currently-active one — for scrollIntoView() to leave
+      // clearance under the sticky scan bar regardless of which line it's
+      // targeting at the time.
+      var line=el("div","teach-line scroll-clear-bar"+(active?" active":"")+(passed?" passed":""));
       if(active) line.id="teachActiveLine";
       var he=el("div","teach-he",p[0]); he.dir="rtl";
       var en=el("div","teach-en"+(show?" show":""),p[1]);
@@ -7875,7 +8442,7 @@ function setupRoster() {
   $("teachPhrasePrev").addEventListener("click", function(){ teachAdvance(1); });
   $("teachPhraseNext").addEventListener("click", function(){ teachAdvance(-1); });
   $("teachRepeatToggle").addEventListener("click", function(){ data.teachRepeatMode=!data.teachRepeatMode; save(); renderTeach(); });
-  $("teachPasukSel").addEventListener("change", function(){ teachN=parseInt(this.value,10); teachManualShow={}; teachActiveIdx=null; navigateToPasuk(); window.scrollTo({top:0, behavior:"smooth"}); });
+  $("teachPasukSel").addEventListener("change", function(){ teachN=parseInt(this.value,10); teachManualShow={}; teachActiveIdx=null; navigateToPasuk(); var target=$("teachPasuk"); if(target) target.scrollIntoView({behavior:"smooth", block:"start"}); else window.scrollTo({top:0, behavior:"smooth"}); });
   document.addEventListener("keydown", function(e){
     if(!$("view-pesukim").classList.contains("active")) return;
     var _isTeachSub=(pesukMode==="pesukim"||pesukMode==="mishnayos")&&pesukSubMode==="teach";
@@ -8061,6 +8628,21 @@ function setupRoster() {
         var wordBtn=el("button","btn btn-sm","\ud83d\udcdd Word"); wordBtn.title="Download as a Word document";
         wordBtn.addEventListener("click", function(){ exportSetWord(this.dataset.id); }); wordBtn.dataset.id=s.id;
         row.appendChild(wordBtn);
+        var renBtn=el("button","btn btn-sm","✏️ Rename"); renBtn.title="Rename this text set";
+        (function(sid){
+          renBtn.addEventListener("click", function(){
+            var ts=data.textSets.find(function(x){ return x.id===sid; }); if(!ts) return;
+            var newLabel=prompt("Name for this set:", ts.label||"");
+            if(newLabel===null) return;
+            if(newLabel.trim()) ts.label=newLabel.trim();
+            var newRef=prompt("Reference (e.g. Bereishis 1:1-10):", ts.ref||"");
+            if(newRef===null) return;
+            if(newRef.trim()) ts.ref=newRef.trim();
+            save(); renderPesukSets();
+            var sel2=$("pesukSetSel"); if(sel2) { sel2.innerHTML=""; data.textSets.forEach(function(s2){ var o=el("option",null,s2.label); o.value=s2.id; sel2.appendChild(o); }); sel2.value=data.activeSetId; }
+          });
+        })(s.id);
+        row.appendChild(renBtn);
         if(s.id!=="starter"){ var del=el("button","btn btn-sm btn-bad","Delete"); del.addEventListener("click", function(){ deleteTextSet(s.id); }); row.appendChild(del); }
         list.appendChild(row);
       });
@@ -8280,6 +8862,82 @@ nameLine
      If Sefaria or the proxy can't be reached (offline, proxy not deployed
      yet, etc.) this degrades gracefully to the existing manual copy/paste
      flow, seeded with whatever real text it did manage to fetch. */
+  // Parsha-level data: display label, Sefaria book ref, and chapter list
+  var PARSHA_DATA=[
+    {label:"Bereishis",      ref:"Genesis",      chapters:[1,2,3,4,5,6]},
+    {label:"Noach",          ref:"Genesis",      chapters:[6,7,8,9,10,11]},
+    {label:"Lech Lecha",     ref:"Genesis",      chapters:[12,13,14,15,16,17]},
+    {label:"Vayeira",        ref:"Genesis",      chapters:[18,19,20,21,22]},
+    {label:"Chayei Sara",    ref:"Genesis",      chapters:[23,24,25]},
+    {label:"Toldos",         ref:"Genesis",      chapters:[25,26,27,28]},
+    {label:"Vayeitzei",      ref:"Genesis",      chapters:[28,29,30,31,32]},
+    {label:"Vayishlach",     ref:"Genesis",      chapters:[32,33,34,35,36]},
+    {label:"Vayeishev",      ref:"Genesis",      chapters:[37,38,39,40]},
+    {label:"Mikeitz",        ref:"Genesis",      chapters:[41,42,43,44]},
+    {label:"Vayigash",       ref:"Genesis",      chapters:[44,45,46,47]},
+    {label:"Vayechi",        ref:"Genesis",      chapters:[47,48,49,50]},
+    {label:"Shemos",         ref:"Exodus",       chapters:[1,2,3,4,5,6]},
+    {label:"Va'eira",        ref:"Exodus",       chapters:[6,7,8,9]},
+    {label:"Bo",             ref:"Exodus",       chapters:[10,11,12,13]},
+    {label:"Beshalach",      ref:"Exodus",       chapters:[13,14,15,16,17]},
+    {label:"Yisro",          ref:"Exodus",       chapters:[18,19,20]},
+    {label:"Mishpatim",      ref:"Exodus",       chapters:[21,22,23,24]},
+    {label:"Terumah",        ref:"Exodus",       chapters:[25,26,27]},
+    {label:"Tetzaveh",       ref:"Exodus",       chapters:[27,28,29,30]},
+    {label:"Ki Sisa",        ref:"Exodus",       chapters:[30,31,32,33,34]},
+    {label:"Vayakhel",       ref:"Exodus",       chapters:[35,36,37,38]},
+    {label:"Pekudei",        ref:"Exodus",       chapters:[38,39,40]},
+    {label:"Vayikra",        ref:"Leviticus",    chapters:[1,2,3,4,5]},
+    {label:"Tzav",           ref:"Leviticus",    chapters:[6,7,8]},
+    {label:"Shemini",        ref:"Leviticus",    chapters:[9,10,11]},
+    {label:"Tazria",         ref:"Leviticus",    chapters:[12,13]},
+    {label:"Metzora",        ref:"Leviticus",    chapters:[14,15]},
+    {label:"Acharei Mos",    ref:"Leviticus",    chapters:[16,17,18]},
+    {label:"Kedoshim",       ref:"Leviticus",    chapters:[19,20]},
+    {label:"Emor",           ref:"Leviticus",    chapters:[21,22,23,24]},
+    {label:"Behar",          ref:"Leviticus",    chapters:[25,26]},
+    {label:"Bechukosai",     ref:"Leviticus",    chapters:[26,27]},
+    {label:"Bamidbar",       ref:"Numbers",      chapters:[1,2,3,4]},
+    {label:"Naso",           ref:"Numbers",      chapters:[4,5,6,7]},
+    {label:"Beha'alosecha",  ref:"Numbers",      chapters:[8,9,10,11,12]},
+    {label:"Shlach",         ref:"Numbers",      chapters:[13,14,15]},
+    {label:"Korach",         ref:"Numbers",      chapters:[16,17,18]},
+    {label:"Chukas",         ref:"Numbers",      chapters:[19,20,21,22]},
+    {label:"Balak",          ref:"Numbers",      chapters:[22,23,24,25]},
+    {label:"Pinchas",        ref:"Numbers",      chapters:[25,26,27,28,29,30]},
+    {label:"Matos",          ref:"Numbers",      chapters:[30,31,32]},
+    {label:"Masei",          ref:"Numbers",      chapters:[33,34,35,36]},
+    {label:"Devarim",        ref:"Deuteronomy",  chapters:[1,2,3]},
+    {label:"Va'eschanan",    ref:"Deuteronomy",  chapters:[3,4,5,6,7]},
+    {label:"Eikev",          ref:"Deuteronomy",  chapters:[7,8,9,10,11]},
+    {label:"Reeh",           ref:"Deuteronomy",  chapters:[11,12,13,14,15,16]},
+    {label:"Shoftim",        ref:"Deuteronomy",  chapters:[16,17,18,19,20,21]},
+    {label:"Ki Seitzei",     ref:"Deuteronomy",  chapters:[21,22,23,24,25]},
+    {label:"Ki Savo",        ref:"Deuteronomy",  chapters:[26,27,28,29]},
+    {label:"Nitzavim",       ref:"Deuteronomy",  chapters:[29,30]},
+    {label:"Vayelech",       ref:"Deuteronomy",  chapters:[31]},
+    {label:"Ha'azinu",       ref:"Deuteronomy",  chapters:[32]},
+    {label:"Vzos Habracha",  ref:"Deuteronomy",  chapters:[33,34]}
+  ];
+  // Mishnayos: label, Sefaria ref, number of perakim
+  var MISHNA_PERAKIM={
+    "Mishnah Berakhot":9,"Mishnah Peah":8,"Mishnah Demai":7,"Mishnah Kilayim":9,
+    "Mishnah Sheviit":10,"Mishnah Terumot":11,"Mishnah Maasrot":5,"Mishnah Maaser Sheni":5,
+    "Mishnah Challah":4,"Mishnah Orlah":3,"Mishnah Bikkurim":3,"Mishnah Shabbat":24,
+    "Mishnah Eruvin":10,"Mishnah Pesachim":10,"Mishnah Shekalim":8,"Mishnah Yoma":8,
+    "Mishnah Sukkah":5,"Mishnah Beitzah":5,"Mishnah Rosh Hashanah":4,"Mishnah Taanit":4,
+    "Mishnah Megillah":4,"Mishnah Moed Katan":3,"Mishnah Chagigah":3,"Mishnah Yevamot":16,
+    "Mishnah Ketubot":13,"Mishnah Nedarim":11,"Mishnah Nazir":9,"Mishnah Sotah":9,
+    "Mishnah Gittin":9,"Mishnah Kiddushin":4,"Mishnah Bava Kamma":10,"Mishnah Bava Metzia":10,
+    "Mishnah Bava Batra":10,"Mishnah Sanhedrin":11,"Mishnah Makkot":3,"Mishnah Shevuot":8,
+    "Mishnah Eduyot":8,"Mishnah Avodah Zarah":5,"Mishnah Avot":6,"Mishnah Horayot":3,
+    "Mishnah Zevachim":14,"Mishnah Menachot":13,"Mishnah Chullin":12,"Mishnah Bekhorot":9,
+    "Mishnah Arakhin":9,"Mishnah Temurah":7,"Mishnah Keritot":6,"Mishnah Meilah":6,
+    "Mishnah Tamid":7,"Mishnah Middot":5,"Mishnah Kinnim":3,"Mishnah Kelim":30,
+    "Mishnah Oholot":18,"Mishnah Negaim":14,"Mishnah Parah":12,"Mishnah Tahorot":10,
+    "Mishnah Mikvaot":10,"Mishnah Niddah":10,"Mishnah Makhshirin":6,"Mishnah Zavim":5,
+    "Mishnah Tevul Yom":4,"Mishnah Yadayim":4,"Mishnah Oktzin":3
+  };
   var CHUMASH_BOOKS=[
     {label:"Bereishis", ref:"Genesis"},
     {label:"Shemos",    ref:"Exodus"},
@@ -8287,32 +8945,103 @@ nameLine
     {label:"Bamidbar",  ref:"Numbers"},
     {label:"Devarim",   ref:"Deuteronomy"}
   ];
+  // tractates = Sefaria API ref (must match exactly); labels = Yeshivish display names
   var MISHNAYOS_SEDARIM=[
-    {seder:"Zeraim",   tractates:["Berakhot","Peah","Demai","Kilayim","Sheviit","Terumot","Maasrot","Maaser Sheni","Challah","Orlah","Bikkurim"]},
-    {seder:"Moed",     tractates:["Shabbat","Eruvin","Pesachim","Shekalim","Yoma","Sukkah","Beitzah","Rosh Hashanah","Taanit","Megillah","Moed Katan","Chagigah"]},
-    {seder:"Nashim",   tractates:["Yevamot","Ketubot","Nedarim","Nazir","Sotah","Gittin","Kiddushin"]},
-    {seder:"Nezikin",  tractates:["Bava Kamma","Bava Metzia","Bava Batra","Sanhedrin","Makkot","Shevuot","Eduyot","Avodah Zarah","Avot","Horayot"]},
-    {seder:"Kodashim", tractates:["Zevachim","Menachot","Chullin","Bekhorot","Arakhin","Temurah","Keritot","Meilah","Tamid","Middot","Kinnim"]},
-    {seder:"Taharot",  tractates:["Kelim","Oholot","Negaim","Parah","Tahorot","Mikvaot","Niddah","Makhshirin","Zavim","Tevul Yom","Yadayim","Oktzin"]}
+    {seder:"Zeraim",   tractates:["Berakhot","Peah","Demai","Kilayim","Sheviit","Terumot","Maasrot","Maaser Sheni","Challah","Orlah","Bikkurim"],
+                       labels:   ["Brachos", "Peah","Demai","Kilayim","Sheviis","Terumos","Maasros","Maaser Sheni","Challah","Orlah","Bikkurim"]},
+    {seder:"Moed",     tractates:["Shabbat","Eruvin","Pesachim","Shekalim","Yoma","Sukkah","Beitzah","Rosh Hashanah","Taanit","Megillah","Moed Katan","Chagigah"],
+                       labels:   ["Shabbos","Eiruvin","Pesachim","Shekalim","Yoma","Sukkah","Beitzah","Rosh Hashana","Taanis","Megillah","Moed Koton","Chagigah"]},
+    {seder:"Nashim",   tractates:["Yevamot","Ketubot","Nedarim","Nazir","Sotah","Gittin","Kiddushin"],
+                       labels:   ["Yevamos","Kesubos","Nedarim","Nazir","Sotah","Gittin","Kiddushin"]},
+    {seder:"Nezikin",  tractates:["Bava Kamma","Bava Metzia","Bava Batra","Sanhedrin","Makkot","Shevuot","Eduyot","Avodah Zarah","Avot","Horayot"],
+                       labels:   ["Bava Kamma","Bava Metzia","Bava Basra","Sanhedrin","Makkos","Shevuos","Eduyos","Avodah Zarah","Avos","Horayos"]},
+    {seder:"Kodashim", tractates:["Zevachim","Menachot","Chullin","Bekhorot","Arakhin","Temurah","Keritot","Meilah","Tamid","Middot","Kinnim"],
+                       labels:   ["Zevachim","Menachos","Chulin","Bechoros","Erchin","Temurah","Krisus","Meilah","Tomid","Midos","Kinnim"]},
+    {seder:"Taharot",  tractates:["Kelim","Oholot","Negaim","Parah","Tahorot","Mikvaot","Niddah","Makhshirin","Zavim","Tevul Yom","Yadayim","Oktzin"],
+                       labels:   ["Keilim","Ohalos","Negaim","Parah","Taharos","Mikvaos","Niddah","Machshirin","Zavim","Tevul Yom","Yadayim","Uktzin"]}
   ];
   // Fill in after deploying the proxy (see docs/ai-proxy-worker.js). Blank
   // means auto-generate always falls straight back to the manual prompt box.
   var AI_PROXY_URL="https://pesukim-ai-proxy.bsteinerman.workers.dev/";
-  function renderAutoSeferOptions(){
-    var kind=$("autoKind").value, sel=$("autoSefer");
-    sel.innerHTML="";
-    if(kind==="mishna"){
-      MISHNAYOS_SEDARIM.forEach(function(grp){
-        var og=document.createElement("optgroup"); og.label=grp.seder;
-        grp.tractates.forEach(function(t){ var o=el("option",null,t); o.value="Mishnah "+t; og.appendChild(o); });
-        sel.appendChild(og);
-      });
-    } else {
-      CHUMASH_BOOKS.forEach(function(b){ var o=el("option",null,b.label); o.value=b.ref; sel.appendChild(o); });
-    }
+  // Populate the Parsha dropdown (one-time)
+  function populateAppParshaDropdown(){
+    var sel=$("autoParshaSel"); if(!sel||sel.options.length>1) return;
+    PARSHA_DATA.forEach(function(p,i){
+      var o=el("option",null,p.label); o.value=i; sel.appendChild(o);
+    });
   }
-  $("autoKind").addEventListener("change", renderAutoSeferOptions);
-  renderAutoSeferOptions();
+  // Populate the Mesechta dropdown (one-time)
+  function populateAppMesechtaDropdown(){
+    var sel=$("autoMesechtaSel"); if(!sel||sel.options.length>1) return;
+    MISHNAYOS_SEDARIM.forEach(function(grp){
+      var og=document.createElement("optgroup"); og.label=grp.seder;
+      grp.tractates.forEach(function(t,i){
+        var label=(grp.labels&&grp.labels[i])||t;
+        var o=el("option",null,label); o.value="Mishnah "+t; og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+  }
+  // Render chapter/perek chip pickers for the selected parsha or mesechta
+  function renderAutoChapterChips(){
+    var kind=$("autoKind").value;
+    var chips=$("autoChapterChips"); var row=$("autoChapterRow");
+    var lbl=$("autoChapterLabel");
+    if(!chips||!row) return;
+    chips.innerHTML=""; row.style.display="none";
+    var items=[], seferRef="";
+    if(kind==="pasuk"){
+      var pSel=$("autoParshaSel"); if(!pSel||!pSel.value) return;
+      var p=PARSHA_DATA[parseInt(pSel.value,10)]; if(!p) return;
+      items=p.chapters; seferRef=p.ref;
+      lbl.textContent="Chapters";
+    } else {
+      var mSel=$("autoMesechtaSel"); if(!mSel||!mSel.value) return;
+      var count=MISHNA_PERAKIM[mSel.value]||1;
+      for(var i=1;i<=count;i++) items.push(i);
+      seferRef=mSel.value;
+      lbl.textContent="Perakim";
+    }
+    $("autoSefer").value=seferRef;
+    row.style.display="";
+    // Track selected chapters/perakim in a closure array
+    var selected=[];
+    function syncHidden(){
+      if(!selected.length){ $("autoPerek").value=""; $("autoFrom").value=""; $("autoTo").value=""; return; }
+      var sorted=selected.slice().sort(function(a,b){return a-b;});
+      $("autoPerek").value=sorted[0];
+      $("autoFrom").value=sorted[0];
+      $("autoTo").value=sorted[sorted.length-1];
+    }
+    items.forEach(function(val){
+      var chip=el("button","btn btn-sm");
+      chip.textContent=val; chip.type="button";
+      chip.style.cssText="min-width:36px;font-weight:600";
+      chip.addEventListener("click",function(){
+        var idx=selected.indexOf(val);
+        if(idx>=0){ selected.splice(idx,1); chip.classList.remove("btn-primary"); }
+        else { selected.push(val); chip.classList.add("btn-primary"); }
+        syncHidden();
+      });
+      chips.appendChild(chip);
+    });
+  }
+  // Show/hide the right dropdown when kind changes
+  function onAutoKindChange(){
+    var kind=$("autoKind").value;
+    var pSel=$("autoParshaSel"), mSel=$("autoMesechtaSel");
+    if(pSel) pSel.style.display=kind==="pasuk"?"":"none";
+    if(mSel) mSel.style.display=kind==="mishna"?"":"none";
+    if(kind==="pasuk") populateAppParshaDropdown();
+    else populateAppMesechtaDropdown();
+    // Clear chips when switching kinds
+    var chips=$("autoChapterChips"); if(chips) chips.innerHTML="";
+    var row=$("autoChapterRow"); if(row) row.style.display="none";
+  }
+  $("autoKind").addEventListener("change", onAutoKindChange);
+  $("autoParshaSel").addEventListener("change", renderAutoChapterChips);
+  $("autoMesechtaSel").addEventListener("change", renderAutoChapterChips);
+  onAutoKindChange(); // init
 
   async function fetchSefariaVerses(seferRef, perek, from, to){
     var rangeRef=seferRef+"."+perek+"."+(from===to ? from : from+"-"+to);
@@ -8381,28 +9110,63 @@ nameLine
   }
   async function callAiProxy(promptText){
     if(!AI_PROXY_URL) throw new Error("AI proxy not configured yet");
-    var res=await fetch(AI_PROXY_URL, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({prompt: promptText})
-    });
-    var json=null; try{ json=await res.json(); }catch(e){}
-    if(!res.ok) throw new Error((json&&json.error) || ("AI proxy request failed ("+res.status+")"));
-    if(!json||!json.text) throw new Error("AI proxy returned an empty response");
+    // 55-second timeout — Gemini can be slow on large prompts; this gives it
+    // plenty of time while still failing clearly rather than hanging forever.
+    var controller=new AbortController();
+    var timer=setTimeout(function(){ controller.abort(); }, 55000);
+    var res, json=null;
+    try{
+      res=await fetch(AI_PROXY_URL, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({prompt: promptText}),
+        signal: controller.signal
+      });
+    } catch(e){
+      clearTimeout(timer);
+      if(e.name==="AbortError") throw new Error("AI request timed out after 55s — try a smaller range or use manual prompt");
+      throw new Error("Network error reaching AI proxy: "+e.message);
+    }
+    clearTimeout(timer);
+    try{ json=await res.json(); }catch(e){}
+    if(!res.ok){
+      var errMsg=(json&&json.error)||(json&&json.message)||("HTTP "+res.status);
+      throw new Error("AI proxy error: "+errMsg);
+    }
+    if(!json||!json.text) throw new Error("AI proxy returned an empty response (status "+res.status+")");
     return json.text;
   }
 
   $("autoFetchBtn").addEventListener("click", async function(){
     var statusEl=$("autoFetchStatus"), btn=this;
-    var kind=$("autoKind").value, seferRef=$("autoSefer").value;
+    var kind=$("autoKind").value;
+    // autoSefer is now a hidden input set by the chip picker
+    var seferRef=$("autoSefer").value;
     var perek=parseInt($("autoPerek").value,10);
     var from=parseInt($("autoFrom").value,10);
     var to=parseInt($("autoTo").value,10); if(isNaN(to)) to=from;
-    if(!seferRef || isNaN(perek) || isNaN(from)){
-      statusEl.textContent="Fill in Sefer, Perek, and at least a starting "+(kind==="mishna"?"mishna":"pasuk")+".";
+
+    // Give a clear message if no selection has been made yet
+    if(!seferRef){
+      var pickEl=kind==="pasuk" ? $("autoParshaSel") : $("autoMesechtaSel");
+      statusEl.textContent="Please select a "+(kind==="mishna"?"mesechta":"parsha")+" and then tap at least one "+(kind==="mishna"?"perek":"chapter")+"."; 
+      if(pickEl) pickEl.focus();
+      return;
+    }
+    if(isNaN(perek) || isNaN(from)){
+      statusEl.textContent="Tap at least one "+(kind==="mishna"?"perek":"chapter")+" to continue.";
       return;
     }
     if(to<from) to=from;
-    var seferLabel=$("autoSefer").selectedOptions[0].textContent;
+
+    // Build a readable label from the selected Parsha/Mesechta + chapter
+    var seferLabel="";
+    if(kind==="pasuk"){
+      var pSel=$("autoParshaSel");
+      seferLabel=pSel && pSel.selectedOptions[0] ? pSel.selectedOptions[0].textContent : seferRef;
+    } else {
+      var mSel=$("autoMesechtaSel");
+      seferLabel=mSel && mSel.selectedOptions[0] ? mSel.selectedOptions[0].textContent : seferRef;
+    }
     var refLabel=seferLabel+" "+perek+":"+(from===to?from:from+"-"+to);
 
     btn.disabled=true;
@@ -8429,9 +9193,10 @@ nameLine
       return;
     }
 
-    var prompt=buildAutoImportPrompt(kind, refLabel, verses);
+    var hebrewOnly=$("autoHebrewOnly") && $("autoHebrewOnly").checked;
+    var prompt=hebrewOnly ? buildHebrewOnlyPrompt(kind, refLabel, verses) : buildAutoImportPrompt(kind, refLabel, verses);
     try{
-      statusEl.textContent="Asking AI to build the flashcard CSV…";
+      statusEl.textContent=hebrewOnly ? "Asking AI to split into Hebrew phrases…" : "Asking AI to build the flashcard CSV…";
       var csvText=stripCodeFence(await callAiProxy(prompt));
       $("csvBox").value=csvText;
       statusEl.textContent="Done — review the CSV below, then click \"Import as new text set.\"";
@@ -8492,7 +9257,9 @@ nameLine
     var nums=pmNumbers(); var idx=nums.indexOf(teachN); if(idx<0) idx=0;
     idx=(idx+delta+nums.length)%nums.length; teachN=nums[idx]; teachManualShow={};
     navigateToPasuk();
-    window.scrollTo({top:0, behavior:"smooth"});
+    var target=$("teachPasuk");
+    if(target) target.scrollIntoView({behavior:"smooth", block:"start"});
+    else window.scrollTo({top:0, behavior:"smooth"}); // fallback if the element isn't found
   }
   $("teachPrev").addEventListener("click", function(){ teachGo(-1); });
   $("teachNext").addEventListener("click", function(){ teachGo(1); });
@@ -10089,6 +10856,35 @@ nameLine
   $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); renderSeatChartPrint(); });
   $("seatPrintShowPoints").addEventListener("change", function(){ data.seatPrintOpts.showPoints=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); renderSeatChartPrint(); });
+  $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); renderSeatChartPrint(); });
+  // Compact activity-code footer for the seating-chart printout — distinct
+  // from renderMenuLabels()'s full-size (104x104) cards, which are too
+  // large to reliably fit alongside a seating chart on one page. Reuses
+  // menuLabelItems() for the underlying data ({qrText, name, sub} per
+  // activity — confirmed against the actual function, not assumed) but
+  // renders at a much smaller, denser size.
+  function renderSeatPrintActivitiesFooter(wrap){
+    var items = menuLabelItems();
+    if(!items || !items.length) return;
+    var hasQR=(typeof QRCode!=="undefined");
+    var footer=el("div","seat-print-activities-footer");
+    footer.appendChild(el("div","seat-print-activities-title","Activity Codes"));
+    var grid=el("div","seat-print-activities-grid");
+    items.forEach(function(it){
+      var card=el("div","seat-print-act-card");
+      if(hasQR){
+        var holder=el("div"); card.appendChild(holder);
+        try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ card.appendChild(document.createTextNode("QR?")); }
+      }
+      var label=el("div","seat-print-act-label", it.name);
+      var sub=el("div","seat-print-act-sub", it.sub);
+      card.appendChild(label); card.appendChild(sub);
+      grid.appendChild(card);
+    });
+    footer.appendChild(grid);
+    wrap.appendChild(footer);
+  }
   function renderSeatChartPrint(){
     var wrap=$("seatChartGrid"); wrap.innerHTML="";
     var lay=seatLayout();
@@ -10146,6 +10942,21 @@ nameLine
     });
     wrap.appendChild(grid);
     if(rebbiView) wrap.appendChild(el("div","seat-front","Front of room"));
+    if(data.seatPrintOpts.showActivities){
+      renderSeatPrintActivitiesFooter(wrap);
+    }
+    // Heuristic, non-blocking fit check — printed page dimensions don't map
+    // exactly to on-screen pixels, so this is an estimate to give the
+    // teacher a heads-up, not a guarantee. Letter portrait usable height
+    // after margins is roughly 10in; landscape roughly 7.5in. Using 96px/in
+    // as a rough screen-to-print approximation.
+    var warnEl=$("seatPrintFitWarning");
+    if(warnEl){
+      var usableInches = seatPrintOrient==="landscape" ? 7.5 : 10;
+      var usablePx = usableInches * 96;
+      var fits = wrap.scrollHeight <= usablePx;
+      warnEl.style.display = fits ? "none" : "block";
+    }
   }
   // @page can't be scoped by a body class, so landscape mode is applied by
   // briefly injecting its own <style> tag around the print action, removed
@@ -10244,6 +11055,175 @@ nameLine
   $("copyManifest").addEventListener("click", function(){ copyPre("manifestCode", this); });
   function fallbackCopy(txt){ var ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(e){} document.body.removeChild(ta); }
 
+  /* ---------- SNAPSHOT SYNC (Phase 1) ---------- */
+  // Pushes the entire data object to the Sheet's "Snapshot" tab.
+  // The Apps Script stores it chunked across cells and keeps the last 5
+  // snapshots per device, so there's always a recent version to restore from.
+  var _snapshotTimer = null;
+  var _snapshotBusy = false;
+
+  // Builds the JSON string sent to the Sheet for a snapshot push. Shared by
+  // the normal debounced push and the tab-close push, so both always send
+  // the exact same shape of data.
+  function buildSnapshotPayload() {
+    var clone = JSON.parse(JSON.stringify(data));
+    delete clone.sheetUrl; // don't store credentials/links inside the snapshot itself
+    return JSON.stringify({
+      type: "snapshot",
+      deviceId: deviceId,
+      snapshot: JSON.stringify(clone)
+    });
+  }
+
+  // True while the app has unsaved changes that haven't yet been confirmed
+  // pushed to the Sheet — used to decide whether a tab-close snapshot is
+  // worth attempting at all.
+  var _snapshotDirty = false;
+
+  function pushSnapshot(silent) {
+    var url = (data.sheetUrl || "").trim();
+    if (!url) {
+      if (!silent && $("snapshotStatus")) $("snapshotStatus").textContent = "No Google Sheet connected — add one on the Sync to Google Sheets section first.";
+      return;
+    }
+    // Don't push a snapshot of essentially-empty/default state — this happens
+    // on first load of a brand-new device before any real data exists, and
+    // would otherwise pollute the Sheet's snapshot history for no benefit.
+    var looksEmpty = (!data.students || data.students.length === 0)
+      && (!data.log || data.log.length === 0);
+    if (looksEmpty && silent) {
+      // Silent (auto) pushes skip empty state entirely. Manual "Save to Sheet
+      // now" clicks still go through — if a teacher explicitly clicks it,
+      // respect that even if the class roster happens to be empty right now.
+      return;
+    }
+    if (_snapshotBusy) return;
+    _snapshotBusy = true;
+    var statusEl = $("snapshotStatus");
+    if (!silent && statusEl) statusEl.textContent = "Saving to sheet…";
+
+    var payload = buildSnapshotPayload();
+
+    fetch(url, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: payload
+    }).then(function() {
+      if (!silent && statusEl) statusEl.textContent = "Saved to your Google Sheet (" + new Date().toLocaleTimeString() + ").";
+      data._lastSnapshotAt = Date.now();
+      _snapshotDirty = false;
+      save();
+    }).catch(function(err) {
+      if (!silent && statusEl) statusEl.textContent = "Couldn't reach your sheet. Check your connection and try again.";
+    }).finally(function() {
+      _snapshotBusy = false;
+    });
+  }
+
+  function pullSnapshot() {
+    var url = (data.sheetUrl || "").trim();
+    var statusEl = $("snapshotStatus");
+    if (!url) {
+      if (statusEl) statusEl.textContent = "No Google Sheet connected — add one on the Sync to Google Sheets section first.";
+      return;
+    }
+    if (statusEl) statusEl.textContent = "Loading from sheet…";
+    var fetchUrl = url + (url.indexOf("?") >= 0 ? "&" : "?") + "action=snapshot";
+    fetch(fetchUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(resp) {
+        if (!resp.ok) {
+          if (statusEl) statusEl.textContent = resp.error || "No snapshot found on your sheet.";
+          return;
+        }
+        var obj;
+        try { obj = JSON.parse(resp.snapshot); } catch(e) {
+          if (statusEl) statusEl.textContent = "The snapshot on your sheet couldn't be read — it may be corrupted.";
+          return;
+        }
+        if (!obj.students || !obj.activities) {
+          if (statusEl) statusEl.textContent = "That snapshot doesn't look like valid Menchmark data.";
+          return;
+        }
+        if (!confirm("This will replace everything currently here with the version saved on your Google Sheet. Continue?")) {
+          if (statusEl) statusEl.textContent = "";
+          return;
+        }
+        // Preserve the current sheetUrl — don't overwrite it from the snapshot
+        var currentSheetUrl = data.sheetUrl;
+        data = migrateData(obj);
+        data.sheetUrl = currentSheetUrl;
+        load2fix();
+        save();
+        // Refresh all views (same as JSON restore)
+        $("schoolName").textContent = data.school;
+        $("bunkName").textContent = data.className;
+        $("sheetUrl").value = data.sheetUrl || "";
+        $("autoSheet").checked = (data.autoSheet !== false);
+        renderActButtons(); renderRecent(); renderStudents(); renderActivities();
+        renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
+        showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
+        if (statusEl) statusEl.textContent = "";
+        alert("Restored from Google Sheet.");
+      })
+      .catch(function(err) {
+        if (statusEl) statusEl.textContent = "Couldn't reach your sheet. Check your connection and try again.";
+      });
+  }
+
+  // Auto-snapshot: after every save(), wait 30 seconds of inactivity,
+  // then silently push a snapshot if the Sheet is connected.
+  function scheduleAutoSnapshot() {
+    if (_snapshotTimer) clearTimeout(_snapshotTimer);
+    if (!(data.sheetUrl || "").trim()) return;
+    _snapshotDirty = true;
+    _snapshotTimer = setTimeout(function() {
+      pushSnapshot(true); // silent
+    }, 30000);
+  }
+
+  // Fires a best-effort final snapshot if the tab is being closed/hidden
+  // while a debounced snapshot is still pending. Uses fetch with
+  // keepalive:true rather than sendBeacon, since sendBeacon caps payloads
+  // around 64KB and a real snapshot can run well past that. keepalive has
+  // no such limit and is designed for exactly this "survive page unload"
+  // case — the browser guarantees the request is sent even after JS
+  // execution on the page stops.
+  function pushSnapshotOnClose() {
+    if (!_snapshotDirty) return; // nothing pending, nothing to do
+    var url = (data.sheetUrl || "").trim();
+    if (!url) return;
+    var looksEmpty = (!data.students || data.students.length === 0)
+      && (!data.log || data.log.length === 0);
+    if (looksEmpty) return;
+    try {
+      var payload = buildSnapshotPayload();
+      fetch(url, {
+        method: "POST",
+        mode: "no-cors",
+        keepalive: true,
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: payload
+      });
+      // Can't confirm success here — the page may already be gone by the
+      // time any response would arrive. This is a best-effort safety net,
+      // not a guaranteed-delivery mechanism.
+    } catch (e) {
+      // Nothing more we can do if this throws — the tab is closing regardless.
+    }
+  }
+
+  // "visibilitychange" firing to "hidden" covers tab close, browser close,
+  // switching tabs, and minimizing — the most reliable signal across
+  // browsers for "the user may be leaving." "pagehide" is a second safety
+  // net for cases visibilitychange might miss (e.g. some mobile browser
+  // back/forward cache scenarios).
+  document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === "hidden") pushSnapshotOnClose();
+  });
+  window.addEventListener("pagehide", pushSnapshotOnClose);
+
   /* ---------- BACKUP ---------- */
   function download(filename, text, type){
     // A UTF-8 BOM is prepended for CSV specifically: without it, Excel on
@@ -10258,6 +11238,8 @@ nameLine
     setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
   }
   function stamp(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  $("pushSnapshotBtn").addEventListener("click", function(){ pushSnapshot(false); });
+  $("pullSnapshotBtn").addEventListener("click", function(){ pullSnapshot(); });
   $("exportJson").addEventListener("click", function(){
     download("points-backup-"+stamp()+".json", JSON.stringify(data,null,2), "application/json");
   });
@@ -10340,7 +11322,7 @@ nameLine
           data=migrateData(resolvedObj); load2fix(); save();
           clearStaleTicketPools();
           $("schoolName").textContent=data.school;
-          $("bunkName").textContent=data.bunk;
+          $("bunkName").textContent=data.className;
           $("sheetUrl").value=data.sheetUrl||"";
           $("autoSheet").checked=(data.autoSheet!==false);
           renderActButtons(); renderRecent(); renderStudents(); renderActivities();
@@ -10362,7 +11344,7 @@ nameLine
       try{
         var rows=parseCSV(r.result).filter(function(row){ return row.some(function(c){ return (c||"").trim(); }); });
         if(!rows.length) throw new Error("empty");
-        // detect & skip a header row (Time, Student, Bunk/Group, Activity, Points, New total)
+        // detect & skip a header row (Time, Student, Class/Group, Activity, Points, New total)
         var h=rows[0].map(function(c){ return (c||"").trim().toLowerCase(); });
         var start = (h[0]==="time"||h[1]==="student"||h.indexOf("activity")>=0) ? 1 : 0;
         var entries=[];
@@ -10380,7 +11362,7 @@ nameLine
 
         entries.sort(function(a,b){ return a.ts-b.ts; }); // chronological, so totals & history land in order
 
-        var fresh={ school:data&&data.school||"Sample School", bunk:data&&data.bunk||"Sample Class 1",
+        var fresh={ school:data&&data.school||"Sample School", className:data&&data.className||"Sample Class 1",
           students:[], activities:[], scores:{}, log:[], sheetUrl:(data&&data.sheetUrl)||"", autoSheet:(data&&data.autoSheet)!==false,
           earned:{}, weekly:{}, earnedSeeded:true };
         var byName={}, actSeen={};
@@ -10423,13 +11405,13 @@ nameLine
         // rebuild earned/weekly trend history from the full entry list (positive points only)
         entries.forEach(function(e){ if(e.delta>0){ var s=byName[e.name.toLowerCase()]; if(s) recordEarn(s.id, e.label, e.delta, e.ts); } });
         save();
-        $("schoolName").textContent=data.school; $("bunkName").textContent=data.bunk;
+        $("schoolName").textContent=data.school; $("bunkName").textContent=data.className;
         $("sheetUrl").value=data.sheetUrl||""; $("autoSheet").checked=(data.autoSheet!==false);
         renderActButtons(); renderRecent(); renderStudents(); renderActivities(); renderClassSel();
         $("logCsvStatus").textContent="Restored "+fresh.students.length+" students, "+fresh.activities.length+" activities, and "+entries.length+" log entries.";
         alert("Restored from Log CSV: "+fresh.students.length+" students, "+entries.length+" scan entries.");
       }catch(err){
-        $("logCsvStatus").textContent="Couldn't read that as a Log CSV. Make sure it's the export of your sheet's Log tab (Time, Student, Bunk/Group, Activity, Points, New total).";
+        $("logCsvStatus").textContent="Couldn't read that as a Log CSV. Make sure it's the export of your sheet's Log tab (Time, Student, Class/Group, Activity, Points, New total).";
       }
     };
     r.readAsText(file);
@@ -10443,7 +11425,7 @@ nameLine
     data.log.forEach(function(e){ if(e && !e.id) e.id=newId(); });
     if(!data.scores) data.scores = {};
     if(!data.school) data.school = "Sample School";
-    if(!data.bunk) data.bunk = "Sample Class 1";
+    if(!data.className) data.className = "Sample Class 1";
     if(typeof data.sheetUrl!=="string") data.sheetUrl="";
     if(typeof data.autoSheet!=="boolean") data.autoSheet=true;
     if(!data.raffle) data.raffle={mode:"auto",entries:{},winners:[]};
@@ -10486,6 +11468,7 @@ nameLine
     if(!data.weekly) data.weekly={};
     if(typeof data.standingsActivity!=="string") data.standingsActivity="";
     if(typeof data.raffleActivity!=="string") data.raffleActivity="";
+    if(["all","activity","contest"].indexOf(data.raffleSourceMode)<0) data.raffleSourceMode="all";
     if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={groupMode:"all", groupKeys:[], format:"tiles"};
     if(typeof data.pointsPrint.format!=="string" || data.pointsPrint.format==="grid") data.pointsPrint.format="tiles";
     if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[];
@@ -10520,6 +11503,7 @@ nameLine
     delete data.seatPrintOpts.showQR;
     if(typeof data.seatPrintOpts.showPoints!=="boolean") data.seatPrintOpts.showPoints=false;
     if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
+    if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
     if(!Array.isArray(data.pastContests)) data.pastContests=[];
     if(data.contest!==null && (typeof data.contest!=="object" || !data.contest.startTs)) data.contest=null;
     if(data.contest){
@@ -10541,6 +11525,7 @@ nameLine
     if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages";
     if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
     if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
+    if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
     if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
     if(typeof data.grade!=="string") data.grade="";
@@ -10548,6 +11533,7 @@ nameLine
     if(typeof data.features.shulchani!=="boolean") data.features.shulchani=true;
     if(typeof data.features.chavrusa!=="boolean") data.features.chavrusa=false;
     if(typeof data.features.learningType!=="string") data.features.learningType="";
+    if(typeof data.wizardLearning==="undefined") data.wizardLearning=null;
     if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}};
     if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={};
     if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={};
@@ -10590,7 +11576,7 @@ nameLine
   // history, and the saved Sheet link. Type-to-confirm since this is the one
   // action here with no way back short of a backup file.
   $("clearAllData").addEventListener("click", function(){
-    var typed=prompt("This permanently erases the institution name, class/bunk name, students, activities, scores, scan log, raffle history, and your saved Google Sheet link on this device. This cannot be undone.\n\nType CLEAR to confirm:");
+    var typed=prompt("This permanently erases the institution name, class name, students, activities, scores, scan log, raffle history, and your saved Google Sheet link on this device. This cannot be undone.\n\nType CLEAR to confirm:");
     if(typed===null) return;
     if(typed.trim().toUpperCase()!=="CLEAR"){ alert("Not cleared — typed text didn't match \u201CCLEAR\u201D."); return; }
     data=JSON.parse(JSON.stringify(defaults));
@@ -10601,7 +11587,7 @@ nameLine
   /* ---------- school name + mute + date ---------- */
   $("schoolName").addEventListener("blur", function(){ data.school=this.textContent.trim()||"My School"; this.textContent=data.school; save(); });
   $("schoolName").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); this.blur(); } });
-  $("bunkName").addEventListener("blur", function(){ data.bunk=this.textContent.trim()||"Sample Class 1"; this.textContent=data.bunk; save(); });
+  $("bunkName").addEventListener("blur", function(){ data.className=this.textContent.trim()||"Sample Class 1"; this.textContent=data.className; save(); });
   $("bunkName").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); this.blur(); } });
   $("muteBtn").addEventListener("click", function(){ data.muted=!data.muted; this.textContent=data.muted?"🔇 Sound off":"🔊 Sound on"; var ss=$("setSound"); if(ss) ss.checked=!data.muted; save(); });
   function showDate(){
@@ -10677,19 +11663,36 @@ nameLine
     if (rawSetup) {
       try {
         var s = JSON.parse(rawSetup);
-        if (s.className)  { data.bunk   = s.className;  changed = true; }
+        if (s.className)  { data.className = s.className; changed = true; }
         if (s.schoolName) { data.school = s.schoolName; changed = true; }
         if (s.grade)      { data.grade  = s.grade;      changed = true; }
 
         if (s.features && typeof s.features === "object") {
-          /* Shulchani Mode — honour the wizard toggle directly */
-          if (typeof s.features.shulchani === "boolean") {
-            data.shulchaniMode = s.features.shulchani;
+          /* Shulchani Mode — route through the same safety check used by
+             the Settings toggle; never flip it as a bare assignment. If
+             the teacher has existing balances and the wizard's chosen
+             mode differs from the current one, this preserves data
+             (non-destructive switch) rather than silently reinterpreting
+             every balance into a different unit. The wizard is a
+             first-run/setup context, so if there's no existing data yet,
+             this is a no-op confirmation-wise and behaves identically to
+             the old direct assignment. */
+          if (typeof s.features.shulchani === "boolean" && data.shulchaniMode !== s.features.shulchani) {
+            if (hasAnyScores()) {
+              doShulchaniSwitch(s.features.shulchani, true); // true = preserve data, never wizard-initiated wipe
+            } else {
+              data.shulchaniMode = s.features.shulchani; // nothing to protect — safe to set directly
+            }
           }
           /* Store other feature flags for subsystems to read */
           if (!data.features || typeof data.features !== "object") data.features = {};
           data.features.chavrusa = s.features.chavrusa === true;
-          if (s.learning && s.learning.type) data.features.learningType = s.learning.type;
+          if (s.features && s.features.learning === true && s.learning && s.learning.type) {
+            data.features.learningType = s.learning.type;
+            if (s.learning.parshaLabel || s.learning.mesechtaLabel) {
+              data.wizardLearning = s.learning;
+            }
+          }
 
           /* Nav visibility — reversible via Settings */
           if (!data.navHidden || typeof data.navHidden !== "object") data.navHidden = {groups:{},tabs:{}};
@@ -10737,9 +11740,24 @@ nameLine
 
   /* ---------- init ---------- */
   load();
+  // --- Device ID for snapshot scoping (Phase 1) ---
+  // Each browser gets a stable random ID so snapshots on a shared Sheet
+  // stay separated per device. Generated once, persists in localStorage.
+  var DEVICE_ID_KEY = "menchmark-device-id";
+  var deviceId = (function(){
+    try {
+      var stored = localStorage.getItem(DEVICE_ID_KEY);
+      if (stored) return stored;
+      var id = "dev-" + Date.now().toString(36) + "-" + Math.random().toString(36).substring(2, 8);
+      localStorage.setItem(DEVICE_ID_KEY, id);
+      return id;
+    } catch(e) {
+      return "dev-unknown";
+    }
+  })();
   applySetupWizard();
   $("schoolName").textContent=data.school;
-  $("bunkName").textContent=data.bunk;
+  $("bunkName").textContent=data.className;
   $("sheetUrl").value=data.sheetUrl||"";
   $("autoSheet").checked=(data.autoSheet!==false);
   $("muteBtn").textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
@@ -10754,11 +11772,16 @@ nameLine
   renderScanBoard();
   renderTapPanel();
   applyScanLayout();
+  syncScanBarHeight();
   renderClassSel();
   renderGroupTabs("scan"); renderSubTabs("scan","scan"); activeGroupName="scan"; activeTabName="scan";
   applyGlobalScanBarVisibility("scan");
   if(typeof serialTryAutoReconnect==="function") serialTryAutoReconnect();
   if(typeof window._refreshSnackBtn==="function") window._refreshSnackBtn();
+  // Auto-generate text set from wizard learning selection — runs once, async,
+  // 1.5s delay so the full app is rendered before the toast appears.
+  // Auto-generate only if teacher opted in (default: true)
+  if (data.wizardLearning && data.wizardLearning.autoGenerate !== false) setTimeout(function(){ autoGenerateWizardTextSet(); }, 1500);
   setTimeout(function(){ $("scanInput").focus(); },80);
 })();
 
@@ -10911,7 +11934,7 @@ This program runs entirely in a web browser (like Chrome or Safari) — there is
 Every screen in the program now shares a three-part header:
 
 
-- A top bar with your school/bunk name on the left, the main section tabs in the middle (Scan, Rewards, Learn, Tools, Print, Setup), and the class dropdown on the right — tap the school/bunk name to rename it.
+- A top bar with your school/class name on the left, the main section tabs in the middle (Scan, Rewards, Learn, Tools, Print, Setup), and the class dropdown on the right — tap the school/class name to rename it.
 
 
 - A second row just below it with the sub-tabs for whichever section you're in (for example, under Scan you'll see Dashboard, Seats, History, Leader Board, Trends, Contest), plus a row of quick icons.
