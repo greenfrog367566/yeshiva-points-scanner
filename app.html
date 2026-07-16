@@ -9440,6 +9440,12 @@ nameLine
   function teachGo(delta){
     var nums=pmNumbers(); var idx=nums.indexOf(teachN); if(idx<0) idx=0;
     idx=(idx+delta+nums.length)%nums.length; teachN=nums[idx]; teachManualShow={};
+    // Reset the arrow-key progression too — a stale active index from the
+    // previous pasuk would mark that many phrases of the NEW pasuk as
+    // active/passed (i.e. revealed). The dropdown handler already does this;
+    // the ‹ › buttons were inconsistent. teachAdvance's continue-mode sets
+    // its own teachActiveIdx right after calling this, so it's unaffected.
+    teachActiveIdx=null;
     navigateToPasuk();
     var target=$("teachPasuk");
     if(target) target.scrollIntoView({behavior:"smooth", block:"start"});
@@ -9447,7 +9453,17 @@ nameLine
   }
   $("teachPrev").addEventListener("click", function(){ teachGo(-1); });
   $("teachNext").addEventListener("click", function(){ teachGo(1); });
-  $("teachToggle").addEventListener("click", function(){ teachShowAll=!teachShowAll; renderTeach(); });
+  $("teachToggle").addEventListener("click", function(){
+    teachShowAll=!teachShowAll;
+    // The toggle is authoritative: clear any per-line manual reveals so the
+    // global state actually wins (previously a tapped-open phrase survived
+    // "Hide all"). Hiding all also resets the arrow-key progression —
+    // active/passed lines auto-reveal, so leaving them set would keep those
+    // translations visible despite the button saying everything is hidden.
+    teachManualShow={};
+    if(!teachShowAll) teachActiveIdx=null;
+    renderTeach();
+  });
   $("teachEditBtn").addEventListener("click", function(){ teachEditing=!teachEditing; renderTeach(); });
   $("teachAddPhrase").addEventListener("click", function(){ addPhrase(teachN); });
   $("teachResetPhrases").addEventListener("click", function(){ resetPasukPhrases(teachN); });
