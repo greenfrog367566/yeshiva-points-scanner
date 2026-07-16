@@ -128,7 +128,7 @@ Now that tabs are reorganized and the armed-item mechanic exists (2d), refine th
 - **7a. Print Wizard shell** — one guided entry point; re-home the (already-relocated in Phase 1) print pages into it; class-list printable; big double-sided student card.
 - **7b. Shulchani coin cards** — color-matched coin QR backgrounds (uses existing `COINS` colors), per-student coin codes. *Depends on Phase 4's Shulchani work being settled.*
 - **7c. Scanner Setup sheet** — reference-only version first (safe, no Tera permission needed); upgrade to reproduced codes only if/when Tera says yes.
-- **7d. Batch Import / No-Computer** — the offline scan-all-day-upload-later flow. **Blocked on the real scanner timestamp-format test** (still outstanding). Parser built against real output, review-before-commit screen, paired with Personal Scoring Pages (preserved since Phase 1).
+- **7d. Offline Mode / Batch Import / Secretary Mode** — the full no-computer story. **UNBLOCKED** — the real scanner timestamp format is confirmed (`YYYY/MM/DD HH:MM:SS` suffix, 1-sec resolution). Fully spec'd in `docs/Offline_NoComputer_Secretary_Spec.md`: Offline Mode preference (onboarding + Manage tile + readiness wizard), Batch Import parser (with review-before-commit, same-second-duplicate + unknown-code flagging), and Secretary Mode (upload-for-others with saved rebbi roster + batch revert — the first multi-user feature, build carefully & last). Paired with Personal Scoring Pages (preserved since Phase 1) — the test data proved arm-then-scan is unreliable in batch. Only remaining external dep is Tera's permission for reproducing config barcodes on the *print* side (import/parser unaffected).
 
 **Ships:** the complete printing story + the no-screen classroom workflow.
 
@@ -173,7 +173,7 @@ Phase 2 (Gradebook) ──> Phase 5 (quiz grades), Phase 6a→b less so, Phase 6
 Phase 4 (Shulchani coins) ──> Phase 7b (coin cards)
 Phase 6a (Library) ──> Phase 6b (Review Wizard)
 Phase 3 (Dashboard) ──> Phase 8 (Chavrusa Dashboard bits)
-Phase 7d (Batch Import) ──> BLOCKED on real scanner timestamp test
+Phase 7d (Offline/Batch/Secretary) ──> UNBLOCKED (scanner format confirmed); spec in docs/Offline_NoComputer_Secretary_Spec.md
 ```
 
 **Critical path:** 0 → 1 → 2 is the spine. Everything valuable hangs off Phase 2 existing. If you build nothing else, 0→1→2 already transforms the app.
