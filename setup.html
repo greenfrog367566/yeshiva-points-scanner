@@ -593,17 +593,43 @@ tailwind.config = {
 <!-- JAVASCRIPT                                                     -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <script>
+// Progress older than this is treated as abandoned, not resumable —
+// prevents a teacher from testing setup weeks ago, then a real teacher
+// opening it fresh and silently inheriting that old test data. 24 hours
+// comfortably covers "closed the tab and came back later today" while
+// ruling out genuinely stale/forgotten sessions.
+var SETUP_RESUME_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 document.addEventListener('DOMContentLoaded', function () {
   if (typeof lucide !== 'undefined') lucide.createIcons();
 
-  // Resume if there's saved progress
+  // If a previous setup actually completed, this is a fresh visit —
+  // never resume old in-progress data over it (e.g. someone clicking
+  // "Skip & Start Now" earlier, then later opening setup.html again to
+  // actually configure things properly).
+  var alreadyCompleted = localStorage.getItem('menchmark_setup_complete') === 'true';
+
   var saved = localStorage.getItem('menchmark_setup');
-  if (saved) {
+  if (saved && !alreadyCompleted) {
     try {
       var parsed = JSON.parse(saved);
-      Object.assign(setup, parsed);
-      restoreUI();
-    } catch (e) { /* ignore corrupt data */ }
+      var age = Date.now() - (parsed._savedAt || 0);
+      if (parsed._savedAt && age < SETUP_RESUME_MAX_AGE_MS) {
+        Object.assign(setup, parsed);
+        restoreUI();
+      } else {
+        // Too old (or never timestamped, e.g. pre-fix data) — treat as
+        // abandoned. Clear it so it can't resurface again later either.
+        localStorage.removeItem('menchmark_setup');
+      }
+    } catch (e) {
+      // Corrupt data — clear it rather than leaving a landmine for next time.
+      localStorage.removeItem('menchmark_setup');
+    }
+  } else if (saved && alreadyCompleted) {
+    // Setup was already finished at some point — don't silently resume
+    // old in-progress data over a fresh visit.
+    localStorage.removeItem('menchmark_setup');
   }
 });
 
@@ -632,6 +658,7 @@ function saveProgress() {
   setup.className  = (document.getElementById('inp-class').value  || '').trim();
   var baudEl = document.getElementById('sel-baud');
   setup.hardware.baud = baudEl ? parseInt(baudEl.value, 10) || 9600 : 9600;
+  setup._savedAt = Date.now(); // stamp every save so resume can check staleness
   localStorage.setItem('menchmark_setup', JSON.stringify(setup));
 }
 
@@ -665,7 +692,28 @@ function restoreUI() {
   // Restore learning type
   if (setup.learning.type) {
     var lc = document.querySelector('.learn-card[data-type="' + setup.learning.type + '"]');
-    if (lc) { lc.classList.add('selected'); document.getElementById('learn-data-section').classList.remove('hidden'); }
+    if (lc) {
+      // Route through the SAME function the actual click handler uses,
+      // rather than partially re-implementing its side effects here.
+      // selectLearnType() already handles unhiding the right picker
+      // section, populating the correct dropdown, and setting
+      // setup.learning.type — calling it directly means restore and a
+      // real click can never drift out of sync with each other again.
+      selectLearnType(lc);
+      // Re-apply the previously selected parsha/mesechta value + chapter
+      // chips, since selectLearnType() alone only sets up the picker UI
+      // shell, not the specific saved selection within it.
+      if (setup.learning.type === 'pesukim' && setup.learning.parshaIdx != null) {
+        var parshaSel = document.getElementById('learn-parsha-sel');
+        if (parshaSel) { parshaSel.value = String(setup.learning.parshaIdx); onLearnParshaChange(); }
+      } else if (setup.learning.type === 'mishnayos' && setup.learning.mesechtaIdx != null) {
+        var mesechtaSel = document.getElementById('learn-mesechta-sel');
+        if (mesechtaSel) { mesechtaSel.value = String(setup.learning.mesechtaIdx); onLearnMesechtaChange(); }
+      } else if (setup.learning.type === 'shoreshim' && setup.learning.shorashimTopic) {
+        var topicEl = document.getElementById('learn-shorashim-topic');
+        if (topicEl) topicEl.value = setup.learning.shorashimTopic;
+      }
+    }
   }
 
   // Restore scanner toggle
@@ -735,6 +783,20 @@ function toggleFeature(card) {
   card.classList.toggle('on');
   var feat = card.dataset.feature;
   setup.features[feat] = card.classList.contains('on');
+
+  // If Learn mode was just turned OFF, clear any selection underneath
+  // it — otherwise a teacher who toggles it on, picks a parsha, then
+  // changes their mind and toggles it off, would still have that
+  // parsha silently attached to setup.learning and potentially applied
+  // by app.html's setup-wizard bridge regardless of the toggle's
+  // now-off state. Resetting here keeps setup.features and
+  // setup.learning from ever being able to drift out of sync.
+  if (feat === 'learning' && !setup.features.learning) {
+    setup.learning = { type: null, source: null, autoGenerate: true };
+    document.querySelectorAll('.learn-card').forEach(function(c){ c.classList.remove('selected'); });
+    var picker = document.getElementById('learn-text-picker');
+    if (picker) picker.classList.add('hidden');
+  }
 }
 
 function goToStep3() {
