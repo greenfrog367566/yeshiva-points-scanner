@@ -11,6 +11,24 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 ## [Unreleased]
 
 ### Added
+- **Phase 0: Migration test harness** (`test-migration.html`) — a standalone page that runs `migrateData()` + `load2fix()` against test data blobs (8 built-in scenarios plus paste/drop a real backup) and reports whether data survives intact. Run it before any data-model change. Its copies of the migration functions must be kept in sync with app.html.
+- **Seating chart full-screen pop-out** — a "⛶ Full screen" button on the Dashboard's Class list card expands the seating chart to fill the screen below the top bar (which stays usable, including the scan bar's activity-pill and History dropdowns). Grows out of the card and shrinks back into it on close; background scrolling is locked while open; chrome is trimmed in full-screen so the chart gets the space. Respects reduced-motion.
+- **Print buttons on data-owner tabs** — Students, Activities, Leader Board, and the Dashboard's Class list card each get a 🖨 button jumping to their print view (replaces the dissolved Print tab group).
+- **Scoped "Reset spendable points"** now lives in Manage → Backup & Restore's danger zone with its own group picker (moved off the Leader Board — too destructive next to routine filter controls). Same behavior: zeroes balances, keeps lifetime Trends.
+
+### Changed
+- **Tab restructure (Phase 1)** — the 6-group nav (Scan/Rewards/Learn/Tools/Print/Setup) becomes 5 groups: **Scan** (Dashboard, History), **Standings** (Leader Board, Trends, Contest), **Rewards** (Raffle, Auction, Store), **Manage** (Students, Activities, Brachos, Spinner, Passes, Attendance, Tracker, Homework, Backup & Restore, Settings), **Learn** (unchanged). Every feature works exactly as before — just reorganized. Saved nav state from the old group names is migrated in `load2fix()` (stale `tools`/`setup`/`print` group keys and the `seats` tab key are cleaned up).
+- **Seats tab folded into the Dashboard** — the separate Seats tab is gone; the seating chart lives on the Dashboard's Class list panel with the full-screen pop-out above. Saved "last tab = seats" state remaps to the Dashboard.
+- **"Backup & Sheets" renamed to "Backup & Restore".**
+- **In Rebbi's view, "Front of room" now sits below the seating grid** — matching the printed chart's convention (the chart is flipped to the rebbi's perspective, so the front is at the bottom).
+- **Feature-specific settings moved onto their features** (out of Settings): Teach Mode's flip-keys/flip-columns → a "⚙ Teach options" details on the Teach view; Shorashim Quiz's answer delay → the Quiz toolbar; Game Show's auto-advance toggle and timing → the Game Show setup card.
+- **Stale "camper" wording in the help docs** updated to "student", matching the actual UI labels.
+
+### Fixed
+- **Teach mode "Hide all" now actually hides everything** — manually-revealed phrases (tapped open) previously survived "Hide all", and the arrow-key progression kept the active line and every passed line revealed regardless. The Show all / Hide all toggle is now authoritative: it clears per-line manual reveals, and "Hide all" also resets the progression to a clean board.
+- **Teach mode pasuk ‹ › navigation no longer carries revealed phrases into the next pasuk** — a stale active-phrase index from the previous pasuk was marking the same number of phrases in the new pasuk as active/passed (i.e. revealed). The buttons now reset the progression on navigation, matching the dropdown's existing behavior.
+
+### Added
 
 - **History: filter by activity, and a "Most given" ranked view.** Narrow History to a single activity, then choose between the existing chronological/point-value sorts or a new ranked view showing which students received that activity most. With no activity selected, ranked mode totals points across all activities combined.
 - **Bathroom Passes now show when each pass was used**, not just whether it's been used this week — reuses the same clock-time format already shown in Tracker and History.
