@@ -198,6 +198,51 @@
     #seatsBody .seat{min-height:56px; height:auto}
   }
 
+  /* Seating chart pop-out (Phase 1: Seats folded into Dashboard). A fixed
+     overlay that fills the viewport BELOW the top bar (header + subtab row +
+     scan bar), so it cleanly replaces whatever tab you popped out from while
+     the top bar stays usable. The top offset (--seats-fs-top) is measured in
+     JS since bar height varies with screen width / Hebrew-date toggle.
+     The expand/collapse animation is JS-driven (FLIP): the overlay literally
+     grows out of the Dashboard's Class list card and shrinks back into it. */
+  #view-seats.seats-fullscreen,
+  #view-seats.seats-shrinking{
+    display:block!important; position:fixed;
+    top:var(--seats-fs-top, 110px); left:0; right:0; bottom:0; z-index:120;
+    background:var(--paper); margin:0; padding:6px 16px 0; overflow:auto;
+    will-change:transform,opacity;
+  }
+  #view-seats.seats-fullscreen #seatsBody,
+  #view-seats.seats-shrinking #seatsBody{
+    height:calc(100vh - var(--seats-fs-top, 110px) - 46px)!important;
+  }
+  /* Fullscreen chrome trim — every px of chrome is a px the chart loses.
+     The instruction sentence is redundant once you're here; the close button
+     stays, compact, on its own slim row. Card header + front label tighten. */
+  #view-seats.seats-fullscreen .seats-fs-bar,
+  #view-seats.seats-shrinking .seats-fs-bar{ margin-bottom:4px }
+  #view-seats.seats-fullscreen .seats-fs-bar .view-note,
+  #view-seats.seats-shrinking .seats-fs-bar .view-note{ display:none }
+  #view-seats.seats-fullscreen .seats-fs-close{ padding:3px 12px; font-size:.85rem }
+  #view-seats.seats-fullscreen #tapCard .board-head,
+  #view-seats.seats-shrinking #tapCard .board-head{ padding:7px 14px }
+  #view-seats.seats-fullscreen .seat-toolbar,
+  #view-seats.seats-shrinking .seat-toolbar{ padding:6px 14px 0 }
+  #view-seats.seats-fullscreen .seat-front,
+  #view-seats.seats-shrinking .seat-front{ margin:4px 14px 0; padding-bottom:4px }
+  /* While the seating-chart pop-out is open, the scan bar must stack ABOVE
+     the overlay (z 120) — its activity-pill and History dropdowns hang down
+     into the overlay's area and would otherwise paint behind the chart. */
+  body.seats-fs-open #globalScanBar{ z-index:130 }
+  .seats-fs-close{
+    background:var(--ink); color:#fff; border:none; border-radius:8px;
+    padding:6px 14px; font-size:.95rem; font-weight:600; cursor:pointer;
+    margin-left:auto;
+  }
+  .seats-fs-close:hover{ background:var(--ink-soft) }
+  .seats-fs-bar{ display:flex; align-items:center; gap:12px; margin-bottom:10px }
+  .seats-fs-bar .view-note{ margin:0 }
+
   .armed-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
   .armed-pill{font-family:var(--serif);font-size:1.05rem;background:var(--brass-soft);color:#6b4d18;border:1px solid #e4cf9f;border-radius:999px;padding:7px 16px;font-weight:600}
   .armed-pill.neg{background:var(--bad-soft);color:#7c2d1c;border-color:#e3bdb5}
@@ -1051,6 +1096,8 @@
           <div class="card" id="dashTapCard">
             <div class="board-head">
               <h3>Tap a name to give points</h3>
+              <button class="btn btn-sm" id="printSeatsBtn" title="Print the seating chart">🖨 Print</button>
+              <button class="btn btn-sm" id="seatsPopOut" title="Show the seating chart full screen">⛶ Full screen</button>
             </div>
             <div id="dashTapPanelBody"></div>
           </div>
@@ -1060,9 +1107,12 @@
     </div>
   </section>
 
-  <!-- ============ SEATS (seating chart, its own tab) ============ -->
+  <!-- ============ SEATS (fullscreen pop-out of the seating chart; not a tab) ============ -->
   <section id="view-seats" class="view">
-    <p class="view-note">Scan or tap a student's seat to give points — the seating chart fills the screen so it's easy to read from across the room.</p>
+    <div class="seats-fs-bar">
+      <p class="view-note">Scan or tap a student's seat to give points — the seating chart fills the screen so it's easy to read from across the room.</p>
+      <button class="seats-fs-close" id="seatsCloseBtn" style="display:none">✕ Close full screen</button>
+    </div>
     <div id="seatsBody" style="display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden">
       <div class="card" id="tapCard">
         <div class="board-head">
@@ -1102,7 +1152,7 @@
   <!-- ============ STANDINGS ============ -->
   <section id="view-standings" class="view">
     <h2 class="view-title">Leader Board</h2>
-    <p class="view-note">Live point totals. Great for the projector — filter by class, group, activity, or time period.</p>
+    <p class="view-note">Live point totals. Great for the projector — filter by class, group, activity, or time period. <button class="btn btn-sm" id="goPrintPointsBtn" style="margin-left:8px">🖨 Print point cards</button></p>
 
     <div class="card pad" id="contestCard" style="margin-bottom:16px">
       <div id="contestInactive" class="toolbar" style="margin:0">
@@ -1139,10 +1189,7 @@
     <div id="standWeekLbl" class="pill-note" style="display:none;margin-bottom:10px"></div>
     <div id="standActivitySummary" class="pill-note" style="margin-bottom:10px"></div>
     <div id="standingsBody"></div>
-    <div class="toolbar" style="margin-top:14px">
-      <span class="grow"></span>
-      <button id="standResetBtn" class="btn btn-sm btn-bad">Reset points now…</button>
-    </div>
+    <!-- Phase 1: "Reset points now" moved to Manage → Backup & Restore (danger zone) -->
   </section>
 
 
@@ -1482,6 +1529,15 @@
           <button class="btn btn-sm" id="teachAddPhrase">+ Add phrase</button>
           <button class="btn btn-sm btn-bad" id="teachResetPhrases">↺ Reset phrases</button>
         </div>
+        <!-- Phase 1: Teach Mode options moved here from Settings — they only matter on this view -->
+        <details class="no-print" style="margin-top:12px">
+          <summary style="cursor:pointer;font-size:.85rem;color:var(--muted)">⚙ Teach options</summary>
+          <div style="padding:10px 4px 0">
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:4px"><input type="checkbox" id="setTeachFlipKeys"> Flip arrow keys (→ advances, ← goes back)</label>
+            <p class="view-note" style="margin:0 0 10px">Off by default. Normally ← advances (the text reads right-to-left); turn on to reverse.</p>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setTeachFlipCols"> Flip columns (Hebrew on right, English on left)</label>
+          </div>
+        </details>
       </div>
 
       <!-- Match sub-panel (nested inside pesukTeachMode) -->
@@ -1611,6 +1667,7 @@
         <label class="lbl" style="margin:0">Questions</label>
         <select id="quizMax" class="field" style="width:auto"><option>5</option><option selected>10</option><option>15</option><option>20</option><option>∞</option></select>
         <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--muted);font-weight:600"><input type="checkbox" id="quizTimed"> Timed</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--muted);font-weight:600" title="After a student answers, the quiz waits this long before the next question — 0 jumps instantly">Delay <input type="number" id="setQuizDelay" class="field" min="0" max="10" step="0.5" style="width:64px">s</label>
         <button class="btn btn-sm" id="quizRestart">Restart</button>
         <span id="quizTime" style="font-weight:800;font-variant-numeric:tabular-nums;display:none">0.0s</span>
         <span class="grow" id="quizScore" style="font-weight:700;text-align:right"></span>
@@ -1630,6 +1687,8 @@
           <div><label class="lbl">Points per correct</label><input id="gamePts" type="number" class="field" value="1" style="width:90px"></div>
           <label style="display:flex;align-items:center;gap:7px;font-size:.9rem;color:var(--muted);font-weight:600"><input type="checkbox" id="gameAlsoMain" checked> Also add to school points</label>
           <label style="display:flex;align-items:center;gap:7px;font-size:.9rem;color:var(--muted);font-weight:600"><input type="checkbox" id="gameManual"> Reveal manually (don't auto-reveal)</label>
+          <label style="display:flex;align-items:center;gap:7px;font-size:.9rem;color:var(--muted);font-weight:600" title="Gives you time to scan the students in the correct corner before the next question appears"><input type="checkbox" id="setGameAuto"> Auto-start next question after</label>
+          <div><input type="number" id="setGameAutoSecs" class="field" min="1" max="60" step="1" style="width:64px" title="Seconds to wait before auto-starting"></div>
           <div style="flex:1"></div>
           <button class="btn btn-primary" id="gameNew">New question</button>
           <button class="btn" id="gameReveal">Reveal answer</button>
@@ -1651,7 +1710,7 @@
 
   <section id="view-students" class="view">
     <h2 class="view-title">Students</h2>
-    <p class="view-note">Add your kids once. Each gets a QR code you'll print on the QR Labels tab.</p>
+    <p class="view-note">Add your kids once. Each gets a QR code you can print. <button class="btn btn-sm" id="printStudentsBtn" style="margin-left:8px">🖨 Print student labels</button></p>
 
     <div class="card pad" style="margin-bottom:20px">
       <div class="add-grid">
@@ -1724,6 +1783,7 @@
   <section id="view-activities" class="view">
     <h2 class="view-title" id="actViewTitle">Activities &amp; point values</h2>
     <p class="view-note" id="actViewNote">These are the buttons on the Scan screen. Change a point value right here — tap the +/– or type a number. Use a negative value for a deduction.</p>
+    <p class="view-note no-print" style="margin-top:-12px"><button class="btn btn-sm" id="printActivitiesBtn">🖨 Print activity labels</button></p>
 
     <div class="card pad" style="margin-bottom:20px">
       <div class="add-grid">
@@ -1894,6 +1954,14 @@
         <h3>Export standings</h3>
         <p>A spreadsheet (CSV) of every student and their current score.</p>
         <button class="btn" id="exportCsv">Download standings (CSV)</button>
+      </div>
+      <div class="card pad bk-card danger-zone">
+        <h3>Reset spendable points</h3>
+        <p>Zeroes current point balances (e.g. to start a fresh week) for the current class or one group. Lifetime Trends history is kept.</p>
+        <div class="toolbar" style="margin:0">
+          <select id="resetPointsGroup" class="field" style="width:auto"><option value="">Whole class</option></select>
+          <button class="btn btn-bad" id="resetPointsScoped">Reset points now…</button>
+        </div>
       </div>
       <div class="card pad bk-card danger-zone">
         <h3>Start a new period</h3>
@@ -2735,32 +2803,9 @@ function setupRoster() {
       <p class="view-note" style="margin:8px 0 0">Off by default. The app normally keeps its content in a centered column, which reads comfortably on a laptop but leaves a lot of empty space on either side of a large desktop monitor. Turn this on to stretch every tab to fill the screen instead — most noticeable on the Scan tab's Customize layout, where it gives the movable sections more room to work with.</p>
     </div>
 
-    <div class="card pad" style="margin-bottom:14px">
-      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Teach Mode</h3>
-      <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:6px"><input type="checkbox" id="setTeachFlipKeys"> Flip arrow keys (→ advances, ← goes back)</label>
-      <p class="view-note" style="margin:0 0 12px">Off by default. Normally ← advances to the next phrase (since the text reads right-to-left). Turn this on to reverse it so → advances instead — easier if you're not used to RTL navigation.</p>
-      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setTeachFlipCols"> Flip columns (Hebrew on right, English on left)</label>
-      <p class="view-note" style="margin:8px 0 0">Off by default. In Teach mode each phrase row shows Hebrew then English side-by-side. Turn this on to put the Hebrew on the right and the English on the left — a more natural layout for RTL readers.</p>
-    </div>
-
-    <div class="card pad" style="margin-bottom:14px">
-      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Shorashim — Quiz</h3>
-      <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-weight:600">Seconds before the next question:</span>
-        <input type="number" id="setQuizDelay" class="field" min="0" max="10" step="0.5" style="width:84px">
-      </label>
-      <p class="view-note" style="margin:8px 0 0">After a student answers, the quiz waits this long (so they see right/wrong) before moving on. Lower it to speed up; 0 jumps instantly.</p>
-    </div>
-
-    <div class="card pad">
-      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Shorashim — Game Show</h3>
-      <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:8px"><input type="checkbox" id="setGameAuto"> Auto-start the next question after the answer is revealed</label>
-      <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-weight:600">Wait this many seconds first:</span>
-        <input type="number" id="setGameAutoSecs" class="field" min="1" max="60" step="1" style="width:84px">
-      </label>
-      <p class="view-note" style="margin:8px 0 0">Gives you time to scan the students in the correct corner before the next question appears. Starting a question manually cancels any pending auto-advance.</p>
-    </div>
+    <!-- Phase 1: Teach Mode, Shorashim Quiz, and Game Show settings moved to
+         their feature panels (Teach view / Quiz toolbar / Game Show card) —
+         they only matter to one feature each, so they live with it. -->
   </section>
 </main>
 
@@ -3199,31 +3244,41 @@ function setupRoster() {
 
   /* ---------- TABS (grouped, with a subtab row) ---------- */
   var TAB_GROUPS = {
-    scan:        { label:"Scan",         tabs:["scan","seats","history","standings","trends","contest"] },
+    scan:        { label:"Scan",         tabs:["scan","history"] },
+    standings:   { label:"Standings",    tabs:["standings","trends","contest"] },
     rewards:     { label:"Rewards",      tabs:["raffle","auction","store"] },
-    learn:       { label:"Learn",        tabs:["learn-text","learn-chart","learn-pesukim","learn-mishnayos","learn-shorashim"] },
-    tools:       { label:"Tools",        tabs:["brachos","spinner","passes","attendance","tracker","homework"] },
-    print:       { label:"Print",        tabs:["printStudents","printActivities","printSeats","printPoints"] },
-    setup:       { label:"Setup",        tabs:["students","activities","backup","settings"] }
+    manage:      { label:"Manage",       tabs:["students","activities","brachos","spinner","passes","attendance","tracker","homework","backup","settings"] },
+    learn:       { label:"Learn",        tabs:["learn-text","learn-chart","learn-pesukim","learn-mishnayos","learn-shorashim"] }
   };
-  var GROUP_ORDER=["scan","rewards","learn","tools","print","setup"];
+  var GROUP_ORDER=["scan","standings","rewards","manage","learn"];
+  // Phase 1: Seats folded into Dashboard (view-seats kept for fullscreen pop-out).
+  // Print tabs dissolved — accessible via buttons on their data-owner tabs.
+  // Old group names mapped for saved-state compatibility:
+  var GROUP_REMAP={"tools":"manage","setup":"manage","print":null};
   var TAB_LABELS = {
-    scan:"Dashboard", standings:"Leader Board", trends:"Trends", raffle:"Raffle", auction:"Auction", store:"Store",
-    "learn-text":"Text", "learn-chart":"Chart", "learn-pesukim":"Pesukim", "learn-mishnayos":"Mishnayos", "learn-shorashim":"Shorashim", brachos:"Brachos", students:"Students", activities:"Activities",
-    passes:"Passes", spinner:"Spinner", backup:"Backup & Sheets", settings:"Settings",
-    seats:"Seats", history:"History", contest:"Contest",
-    printStudents:"Students", printActivities:"Activities", printSeats:"Seating chart", printPoints:"Points",
-    attendance:"Attendance", tracker:"Tracker", homework:"Homework"
+    scan:"Dashboard", history:"History",
+    standings:"Leader Board", trends:"Trends", contest:"Contest",
+    raffle:"Raffle", auction:"Auction", store:"Store",
+    students:"Students", activities:"Activities", brachos:"Brachos", spinner:"Spinner",
+    passes:"Passes", attendance:"Attendance", tracker:"Tracker", homework:"Homework",
+    backup:"Backup & Restore", settings:"Settings",
+    "learn-text":"Text", "learn-chart":"Chart", "learn-pesukim":"Pesukim", "learn-mishnayos":"Mishnayos", "learn-shorashim":"Shorashim",
+    // Print views (no longer navigable tabs — accessed via buttons on data-owner tabs)
+    printStudents:"Students", printActivities:"Activities", printSeats:"Seating chart", printPoints:"Points"
   };
   var lastTabInGroup = {}; // remembers which subtab was last open per group
   var activeGroupName="scan", activeTabName="scan";
   // Map old tab ids to new ones (for saved state compatibility)
-  function remapTabId(t){ var m={"pesukim":"learn-chart","shorashim":"learn-shorashim"}; return m[t]||t; }
+  function remapTabId(t){ var m={"pesukim":"learn-chart","shorashim":"learn-shorashim","seats":"scan"}; return m[t]||t; }
   function groupOfTab(tab){
     for(var g in TAB_GROUPS){ if(TAB_GROUPS[g].tabs.indexOf(tab)>=0) return g; }
+    // Print tabs are no longer in any group but their views still exist
+    // (accessed via buttons on data-owner tabs). Return the data-owner group.
+    var printOwner={"printStudents":"manage","printActivities":"manage","printSeats":"scan","printPoints":"standings"};
+    if(printOwner[tab]) return printOwner[tab];
     return "scan";
   }
-  // "setup" (holds Settings) and the "settings" tab itself can never be hidden,
+  // "manage" (holds Settings) and the "settings" tab itself can never be hidden,
   // so there's always a way back into this screen to turn tabs back on.
   function navHidden(){
     if(!data.navHidden || typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}};
@@ -3232,15 +3287,15 @@ function setupRoster() {
     return data.navHidden;
   }
   function isTabVisible(t){ return t==="settings" || t==="scan" || !navHidden().tabs[t]; }
-  function groupVisibleTabs(g){ return TAB_GROUPS[g].tabs.filter(isTabVisible); }
+  function groupVisibleTabs(g){ return TAB_GROUPS[g] ? TAB_GROUPS[g].tabs.filter(isTabVisible) : []; }
   function isGroupVisible(g){
-    if(g==="scan" || g==="setup") return true;
+    if(g==="scan" || g==="manage") return true;
     if(navHidden().groups[g]) return false;
     return groupVisibleTabs(g).length>0;
   }
   function firstVisibleTab(g){
     var vis=groupVisibleTabs(g);
-    return vis.length ? vis[0] : (g==="setup" ? "settings" : TAB_GROUPS[g].tabs[0]);
+    return vis.length ? vis[0] : (g==="manage" ? "settings" : (TAB_GROUPS[g] ? TAB_GROUPS[g].tabs[0] : "scan"));
   }
   function renderGroupTabs(activeGroup){
     var box=$("groupTabs"); box.innerHTML="";
@@ -3299,18 +3354,22 @@ function setupRoster() {
     renderGroupTabs(group);
     renderSubTabs(group, tab);
     document.querySelectorAll(".view").forEach(function(v){ v.classList.toggle("active", v.id==="view-"+tab); });
+    // Clean up the seating-chart pop-out if it was open (seats folded into
+    // Dashboard — its full-screen state must not survive a tab switch).
+    var vseats=$("view-seats");
+    if(vseats && (vseats.classList.contains("seats-fullscreen") || vseats.classList.contains("seats-shrinking"))){
+      vseats.classList.remove("seats-fullscreen","seats-shrinking");
+      vseats.style.transition=""; vseats.style.transform=""; vseats.style.opacity="";
+      document.body.style.overflow="";
+      document.body.classList.remove("seats-fs-open");
+    }
+    var sClose=$("seatsCloseBtn"); if(sClose) sClose.style.display="none";
     applyGlobalScanBarVisibility(tab);
     gameScanArmed=false; pendingSave=null;
     if(typeof stopGameShow==="function") stopGameShow();
     if(typeof resetDndStuck==="function") resetDndStuck();
     if(tab==="scan"){
       renderScanBoard(); renderTapPanel(); setTimeout(function(){ $("scanInput").focus(); },50);
-    }
-    if(tab==="seats"){
-      renderTapPanel();
-      renderSeatsScanBar();
-      setTimeout(function(){ $("seatsScanInput").focus(); },50);
-      requestAnimationFrame(function(){ fitNoScrollSection("seatsBody"); });
     }
     if(tab==="history") renderHistoryTab();
     if(tab==="standings") renderStandings();
@@ -3350,6 +3409,16 @@ function setupRoster() {
     }
     if(tab==="printPoints") renderPointsPrint();
     if(tab==="settings") renderSettings();
+    if(tab==="backup"){
+      // Populate the scoped-reset group picker (Phase 1: reset moved here)
+      var rpg=$("resetPointsGroup");
+      if(rpg){
+        var cur=rpg.value;
+        rpg.innerHTML='<option value="">Whole class</option>';
+        groups().forEach(function(g){ var o=el("option",null,g); o.value=g; rpg.appendChild(o); });
+        rpg.value=cur||"";
+      }
+    }
     if(tab==="brachos"){ $("brRch").checked=false; $("brRchBox").style.display="none"; }
     if(tab==="spinner") renderSpinner();
     if(tab==="passes"){ renderPasses(); setTimeout(function(){ $("passScanInput").focus(); },50); }
@@ -4435,11 +4504,8 @@ function setupRoster() {
     $("setHeaderShortcuts").checked = data.showHeaderShortcuts!==false;
     $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setFullWidth").checked = !!data.fullWidth;
-    $("setTeachFlipKeys").checked = !!data.teachFlipKeys;
-    $("setTeachFlipCols").checked = !!data.teachFlipCols;
-    $("setQuizDelay").value = String(data.quizDelay);
-    $("setGameAuto").checked = !!data.gameAuto;
-    $("setGameAutoSecs").value = String(data.gameAutoSecs);
+    // Phase 1: Teach flip / quiz delay / game auto inits moved to renderTeach,
+    // renderQuiz, renderGame — those controls now live on their feature panels.
     renderSerialUI();
     renderNavVisibilitySettings();
   }
@@ -4450,7 +4516,7 @@ function setupRoster() {
     var nh=navHidden();
     GROUP_ORDER.forEach(function(g){
       if(g==="scan") return; // nothing to configure — Scan is always shown
-      var locked=(g==="setup");
+      var locked=(g==="manage");
       var card=el("div","nav-vis-group");
       var head=el("label","nav-vis-head");
       var gchk=el("input"); gchk.type="checkbox";
@@ -5330,6 +5396,113 @@ function setupRoster() {
     var ad=$("seatsActivityDropdown");
     if(ad && ad.style.display!=="none" && !e.target.closest(".seats-pill-wrap")) hideSeatsActivityDropdown();
   });
+  // Phase 1: Seating chart pop-out (seats folded into Dashboard). Instead of
+  // a fixed overlay, this shows view-seats the same way the old Seats tab did
+  // — a normal active view in <main>, header + subtabs still on top, the
+  // seating chart filling the content area below via fitNoScrollSection.
+  // It does NOT change activeTabName, so the nav still shows you're on the
+  // Dashboard; "Close" just returns to it.
+  // Measures the real bottom edge of the top chrome (header + subtab row +
+  // the sticky scan bar) so the overlay starts right below it. Measured, not
+  // hardcoded — bar heights shift with screen width and the Hebrew-date toggle.
+  function syncSeatsFsTop(){
+    var scanBar=$("globalScanBar");
+    var subrow=document.querySelector(".subtabs-row");
+    var ref = (scanBar && scanBar.offsetParent!==null) ? scanBar : subrow;
+    var bottom = ref ? ref.getBoundingClientRect().bottom : 110;
+    document.documentElement.style.setProperty("--seats-fs-top", Math.max(0, Math.round(bottom)) + "px");
+  }
+  var seatsPopReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // FLIP expand: the overlay starts transformed to exactly match the Class
+  // list card's on-screen rectangle, then animates to its natural full-screen
+  // rect — so it genuinely looks like the card growing to fill the screen.
+  function seatsCardRect(){
+    var card=$("dashTapCard");
+    if(card && card.offsetParent!==null) return card.getBoundingClientRect();
+    return null;
+  }
+  function seatsFlipTransform(vs){
+    var c=seatsCardRect(); if(!c) return null;
+    var o=vs.getBoundingClientRect();
+    if(!o.width || !o.height) return null;
+    return "translate("+(c.left-o.left)+"px,"+(c.top-o.top)+"px) scale("+(c.width/o.width)+","+(c.height/o.height)+")";
+  }
+  $("seatsPopOut").addEventListener("click", function(){
+    syncSeatsFsTop();
+    var vs=$("view-seats");
+    vs.classList.add("seats-fullscreen");
+    $("seatsCloseBtn").style.display="";
+    document.body.style.overflow="hidden"; // no background scroll behind the overlay
+    document.body.classList.add("seats-fs-open"); // lifts the scan bar (and its dropdowns) above the overlay
+    renderTapPanel();
+    renderSeatsScanBar();
+    if(!seatsPopReduced){
+      var t=seatsFlipTransform(vs);
+      if(t){
+        vs.style.transformOrigin="top left";
+        vs.style.transition="none";
+        vs.style.transform=t;
+        vs.style.opacity="0.35";
+        vs.getBoundingClientRect(); // force reflow so the start state paints
+        vs.style.transition="transform .32s cubic-bezier(.2,.85,.25,1), opacity .28s ease";
+        vs.style.transform="none";
+        vs.style.opacity="1";
+        setTimeout(function(){ vs.style.transition=""; vs.style.transform=""; vs.style.opacity=""; }, 380);
+      }
+    }
+    setTimeout(function(){ $("seatsScanInput") && $("seatsScanInput").focus(); },50);
+    requestAnimationFrame(function(){ fitNoScrollSection("seatsBody"); });
+  });
+  function closeSeatsPopout(){
+    var vs=$("view-seats");
+    if(!vs) return;
+    $("seatsCloseBtn").style.display="none";
+    var done=false;
+    var finish=function(){
+      if(done) return; done=true;
+      vs.classList.remove("seats-fullscreen","seats-shrinking");
+      vs.style.transition=""; vs.style.transform=""; vs.style.opacity="";
+      document.body.style.overflow="";
+      document.body.classList.remove("seats-fs-open");
+      activateTab("scan"); // returns to the Dashboard we popped out from
+    };
+    var t = seatsPopReduced ? null : seatsFlipTransform(vs);
+    if(t){
+      // Collapse back into the card, then hand off to the Dashboard.
+      vs.classList.remove("seats-fullscreen");
+      vs.classList.add("seats-shrinking");
+      vs.style.transformOrigin="top left";
+      vs.style.transition="transform .26s cubic-bezier(.5,0,.75,.4), opacity .22s ease";
+      vs.style.transform=t;
+      vs.style.opacity="0.35";
+      vs.addEventListener("transitionend", function h(e){
+        if(e.propertyName!=="transform") return;
+        vs.removeEventListener("transitionend", h);
+        finish();
+      });
+      setTimeout(finish, 320); // fallback slightly beyond the transition
+    } else {
+      finish();
+    }
+  }
+  $("seatsCloseBtn").addEventListener("click", closeSeatsPopout);
+  // Keep the overlay's top offset and chart size correct if the window
+  // resizes while it's open.
+  window.addEventListener("resize", function(){
+    if($("view-seats") && $("view-seats").classList.contains("seats-fullscreen")){
+      syncSeatsFsTop();
+      fitNoScrollSection("seatsBody");
+    }
+  });
+  // Phase 1: Print buttons on data-owner tabs (Print group dissolved).
+  // These jump to the relevant print view via activateTab(). Wired with
+  // real listeners inside the IIFE (inline onclick can't see activateTab —
+  // it's scoped to this closure).
+  $("printSeatsBtn").addEventListener("click", function(){ activateTab("printSeats"); });
+  $("goPrintPointsBtn").addEventListener("click", function(){ activateTab("printPoints"); });
+  $("printStudentsBtn").addEventListener("click", function(){ activateTab("printStudents"); });
+  $("printActivitiesBtn").addEventListener("click", function(){ activateTab("printActivities"); });
+
   // Reverses a real scan/spend entry by writing a correction entry rather than deleting
   // history — keeps on-screen totals right and keeps the Google Sheet Log honest.
   function undoEntry(idx){
@@ -5788,7 +5961,10 @@ function setupRoster() {
     var byId={}; studs.forEach(function(s){ byId[s.id]=s; });
     var arranging=!!data.seatArranging;
 
-    body.appendChild(el("div","seat-front","Front of room"));
+    // "Front of room" sits above the grid in normal view; in Rebbi's view the
+    // seats are reversed (Rebbi faces the class), so the front is at the
+    // BOTTOM — same convention the printed chart already uses.
+    if(!data.seatLiveRebbiView) body.appendChild(el("div","seat-front","Front of room"));
     var grid=el("div","seat-grid"+(arranging?" arranging":""));
     grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
     grid.style.gridTemplateRows="repeat("+lay.rows+", 1fr)";
@@ -5865,6 +6041,7 @@ function setupRoster() {
       grid.appendChild(seat);
     });
     body.appendChild(grid);
+    if(data.seatLiveRebbiView) body.appendChild(el("div","seat-front","Front of room"));
 
     if(arranging){
       var trayWrap=el("div","seat-unplaced");
@@ -6109,7 +6286,7 @@ function setupRoster() {
   $("scanLayoutReset").addEventListener("click", function(){ data.scanLayout=defaultScanLayout(); save(); applyScanLayout(); });
   $("scanColsToggle").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; setScanCols(parseInt(b.dataset.cols,10)); });
   window.addEventListener("resize", function(){
-    if($("view-seats") && $("view-seats").classList.contains("active")) fitNoScrollSection("seatsBody");
+    if($("view-seats") && $("view-seats").classList.contains("seats-fullscreen")) fitNoScrollSection("seatsBody");
   });
   // Move buttons (▲ ▼ ⇄) — delegated on the scan section.
   $("view-scan").addEventListener("click", function(e){
@@ -7100,8 +7277,12 @@ function setupRoster() {
     if($("view-standings").classList.contains("active")) renderContestBanner();
   });
 
-  $("standResetBtn").addEventListener("click", function(){
-    var grp=$("standGroup").value, cls=data.currentClass;
+  // Phase 1: scoped points reset moved from Leader Board to Manage → Backup
+  // & Restore (danger zone). Same behavior — zeroes current balances for the
+  // class or one group, keeps lifetime Trends — but reads its own group
+  // picker instead of the Leader Board's filter.
+  $("resetPointsScoped").addEventListener("click", function(){
+    var grp=$("resetPointsGroup").value, cls=data.currentClass;
     var scope = activeStudents().filter(function(s){ return !grp || s.group===grp; });
     var label = grp ? grp : (cls ? cls : "everyone shown (all classes)");
     if(!scope.length){ alert("No students match the current filter."); return; }
@@ -8343,6 +8524,9 @@ function setupRoster() {
     var nums=syncTeachPasukSel();
     if(nums.indexOf(teachN)<0){ teachN=nums[0]; teachActiveIdx=null; }
     var _tLbl=$("teachLbl"); if(_tLbl) _tLbl.textContent=itemLabel(teachN);
+    // Phase 1: these options moved here from Settings — sync their state on render
+    var tfk=$("setTeachFlipKeys"); if(tfk) tfk.checked=!!data.teachFlipKeys;
+    var tfc=$("setTeachFlipCols"); if(tfc) tfc.checked=!!data.teachFlipCols;
     document.body.classList.toggle("teach-flip-cols", !!data.teachFlipCols);
     $("teachPasuk").textContent=(data.pasukPointed&&data.pasukPointed[teachN])||"";
     $("teachToggle").style.display = teachEditing ? "none" : "";
@@ -9616,6 +9800,8 @@ nameLine
   }
   function renderQuiz(){
     clearInterval(quiz.timer);
+    // Phase 1: delay setting moved here from Settings — sync its value on render
+    var qd=$("setQuizDelay"); if(qd) qd.value=String(data.quizDelay);
     quiz={current:null,score:0,total:0,max:quizMax(),timed:$("quizTimed").checked,t:0,timer:null,started:false};
     $("quizScore").textContent=""; $("quizTime").textContent="0.0s"; $("quizTime").style.display=quiz.timed?"inline":"none";
     showQuizBoard(); nextQuiz();
@@ -9739,6 +9925,9 @@ nameLine
   function renderGame(){
     gameScanArmed=false;
     renderHeaderScanContext();
+    // Phase 1: auto-advance settings moved here from Settings — sync on render
+    var ga=$("setGameAuto"); if(ga) ga.checked=!!data.gameAuto;
+    var gas=$("setGameAutoSecs"); if(gas) gas.value=String(data.gameAutoSecs);
     var stage=$("gameStage"); stage.innerHTML="";
     stage.appendChild(el("div","game-hint","Press \u201CNew question\u201D to begin. Read the four corners to the room, the students run, the timer counts down, then reveal and scan the winners."));
     renderGameBoard();
@@ -11537,6 +11726,13 @@ nameLine
     if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}};
     if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={};
     if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={};
+    // Phase 1: remap old group names. "tools"/"setup" merged into "manage";
+    // "print" dissolved (tabs accessed via buttons). Clean up stale keys.
+    delete data.navHidden.groups.tools;
+    delete data.navHidden.groups.setup;
+    delete data.navHidden.groups.print;
+    // Seats tab no longer exists — remove any saved hidden state for it
+    delete data.navHidden.tabs.seats;
     if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
     if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
     if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
@@ -12237,7 +12433,7 @@ Rewards → Auction lets you set up prizes that students "bid" on using tickets.
 - Each prize is drawn separately from its own pool of tickets — the more tickets a student has on a prize, the better their odds of winning it.
 
 
-If you turn on "Each camper's points" as the ticket source, every ticket placed costs 1 point, deducted right away. Removing a ticket refunds the point — but only until that prize has actually been drawn, after which it locks in.
+If you turn on "Each student's points" as the ticket source, every ticket placed costs 1 point, deducted right away. Removing a ticket refunds the point — but only until that prize has actually been drawn, after which it locks in.
 
 
 > **TIP**  If you manage more than one class, each class gets its own separate auction — clearing or resetting one class's auction does not affect any other class.
@@ -12384,7 +12580,7 @@ Alongside the Students print tab, "Personal scoring pages" gives each student th
 The Picker is a separate spinner from the Raffle — it's just for choosing whose turn it is (for example, who reads next), with an equal chance for every student. No points are involved.
 
 
-- Turn on "Skip campers who already had a turn" if you want everyone to get one turn before anyone goes twice.
+- Turn on "Skip students who already had a turn" if you want everyone to get one turn before anyone goes twice.
 
 
 - Tap "Reset round" to clear who's already gone and start over.

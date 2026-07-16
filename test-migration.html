@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Menchmark — Migration Test Harness (Phase 0)</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; background: #f5f6fa; color: #1b2440; }
+  h1 { font-size: 1.4rem; }
+  .pass { color: #1f8a5b; font-weight: 700; }
+  .fail { color: #b04432; font-weight: 700; }
+  .test { background: #fff; border: 1px solid #d8dbe4; border-radius: 10px; padding: 14px 18px; margin: 10px 0; }
+  .test h3 { margin: 0 0 6px; font-size: .95rem; }
+  .detail { font-size: .85rem; color: #6a7187; white-space: pre-wrap; }
+  #summary { font-size: 1.1rem; margin: 20px 0; padding: 16px; border-radius: 10px; font-weight: 700; }
+  #summary.all-pass { background: #e3f3ea; color: #1f8a5b; }
+  #summary.has-fail { background: #f6e6e2; color: #b04432; }
+  button { font-size: 1rem; padding: 10px 20px; cursor: pointer; border-radius: 8px; border: 1px solid #d8dbe4; background: #1b2440; color: #fff; }
+  button:hover { background: #2c3860; }
+  #dropZone { border: 2px dashed #d8dbe4; border-radius: 10px; padding: 30px; text-align: center; color: #6a7187; margin: 16px 0; }
+  #dropZone.over { border-color: #1f8a5b; background: #e3f3ea; }
+  textarea { width: 100%; height: 120px; font-family: monospace; font-size: .85rem; border: 1px solid #d8dbe4; border-radius: 8px; padding: 10px; }
+</style>
+</head>
+<body>
+<h1>Menchmark Migration Test Harness</h1>
+<p>Runs <code>migrateData()</code> + <code>load2fix()</code> against test blobs and reports whether data survives intact. Use this before any data-model change.</p>
+
+<button onclick="runBuiltInTests()">Run built-in tests</button>
+
+<h2 style="margin-top:30px;font-size:1.1rem">Test a real backup</h2>
+<p style="font-size:.9rem;color:#6a7187">Paste a teacher's <code>localStorage</code> JSON blob (from Backup & Restore → Download backup) or drag the <code>.json</code> file here.</p>
+<div id="dropZone">Drop a .json backup file here</div>
+<textarea id="pasteBox" placeholder="…or paste raw JSON here"></textarea>
+<button onclick="runCustomTest()" style="margin-top:8px">Test this blob</button>
+
+<div id="results"></div>
+<div id="summary"></div>
+
+<script>
+// ===== Migration functions (extracted from app.html, keep in sync) =====
+// These must match what's in app.html. When you change migrateData or
+// load2fix in the app, update them here too and re-run.
+
+var DATA_VERSION = 2;
+
+function newId(){ return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
+
+function migrateData(d){
+  if(!d.version) d.version = 1;
+  if(d.version===1){
+    if(typeof d.bunk==="string" && typeof d.className!=="string") d.className = d.bunk;
+    delete d.bunk;
+    d.version = 2;
+  }
+  return d;
+}
+
+function weekKeyOf(ts){
+  var d=new Date(ts||Date.now());
+  var day=d.getDay();
+  var diff=(day===0? -6 : 1-day);
+  var m=new Date(d.getFullYear(), d.getMonth(), d.getDate()+diff);
+  return m.getFullYear()+"-"+String(m.getMonth()+1).padStart(2,"0")+"-"+String(m.getDate()).padStart(2,"0");
+}
+function earnLabel(label){
+  label=(label||"Points").trim();
+  if(/^Pasuk tested/i.test(label)) return "Pasuk tested";
+  return label;
+}
+function recordEarn(sid, label, pts, ts){
+  if(!sid) return;
+  var L=earnLabel(label), p=Math.max(0, pts||0);
+  if(!data.earned) data.earned={};
+  if(!data.earned[sid]) data.earned[sid]={};
+  if(!data.earned[sid][L]) data.earned[sid][L]={p:0,n:0};
+  data.earned[sid][L].p+=p; data.earned[sid][L].n++;
+  var wk=weekKeyOf(ts);
+  if(!data.weekly) data.weekly={};
+  if(!data.weekly[wk]) data.weekly[wk]={};
+  if(!data.weekly[wk][sid]) data.weekly[wk][sid]={};
+  if(!data.weekly[wk][sid][L]) data.weekly[wk][sid][L]={p:0,n:0};
+  data.weekly[wk][sid][L].p+=p; data.weekly[wk][sid][L].n++;
+}
+
+function nextActId(){ var n=1; var used={}; data.activities.forEach(function(a){used[a.id]=1;}); while(used["a"+n]) n++; return "a"+n; }
+
+// Simplified versions of layout/set functions for test context (no DOM)
+var SCAN_PANELS=["activities","scanbar","recent","tappanel","leaderboard"];
+function defaultScanLayout(){ return {cols:2, columns:[["activities","scanbar","recent"],["leaderboard","tappanel"],[]]}; }
+function validScanLayout(L){
+  if(!L||typeof L!=="object") return false;
+  if(L.cols!==2 && L.cols!==3) return false;
+  if(!Array.isArray(L.columns) || L.columns.length<3) return false;
+  var seen={}, count=0;
+  for(var c=0;c<L.columns.length;c++){
+    if(!Array.isArray(L.columns[c])) return false;
+    if(c>=L.cols && L.columns[c].length>0) return false;
+    for(var k=0;k<L.columns[c].length;k++){
+      var id=L.columns[c][k];
+      if(SCAN_PANELS.indexOf(id)<0 || seen[id]) return false;
+      seen[id]=1; count++;
+    }
+  }
+  return count===SCAN_PANELS.length;
+}
+function ensureScanLayout(){
+  var L=data.scanLayout;
+  if(L && Array.isArray(L.left) && Array.isArray(L.right) && !L.columns){
+    data.scanLayout={cols:2, columns:[L.left.slice(), L.right.slice(), []]};
+  }
+  if(data.scanLayout && typeof data.scanLayout==="object"){
+    delete data.scanLayout.style;
+    delete data.scanLayout.rowCollapsed;
+    delete data.scanLayout.rowsSeatPos;
+    delete data.scanLayout.rowsVisible;
+  }
+  if(!validScanLayout(data.scanLayout)) data.scanLayout=defaultScanLayout();
+}
+
+function activeSet(){ for(var i=0;i<data.textSets.length;i++){ if(data.textSets[i].id===data.activeSetId) return data.textSets[i]; } return null; }
+
+function migrateSets(){
+  if(!Array.isArray(data.textSets)) data.textSets=[];
+  if(!data.textSets.length){
+    var v={ id:"starter", label:(data.pasukSet&&data.pasukSet.label)||"Sample — add your own text",
+      ref:(data.pasukSet&&data.pasukSet.ref)||"", kind:"pasuk",
+      phrases: data.pasukPhrases || {},
+      orig: {},
+      pointed: {},
+      done: data.pesukimDone || {}, best: data.pasukGameBest || {},
+      from:(data.pasukSet&&data.pasukSet.from)||1, to:(data.pasukSet&&data.pasukSet.to)||1 };
+    data.textSets.push(v); data.activeSetId="starter";
+    data.pasukPhrases=v.phrases; data.pasukPointed=v.pointed; data.pesukimDone=v.done; data.pasukGameBest=v.best;
+    data.pasukSet={label:v.label, ref:v.ref, from:v.from, to:v.to, kind:v.kind};
+  }
+  if(typeof data.activeSetId!=="string" || !data.textSets.some(function(s){return s.id===data.activeSetId;})) data.activeSetId=data.textSets[0].id;
+  var as=activeSet();
+  if(as){
+    as.phrases = data.pasukPhrases || as.phrases || {};
+    as.pointed = data.pasukPointed || as.pointed || {};
+    as.done    = data.pesukimDone  || as.done    || {};
+    as.best    = data.pasukGameBest|| as.best    || {};
+    data.pasukPhrases=as.phrases; data.pasukPointed=as.pointed; data.pesukimDone=as.done; data.pasukGameBest=as.best;
+    data.pasukSet={label:as.label, ref:as.ref, from:as.from, to:as.to, kind:as.kind};
+  }
+}
+
+// The full load2fix — must match app.html exactly
+function load2fix(){
+  ["students","activities","log"].forEach(function(k){ if(!Array.isArray(data[k])) data[k]=[]; });
+  data.log.forEach(function(e){ if(e && !e.id) e.id=newId(); });
+  if(!data.scores) data.scores = {};
+  if(!data.school) data.school = "Sample School";
+  if(!data.className) data.className = "Sample Class 1";
+  if(typeof data.sheetUrl!=="string") data.sheetUrl="";
+  if(typeof data.autoSheet!=="boolean") data.autoSheet=true;
+  if(!data.raffle) data.raffle={mode:"auto",entries:{},winners:[]};
+  if(!data.raffle.entries) data.raffle.entries={};
+  if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[];
+  if(data.raffle.mode!=="manual") data.raffle.mode="auto";
+  if(!data.raffle.adjust||typeof data.raffle.adjust!=="object") data.raffle.adjust={};
+  if(!data.raffle.removed||typeof data.raffle.removed!=="object") data.raffle.removed={};
+  if(typeof data.raffle.spreadTickets!=="boolean") data.raffle.spreadTickets=false;
+  if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1};
+  if(!data.pesukimDone) data.pesukimDone={};
+  if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1};
+  if(!data.pasukGameBest) data.pasukGameBest={};
+  if(!data.pasukPhrases) data.pasukPhrases={};
+  if(!data.pasukPointed) data.pasukPointed={};
+  if(!Array.isArray(data.textSets)) data.textSets=[];
+  migrateSets();
+  if(!Array.isArray(data.shorashim)) data.shorashim=[];
+  if(!data.game||typeof data.game!=="object") data.game={points:{}};
+  if(!data.game.points) data.game.points={};
+  if(!data.shorMatchBest) data.shorMatchBest={};
+  if(!data.gameBoards) data.gameBoards={};
+  if(!data.auctions||typeof data.auctions!=="object") data.auctions={};
+  if(data.auction && typeof data.auction==="object" && !data.auctionsMigrated){
+    data.auctions[""]=data.auction; data.auctionsMigrated=true;
+  }
+  delete data.auction;
+  if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]};
+  if(!Array.isArray(data.store.items)) data.store.items=[];
+  if(!Array.isArray(data.store.log)) data.store.log=[];
+  if(typeof data.store.autoReceived!=="boolean") data.store.autoReceived=false;
+  data.store.log.forEach(function(p){ if(typeof p.received!=="boolean") p.received=true; });
+  if(!data.earned) data.earned={};
+  if(!data.weekly) data.weekly={};
+  if(typeof data.standingsActivity!=="string") data.standingsActivity="";
+  if(typeof data.raffleActivity!=="string") data.raffleActivity="";
+  if(["all","activity","contest"].indexOf(data.raffleSourceMode)<0) data.raffleSourceMode="all";
+  if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={groupMode:"all", groupKeys:[], format:"tiles"};
+  if(typeof data.pointsPrint.format!=="string" || data.pointsPrint.format==="grid") data.pointsPrint.format="tiles";
+  if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[];
+  if(data.pointsPrint.groupMode!=="custom") data.pointsPrint.groupMode="all";
+  if(!data.earnedSeeded){
+    (data.log||[]).slice().reverse().forEach(function(e){
+      if(e && e.delta>0 && e.kind!=="refund") recordEarn(e.sid, e.label, e.delta, e.ts);
+    });
+    data.earnedSeeded=true;
+  }
+  if(typeof data.quizDelay!=="number") data.quizDelay=1;
+  if(typeof data.gameAuto!=="boolean") data.gameAuto=false;
+  if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5;
+  if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()};
+  if(!data.passes.used||typeof data.passes.used!=="object") data.passes.used={};
+  if(typeof data.fpCompact!=="boolean") data.fpCompact=false;
+  if(typeof data.currentClass!=="string") data.currentClass="";
+  if(typeof data.labelFormat!=="string") data.labelFormat="avery5160";
+  if(typeof data.promptStyle!=="string") data.promptStyle="";
+  if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
+  if(!data.seating||typeof data.seating!=="object") data.seating={};
+  if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
+  if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
+  if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
+  if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
+  if(typeof data.fullWidth!=="boolean") data.fullWidth=false;
+  if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOpts={avatarMode:"qr", showPoints:false};
+  if(typeof data.seatPrintOpts.avatarMode!=="string"){
+    data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
+  }
+  if(["qr","photo","none"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
+  delete data.seatPrintOpts.showQR;
+  if(typeof data.seatPrintOpts.showPoints!=="boolean") data.seatPrintOpts.showPoints=false;
+  if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
+  if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
+  if(!Array.isArray(data.pastContests)) data.pastContests=[];
+  if(data.contest!==null && (typeof data.contest!=="object" || !data.contest.startTs)) data.contest=null;
+  if(data.contest){
+    if(typeof data.contest.id!=="string") data.contest.id=newId();
+    if(data.contest.mode!=="contestOnly") data.contest.mode="both";
+    if(typeof data.contest.counting!=="boolean") data.contest.counting=true;
+    if(typeof data.contest.ended!=="boolean") data.contest.ended=false;
+    if(typeof data.contest.merged!=="boolean") data.contest.merged=false;
+  }
+  if(typeof data.standCustomFrom!=="string") data.standCustomFrom="";
+  if(typeof data.standCustomTo!=="string") data.standCustomTo="";
+  if(typeof data.studCustomFrom!=="string") data.studCustomFrom="";
+  if(typeof data.studCustomTo!=="string") data.studCustomTo="";
+  ensureScanLayout();
+  if(typeof data.teachRepeatMode!=="boolean") data.teachRepeatMode=true;
+  if(typeof data.teachFlipKeys!=="boolean") data.teachFlipKeys=false;
+  if(typeof data.teachFlipCols!=="boolean") data.teachFlipCols=false;
+  if(typeof data.menuLabelFormat!=="string") data.menuLabelFormat="tiles";
+  if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages";
+  if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
+  if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
+  if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
+  if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
+  if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
+  if(typeof data.grade!=="string") data.grade="";
+  if(!data.features||typeof data.features!=="object") data.features={};
+  if(typeof data.features.shulchani!=="boolean") data.features.shulchani=true;
+  if(typeof data.features.chavrusa!=="boolean") data.features.chavrusa=false;
+  if(typeof data.features.learningType!=="string") data.features.learningType="";
+  if(typeof data.wizardLearning==="undefined") data.wizardLearning=null;
+  if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}};
+  if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={};
+  if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={};
+  // Phase 1: remap old group names. "tools"/"setup" merged into "manage";
+  // "print" dissolved (tabs accessed via buttons). Clean up stale keys.
+  delete data.navHidden.groups.tools;
+  delete data.navHidden.groups.setup;
+  delete data.navHidden.groups.print;
+  // Seats tab no longer exists — remove any saved hidden state for it
+  delete data.navHidden.tabs.seats;
+  if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
+  if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
+  if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
+  if(typeof data.shulchaniMode!=="boolean") data.shulchaniMode=false;
+  if(typeof data.showPrutot!=="boolean") data.showPrutot=false;
+  if(typeof data.snackSeconds!=="number" || data.snackSeconds<=0) data.snackSeconds=420;
+  if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerExcluded={};
+  if(!Array.isArray(data.spinnerSavedLists)) data.spinnerSavedLists=[];
+  if(!data.attendance||typeof data.attendance!=="object") data.attendance={};
+  if(!data.hw||typeof data.hw!=="object") data.hw={};
+  if(!Array.isArray(data.trackerLog)) data.trackerLog=[];
+  if(typeof data.trackerActId!=="string") data.trackerActId="";
+  data.activities.forEach(function(a){ if(typeof a.tracked!=="boolean") a.tracked=false; });
+  if(!data.hwActivitySeeded){
+    data.activities.push({id:nextActId(), name:"Homework Checked", pts:0, tracked:true, groups:[]});
+    data.hwActivitySeeded=true;
+  }
+}
+
+// ===== Test framework =====
+var data; // global, like in the real app
+var results = [];
+
+function runMigration(blob) {
+  data = JSON.parse(JSON.stringify(blob)); // deep copy
+  data = migrateData(data);
+  load2fix();
+  return data;
+}
+
+function assert(name, condition, detail) {
+  results.push({ name: name, pass: !!condition, detail: detail || "" });
+}
+
+function assertField(d, field, type, label) {
+  var val = field.split(".").reduce(function(o,k){ return o && o[k]; }, d);
+  if (type === "array") {
+    assert(label || field+" is array", Array.isArray(val), "got: "+typeof val+(Array.isArray(val)?" (array)":""));
+  } else {
+    assert(label || field+" is "+type, typeof val === type, "got: "+typeof val+" = "+JSON.stringify(val));
+  }
+}
+
+// ===== Built-in test scenarios =====
+function runBuiltInTests() {
+  results = [];
+
+  // --- Test 1: Empty object (brand new, never-saved) ---
+  var d1 = runMigration({});
+  assert("Empty→version", d1.version === DATA_VERSION, "got v"+d1.version);
+  assertField(d1, "students", "array");
+  assertField(d1, "activities", "array");
+  assertField(d1, "log", "array");
+  assertField(d1, "scores", "object");
+  assertField(d1, "className", "string");
+  assertField(d1, "raffle", "object");
+  assertField(d1, "textSets", "array");
+  assert("Empty→has starter set", d1.textSets.length >= 1 && d1.textSets[0].id === "starter");
+  assertField(d1, "store", "object");
+  assertField(d1, "scanLayout", "object");
+  assert("Empty→valid scanLayout", validScanLayout(d1.scanLayout));
+  assertField(d1, "navHidden", "object");
+  assertField(d1, "features", "object");
+  assert("Empty→hwActivitySeeded", d1.hwActivitySeeded === true);
+
+  // --- Test 2: Pre-v2 data with "bunk" field ---
+  var d2 = runMigration({ bunk: "5A Boys", students: [{id:"s1",name:"Yaakov",group:""}], scores:{s1:15} });
+  assert("Bunk→className migrated", d2.className === "5A Boys", "got: "+d2.className);
+  assert("Bunk→bunk removed", d2.bunk === undefined);
+  assert("Bunk→version", d2.version === DATA_VERSION);
+  assert("Bunk→scores preserved", d2.scores.s1 === 15, "got: "+d2.scores.s1);
+  assert("Bunk→students preserved", d2.students.length === 1 && d2.students[0].name === "Yaakov");
+
+  // --- Test 3: Realistic teacher data (mid-semester) ---
+  var d3src = {
+    version: 2,
+    school: "YBH of Passaic",
+    className: "5A",
+    students: [
+      {id:"s1",name:"Dovid",group:"Aleph"},
+      {id:"s2",name:"Moshe",group:"Aleph"},
+      {id:"s3",name:"Yaakov",group:"Beis"}
+    ],
+    activities: [
+      {id:"a1",name:"On time",pts:1},
+      {id:"a2",name:"Davening nicely",pts:2},
+      {id:"a3",name:"Learning nicely",pts:1}
+    ],
+    scores: { s1: 42, s2: 38, s3: 55 },
+    log: [
+      {ts:1720000000000, sid:"s1", label:"On time", delta:1},
+      {ts:1720000001000, sid:"s2", label:"Davening nicely", delta:2},
+      {ts:1720000002000, sid:"s3", label:"Learning nicely", delta:1, id:"existing-id"}
+    ],
+    sheetUrl: "https://docs.google.com/spreadsheets/d/FAKE",
+    raffle: { mode:"manual", entries:{s1:3,s2:5}, winners:["s3"] },
+    shulchaniMode: true,
+    showPrutot: true,
+    seating: { default: { rows:4, cols:5, seats:["s1","s2",null,"s3",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null] } },
+    navHidden: { groups:{print:true}, tabs:{brachos:true} },
+    contest: { startTs: 1720000000000, id:"c1", mode:"both", counting:true, ended:false, merged:false }
+  };
+  var d3 = runMigration(d3src);
+  assert("Real→school preserved", d3.school === "YBH of Passaic");
+  assert("Real→students preserved (3)", d3.students.length === 3);
+  assert("Real→scores preserved", d3.scores.s1===42 && d3.scores.s2===38 && d3.scores.s3===55);
+  assert("Real→log preserved (3 entries)", d3.log.length === 3);
+  assert("Real→log entries get ids", d3.log.every(function(e){ return !!e.id; }));
+  assert("Real→existing log id kept", d3.log[2].id === "existing-id");
+  assert("Real→sheetUrl preserved", d3.sheetUrl === "https://docs.google.com/spreadsheets/d/FAKE");
+  assert("Real→raffle preserved", d3.raffle.mode==="manual" && d3.raffle.entries.s1===3);
+  assert("Real→shulchaniMode preserved", d3.shulchaniMode === true);
+  assert("Real→seating preserved", d3.seating.default && d3.seating.default.seats[0]==="s1");
+  assert("Real→navHidden preserved", d3.navHidden.groups.print===true && d3.navHidden.tabs.brachos===true);
+  assert("Real→contest preserved", d3.contest && d3.contest.id==="c1");
+  assert("Real→version unchanged", d3.version === DATA_VERSION);
+  // Backfilled fields present:
+  assertField(d3, "store", "object");
+  assertField(d3, "attendance", "object");
+  assertField(d3, "hw", "object");
+  assert("Real→earned seeded", d3.earnedSeeded===true && typeof d3.earned==="object");
+  assert("Real→hwActivitySeeded", d3.hwActivitySeeded===true);
+  assert("Real→activities got tracked flag", d3.activities.every(function(a){return typeof a.tracked==="boolean";}));
+
+  // --- Test 4: Old auction shape migration ---
+  var d4 = runMigration({ version:2, auction:{prizes:[{name:"Prize1"}]}, auctionsMigrated:false });
+  assert("Auction→migrated to auctions map", typeof d4.auctions==="object" && d4.auctions[""] && d4.auctions[""].prizes[0].name==="Prize1");
+  assert("Auction→old field removed", d4.auction === undefined);
+
+  // --- Test 5: Old scan layout (left/right) migration ---
+  var d5 = runMigration({ version:2, scanLayout:{left:["activities","scanbar"],right:["leaderboard","tappanel","recent"]} });
+  assert("Layout→migrated to columns", Array.isArray(d5.scanLayout.columns) && d5.scanLayout.cols===2);
+  assert("Layout→valid after migration", validScanLayout(d5.scanLayout));
+
+  // --- Test 6: Corrupted/garbage data ---
+  var d6 = runMigration({ version:2, students:"not an array", scores:null, log:42, raffle:"bad" });
+  assertField(d6, "students", "array", "Garbage→students fixed to array");
+  assertField(d6, "scores", "object", "Garbage→scores fixed to object");
+  assertField(d6, "log", "array", "Garbage→log fixed to array");
+  assertField(d6, "raffle", "object", "Garbage→raffle fixed to object");
+
+  // --- Test 7: Store log backfill (received flag) ---
+  var d7 = runMigration({ version:2, store:{items:[{id:"i1",name:"Candy",price:10}], log:[{sid:"s1",item:"Candy",ts:1720000000000}]} });
+  assert("Store→log received backfilled", d7.store.log[0].received === true);
+
+  // --- Test 8: Phase 1 nav-state migration (old group names cleaned up) ---
+  var d8 = runMigration({ version:2, navHidden:{ groups:{tools:true, setup:true, print:true, rewards:true}, tabs:{seats:true, brachos:true} } });
+  assert("Phase1→old group keys removed", d8.navHidden.groups.tools===undefined && d8.navHidden.groups.setup===undefined && d8.navHidden.groups.print===undefined);
+  assert("Phase1→current group keys kept", d8.navHidden.groups.rewards===true);
+  assert("Phase1→seats tab key removed", d8.navHidden.tabs.seats===undefined);
+  assert("Phase1→other tab keys kept", d8.navHidden.tabs.brachos===true);
+
+  renderResults();
+}
+
+function runCustomTest() {
+  var raw = document.getElementById("pasteBox").value.trim();
+  if (!raw) { alert("Paste a JSON blob or drop a file first."); return; }
+  results = [];
+  try {
+    var blob = JSON.parse(raw);
+    var before = JSON.parse(JSON.stringify(blob));
+    var after = runMigration(blob);
+
+    assert("Custom→no throw", true, "migrateData + load2fix ran without error");
+    assert("Custom→version", after.version === DATA_VERSION, "got v"+after.version);
+
+    // Preserve checks: any field that existed before should still exist (or be intentionally deleted by migration)
+    var dominated = ["bunk","auction"]; // fields intentionally removed by migrations
+    var preserved = true, lost = [];
+    Object.keys(before).forEach(function(k) {
+      if (dominated.indexOf(k) >= 0) return;
+      if (after[k] === undefined) { preserved = false; lost.push(k); }
+    });
+    assert("Custom→no fields lost", preserved, lost.length ? "Lost: "+lost.join(", ") : "All original fields preserved");
+
+    // Array length checks
+    if (Array.isArray(before.students)) assert("Custom→students count", after.students.length === before.students.length, before.students.length+"→"+after.students.length);
+    if (Array.isArray(before.log)) assert("Custom→log count", after.log.length >= before.log.length, before.log.length+"→"+after.log.length);
+    if (before.scores && typeof before.scores==="object") {
+      var ks = Object.keys(before.scores);
+      var allKept = ks.every(function(k){ return after.scores[k] === before.scores[k]; });
+      assert("Custom→all scores preserved", allKept, ks.length+" score entries checked");
+    }
+
+    assertField(after, "scanLayout", "object", "Custom→scanLayout exists");
+    assert("Custom→valid scanLayout", validScanLayout(after.scanLayout));
+    assertField(after, "features", "object", "Custom→features exists");
+    assertField(after, "navHidden", "object", "Custom→navHidden exists");
+
+  } catch(e) {
+    assert("Custom→parse/run", false, "Error: "+e.message);
+  }
+  renderResults();
+}
+
+function renderResults() {
+  var box = document.getElementById("results");
+  var passed = 0, failed = 0;
+  box.innerHTML = "";
+  results.forEach(function(r) {
+    if (r.pass) passed++; else failed++;
+    var div = document.createElement("div");
+    div.className = "test";
+    div.innerHTML = '<h3><span class="'+(r.pass?"pass":"fail")+'">'+(r.pass?"PASS":"FAIL")+'</span> '+r.name+'</h3>'
+      + (r.detail ? '<div class="detail">'+r.detail+'</div>' : '');
+    box.appendChild(div);
+  });
+  var sum = document.getElementById("summary");
+  sum.className = failed ? "has-fail" : "all-pass";
+  sum.textContent = passed+" passed, "+failed+" failed out of "+(passed+failed)+" checks.";
+}
+
+// Drop zone
+var dz = document.getElementById("dropZone");
+dz.addEventListener("dragover", function(e){ e.preventDefault(); dz.classList.add("over"); });
+dz.addEventListener("dragleave", function(){ dz.classList.remove("over"); });
+dz.addEventListener("drop", function(e){
+  e.preventDefault(); dz.classList.remove("over");
+  var file = e.dataTransfer.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(){ document.getElementById("pasteBox").value = reader.result; };
+  reader.readAsText(file);
+});
+</script>
+</body>
+</html>
