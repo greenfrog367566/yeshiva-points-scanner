@@ -10,6 +10,16 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [0.9.0] — 2026-07-18
+
+The beta milestone. This is the version the first wave of beta rebbeim onboard onto: the app's navigation is rebuilt into five groups (Scan / Standings / Rewards / Manage / Learn) with a global header scan bar and a full-screen seating-chart pop-out (the Phase 1 restructure), and Menchmark gets its public face — a refreshed landing page centered on the Record → Recognize → Reward → Repeat cycle with a new section for menahalim, plus a beta signup system that routes every CTA to a signup form backed by Google Apps Script. A closing bugfix batch cleans up printed seat names, pass timestamps, Teach/Chart sync, stray scan boxes, and the activity print title.
+
 - **Menchmark branding in the app** — M mark in the header beside the school name, favicon, and page title updated from "Davening & Learning Points" to "Menchmark".
 
 ### Added
