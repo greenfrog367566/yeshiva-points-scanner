@@ -1,6 +1,6 @@
 # Davening & Learning Points — Classroom Points Scanner
 
-A single-file, offline-friendly web app for tracking classroom points with a handheld barcode/QR scanner. Built by Rebbeim, for Rebbeim.
+A single-file, offline-friendly web app for tracking classroom/bunk points with a handheld barcode/QR scanner. Built by Rebbeim, for Rebbeim.
 
 **Live app:**  ( https://greenfrog367566.github.io/yeshiva-points-scanner/)
 
