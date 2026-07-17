@@ -207,6 +207,19 @@ Draft it, show it, wait for a yes. Don't just pick.
 
 ---
 
+## Confirmation policy
+
+Ben trusts Claude Code's technical judgment and does not want a second opinion on routine implementation decisions (variable names, exact CSS values, minor refactors, which function to edit). Proceed with the best reasonable choice and note it in the commit message rather than asking.
+
+Still stop and explicitly ask Ben before:
+- Merging to main
+- Force-pushing or rewriting shared git history
+- Deleting any file, branch, or data
+- Any change to the data model or migrateData() that isn't purely additive
+- Anything Ben's instructions in this session left ambiguous about intent (not implementation)
+
+---
+
 ## 📚 DECISION RECORD (authoritative — read before planning any feature)
 
 These docs are the settled design. They answer most "should we..." questions — check them before asking the maintainer. They live in `docs/`:
