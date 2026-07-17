@@ -12,6 +12,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **Beta signup system.** New `beta.html` page (matching the landing-page design) with an 11-question signup form, a hidden honeypot field for spam protection, and an in-place thank-you state. Submissions POST to a Google Apps Script backend (`apps-script/beta-signup.gs`, deploy instructions in the file) that appends each signup to a "Menchmark Beta Signups" sheet tab, creating it with headers on first use. The landing page's Get Started / launch CTAs now route to the beta signup instead of the setup wizard until launch; paste the deployed Apps Script URL into `BETA_SIGNUP_ENDPOINT` at the top of beta.html's script to activate the form.
 - **History: filter by activity, and a "Most given" ranked view.** Narrow History to a single activity, then choose between the existing chronological/point-value sorts or a new ranked view showing which students received that activity most. With no activity selected, ranked mode totals points across all activities combined.
 - **Bathroom Passes now show when each pass was used**, not just whether it's been used this week — reuses the same clock-time format already shown in Tracker and History.
 - **Raffle: option to count only points earned during the current contest**, alongside the existing all-time and by-activity options (mutually exclusive — All-time points · By activity · Current contest). Automatically falls back to all-time points if no contest is running or the contest ends.
