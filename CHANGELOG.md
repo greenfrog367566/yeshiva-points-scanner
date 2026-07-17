@@ -10,6 +10,16 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [0.9.0] — 2026-07-18
+
+The beta milestone. This is the version the first wave of beta rebbeim onboard onto: the app's navigation is rebuilt into five groups (Scan / Standings / Rewards / Manage / Learn) with a global header scan bar and a full-screen seating-chart pop-out (the Phase 1 restructure), and Menchmark gets its public face — a refreshed landing page centered on the Record → Recognize → Reward → Repeat cycle with a new section for menahalim, plus a beta signup system that routes every CTA to a signup form backed by Google Apps Script. A closing bugfix batch cleans up printed seat names, pass timestamps, Teach/Chart sync, stray scan boxes, and the activity print title.
+
 - **Menchmark branding in the app** — M mark in the header beside the school name, favicon, and page title updated from "Davening & Learning Points" to "Menchmark".
 
 ### Added
@@ -37,6 +47,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 - **Landing page: Record → Recognize → Reward → Repeat cycle + "For menahalim" section.** The comparison chart now centers on the four-step cycle — the new Repeat column measures whether a system physically survives daily classroom use, replacing the old Reliability and Retainability columns. The "Five R's of Menchmark" badge is de-branded to "Everything Menchmark does" so the cycle is the page's only R-concept (the five capability cards themselves are unchanged). New admin-lite section aimed at menahalim with only the two live claims — attendance captured by the morning scan, and a timestamped behavior record you can review and can't fake or lose — plus one clearly-future roadmap line about school-tier tools. Linked from the desktop nav dropdown and mobile menu.
 
+- **Landing page: "For substitute rebbeim" section.** Aimed at the app's origin story — a substitute rebbi walks into a working classroom instead of starting from scratch: seating chart, roster, and the regular rebbi's points system ready to go, with the day's points either synced into the regular rebbi's record or kept separate. Linked from the desktop nav dropdown and mobile menu.
 - **Beta signup system.** New `beta.html` page (matching the landing-page design) with an 11-question signup form, a hidden honeypot field for spam protection, and an in-place thank-you state. Submissions POST to a Google Apps Script backend (`apps-script/beta-signup.gs`, deploy instructions in the file) that appends each signup to a "Menchmark Beta Signups" sheet tab, creating it with headers on first use. The landing page's Get Started / launch CTAs now route to the beta signup instead of the setup wizard until launch; paste the deployed Apps Script URL into `BETA_SIGNUP_ENDPOINT` at the top of beta.html's script to activate the form.
 - **History: filter by activity, and a "Most given" ranked view.** Narrow History to a single activity, then choose between the existing chronological/point-value sorts or a new ranked view showing which students received that activity most. With no activity selected, ranked mode totals points across all activities combined.
 - **Bathroom Passes now show when each pass was used** — date and time, not just whether it's been used this week — reusing the same date + clock-time format already shown in Tracker and History.
