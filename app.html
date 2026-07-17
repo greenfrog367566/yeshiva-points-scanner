@@ -480,6 +480,21 @@
   .modal-close{border:none;background:#f1f2f6;color:var(--muted);width:30px;height:30px;border-radius:50%;font-size:.95rem;cursor:pointer;flex:none}
   .modal-close:hover{background:#e5e7ee;color:var(--ink)}
   .modal-card .stud-breakdown{margin:0;padding:0;background:none;border:none}
+  /* 6-7 celebration overlay (data.sixSeven, Settings tab) */
+  .sixseven-overlay{position:fixed;inset:0;background:rgba(20,22,30,.6);display:flex;align-items:center;justify-content:center;z-index:600;cursor:pointer;opacity:1;transition:opacity .4s ease}
+  .sixseven-overlay.out{opacity:0}
+  .sixseven-inner{position:relative;text-align:center;color:#fff;padding:24px;overflow:visible}
+  .sixseven-hands{display:flex;align-items:center;justify-content:center;gap:38px;margin-bottom:14px}
+  .sixseven-hands svg{width:110px;height:82px;display:block}
+  .ss-hand-l{animation:ssWeighA 1.4s ease-in-out infinite}
+  .ss-hand-r{animation:ssWeighB 1.4s ease-in-out infinite}
+  @keyframes ssWeighA{0%,100%{transform:translateY(-16px)}50%{transform:translateY(16px)}}
+  @keyframes ssWeighB{0%,100%{transform:translateY(16px)}50%{transform:translateY(-16px)}}
+  .sixseven-num{font-family:var(--serif);font-size:clamp(3.5rem,12vw,7rem);font-weight:800;color:var(--brass);text-shadow:0 4px 18px rgba(0,0,0,.45);line-height:1}
+  .sixseven-name{font-size:clamp(1.1rem,3vw,1.8rem);font-weight:700;margin-top:12px}
+  .ss-confetti{position:absolute;top:-10px;width:9px;height:14px;border-radius:2px;opacity:0;animation:ssConfetti 2s ease-in forwards;pointer-events:none}
+  @keyframes ssConfetti{0%{opacity:0;transform:translateY(0) rotate(0)}12%{opacity:.9}100%{opacity:0;transform:translateY(340px) rotate(540deg)}}
+  @media(prefers-reduced-motion:reduce){.ss-hand-l,.ss-hand-r{animation:none}.ss-confetti{animation:none}.sixseven-overlay{transition:none}}
   .avatar{border-radius:50%;background:var(--ink-soft);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;overflow:hidden;position:relative}
   .avatar img{width:100%;height:100%;object-fit:cover;display:block}
   .avatar.editable{cursor:pointer}
@@ -2821,6 +2836,12 @@ function setupRoster() {
       <p class="view-note" style="margin:8px 0 0">Off by default. The app normally keeps its content in a centered column, which reads comfortably on a laptop but leaves a lot of empty space on either side of a large desktop monitor. Turn this on to stretch every tab to fill the screen instead — most noticeable on the Scan tab's Customize layout, where it gives the movable sections more room to work with.</p>
     </div>
 
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">6-7 Celebration</h3>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setSixSeven"> Show a full-screen "6-7!" celebration when a student's total lands on exactly 67</label>
+      <p class="view-note" style="margin:8px 0 0">Off by default. When on, a scan that brings a student's point total to exactly 67 pops up a short, silent full-screen moment — two hands weighing, a little confetti — then fades away on its own (or tap anywhere to dismiss it early). It fires every time a total lands on exactly 67, so a student who spends points and earns their way back can hit it again. No sound, ever.</p>
+    </div>
+
     <!-- Phase 1: Teach Mode, Shorashim Quiz, and Game Show settings moved to
          their feature panels (Teach view / Quiz toolbar / Game Show card) —
          they only matter to one feature each, so they live with it. -->
@@ -4523,6 +4544,7 @@ function setupRoster() {
     $("setHeaderShortcuts").checked = data.showHeaderShortcuts!==false;
     $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setFullWidth").checked = !!data.fullWidth;
+    $("setSixSeven").checked = !!data.sixSeven;
     // Phase 1: Teach flip / quiz delay / game auto inits moved to renderTeach,
     // renderQuiz, renderGame — those controls now live on their feature panels.
     renderSerialUI();
@@ -4573,6 +4595,7 @@ function setupRoster() {
   $("setHeaderShortcuts").addEventListener("change", function(){ data.showHeaderShortcuts=this.checked; save(); applyHeaderShortcutsVisibility(); });
   $("setHebrewDate").addEventListener("change", function(){ data.showHebrewDate=this.checked; save(); showDate(); });
   $("setFullWidth").addEventListener("change", function(){ data.fullWidth=this.checked; save(); applyFullWidth(); });
+  $("setSixSeven").addEventListener("change", function(){ data.sixSeven=this.checked; save(); });
   function escHtml(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
   $("teachWordBtn").addEventListener("click", function(){
@@ -5116,6 +5139,7 @@ function setupRoster() {
     var tag=contestTagForScan();
     if(tag.scoreToMain) data.scores[s.id]=score(s.id)+armed.delta;
     if(armed.delta>0 && tag.scoreToMain) recordEarn(s.id, armed.label, armed.delta);
+    if(tag.scoreToMain) maybeSixSeven(s);
     var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:armed.label, delta:armed.delta, contestId:tag.contestId, contestOnly:tag.contestOnly});
     save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:armed.label, delta:armed.delta, total:score(s.id), id:logEntry.id}); }
@@ -5160,6 +5184,7 @@ function setupRoster() {
     var tag=contestTagForScan();
     if(tag.scoreToMain) data.scores[s.id]=score(s.id)+delta;
     if(delta>0 && tag.scoreToMain) recordEarn(s.id, label, delta);
+    if(tag.scoreToMain) maybeSixSeven(s);
     var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly});
     save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
@@ -5167,6 +5192,45 @@ function setupRoster() {
     beep(delta>=0);
     renderRecent(); renderScanBoard();
     return true;
+  }
+  // 6-7 celebration (optional — data.sixSeven, Settings tab). Checked after any
+  // scan that touched the main score; deliberately re-fires on every landing on
+  // exactly 67, since spending points and re-earning can bring a student back.
+  function maybeSixSeven(s){
+    if(data.sixSeven===true && score(s.id)===67) showSixSeven(s.name);
+  }
+  function showSixSeven(name){
+    var old=document.getElementById("sixSevenOverlay");
+    if(old && old.parentNode) old.parentNode.removeChild(old);
+    // Simple upturned open palm — inline SVG so it renders identically everywhere
+    // (emoji hands vary wildly across devices/boards).
+    var HAND='<svg viewBox="0 0 120 90" aria-hidden="true"><path fill="#f2c88f" stroke="#b98a4e" stroke-width="3.5" stroke-linejoin="round" d="M20 60 Q18 38 26 36 Q33 34 36 44 L38 50 Q37 24 45 23 Q52 22 53 46 Q54 18 61 18 Q68 18 68 46 Q70 22 77 23 Q84 24 83 50 Q95 42 99 50 Q103 58 90 68 Q78 80 58 80 Q34 80 24 68 Z"/></svg>';
+    var overlay=el("div","sixseven-overlay"); overlay.id="sixSevenOverlay";
+    var inner=el("div","sixseven-inner");
+    var hands=el("div","sixseven-hands");
+    var lh=el("div","ss-hand-l"); lh.innerHTML=HAND;
+    var rh=el("div","ss-hand-r"); rh.innerHTML=HAND;
+    rh.firstChild.style.transform="scaleX(-1)";
+    hands.appendChild(lh); hands.appendChild(rh);
+    inner.appendChild(hands);
+    inner.appendChild(el("div","sixseven-num","6-7!"));
+    inner.appendChild(el("div","sixseven-name", name+" hit 67"));
+    var colors=["#c9a227","#5b8def","#e2574c","#4caf7d","#f2c14e"];
+    for(var i=0;i<22;i++){
+      var c=el("span","ss-confetti");
+      c.style.left=(4+Math.random()*92)+"%";
+      c.style.background=colors[i%colors.length];
+      c.style.animationDelay=(Math.random()*0.5).toFixed(2)+"s";
+      c.style.animationDuration=(1.4+Math.random()*0.8).toFixed(2)+"s";
+      inner.appendChild(c);
+    }
+    overlay.appendChild(inner);
+    document.body.appendChild(overlay);
+    var fading=false;
+    function remove(){ if(overlay.parentNode) overlay.parentNode.removeChild(overlay); }
+    function fadeOut(){ if(fading) return; fading=true; overlay.classList.add("out"); setTimeout(remove, 450); }
+    overlay.addEventListener("click", fadeOut);
+    setTimeout(fadeOut, 2500);
   }
   function actById(id){ for(var i=0;i<data.activities.length;i++){ if(data.activities[i].id===id) return data.activities[i]; } return null; }
 
@@ -11733,6 +11797,7 @@ nameLine
     if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
     if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
     if(typeof data.fullWidth!=="boolean") data.fullWidth=false;
+    if(typeof data.sixSeven!=="boolean") data.sixSeven=false;
     if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOpts={avatarMode:"qr", showPoints:false};
     if(typeof data.seatPrintOpts.avatarMode!=="string"){
       data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
