@@ -16,6 +16,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Changed
 
+- **Renamed tab groups to the 5 R's — Record, Review, Recognize, Reward, Run — and reordered to match the workflow.** The nav now reads Record (was Scan) · Recognize (was Standings) · Reward (was Rewards) · Review (was Learn) · Run (was Manage). Labels and order only — internal keys and saved state are untouched, so nothing migrates.
+
 ### Fixed
 
 ## [0.9.0] — 2026-07-18
