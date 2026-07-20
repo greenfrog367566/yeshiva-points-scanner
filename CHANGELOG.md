@@ -14,6 +14,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 - **6-7 celebration:** optional full-screen animation when a student's total lands on exactly 67 points (plain-points mode only; off by default — toggle in Manage → Settings). Silent by design; two SVG hands do the weighing motion with a small confetti burst, then it fades out on its own or on a tap. Fires every time a total lands on 67, not just the first. New `data.sixSeven` boolean, backfilled in `load2fix()`.
 - Quick Start guide (`quick-start.html`) with a Quick Start button in the app header — a 15-minute zero-to-first-scan walkthrough for beta rebbeim, opened in a new tab from the subheader next to the help button.
+- Animated brand-story intro page (`intro.html`) — a scroll-driven GSAP sequence taking the "s" out of "mensch" and turning it into a scanner, linked from the landing-page footer as "Watch the intro".
 
 ### Changed
 
