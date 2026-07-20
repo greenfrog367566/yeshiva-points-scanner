@@ -14,10 +14,11 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 - **6-7 celebration:** optional full-screen animation when a student's total lands on exactly 67 points (plain-points mode only; off by default — toggle in Manage → Settings). Silent by design; two SVG hands do the weighing motion with a small confetti burst, then it fades out on its own or on a tap. Fires every time a total lands on 67, not just the first. New `data.sixSeven` boolean, backfilled in `load2fix()`.
 - Quick Start guide (`quick-start.html`) with a Quick Start button in the app header — a 15-minute zero-to-first-scan walkthrough for beta rebbeim, opened in a new tab from the subheader next to the help button.
-- Animated brand-story intro page (`intro.html`) — a scroll-driven GSAP sequence taking the "s" out of "mensch" and turning it into a scanner, linked from the landing-page footer as "Watch the intro".
+- Animated brand-story intro page — a scroll-driven GSAP sequence taking the "s" out of "mensch" and turning it into a scanner. Now the site's front door (see Changed); also reachable from the landing page footer as "Watch the intro".
 
 ### Changed
 
+- **Intro animation is now the site front door (`index.html`); previous landing page moved to `home.html`; added Skip control.** Visiting the root now plays the brand-story intro, with an always-visible "Skip →" (top-right) and an end-of-story CTA that both lead to the landing page at `home.html`. Internal links updated accordingly (landing-page links in `beta.html`, `quick-start.html`, and the intro's own CTA now point to `home.html`; the landing footer's "Watch the intro" points to `index.html`).
 - **Renamed tab groups to the 5 R's — Record, Review, Recognize, Reward, Run — and reordered to match the workflow.** The nav now reads Record (was Scan) · Recognize (was Standings) · Reward (was Rewards) · Review (was Learn) · Run (was Manage). Labels and order only — internal keys and saved state are untouched, so nothing migrates.
 - Marked Chavrusa, Gradebook, and Quiz features as Coming soon on the landing page and setup wizard; updated hero mockup to the 5 R's tab names; corrected sync location wording.
 - Rebuilt the landing-page hero mockup's nav as a horizontal tab bar matching the real app (Record · Recognize · Reward · Review · Run, gold active tab) instead of a vertical sidebar; dashboard content now uses the full card width.
