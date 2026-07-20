@@ -17,6 +17,9 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 ### Changed
 
 - **Renamed tab groups to the 5 R's — Record, Review, Recognize, Reward, Run — and reordered to match the workflow.** The nav now reads Record (was Scan) · Recognize (was Standings) · Reward (was Rewards) · Review (was Learn) · Run (was Manage). Labels and order only — internal keys and saved state are untouched, so nothing migrates.
+- Marked Chavrusa, Gradebook, and Quiz features as Coming soon on the landing page and setup wizard; updated hero mockup to the 5 R's tab names; corrected sync location wording.
+- Rebuilt the landing-page hero mockup's nav as a horizontal tab bar matching the real app (Record · Recognize · Reward · Review · Run, gold active tab) instead of a vertical sidebar; dashboard content now uses the full card width.
+- Replaced the hero mockup's invented dashboard (stat cards, Recent Activity feed) with the real Record-tab elements: Now-scoring armed pill, dashed scan box, Recent scans list with undo, and the live Leaderboard.
 
 ### Fixed
 
