@@ -46,6 +46,11 @@ tailwind.config = { theme: { extend: {
   /* Skip — always visible from the very first frame, jumps to the landing page */
   #skip{position:fixed;top:22px;right:24px;z-index:60;font-family:Inter,sans-serif;font-size:13px;font-weight:600;letter-spacing:.02em;color:#aeb6d2;background:rgba(15,27,51,.55);border:1px solid rgba(174,182,210,.28);border-radius:999px;padding:8px 16px;text-decoration:none;backdrop-filter:blur(4px);display:inline-flex;align-items:center;gap:6px;transition:color .2s,border-color .2s,background .2s}
   #skip:hover{color:#0a1424;background:#e8b321;border-color:#e8b321}
+  /* Play — auto-scrolls the whole animation so the user can just watch. Centered near
+     the top of the first frame; fades out once playback starts or the user scrolls. */
+  #playBtn{position:fixed;top:7vh;left:50%;transform:translateX(-50%);z-index:60;font-family:Inter,sans-serif;font-size:14px;font-weight:600;letter-spacing:.03em;color:#0a1424;background:#e8b321;border:none;border-radius:999px;padding:10px 22px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 6px 24px rgba(232,179,33,.28);transition:transform .2s,box-shadow .2s,opacity .45s}
+  #playBtn:hover{transform:translateX(-50%) translateY(-1px);box-shadow:0 8px 30px rgba(232,179,33,.42)}
+  #playBtn .tri{font-size:11px;line-height:1}
   .indicator{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);color:#5a6a8a;font-family:Inter,sans-serif;font-size:11px;letter-spacing:.2em;text-transform:uppercase;display:flex;align-items:center;gap:8px;transition:opacity .4s;z-index:40}
   .indicator svg{width:14px;height:14px;animation:bob 1.6s ease-in-out infinite}
   @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(5px)}}
@@ -63,6 +68,7 @@ tailwind.config = { theme: { extend: {
 <body>
 
 <a href="home.html" id="skip">Skip <span aria-hidden="true">→</span></a>
+<button id="playBtn" type="button" aria-label="Play the intro"><span class="tri" aria-hidden="true">▶</span> Play</button>
 
 <div id="pinSpacer" style="height:680vh;position:relative">
   <div id="pin">
@@ -156,14 +162,26 @@ tailwind.config = { theme: { extend: {
   </div>
 </div>
 
-<section class="min-h-screen bg-[#f4f1ea] flex items-center justify-center px-6">
-  <div class="max-w-xl text-center">
-    <div class="font-display text-4xl sm:text-5xl text-navy-800 mb-3">Mench<span class="text-gold-400">mark</span></div>
-    <p class="font-sans text-slate-500 text-lg mb-8">Run your classroom like a mensch.</p>
-    <a href="home.html" class="inline-flex items-center gap-2 bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold text-base rounded-xl px-8 py-4 transition-colors shadow-lg shadow-gold-400/30">
-      Try Menchmark free
-    </a>
-    <p class="text-slate-400 text-xs font-sans mt-4">menchmark.app · free during beta</p>
+<!-- Split-screen final frame: dark top holds the payoff line, light bottom holds the invite.
+     grid-rows-[1fr_1fr] keeps the two halves exactly equal (content-respecting, so neither
+     clips) rather than flex-1's content-driven 43/57 split. -->
+<section class="min-h-screen grid grid-rows-[1fr_1fr]">
+  <!-- top half: dark, payoff line -->
+  <div class="bg-navy-900 flex items-center justify-center px-6 py-12">
+    <p class="font-display text-2xl sm:text-4xl text-white text-center leading-snug">
+      We took away your <span class="text-gold-400">stress</span>.<br>And replaced it with a scanner.
+    </p>
+  </div>
+  <!-- bottom half: light, invite + CTA -->
+  <div class="bg-[#f4f1ea] flex items-center justify-center px-6 py-12">
+    <div class="max-w-xl text-center">
+      <div class="font-display text-4xl sm:text-5xl text-navy-800 mb-3">Mench<span class="text-gold-400">mark</span></div>
+      <p class="font-sans text-slate-500 text-lg mb-8">Run your classroom like a mensch.</p>
+      <a href="home.html" class="inline-flex items-center gap-2 bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold text-base rounded-xl px-8 py-4 transition-colors shadow-lg shadow-gold-400/30">
+        Try Menchmark free
+      </a>
+      <p class="text-slate-400 text-xs font-sans mt-4">menchmark.app · free during beta</p>
+    </div>
   </div>
 </section>
 
@@ -291,6 +309,47 @@ window.addEventListener('load', function(){
   // keep S start position correct if the window resizes before scrolling
   ScrollTrigger.addEventListener('refreshInit', initPositions);
   window.addEventListener('resize', function(){ if (tl.progress() === 0) initPositions(); });
+
+  // ---- PLAY: auto-scroll the whole intro so the user can just watch ----
+  // We tween the REAL scroll position (not the timeline) and let ScrollTrigger's
+  // scrub follow it — so autoplay looks identical to a smooth manual scroll, and
+  // handing control back to the user mid-play is seamless. Any genuine scroll
+  // intent (wheel / touch-drag / key) cancels autoplay so the user can take over.
+  var playBtn = document.getElementById('playBtn');
+  var autoScroll = null;
+
+  function hidePlayBtn(){
+    if (playBtn.dataset.hidden) return;
+    playBtn.dataset.hidden = '1';
+    gsap.to(playBtn, { opacity: 0, duration: 0.45, onComplete: function(){ playBtn.style.pointerEvents = 'none'; } });
+  }
+  function cancelAutoScroll(){
+    if (autoScroll){ autoScroll.kill(); autoScroll = null; }
+  }
+  function startAutoScroll(){
+    cancelAutoScroll();
+    hidePlayBtn();
+    var maxY = document.documentElement.scrollHeight - window.innerHeight;
+    var proxy = { y: window.scrollY };
+    // pace to the scroll distance so playback always feels the same speed
+    // (~360px/s), clamped so it's never a crawl or a blur; gentle ease at the ends.
+    var dur = Math.min(22, Math.max(10, (maxY - proxy.y) / 360));
+    autoScroll = gsap.to(proxy, {
+      y: maxY, duration: dur, ease: 'power1.inOut',
+      onUpdate: function(){ window.scrollTo(0, proxy.y); },
+      onComplete: function(){ autoScroll = null; }
+    });
+  }
+  playBtn.addEventListener('click', startAutoScroll);
+
+  // Genuine user scroll intent cancels autoplay (these don't fire from scrollTo()).
+  ['wheel','touchmove','keydown'].forEach(function(ev){
+    window.addEventListener(ev, cancelAutoScroll, { passive: true });
+  });
+  // Once the user is scrolling on their own (and not being auto-played), retire Play.
+  window.addEventListener('scroll', function(){
+    if (!autoScroll && window.scrollY > 40) hidePlayBtn();
+  }, { passive: true });
 });
 </script>
 </body>
