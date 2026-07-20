@@ -18,6 +18,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Changed
 
+- Merged Menahalim tab to 4 cards to match the other audience tabs.
 - Restructured home page: reordered sections (hero → why → features → compare → audience toggle → testimonials → walkthrough → about → CTA), added a 3-tab audience toggle (Rebbeim/Menahalim/Substitutes) as the centerpiece, corrected the walkthrough to the real task-based setup flow, and consolidated the audience-specific standalone sections (Substitute, Menahalim, Shulchani Mode, No-Computer) into the toggle to shorten the page.
 - Removed stale open-source language from meta description; added copyright notice to footer.
 - Updated home page "How It Works" walkthrough to the real task-based setup flow (was Sheet-first and inaccurate). The four steps are now Add your students → Set up what you reward → Print your codes → Start scanning, matching `quick-start.html`; Google Sheets is no longer implied as a required first step (it's an optional sync layer).
