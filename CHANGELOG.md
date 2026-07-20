@@ -20,6 +20,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 - Marked Chavrusa, Gradebook, and Quiz features as Coming soon on the landing page and setup wizard; updated hero mockup to the 5 R's tab names; corrected sync location wording.
 - Rebuilt the landing-page hero mockup's nav as a horizontal tab bar matching the real app (Record · Recognize · Reward · Review · Run, gold active tab) instead of a vertical sidebar; dashboard content now uses the full card width.
 - Replaced the hero mockup's invented dashboard (stat cards, Recent Activity feed) with the real Record-tab elements: Now-scoring armed pill, dashed scan box, Recent scans list with undo, and the live Leaderboard.
+- Added small monochrome inline SVG icons to the five nav tab labels (scan-corners Record · trophy Recognize · gift Reward · open-book Review · gear Run) — hand-written line icons that inherit the tab's text color, no icon library. Nav bar only — labels elsewhere (e.g. the Settings show/hide list) are unchanged.
 
 ### Fixed
 
