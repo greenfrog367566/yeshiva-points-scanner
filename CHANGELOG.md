@@ -18,6 +18,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Changed
 
+- Replaced casual 'kid/kids' with 'student/students' in user-facing copy.
 - Merged Menahalim tab to 4 cards to match the other audience tabs.
 - Restructured home page: reordered sections (hero → why → features → compare → audience toggle → testimonials → walkthrough → about → CTA), added a 3-tab audience toggle (Rebbeim/Menahalim/Substitutes) as the centerpiece, corrected the walkthrough to the real task-based setup flow, and consolidated the audience-specific standalone sections (Substitute, Menahalim, Shulchani Mode, No-Computer) into the toggle to shorten the page.
 - Removed stale open-source language from meta description; added copyright notice to footer.
