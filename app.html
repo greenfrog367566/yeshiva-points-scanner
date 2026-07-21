@@ -588,12 +588,17 @@
   @media(prefers-reduced-motion:reduce){.spin-result{transition:none}}
 
   /* ---- Seating-chart picker engine (reusable; see SeatPicker() in JS) ---- */
-  .sp-wrap{width:100%}
+  /* overflow-x lets the grid keep its column count and scroll sideways when the
+     pop-out is too narrow to fit them (small screens) instead of squishing. */
+  .sp-wrap{width:100%;overflow-x:auto}
   .sp-grid{display:grid;gap:8px;padding:4px 0}
   .sp-seat{position:relative;border:2px solid var(--line);background:#fff;border-radius:10px;padding:9px 6px;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;transition:transform .12s,box-shadow .12s,border-color .12s,background .12s}
-  .sp-seat .sp-name{font-weight:600;font-size:.85rem;line-height:1.15}
+  .sp-seat .sp-name{font-weight:600;font-size:.85rem;line-height:1.15;overflow-wrap:break-word;max-width:100%}
   .sp-seat .sp-sub{font-size:.68rem;color:var(--muted);font-weight:700;margin-top:2px;text-transform:uppercase;letter-spacing:.4px}
-  .sp-seat.empty{background:#f7f8fa;border-style:dashed;color:#b7bcca;font-size:.72rem;border-width:1px}
+  /* Empty seats are unfilled slots (empty desks in an arranged chart, or last-
+     row padding in the auto-grid) — kept for grid alignment but de-emphasized
+     so they don't read as broken student cards. */
+  .sp-seat.empty{background:transparent;border:1px dashed var(--line);opacity:.35;min-height:52px}
   /* Two facts, ONE signal each (kept deliberately non-redundant):
        HAD-A-TURN  → dimming (grey wash + faded name), nothing else.
        ELIGIBILITY → one small colored pill (OUT / PASSED); eligible shows none.
@@ -756,6 +761,9 @@
   .ft-btn.on{background:var(--brass);color:#2a1d05;border-color:var(--brass)}
   .float-picker{position:fixed;top:64px;right:12px;z-index:201;width:380px;max-width:calc(100vw - 24px);background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(20,26,46,.3);overflow:hidden;user-select:none}
   .float-picker .ft-grip{touch-action:none}
+  /* Seating-chart mode goes LANDSCAPE so the (same) column count gets enough
+     room per card for full names; capped to the viewport on small screens. */
+  .float-picker.seat-mode{width:min(740px, calc(100vw - 24px))}
   .float-picker.min .ft-body{display:none}
   .float-picker.min{width:auto}
   .float-picker .raffle-stage{flex-direction:column;align-items:center;gap:12px}
@@ -10250,6 +10258,7 @@ nameLine
     var maxDelay  = cfg.maxDelay!=null ? cfg.maxDelay : 340;   // slow at the end
     var minSteps  = cfg.minSteps!=null ? cfg.minSteps : 20;    // never too short a run
     var loops     = cfg.loops!=null    ? cfg.loops    : 2;     // full sweeps before landing
+    var minColPx  = cfg.minColPx!=null ? cfg.minColPx : 0;     // floor on column width (0 = shrink freely)
     var reduced   = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     var seatEls=[], sweep=[], spinning=false, timer=null;
@@ -10265,7 +10274,7 @@ nameLine
         return;
       }
       var grid=el("div","sp-grid");
-      grid.style.gridTemplateColumns="repeat("+state.cols+", minmax(0,1fr))";
+      grid.style.gridTemplateColumns="repeat("+state.cols+", minmax("+minColPx+"px,1fr))";
       state.cells.forEach(function(c,i){
         if(!c){ var e0=el("div","sp-seat empty",""); seatEls[i]=null; grid.appendChild(e0); return; }
         var seat=el("div","sp-seat");
@@ -10475,6 +10484,7 @@ nameLine
       seatPickerCtl=SeatPicker($("pickSeatChart"), {
         rows:d.rows, cols:d.cols, cells:d.cells, used:d.used, elig:d.elig,
         interactive:true,
+        config:{minColPx:76},   // keep cards readable; sp-wrap scrolls if they don't fit
         emptyNote:"No students in this class yet.",
         onSpinStart:function(){
           $("pickSeatSpin").disabled=true;
@@ -10507,6 +10517,8 @@ nameLine
     $("pickModeSeat").classList.toggle("active", m==="seat");
     $("pickWheelStage").style.display = m==="wheel" ? "" : "none";
     $("pickSeatStage").style.display  = m==="seat"  ? "block" : "none";
+    // Seating chart needs a wider (landscape) pop-out than the wheel.
+    $("floatPicker").classList.toggle("seat-mode", m==="seat");
     renderPicker();
   }
   $("pickModeWheel").addEventListener("click", function(){ setPickMode("wheel"); });
