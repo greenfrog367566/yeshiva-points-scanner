@@ -594,23 +594,15 @@
   .sp-seat .sp-name{font-weight:600;font-size:.85rem;line-height:1.15}
   .sp-seat .sp-sub{font-size:.68rem;color:var(--muted);font-weight:700;margin-top:2px;text-transform:uppercase;letter-spacing:.4px}
   .sp-seat.empty{background:#f7f8fa;border-style:dashed;color:#b7bcca;font-size:.72rem;border-width:1px}
-  /* === HAD-A-TURN track (independent of eligibility) ===
-     A grey wash — an inset shadow paints OVER the eligibility background but
-     UNDER the border + text — plus a corner "✓ turn" chip. So "already picked"
-     stays readable layered on ANY eligibility state; the two never collide. */
-  .sp-seat.picked{box-shadow:inset 0 0 0 999px rgba(122,127,143,.17)}
+  /* Two facts, ONE signal each (kept deliberately non-redundant):
+       HAD-A-TURN  → dimming (grey wash + faded name), nothing else.
+       ELIGIBILITY → one small colored pill (OUT / PASSED); eligible shows none.
+     dim(yes/no) × pill(none/out/passed) keeps all six combos distinguishable. */
+  .sp-seat.picked{box-shadow:inset 0 0 0 999px rgba(122,127,143,.16)}
   .sp-seat.picked .sp-name{opacity:.5}
-  .sp-turn{position:absolute;top:3px;right:4px;font-size:.56rem;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--good);background:var(--good-soft);border:1px solid var(--good);border-radius:999px;padding:0 5px;line-height:1.55}
-  /* === ELIGIBILITY track (independent of had-a-turn) === */
-  /* OUT — absent/ineligible: red hatch + border, excluded from the flash */
-  .sp-seat.out{background:repeating-linear-gradient(135deg,#fbeceb,#fbeceb 6px,#f6dedb 6px,#f6dedb 12px);border-color:#d98a80}
-  .sp-seat.out .sp-name{color:#a4453b;text-decoration:line-through}
-  .sp-seat.out .sp-sub{color:#b8635a}
-  /* PASSED — "not him today": stays in rotation but skipped this round.
-     A distinct slate/indigo dashed look, clearly different from grey/red. */
-  .sp-seat.passed{background:repeating-linear-gradient(135deg,#eef1fb,#eef1fb 6px,#e1e6f6 6px,#e1e6f6 12px);border-color:#8f9cc9;border-style:dashed}
-  .sp-seat.passed .sp-name{color:#4a5688}
-  .sp-seat.passed .sp-sub{color:#6a76aa}
+  .sp-elig{margin-top:4px;font-size:.6rem;font-weight:800;letter-spacing:.5px;text-transform:uppercase;border-radius:999px;padding:1px 8px;line-height:1.5}
+  .sp-elig.out{color:#a4453b;background:#fbeceb;border:1px solid #e3b3ad}
+  .sp-elig.passed{color:#4a5688;background:#eef1fb;border:1px solid #b7c0e2}
   /* tap-to-cycle affordance (interactive mode) */
   .sp-seat.tappable{cursor:pointer}
   .sp-seat.tappable:hover{border-color:var(--ink)}
@@ -1034,7 +1026,7 @@
     </div>
     <div id="pickSeatStage" style="display:none">
       <div class="sp-wrap" id="pickSeatChart"></div>
-      <div style="font-size:.78rem;color:var(--muted);margin-top:8px;text-align:center">Tap a seat to cycle: <b>in</b> → <b style="color:#a4453b">out</b> → <b style="color:#4a5688">skip today</b> → in. Picker only — never changes attendance.</div>
+      <div style="font-size:.78rem;color:var(--muted);margin-top:8px;text-align:center">Tap a seat to cycle: <b>in</b> → <b style="color:#a4453b">out</b> → <b style="color:#4a5688">passed</b> → in. Picker only — never changes attendance.</div>
       <div style="text-align:center;margin-top:12px">
         <button class="btn btn-primary" id="pickSeatSpin" style="font-size:1.05rem;padding:11px 28px">🎰 Flash &amp; land</button>
         <div class="spin-result" id="pickSeatResult"></div>
@@ -10277,23 +10269,20 @@ nameLine
       state.cells.forEach(function(c,i){
         if(!c){ var e0=el("div","sp-seat empty",""); seatEls[i]=null; grid.appendChild(e0); return; }
         var seat=el("div","sp-seat");
-        // TWO INDEPENDENT tracks, always shown TOGETHER so the chart can never
-        // disagree with the summary — each read from its own single source:
-        //   1. HAD-A-TURN  (state.used[id])  → dimming wash + a "✓ turn" chip.
+        // TWO INDEPENDENT facts, ONE signal each so they never disagree and
+        // never repeat themselves, each read from its own single source:
+        //   1. HAD-A-TURN  (state.used[id])  → dimming (grey wash + faded name).
         //      Set only by being picked, cleared only by round-reset.
-        //   2. ELIGIBILITY (eligOf(id))      → out/passed indicator layered on
-        //      top (border + hatch + sub). Changed only by tap-to-cycle.
-        // Because they're separate classes on separate visual properties, all
-        // of picked+eligible / picked+out / picked+passed / not-picked+* are
+        //   2. ELIGIBILITY (eligOf(id))      → one small OUT/PASSED pill
+        //      (eligible shows none). Changed only by tap-to-cycle.
+        // dim(yes/no) × pill(none/out/passed) keeps every combination
         // distinguishable, and cycling eligibility never hides had-a-turn.
         var e=eligOf(c.id);
         if(state.used[c.id]) seat.classList.add("picked");
-        if(e==="out") seat.classList.add("out");
-        else if(e==="passed") seat.classList.add("passed");
         seat.appendChild(el("div","sp-name", c.name||""));
-        var subTxt = e==="out" ? "Out" : (e==="passed" ? "Skip today" : (c.sub||""));
-        if(subTxt) seat.appendChild(el("div","sp-sub", subTxt));
-        if(state.used[c.id]) seat.appendChild(el("div","sp-turn","✓ turn"));
+        if(e==="out") seat.appendChild(el("div","sp-elig out","Out"));
+        else if(e==="passed") seat.appendChild(el("div","sp-elig passed","Passed"));
+        else if(c.sub) seat.appendChild(el("div","sp-sub", c.sub));
         seat.dataset.id=c.id; seatEls[i]=seat;
         if(inPlay(c)) sweep.push(i);   // only in-play seats light during the flash
         if(opts.interactive){
