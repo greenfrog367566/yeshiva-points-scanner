@@ -587,6 +587,31 @@
   .winner-item .wt{color:var(--muted)}
   @media(prefers-reduced-motion:reduce){.spin-result{transition:none}}
 
+  /* ---- Seating-chart picker engine (reusable; see SeatPicker() in JS) ---- */
+  .sp-wrap{width:100%}
+  .sp-grid{display:grid;gap:8px;padding:4px 0}
+  .sp-seat{position:relative;border:2px solid var(--line);background:#fff;border-radius:10px;padding:9px 6px;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;transition:transform .12s,box-shadow .12s,border-color .12s,background .12s}
+  .sp-seat .sp-name{font-weight:600;font-size:.85rem;line-height:1.15}
+  .sp-seat .sp-sub{font-size:.68rem;color:var(--muted);font-weight:700;margin-top:2px;text-transform:uppercase;letter-spacing:.4px}
+  .sp-seat.empty{background:#f7f8fa;border-style:dashed;color:#b7bcca;font-size:.72rem;border-width:1px}
+  /* already had a turn — dimmed/darkened */
+  .sp-seat.used{opacity:.42;filter:grayscale(.55)}
+  .sp-seat.used .sp-name{color:var(--muted)}
+  /* absent — shown but visually distinct and never landed on */
+  .sp-seat.absent{background:repeating-linear-gradient(135deg,#fbeceb,#fbeceb 6px,#f6dedb 6px,#f6dedb 12px);border-color:#e3b3ad;opacity:.75}
+  .sp-seat.absent .sp-name{color:#a4453b}
+  .sp-seat.absent .sp-sub{color:#b8635a}
+  /* mid-flash highlight as the casino sweep passes over a seat */
+  .sp-seat.flash-on{border-color:var(--brass);background:var(--brass-soft);box-shadow:0 0 0 3px rgba(168,119,42,.28);transform:scale(1.04);z-index:2}
+  /* the seat it lands on */
+  .sp-seat.landed{border-color:var(--good);background:var(--good-soft);box-shadow:0 0 0 4px rgba(31,138,91,.32),0 8px 22px rgba(31,138,91,.28);transform:scale(1.09);z-index:3;animation:sp-pop .4s}
+  @keyframes sp-pop{0%{transform:scale(1.18)}60%{transform:scale(1.02)}100%{transform:scale(1.09)}}
+  .sp-empty-note{text-align:center;color:var(--muted);font-size:.9rem;padding:26px 10px}
+  .sp-modebar{display:flex;gap:6px;margin-bottom:10px}
+  .sp-modebtn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:6px 12px;font-size:.85rem;font-weight:600;cursor:pointer}
+  .sp-modebtn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  @media(prefers-reduced-motion:reduce){.sp-seat{transition:none}.sp-seat.landed{animation:none}}
+
   /* ======= PESUKIM chart ======= */
   .pasuk-pick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
   .pasuk-btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 0;width:44px;text-align:center;font-weight:700;font-size:.85rem}
@@ -972,20 +997,33 @@
     <button class="ft-btn" id="pkClose" title="Close">✕</button>
   </div>
   <div class="ft-body" id="pkBody">
+    <div class="sp-modebar" id="pickModeBar">
+      <button class="sp-modebtn active" id="pickModeWheel">🎡 Wheel</button>
+      <button class="sp-modebtn" id="pickModeSeat">🪑 Seating chart</button>
+    </div>
     <div class="toolbar" style="margin-bottom:10px">
       <label style="display:flex;align-items:center;gap:7px;font-size:.86rem;color:var(--muted);font-weight:600"><input type="checkbox" id="pickSkip"> Skip students who already had a turn</label>
       <div class="grow"></div>
       <button class="btn btn-sm" id="pickReset">Reset round</button>
     </div>
-    <div class="raffle-stage">
-      <div class="wheel-wrap">
-        <div class="wheel-pointer"></div>
-        <svg id="pickWheelSvg" class="wheel" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg"><g id="pickWheelG"></g></svg>
+    <div id="pickWheelStage">
+      <div class="raffle-stage">
+        <div class="wheel-wrap">
+          <div class="wheel-pointer"></div>
+          <svg id="pickWheelSvg" class="wheel" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg"><g id="pickWheelG"></g></svg>
+        </div>
+        <div class="spin-side">
+          <div id="pickStats" style="color:var(--muted);font-size:.92rem"></div>
+          <button class="btn btn-primary" id="pickSpinBtn" style="font-size:1.1rem;padding:13px 30px;margin-top:12px">🎡 Spin</button>
+          <div class="spin-result" id="pickResult"></div>
+        </div>
       </div>
-      <div class="spin-side">
-        <div id="pickStats" style="color:var(--muted);font-size:.92rem"></div>
-        <button class="btn btn-primary" id="pickSpinBtn" style="font-size:1.1rem;padding:13px 30px;margin-top:12px">🎡 Spin</button>
-        <div class="spin-result" id="pickResult"></div>
+    </div>
+    <div id="pickSeatStage" style="display:none">
+      <div class="sp-wrap" id="pickSeatChart"></div>
+      <div style="text-align:center;margin-top:12px">
+        <button class="btn btn-primary" id="pickSeatSpin" style="font-size:1.05rem;padding:11px 28px">🎰 Flash &amp; land</button>
+        <div class="spin-result" id="pickSeatResult"></div>
       </div>
     </div>
     <div id="pickedList" class="pill-note" style="display:none;margin-top:16px"></div>
@@ -10157,13 +10195,135 @@ nameLine
     if(confirm("Reset the game scoreboard to zero? (School points already given are kept.)")){ data.game.points={}; save(); renderGameBoard(); }
   });
 
+  /* ====================================================================
+     SeatPicker — a REUSABLE, CONTEXT-AGNOSTIC seating-chart picker engine.
+
+     It knows nothing about the class roster, the Picker screen, attendance,
+     or `data`. Everything comes in through `opts`, and results go back out
+     through callbacks — so any feature (the Picker below is the first; Jobs
+     will be another) can drive it with its own data set + turn-state.
+
+     INPUTS  (opts):
+       rows, cols   grid dimensions
+       cells        array length rows*cols; each entry is null (empty seat)
+                    or { id, name, sub? } — one person placed in that seat
+       used         { id:true } turn-state — who has ALREADY been picked
+                    (rendered DIMMED, never landed on)
+       absent       { id:true } — shown but visually distinct, never landed on
+       config       { minDelay,maxDelay,minSteps,loops } flash tuning (optional)
+       onLand(id,cell)     fired when the flash lands on a seat
+       onSpinStart()       fired when a flash begins
+       onExhausted()       fired when spin() is called but no one is eligible
+                           (all present people already used → offer a reset)
+       emptyNote           text shown when there are no seated people at all
+
+     OUTPUTS: onLand(id, cell) hands the caller the selected person's id so the
+     caller updates ITS OWN turn-state. The controller also exposes markUsed(id)
+     and setData({...}) so the caller can push a fresh data set / turn-state and
+     redraw. The engine never mutates the caller's data except through the
+     `used`/`absent` objects it was handed (and only via markUsed()).
+  ==================================================================== */
+  function SeatPicker(container, opts){
+    opts = opts || {};
+    var cfg = opts.config || {};
+    var state = { rows:opts.rows||1, cols:opts.cols||1, cells:opts.cells||[],
+                  used:opts.used||{}, absent:opts.absent||{} };
+    var minDelay  = cfg.minDelay!=null ? cfg.minDelay : 55;    // fast at the start
+    var maxDelay  = cfg.maxDelay!=null ? cfg.maxDelay : 340;   // slow at the end
+    var minSteps  = cfg.minSteps!=null ? cfg.minSteps : 20;    // never too short a run
+    var loops     = cfg.loops!=null    ? cfg.loops    : 2;     // full sweeps before landing
+    var reduced   = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    var seatEls=[], sweep=[], spinning=false, timer=null;
+
+    function isEligible(c){ return c && !state.used[c.id] && !state.absent[c.id]; }
+
+    function render(){
+      container.innerHTML=""; seatEls=new Array(state.cells.length); sweep=[];
+      if(!state.cells.some(function(c){ return c; })){
+        container.appendChild(el("div","sp-empty-note", opts.emptyNote || "No seated people to pick from."));
+        return;
+      }
+      var grid=el("div","sp-grid");
+      grid.style.gridTemplateColumns="repeat("+state.cols+", minmax(0,1fr))";
+      state.cells.forEach(function(c,i){
+        if(!c){ var e=el("div","sp-seat empty",""); seatEls[i]=null; grid.appendChild(e); return; }
+        var seat=el("div","sp-seat");
+        if(state.absent[c.id]) seat.classList.add("absent");
+        else if(state.used[c.id]) seat.classList.add("used");
+        seat.appendChild(el("div","sp-name", c.name||""));
+        var sub = state.absent[c.id] ? "Absent" : (state.used[c.id] ? "Had a turn" : (c.sub||""));
+        if(sub) seat.appendChild(el("div","sp-sub", sub));
+        seat.dataset.id=c.id; seatEls[i]=seat; sweep.push(i);
+        grid.appendChild(seat);
+      });
+      container.appendChild(grid);
+    }
+    function clearFlash(){ seatEls.forEach(function(e){ if(e) e.classList.remove("flash-on"); }); }
+    function clearLanded(){ seatEls.forEach(function(e){ if(e) e.classList.remove("landed"); }); }
+    // Cubic ease-out on the DELAY: steps start quick and stretch out toward the
+    // end, giving the roulette "tick… tick…  tick…   tick" deceleration.
+    function ease(t){ return t*t*t; }
+
+    function land(idx, cell){
+      spinning=false; timer=null;
+      if(seatEls[idx]){ seatEls[idx].classList.remove("flash-on"); seatEls[idx].classList.add("landed"); }
+      if(opts.onLand) opts.onLand(cell.id, cell);
+    }
+
+    function spin(){
+      if(spinning) return false;
+      render(); // redraw so dimming reflects the latest used/absent, clear old landed
+      var elig = sweep.filter(function(i){ return isEligible(state.cells[i]); });
+      if(!elig.length){ if(opts.onExhausted) opts.onExhausted(); return false; }
+      spinning=true; clearLanded();
+      if(opts.onSpinStart) opts.onSpinStart();
+      var winIdx = elig[Math.floor(rand()*elig.length)], winCell=state.cells[winIdx];
+      if(reduced){ land(winIdx, winCell); return true; }
+      var winPos = sweep.indexOf(winIdx);
+      var total = loops*sweep.length + winPos;                 // full sweeps, then stop on the winner
+      while(total < minSteps) total += sweep.length;           // guarantee a lively minimum run
+      var step=0;
+      (function tick(){
+        clearFlash();
+        var idx = sweep[step % sweep.length];
+        if(seatEls[idx]) seatEls[idx].classList.add("flash-on");
+        if(step>=total){ clearFlash(); land(winIdx, winCell); return; }
+        var delay = minDelay + (maxDelay-minDelay)*ease(total ? step/total : 1);
+        step++; timer=setTimeout(tick, delay);
+      })();
+      return true;
+    }
+
+    render();
+    return {
+      spin: spin,
+      isSpinning: function(){ return spinning; },
+      markUsed: function(id){ state.used[id]=true; },
+      setData: function(next){
+        next=next||{};
+        if(next.rows!=null)   state.rows=next.rows;
+        if(next.cols!=null)   state.cols=next.cols;
+        if(next.cells)        state.cells=next.cells;
+        if(next.used)         state.used=next.used;
+        if(next.absent)       state.absent=next.absent;
+        render();
+      },
+      render: render,
+      destroy: function(){ if(timer) clearTimeout(timer); timer=null; spinning=false; container.innerHTML=""; }
+    };
+  }
+
   /* ---------- PICKER (class spinner) ---------- */
   var pickSlices=[], pickRot=0, pickSpinning=false, pickedSet={};
   function pickEntries(){
     var skip=$("pickSkip").checked;
     return activeStudents().filter(function(s){ return !(skip && pickedSet[s.id]); });
   }
-  function renderPicker(){ renderPickWheel(); renderPicked(); }
+  function renderPicker(){
+    if(pickViewMode==="seat") renderSeatPicker(); else renderPickWheel();
+    renderPicked();
+  }
   function renderPickWheel(){
     var g=$("pickWheelG"); g.style.transition="none"; g.style.transform="rotate(0deg)"; pickRot=0; g.innerHTML=""; pickSlices=[];
     var ents=pickEntries(), cx=160,cy=160,r=150, n=ents.length;
@@ -10215,8 +10375,86 @@ nameLine
     box.style.display="block"; box.textContent="Already picked this round: "+names.join(", ");
   }
   $("pickSpinBtn").addEventListener("click", pickSpin);
-  $("pickReset").addEventListener("click", function(){ pickedSet={}; renderPicker(); });
+  $("pickReset").addEventListener("click", function(){
+    pickedSet={};
+    $("pickResult").className="spin-result"; $("pickResult").innerHTML="";
+    $("pickSeatResult").className="spin-result"; $("pickSeatResult").innerHTML="";
+    renderPicker();
+  });
   $("pickSkip").addEventListener("change", renderPickWheel);
+
+  /* ---------- PICKER: seating-chart mode (first caller of SeatPicker) ----------
+     Shares pickedSet as its turn-state, so a student dimmed in the seating
+     chart is the same "already had a turn" state the wheel uses. */
+  var pickViewMode="wheel";           // in-memory only — NOT persisted, so no new data field / migration
+  var seatPickerCtl=null;
+  // Build the engine's inputs from THIS caller's world: the class seating
+  // layout (or an auto-grid if no seats are arranged yet), pickedSet as the
+  // turn-state, and today's attendance as the absence-state.
+  function pickSeatData(){
+    var studs=activeStudents(), byId={}; studs.forEach(function(s){ byId[s.id]=s; });
+    var lay=seatLayout();
+    var placed=lay.seats.filter(function(sid){ return sid && byId[sid]; }).length;
+    var rows,cols,cells;
+    if(placed>0){
+      rows=lay.rows; cols=lay.cols;
+      cells=lay.seats.map(function(sid){
+        var s = sid && byId[sid];
+        return s ? {id:s.id, name:firstName(s.name), full:s.name} : null;
+      });
+    } else {
+      var n=studs.length;
+      cols=Math.max(1, Math.ceil(Math.sqrt(n))); rows=Math.max(1, Math.ceil(n/Math.max(1,cols)));
+      cells=studs.map(function(s){ return {id:s.id, name:firstName(s.name), full:s.name}; });
+      while(cells.length<rows*cols) cells.push(null);
+    }
+    var day=data.attendance[todayKey()]||{}, absent={};
+    studs.forEach(function(s){ if(day[s.id] && day[s.id].status==="absent") absent[s.id]=true; });
+    return {rows:rows, cols:cols, cells:cells, used:pickedSet, absent:absent};
+  }
+  function renderSeatPicker(){
+    var d=pickSeatData();
+    if(!seatPickerCtl){
+      seatPickerCtl=SeatPicker($("pickSeatChart"), {
+        rows:d.rows, cols:d.cols, cells:d.cells, used:d.used, absent:d.absent,
+        emptyNote:"No students in this class yet.",
+        onSpinStart:function(){
+          $("pickSeatSpin").disabled=true;
+          $("pickSeatResult").className="spin-result"; $("pickSeatResult").innerHTML="";
+        },
+        onLand:function(id, cell){
+          pickedSet[id]=true; seatPickerCtl.markUsed(id);   // engine output → caller's turn-state
+          var res=$("pickSeatResult"); res.className="spin-result show"; res.innerHTML="";
+          res.appendChild(el("div","rr-label","It's their turn"));
+          res.appendChild(el("div","rr-name", cell.full||cell.name));
+          beep(true); renderPicked(); $("pickSeatSpin").disabled=false;
+        },
+        onExhausted:function(){
+          var res=$("pickSeatResult"); res.className="spin-result show"; res.innerHTML="";
+          res.appendChild(el("div","rr-label","Round complete"));
+          res.appendChild(el("div","rr-name","Everyone had a turn"));
+          $("pickSeatSpin").disabled=false;
+        }
+      });
+    } else {
+      seatPickerCtl.setData({rows:d.rows, cols:d.cols, cells:d.cells, used:d.used, absent:d.absent});
+    }
+  }
+  function setPickMode(m){
+    pickViewMode=m;
+    $("pickModeWheel").classList.toggle("active", m==="wheel");
+    $("pickModeSeat").classList.toggle("active", m==="seat");
+    $("pickWheelStage").style.display = m==="wheel" ? "" : "none";
+    $("pickSeatStage").style.display  = m==="seat"  ? "block" : "none";
+    renderPicker();
+  }
+  $("pickModeWheel").addEventListener("click", function(){ setPickMode("wheel"); });
+  $("pickModeSeat").addEventListener("click", function(){ setPickMode("seat"); });
+  $("pickSeatSpin").addEventListener("click", function(){
+    if(seatPickerCtl && seatPickerCtl.isSpinning()) return;
+    renderSeatPicker();            // refresh roster/attendance right before the flash
+    if(seatPickerCtl) seatPickerCtl.spin();
+  });
 
   /* ---------- SPINNER (class roster, or a custom list — separate from the student Picker) ---------- */
   var spinSlices=[], spinRot=0, spinSpinning=false;
