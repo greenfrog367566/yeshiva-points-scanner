@@ -33,6 +33,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Fixed
 
+- Made the seating-chart picker pop-out landscape/wider to fix clipped student names (same column count, more room per card). The floating Picker widens to a landscape layout in seating-chart mode (up to 740px, capped to the viewport) so each of the same columns gets enough width for full names like "Yehudah" or "Michael"; on narrow screens the grid keeps its columns and scrolls sideways instead of squishing. Empty seat slots (unfilled desks / auto-grid padding) are de-emphasized so they no longer look like broken student cards.
 - Intro (`index.html`): removed the duplicated animated payoff line so "We took away your stress. And replaced it with a scanner." now appears exactly once, in the split-frame final section. (The animated `#payoff` element/tween/CSS had been on `main` since the front-door swap; two earlier removal commits never merged, so this is the removal finally landing on `main`.)
 - Added Menchmark favicon to all pages (browser tab icon was missing). New `favicon.svg` (gold circle + white serif "M") in the repo root, linked from `index.html`, `home.html`, `setup.html`, and `quick-start.html` via root-relative `/favicon.svg`. (`app.html` keeps its existing inline data-URI favicon so the single-file download still shows the icon offline.)
 
