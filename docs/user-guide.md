@@ -427,7 +427,7 @@ Once your students are added, print their QR code labels from Print → Students
 - Filter by group, or pick a single student and set "Copies each" if you need extras (for example, a spare sticker).
 
 
-- "Fill a sheet (1 kid)" is handy if you just need to reprint one student's sticker and want to use up a whole label sheet on them.
+- "Fill a sheet (1 student)" is handy if you just need to reprint one student's sticker and want to use up a whole label sheet on them.
 
 
 - Print one full set at the start of the year (or whenever you add new students), and you're set for the year.
