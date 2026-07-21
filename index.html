@@ -3,684 +3,352 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Menchmark — Run Your Classroom Like a Mensch</title>
-<meta name="description" content="A free, open-source classroom assistant for Yeshiva and Jewish Day School rebbeim. Recognize Middos and Derech Eretz with a scan, in Talmudic coin denominations if you want — QR-based, works offline, syncs to your own Google Sheet.">
+<title>Menchmark — Run your classroom like a mensch</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="alternate icon" href="/favicon.svg">
 <script src="https://cdn.tailwindcss.com"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/lucide@0.394.0/dist/umd/lucide.js"></script>
 <script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: {
-        navy:  { 50:'#f0f3f8', 100:'#d4dce8', 200:'#a9b9d1', 300:'#7e96ba', 400:'#5373a3', 500:'#2d5086', 600:'#1a2d4d', 700:'#0f1b33', 800:'#0a1122', 900:'#050911' },
-        gold:  { 50:'#fef9ec', 100:'#fcefc4', 200:'#f9df89', 300:'#f5c84e', 400:'#e8b321', 500:'#c9961b', 600:'#9a7215', 700:'#6b4f0f', 800:'#3d2d09', 900:'#1e1604' },
-        dark:  '#0c1526',
-      },
-      fontFamily: {
-        display: ['"DM Serif Display"', 'Georgia', 'serif'],
-        body:    ['"Inter"', 'system-ui', 'sans-serif'],
-      },
-    },
-  },
-};
+tailwind.config = { theme: { extend: {
+  colors: { navy:{900:'#0a1424',800:'#0f1b33',700:'#16264a',600:'#1a2d4d'}, gold:{400:'#e8b321',300:'#f0c65e'}, stress:'#e14b3c' },
+  fontFamily: { display:['"DM Serif Display"','serif'], sans:['Inter','system-ui','sans-serif'] }
+}}}
 </script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/Flip.min.js"></script>
 <style>
-  html { scroll-behavior: smooth; }
-  body { font-family: 'Inter', system-ui, sans-serif; }
-
-  /* Coin shimmer */
-  @keyframes shimmer {
-    0%, 100% { opacity: 1; }
-    50%      { opacity: 0.85; }
+  html,body{background:#0a1424;overflow-x:hidden}
+  #pin{height:100vh;position:relative;overflow:hidden}
+  .layer{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column}
+  /* --- HERO TEXT LAYER --- */
+  #brand{font-family:'DM Serif Display',serif;font-size:clamp(2rem,6vw,4.5rem);letter-spacing:.02em;color:#f4f1ea;line-height:1;margin-bottom:1.4rem}
+  #brand .mk{color:#e8b321}
+  #tagline{font-family:'DM Serif Display',serif;font-size:clamp(1.6rem,5vw,3.4rem);color:#cdd6e6;line-height:1.15;text-align:center;display:flex;flex-wrap:wrap;justify-content:center;align-items:baseline}
+  #tagline .w{display:inline-flex;align-items:baseline;white-space:nowrap;margin:0 .28em}
+  .sInline{display:inline-block;position:relative;color:#cdd6e6}
+  /* --- FLYING S (starts matching tagline s) --- */
+  #sFly{position:fixed;font-family:'DM Serif Display',serif;font-size:clamp(2rem,9vw,6rem);color:#cdd6e6;opacity:0;z-index:30;line-height:1;transform-origin:center center;left:0;top:0}
+  /* --- STRESS as a FIXED centered unit; its leading S is a hidden placeholder --- */
+  #stressRow{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:baseline;opacity:0;z-index:20}
+  #stressRow .ltr{font-family:'DM Serif Display',serif;font-size:clamp(2rem,9vw,6rem);color:#e14b3c;line-height:1;display:inline-block}
+  #stressRow #xS{visibility:hidden} /* placeholder slot; the flying S lands here */
+  /* --- SCANNER --- */
+  #svgWrap{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(46vw,320px);height:min(46vw,320px);opacity:0;z-index:25}
+  #svgWrap svg{width:100%;height:100%;overflow:visible}
+  .scan-line{stroke:#f4f1ea;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  #qrTarget{opacity:0}
+  #qrTarget rect{fill:#f4f1ea}
+  #scanRay{stroke:#e8b321;stroke-width:3;opacity:0;filter:drop-shadow(0 0 6px #e8b321)}
+  #beam{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:26}
+  #beamBar{position:absolute;top:0;bottom:0;left:0;width:6px;background:linear-gradient(90deg,transparent,#e8b321,#fff8e0,#e8b321,transparent);filter:blur(1px);box-shadow:0 0 40px 8px rgba(232,179,33,.55);transform:translateX(-100vw)}
+  /* Skip — always visible from the very first frame, jumps to the landing page */
+  #skip{position:fixed;top:22px;right:24px;z-index:60;font-family:Inter,sans-serif;font-size:13px;font-weight:600;letter-spacing:.02em;color:#aeb6d2;background:rgba(15,27,51,.55);border:1px solid rgba(174,182,210,.28);border-radius:999px;padding:8px 16px;text-decoration:none;backdrop-filter:blur(4px);display:inline-flex;align-items:center;gap:6px;transition:color .2s,border-color .2s,background .2s}
+  #skip:hover{color:#0a1424;background:#e8b321;border-color:#e8b321}
+  /* Play — auto-scrolls the whole animation so the user can just watch. Centered near
+     the top of the first frame; fades out once playback starts or the user scrolls. */
+  #playBtn{position:fixed;top:7vh;left:50%;transform:translateX(-50%);z-index:60;font-family:Inter,sans-serif;font-size:14px;font-weight:600;letter-spacing:.03em;color:#0a1424;background:#e8b321;border:none;border-radius:999px;padding:10px 22px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 6px 24px rgba(232,179,33,.28);transition:transform .2s,box-shadow .2s,opacity .45s}
+  #playBtn:hover{transform:translateX(-50%) translateY(-1px);box-shadow:0 8px 30px rgba(232,179,33,.42)}
+  #playBtn .tri{font-size:11px;line-height:1}
+  .indicator{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);color:#5a6a8a;font-family:Inter,sans-serif;font-size:11px;letter-spacing:.2em;text-transform:uppercase;display:flex;align-items:center;gap:8px;transition:opacity .4s;z-index:40}
+  .indicator svg{width:14px;height:14px;animation:bob 1.6s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(5px)}}
+  @media (prefers-reduced-motion: reduce){ .indicator svg{animation:none} }
+  @media (max-width: 640px){
+    #tagline{font-size:clamp(1.3rem,6.5vw,2rem);gap:.1em}
+    #tagline .w{margin:0 .18em}
+    /* push the mensch word onto its own line so the dropping s is easy to track */
+    #menschWord{flex-basis:100%;justify-content:center;margin-top:.2em}
+    #stressRow .ltr{font-size:clamp(2.2rem,11vw,4rem)}
+    #sFly{font-size:clamp(2.2rem,11vw,4rem)}
   }
-  .coin { animation: shimmer 3s ease-in-out infinite; }
-  .coin:nth-child(2) { animation-delay: 0.4s; }
-  .coin:nth-child(3) { animation-delay: 0.8s; }
-  .coin:nth-child(4) { animation-delay: 1.2s; }
-
-  /* Mobile nav */
-  .mobile-menu { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
-  .mobile-menu.open { max-height: 400px; }
 </style>
 </head>
+<body>
 
-<body class="bg-white text-slate-800 antialiased">
+<a href="home.html" id="skip">Skip <span aria-hidden="true">→</span></a>
+<button id="playBtn" type="button" aria-label="Play the intro"><span class="tri" aria-hidden="true">▶</span> Play</button>
 
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- NAVBAR                                                         -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<nav class="sticky top-0 z-50 bg-white border-b border-slate-200">
-  <div class="max-w-7xl mx-auto flex items-center justify-between px-5 py-3">
-    <!-- Logo -->
-    <a href="#" class="flex items-center gap-3">
-      <span class="w-10 h-10 rounded-full bg-gold-400 flex items-center justify-center">
-        <span class="font-display text-lg text-white leading-none font-bold">M</span>
-      </span>
-      <span class="hidden sm:block">
-        <span class="block font-extrabold text-navy-700 text-lg tracking-tight leading-tight">MENCHMARK</span>
-        <span class="block text-[9px] font-bold text-navy-400 tracking-[0.2em] uppercase leading-tight">Run Your Classroom Like a Mensch</span>
-      </span>
-    </a>
-
-    <!-- Desktop links -->
-    <div class="hidden lg:flex items-center gap-7 text-sm font-semibold text-navy-600">
-      <a href="#features" class="hover:text-gold-500 transition-colors">Features</a>
-      <a href="#modes" class="hover:text-gold-500 transition-colors">Modes</a>
-      <a href="#about" class="hover:text-gold-500 transition-colors">About</a>
-      <a href="#contact" class="hover:text-gold-500 transition-colors">Contact</a>
-    </div>
-
-    <!-- CTA + Hamburger -->
-    <div class="flex items-center gap-3">
-      <a href="setup.html"
-         class="bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold text-sm rounded-lg px-5 py-2.5 transition-colors">
-        Get Started
-      </a>
-      <button onclick="document.getElementById('mobileMenu').classList.toggle('open')" class="lg:hidden p-2 text-navy-600">
-        <i data-lucide="menu" class="w-5 h-5"></i>
-      </button>
-    </div>
-  </div>
-
-  <!-- Mobile menu -->
-  <div id="mobileMenu" class="mobile-menu lg:hidden bg-white border-t border-slate-100 px-5">
-    <div class="py-4 flex flex-col gap-3 text-sm font-semibold text-navy-600">
-      <a href="#features" class="py-2">Features</a>
-      <a href="#modes" class="py-2">Modes</a>
-      <a href="#about" class="py-2">About</a>
-      <a href="#contact" class="py-2">Contact</a>
-    </div>
-  </div>
-</nav>
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- HERO                                                           -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<section class="relative bg-gradient-to-br from-slate-50 via-white to-gold-50 overflow-hidden">
-  <div class="max-w-7xl mx-auto px-5 py-16 md:py-24 grid lg:grid-cols-2 gap-12 items-center">
-
-    <!-- Left: Copy -->
-    <div>
-      <h1 class="font-display text-4xl sm:text-5xl lg:text-[56px] text-navy-700 leading-[1.1] mb-2">
-        Run Your Classroom<br>Like a Mensch
-      </h1>
-      <div class="w-16 h-1 bg-gold-400 rounded-full mb-6"></div>
-      <p class="text-lg text-slate-600 leading-relaxed mb-8 max-w-md">
-        Menchmark helps you recognize Middos and Derech Eretz the moment you see them — a scan of a QR code, right in the flow of teaching. No games to run, no separate activity. Just a rebbi teaching, and the room quietly keeping track.
-      </p>
-      <div class="flex flex-wrap gap-3 mb-10">
-        <a href="setup.html"
-           class="inline-flex items-center gap-2 bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold rounded-lg px-6 py-3.5 text-sm transition-colors shadow-lg shadow-gold-400/20">
-          <i data-lucide="scan-line" class="w-4 h-4"></i>
-          Get Started — It's Free
-        </a>
-        <a href="#walkthrough"
-           class="inline-flex items-center gap-2 border-2 border-navy-700 hover:bg-navy-700 hover:text-white text-navy-700 font-bold rounded-lg px-6 py-3.5 text-sm transition-all">
-          <i data-lucide="play-circle" class="w-4 h-4"></i>
-          See How It Works
-        </a>
-      </div>
-
-      <!-- Trust badges -->
-      <div class="flex flex-wrap gap-6 text-sm text-slate-500">
-        <span class="flex items-center gap-2"><i data-lucide="code" class="w-4 h-4 text-navy-400"></i> Free &amp; Open Source</span>
-        <span class="flex items-center gap-2"><i data-lucide="wifi-off" class="w-4 h-4 text-navy-400"></i> Works Offline</span>
-        <span class="flex items-center gap-2"><i data-lucide="table" class="w-4 h-4 text-navy-400"></i> Your Own Google Sheet</span>
-        <span class="flex items-center gap-2"><i data-lucide="user-x" class="w-4 h-4 text-navy-400"></i> No Student Logins</span>
+<div id="pinSpacer" style="height:680vh;position:relative">
+  <div id="pin">
+    <!-- hero text -->
+    <div class="layer" id="heroLayer">
+      <div id="brand">Mench<span class="mk">mark</span></div>
+      <div id="tagline">
+        <span class="w">Run</span><span class="w">your</span><span class="w">classroom</span><span class="w">like</span><span class="w">a</span><span class="w" id="menschWord"><span id="menPart">men</span><span class="sInline" id="lS">s</span><span id="chPart">ch.</span></span>
       </div>
     </div>
 
-    <!-- Right: Dashboard Mockup -->
-    <div class="hidden lg:block">
-      <div class="bg-white rounded-2xl shadow-2xl shadow-navy-700/10 border border-slate-200 overflow-hidden max-w-lg ml-auto">
-        <!-- Mockup top bar -->
-        <div class="bg-navy-700 px-4 py-3 flex items-center gap-3">
-          <span class="w-7 h-7 rounded-full bg-gold-400 flex items-center justify-center">
-            <span class="font-display text-xs text-white font-bold">M</span>
-          </span>
-          <span class="text-white text-sm font-semibold">Good Morning, Rabbi! 👋</span>
-        </div>
+    <!-- flying S -->
+    <span id="sFly">s</span>
 
-        <div class="flex">
-          <!-- Sidebar -->
-          <div class="w-32 bg-navy-700 text-white py-3 shrink-0">
-            <div class="space-y-0.5 text-[11px]">
-              <div class="flex items-center gap-2 px-3 py-1.5 bg-gold-400/20 text-gold-300 font-semibold">
-                <i data-lucide="scan-line" class="w-3 h-3"></i> Scan
-              </div>
-              <div class="flex items-center gap-2 px-3 py-1.5 text-slate-400 hover:text-white">
-                <i data-lucide="trophy" class="w-3 h-3"></i> Standings
-              </div>
-              <div class="flex items-center gap-2 px-3 py-1.5 text-slate-400 hover:text-white">
-                <i data-lucide="gift" class="w-3 h-3"></i> Rewards
-              </div>
-              <div class="flex items-center gap-2 px-3 py-1.5 text-slate-400 hover:text-white">
-                <i data-lucide="settings-2" class="w-3 h-3"></i> Manage
-              </div>
-              <div class="flex items-center gap-2 px-3 py-1.5 text-slate-400 hover:text-white">
-                <i data-lucide="book-open" class="w-3 h-3"></i> Learn
-              </div>
-            </div>
-          </div>
-
-          <!-- Main dashboard content -->
-          <div class="flex-1 p-3 bg-slate-50 text-[11px]">
-            <p class="text-slate-400 text-[9px] mb-2">Here's what's happening in your classroom today.</p>
-
-            <!-- Stat cards -->
-            <div class="grid grid-cols-3 gap-2 mb-3">
-              <div class="bg-white rounded-lg p-2 border border-slate-200 text-center">
-                <p class="text-[8px] text-slate-400 uppercase tracking-wider">Recognized Today</p>
-                <p class="text-lg font-extrabold text-navy-700 leading-tight">38</p>
-                <p class="text-[8px] text-slate-400">Middos Moments</p>
-              </div>
-              <div class="bg-white rounded-lg p-2 border border-slate-200 text-center">
-                <p class="text-[8px] text-slate-400 uppercase tracking-wider">Class Balance</p>
-                <p class="text-lg font-extrabold text-gold-500 leading-tight">7 Sela</p>
-                <p class="text-[8px] text-slate-400">avg. per student</p>
-              </div>
-              <div class="bg-white rounded-lg p-2 border border-slate-200 text-center">
-                <p class="text-[8px] text-slate-400 uppercase tracking-wider">Most Improved</p>
-                <p class="text-sm font-bold text-navy-700 leading-tight mt-0.5">Yossi B.</p>
-                <p class="text-[8px] text-gold-500 font-bold">▲ this week</p>
-              </div>
-            </div>
-
-            <!-- Activity + Leaderboard -->
-            <div class="grid grid-cols-2 gap-2">
-              <!-- Recent Activity -->
-              <div class="bg-white rounded-lg p-2 border border-slate-200">
-                <p class="font-bold text-navy-700 text-[10px] mb-1.5">Recent Activity</p>
-                <div class="space-y-1.5">
-                  <div class="flex items-start gap-1">
-                    <span class="w-1 h-1 rounded-full bg-emerald-400 mt-1 shrink-0"></span>
-                    <span class="text-[8px] text-slate-500">Avi — Helping a chavrusa <span class="text-slate-300">2m</span></span>
-                  </div>
-                  <div class="flex items-start gap-1">
-                    <span class="w-1 h-1 rounded-full bg-blue-400 mt-1 shrink-0"></span>
-                    <span class="text-[8px] text-slate-500">Moshe — Mishnah mastery <span class="text-slate-300">12m</span></span>
-                  </div>
-                  <div class="flex items-start gap-1">
-                    <span class="w-1 h-1 rounded-full bg-violet-400 mt-1 shrink-0"></span>
-                    <span class="text-[8px] text-slate-500">Levi — Derech Eretz <span class="text-slate-300">18m</span></span>
-                  </div>
-                  <div class="flex items-start gap-1">
-                    <span class="w-1 h-1 rounded-full bg-gold-400 mt-1 shrink-0"></span>
-                    <span class="text-[8px] text-slate-500">Chaim — Good davening <span class="text-slate-300">25m</span></span>
-                  </div>
-                </div>
-              </div>
-              <!-- Leaderboard -->
-              <div class="bg-white rounded-lg p-2 border border-slate-200">
-                <div class="flex justify-between items-center mb-1.5">
-                  <p class="font-bold text-navy-700 text-[10px]">Leaderboard</p>
-                  <span class="text-[8px] text-blue-500">View All</span>
-                </div>
-                <div class="space-y-1">
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-[8px] font-bold text-gold-500 w-3">1</span>
-                    <span class="text-[9px] text-navy-700 flex-1">Yossi B.</span>
-                    <span class="text-[9px] font-bold text-gold-500">215</span>
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-[8px] font-bold text-slate-400 w-3">2</span>
-                    <span class="text-[9px] text-navy-700 flex-1">Avi K.</span>
-                    <span class="text-[9px] font-bold text-slate-500">198</span>
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-[8px] font-bold text-slate-400 w-3">3</span>
-                    <span class="text-[9px] text-navy-700 flex-1">Moshe L.</span>
-                    <span class="text-[9px] font-bold text-slate-500">176</span>
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-[8px] font-bold text-slate-400 w-3">4</span>
-                    <span class="text-[9px] text-navy-700 flex-1">Levi S.</span>
-                    <span class="text-[9px] font-bold text-slate-500">162</span>
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-[8px] font-bold text-slate-400 w-3">5</span>
-                    <span class="text-[9px] text-navy-700 flex-1">Chaim D.</span>
-                    <span class="text-[9px] font-bold text-slate-500">148</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <!-- STRESS fixed unit -->
+    <div id="stressRow">
+      <span class="ltr" id="xS">S</span><span class="ltr" id="xT">T</span><span class="ltr" id="xR">R</span><span class="ltr" id="xE">E</span><span class="ltr" id="xS2">S</span><span class="ltr" id="xS3">S</span>
     </div>
 
-  </div>
-</section>
+    <!-- scanner -->
+    <div id="svgWrap">
+      <svg viewBox="0 0 200 200" fill="none">
+        <!-- QR code the scanner reads (to the lower-right of the beam) -->
+        <g id="qrTarget">
+          <rect x="76" y="-66" width="11" height="11" fill="none" stroke="#f4f1ea" stroke-width="2"/>
+          <rect x="79" y="-63" width="5" height="5"/>
+          <rect x="95" y="-66" width="11" height="11" fill="none" stroke="#f4f1ea" stroke-width="2"/>
+          <rect x="98" y="-63" width="5" height="5"/>
+          <rect x="76" y="-47" width="11" height="11" fill="none" stroke="#f4f1ea" stroke-width="2"/>
+          <rect x="79" y="-44" width="5" height="5"/>
+          <rect x="90" y="-64" width="3" height="3"/><rect x="90" y="-58" width="3" height="3"/>
+          <rect x="95" y="-49" width="3" height="3"/><rect x="101" y="-49" width="3" height="3"/>
+          <rect x="95" y="-43" width="3" height="3"/><rect x="90" y="-51" width="3" height="3"/>
+        </g>
 
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- COIN BAR                                                       -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<section class="bg-navy-700 py-10 overflow-hidden">
-  <div class="max-w-3xl mx-auto px-5">
-    <div class="flex justify-center items-end gap-4 sm:gap-8">
-      <!-- Dinar -->
-      <div class="coin flex flex-col items-center">
-        <div class="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-yellow-300 via-yellow-400 to-yellow-600 shadow-lg shadow-yellow-500/30 flex flex-col items-center justify-center border-4 border-yellow-200/50">
-          <span class="text-navy-800 font-display text-lg sm:text-xl font-bold leading-none" dir="rtl">דינר</span>
-          <span class="text-navy-700/70 text-xs font-bold mt-0.5">10</span>
-        </div>
-      </div>
-      <!-- Dinar -->
-      <div class="coin flex flex-col items-center">
-        <div class="w-18 h-18 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-gray-200 via-gray-300 to-gray-400 shadow-lg shadow-gray-400/30 flex flex-col items-center justify-center border-4 border-gray-100/50" style="width:72px;height:72px;">
-          <span class="text-navy-800 font-display text-base sm:text-lg font-bold leading-none" dir="rtl">דינר</span>
-          <span class="text-navy-700/70 text-[10px] font-bold mt-0.5">6</span>
-        </div>
-      </div>
-      <!-- Sela -->
-      <div class="coin flex flex-col items-center">
-        <div class="w-16 h-16 sm:w-[68px] sm:h-[68px] rounded-full bg-gradient-to-br from-orange-300 via-orange-400 to-orange-600 shadow-lg shadow-orange-400/30 flex flex-col items-center justify-center border-4 border-orange-200/50" style="width:60px;height:60px;">
-          <span class="text-navy-800 font-display text-sm sm:text-base font-bold leading-none" dir="rtl">סלע</span>
-          <span class="text-navy-700/70 text-[10px] font-bold mt-0.5">2</span>
-        </div>
-      </div>
-      <!-- Prutah -->
-      <div class="coin flex flex-col items-center">
-        <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-amber-600 via-amber-700 to-amber-800 shadow-lg shadow-amber-600/30 flex flex-col items-center justify-center border-3 border-amber-500/40" style="width:52px;height:52px;">
-          <span class="text-amber-100 font-display text-xs sm:text-sm font-bold leading-none" dir="rtl">פרוטה</span>
-          <span class="text-amber-200/70 text-[9px] font-bold mt-0.5">1</span>
-        </div>
-      </div>
+        <!-- Tera 1300 pocket scanner: rounded pebble body, taller than wide, slight taper -->
+        <!-- p1: outer body outline -->
+        <path class="scan-line" id="p1" d="M78 24
+          Q58 24 56 46
+          Q53 78 55 112
+          Q56 140 66 158
+          Q72 168 84 168
+          L96 168
+          Q108 168 114 158
+          Q124 140 125 112
+          Q127 78 124 46
+          Q122 24 102 24
+          Z"/>
+
+        <!-- p2: glossy face plate (inset panel near the top) -->
+        <path class="scan-line" id="p2" d="M74 34
+          Q66 34 65 46
+          Q63 74 64 104
+          Q64 116 76 116
+          L104 116
+          Q116 116 116 104
+          Q117 74 115 46
+          Q114 34 106 34
+          Z"/>
+
+        <!-- p3: power button (round, centered on face) -->
+        <circle class="scan-line" id="p3" cx="90" cy="92" r="12"/>
+
+        <!-- Menchmark logo mark: gold circle + white M (real brand mark), on the scanner face -->
+        <g id="logoMark" style="opacity:0" transform="translate(77,39) scale(0.0508)">
+          <circle cx="256" cy="256" r="256" fill="#e8b321"/>
+          <g fill="#ffffff"><g transform="translate(93.96,370.44) scale(0.33172,-0.33172)"><path d="M408 -10Q374 73 340.5 155.0Q307 237 273 319Q265 338 252.5 372.5Q240 407 226.5 452.0Q213 497 202 545Q204 489 205.0 439.5Q206 390 205 345Q205 323 205.0 300.0Q205 277 204.5 254.5Q204 232 204.0 209.5Q204 187 204 164Q204 137 202.5 112.0Q201 87 199 74Q216 76 240.5 76.5Q265 77 275 77V0H47V66Q70 67 85.5 72.0Q101 77 109.5 95.0Q118 113 118 153L124 536Q125 563 126.0 588.0Q127 613 128 626Q112 625 88.0 624.5Q64 624 53 623V700H274L425 313Q434 290 445.0 259.5Q456 229 466.0 200.5Q476 172 481 155H482Q495 190 506.0 223.0Q517 256 529 287Q568 391 606.5 494.0Q645 597 684 700H915V634Q893 633 876.0 628.0Q859 623 850.5 605.5Q842 588 843 547L858 164Q860 137 858.0 112.0Q856 87 854 74Q871 76 895.5 76.5Q920 77 930 77V0H652V66Q675 67 691.5 72.0Q708 77 716.5 95.0Q725 113 723 153L715 365Q715 377 713.0 406.5Q711 436 709.5 471.5Q708 507 707 538Q704 531 701.0 524.5Q698 518 696 511L501 -10Z"/></g></g>
+        </g>
+
+        <!-- p4: scan window slit on the TOP edge (emitter) -->
+        <path class="scan-line" id="p4" d="M78 26 L102 26"/>
+
+        <!-- scan beam from bottom window down-right to the QR -->
+        <!-- fanning beam of light spreading upward from the top emitter -->
+        <g id="scanRay" style="opacity:0">
+          <path class="beamArc" d="M74 14 Q90 2 106 14" fill="none" stroke="#fff8e0" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+          <path class="beamArc" d="M64 2 Q90 -18 116 2" fill="none" stroke="#f0c65e" stroke-width="2.2" stroke-linecap="round" opacity="0.75"/>
+          <path class="beamArc" d="M54 -12 Q90 -40 126 -12" fill="none" stroke="#e8b321" stroke-width="2.0" stroke-linecap="round" opacity="0.5"/>
+          <path class="beamArc" d="M44 -26 Q90 -62 136 -26" fill="none" stroke="#e8b321" stroke-width="1.8" stroke-linecap="round" opacity="0.28"/>
+        </g>
+      </svg>
+    </div>
+
+    <div id="beam"><div id="beamBar"></div></div>
+
+    <div class="indicator" id="scrollHint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v16m0 0l-6-6m6 6l6-6"/></svg>
+      Scroll
     </div>
   </div>
-</section>
+</div>
 
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- FEATURES — Everything You Need                                 -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<section id="features" class="py-20 sm:py-28 bg-white">
-  <div class="max-w-6xl mx-auto px-5">
-    <h2 class="font-display text-3xl sm:text-4xl text-navy-700 text-center mb-3">One Scan. The Whole&nbsp;Room.</h2>
-    <p class="text-slate-500 text-center max-w-xl mx-auto mb-14">The QR scanner is the engine. The same motion recognizes davening, learning, behavior, and more — no menus, no mode-switching, no separate activity to run.</p>
-
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5">
-
-      <!-- Recognize -->
-      <div class="bg-slate-50 hover:bg-gold-50 border border-slate-200 hover:border-gold-200 rounded-2xl p-5 text-center transition-all duration-300 group">
-        <div class="w-12 h-12 mx-auto mb-4 rounded-xl bg-gold-100 group-hover:bg-gold-200 flex items-center justify-center transition-colors">
-          <i data-lucide="scan-line" class="w-6 h-6 text-gold-600"></i>
-        </div>
-        <h3 class="font-bold text-navy-700 mb-1.5">Recognize</h3>
-        <p class="text-xs text-slate-500 leading-relaxed">Pick what you're looking for, then scan. Good davening, Derech Eretz, helping a chavrusa — caught the moment it&nbsp;happens.</p>
-      </div>
-
-      <!-- Track -->
-      <div class="bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 rounded-2xl p-5 text-center transition-all duration-300 group">
-        <div class="w-12 h-12 mx-auto mb-4 rounded-xl bg-emerald-100 group-hover:bg-emerald-200 flex items-center justify-center transition-colors">
-          <i data-lucide="clipboard-check" class="w-6 h-6 text-emerald-600"></i>
-        </div>
-        <h3 class="font-bold text-navy-700 mb-1.5">Track</h3>
-        <p class="text-xs text-slate-500 leading-relaxed">Attendance, homework, chazan, test grades — one Gradebook, filled in by the same scan you already&nbsp;make.</p>
-      </div>
-
-      <!-- Learn -->
-      <div class="bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-2xl p-5 text-center transition-all duration-300 group">
-        <div class="w-12 h-12 mx-auto mb-4 rounded-xl bg-blue-100 group-hover:bg-blue-200 flex items-center justify-center transition-colors">
-          <i data-lucide="book-open" class="w-6 h-6 text-blue-600"></i>
-        </div>
-        <h3 class="font-bold text-navy-700 mb-1.5">Learn</h3>
-        <p class="text-xs text-slate-500 leading-relaxed">Pesukim and Mishnayos with phrase-by-phrase translation, matching games, and quizzes — pulled from your own&nbsp;text.</p>
-      </div>
-
-      <!-- Reward -->
-      <div class="bg-slate-50 hover:bg-violet-50 border border-slate-200 hover:border-violet-200 rounded-2xl p-5 text-center transition-all duration-300 group">
-        <div class="w-12 h-12 mx-auto mb-4 rounded-xl bg-violet-100 group-hover:bg-violet-200 flex items-center justify-center transition-colors">
-          <i data-lucide="gift" class="w-6 h-6 text-violet-600"></i>
-        </div>
-        <h3 class="font-bold text-navy-700 mb-1.5">Reward</h3>
-        <p class="text-xs text-slate-500 leading-relaxed">A prize store, a raffle wheel, a Chinese auction — real motivation, with every prize tracked until it's handed&nbsp;out.</p>
-      </div>
-
-      <!-- Own Your Data -->
-      <div class="col-span-2 sm:col-span-1 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-2xl p-5 text-center transition-all duration-300 group">
-        <div class="w-12 h-12 mx-auto mb-4 rounded-xl bg-rose-100 group-hover:bg-rose-200 flex items-center justify-center transition-colors">
-          <i data-lucide="table" class="w-6 h-6 text-rose-600"></i>
-        </div>
-        <h3 class="font-bold text-navy-700 mb-1.5">Own Your Data</h3>
-        <p class="text-xs text-slate-500 leading-relaxed">Everything saves to your own Google Sheet and your own device. No accounts, no lock-in, works&nbsp;offline.</p>
-      </div>
-
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- SHULCHANI MODE + OTHER MODES                                   -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<section id="modes" class="bg-navy-700 text-white py-20 sm:py-28">
-  <div class="max-w-6xl mx-auto px-5">
-    <div class="grid lg:grid-cols-5 gap-8 items-start">
-
-      <!-- Shulchani Spotlight — 3 cols -->
-      <div class="lg:col-span-3">
-        <p class="text-gold-400 text-xs font-bold uppercase tracking-widest mb-2">Optional Mode</p>
-        <h2 class="font-display text-3xl sm:text-4xl mb-1">Shulchani Mode</h2>
-        <p class="text-gold-300 font-semibold text-sm mb-4">Points, in the coins of the Gemara</p>
-        <p class="text-slate-300 leading-relaxed mb-6 max-w-lg">
-          Turn on Shulchani Mode and points become Sela, Dinar, Maah, and Prutah — the denominations from the Mishnah, broken down largest-coin-first just like real money. Not a game mechanic. A quiet way to make a balance feel like it belongs in the beis&nbsp;midrash.
-        </p>
-        <p class="text-slate-400 text-sm leading-relaxed mb-6 max-w-lg">
-          Already using real coin tokens in your classroom? Deposit a student's physical coins straight into their digital balance, so nothing is ever lost in a&nbsp;pocket.
-        </p>
-        <a href="setup.html"
-           class="inline-flex items-center gap-2 bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold rounded-lg px-5 py-3 text-sm transition-colors">
-          <i data-lucide="coins" class="w-4 h-4"></i>
-          See Shulchani Mode
-        </a>
-
-        <!-- Treasure Chest visual -->
-        <div class="mt-8 flex items-center gap-3">
-          <span class="text-5xl">🪙</span>
-          <span class="text-4xl">🏛️</span>
-          <span class="text-5xl">📜</span>
-        </div>
-      </div>
-
-      <!-- Other Modes — 2 cols -->
-      <div class="lg:col-span-2 bg-white/10 backdrop-blur rounded-2xl p-6 border border-white/10">
-        <h3 class="font-bold text-white text-lg mb-5">More Ways to Teach</h3>
-
-        <div class="space-y-4">
-          <a href="#" class="flex items-center gap-3 group">
-            <div class="w-9 h-9 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
-              <i data-lucide="handshake" class="w-4 h-4 text-blue-300"></i>
-            </div>
-            <div class="flex-1">
-              <p class="font-semibold text-white text-sm">Chavrusa Mode</p>
-              <p class="text-slate-400 text-xs">Pair the room in seconds — set who learns well together, who to keep apart, and let it do the rest.</p>
-            </div>
-            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-gold-400 transition-colors"></i>
-          </a>
-
-          <a href="#" class="flex items-center gap-3 group">
-            <div class="w-9 h-9 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0">
-              <i data-lucide="clipboard-check" class="w-4 h-4 text-emerald-300"></i>
-            </div>
-            <div class="flex-1">
-              <p class="font-semibold text-white text-sm">Gradebook</p>
-              <p class="text-slate-400 text-xs">Attendance, homework, and grades in one searchable, printable record.</p>
-            </div>
-            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-gold-400 transition-colors"></i>
-          </a>
-
-          <a href="#" class="flex items-center gap-3 group">
-            <div class="w-9 h-9 rounded-lg bg-violet-500/20 flex items-center justify-center shrink-0">
-              <i data-lucide="graduation-cap" class="w-4 h-4 text-violet-300"></i>
-            </div>
-            <div class="flex-1">
-              <p class="font-semibold text-white text-sm">Quiz &amp; Speed Round</p>
-              <p class="text-slate-400 text-xs">Test pesukim, mishnayos, or shorashim — with printable A/B/C/D scan cards.</p>
-            </div>
-            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-gold-400 transition-colors"></i>
-          </a>
-
-          <a href="#" class="flex items-center gap-3 group">
-            <div class="w-9 h-9 rounded-lg bg-gold-500/20 flex items-center justify-center shrink-0">
-              <i data-lucide="wifi-off" class="w-4 h-4 text-gold-300"></i>
-            </div>
-            <div class="flex-1">
-              <p class="font-semibold text-white text-sm">No-Computer Mode</p>
-              <p class="text-slate-400 text-xs">Scan all day off printed pages, upload from the front office later. <span class="text-gold-400/70">Coming soon.</span></p>
-            </div>
-            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-gold-400 transition-colors"></i>
-          </a>
-        </div>
-      </div>
-
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- NO COMPUTER IN THE ROOM                                        -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<section class="py-20 sm:py-28 bg-slate-50 border-y border-slate-200">
-  <div class="max-w-6xl mx-auto px-5">
-    <div class="grid lg:grid-cols-2 gap-12 items-center">
-
-      <!-- Left: copy -->
-      <div>
-        <p class="text-sm font-bold text-gold-500 uppercase tracking-wider mb-2">No screen. No distraction.</p>
-        <h2 class="font-display text-3xl sm:text-4xl text-navy-700 mb-4">No Computer in the Room? No&nbsp;Problem.</h2>
-        <p class="text-slate-600 leading-relaxed mb-5">
-          Some rebbeim don't want a laptop or tablet open while they teach — and they shouldn't have to. Menchmark works with your scanner's own built-in memory: scan students off their printed pages all day long, with nothing running in the classroom at&nbsp;all.
-        </p>
-        <p class="text-slate-600 leading-relaxed mb-8">
-          At the end of the day, hand the scanner to your secretary — or just bring it home. One bulk upload sends the entire day's scans into Menchmark at once — each one time-stamped and in order, exactly as it&nbsp;happened.
-        </p>
-
-        <div class="space-y-3">
-          <div class="flex items-start gap-3">
-            <span class="w-6 h-6 rounded-full bg-navy-700 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
-            <p class="text-sm text-slate-600"><span class="font-semibold text-navy-700">Scan all day, offline.</span> The scanner stores every scan in its own memory — no phone, no computer, no internet.</p>
-          </div>
-          <div class="flex items-start gap-3">
-            <span class="w-6 h-6 rounded-full bg-navy-700 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
-            <p class="text-sm text-slate-600"><span class="font-semibold text-navy-700">Hand it off.</span> Give the scanner to your secretary, or plug it into your home computer that evening — nothing for you to type up.</p>
-          </div>
-          <div class="flex items-start gap-3">
-            <span class="w-6 h-6 rounded-full bg-navy-700 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
-            <p class="text-sm text-slate-600"><span class="font-semibold text-navy-700">Bulk upload.</span> One click loads the whole day in — review it, then commit. Every scan lands with its real time.</p>
-          </div>
-        </div>
-
-        <div class="mt-8 inline-flex items-center gap-2 bg-gold-100 text-gold-700 text-xs font-bold rounded-full px-4 py-2">
-          <i data-lucide="clock" class="w-3.5 h-3.5"></i>
-          Coming soon
-        </div>
-      </div>
-
-      <!-- Right: visual -->
-      <div class="flex justify-center">
-        <div class="bg-white rounded-2xl shadow-xl shadow-navy-700/10 border border-slate-200 p-6 w-full max-w-sm">
-          <div class="flex items-center gap-2 mb-5">
-            <i data-lucide="scan-barcode" class="w-5 h-5 text-navy-500"></i>
-            <span class="font-bold text-navy-700 text-sm">End-of-day upload</span>
-            <span class="ml-auto text-emerald-500 text-[10px] font-bold flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Ready</span>
-          </div>
-
-          <div class="space-y-2 mb-5">
-            <div class="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-              <span class="text-xs text-slate-600">Yosef — Good davening</span>
-              <span class="text-[10px] text-slate-400 font-mono">9:04</span>
-            </div>
-            <div class="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-              <span class="text-xs text-slate-600">Levi — Helped a chavrusa</span>
-              <span class="text-[10px] text-slate-400 font-mono">10:17</span>
-            </div>
-            <div class="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-              <span class="text-xs text-slate-600">Moshe — Chazan</span>
-              <span class="text-[10px] text-slate-400 font-mono">11:42</span>
-            </div>
-            <div class="text-center text-[10px] text-slate-400 py-1">+ 34 more from today</div>
-          </div>
-
-          <button class="w-full bg-gold-400 text-navy-800 font-bold text-sm rounded-lg py-3 flex items-center justify-center gap-2">
-            <i data-lucide="upload" class="w-4 h-4"></i>
-            Upload 37 scans
-          </button>
-        </div>
-      </div>
-
-    </div>
-  </div>
-</section>
-<section id="walkthrough" class="py-20 sm:py-28 bg-white">
-  <div class="max-w-5xl mx-auto px-5">
-    <p class="text-sm font-bold text-gold-500 uppercase tracking-wider mb-2 text-center">How It Works</p>
-    <h2 class="font-display text-3xl sm:text-4xl text-navy-700 text-center mb-4">Up and running in under 2&nbsp;minutes</h2>
-    <p class="text-slate-500 text-center max-w-lg mx-auto mb-14">Four steps from zero to scanning your first Mensch.</p>
-
-    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-      <div class="relative bg-slate-50 border border-slate-200 rounded-2xl p-6 hover:border-gold-300 hover:shadow-lg hover:shadow-gold-400/5 transition-all duration-300">
-        <span class="absolute -top-3 left-5 bg-gold-400 text-navy-800 text-xs font-extrabold px-2.5 py-1 rounded-full">1</span>
-        <div class="mt-2 mb-3"><i data-lucide="file-code-2" class="w-7 h-7 text-navy-400"></i></div>
-        <h3 class="font-bold text-navy-700 text-sm mb-1.5">Copy the Apps Script</h3>
-        <p class="text-xs text-slate-500 leading-relaxed">Open the template link, deploy it as a web app, and copy the&nbsp;URL.</p>
-      </div>
-
-      <div class="relative bg-slate-50 border border-slate-200 rounded-2xl p-6 hover:border-gold-300 hover:shadow-lg hover:shadow-gold-400/5 transition-all duration-300">
-        <span class="absolute -top-3 left-5 bg-gold-400 text-navy-800 text-xs font-extrabold px-2.5 py-1 rounded-full">2</span>
-        <div class="mt-2 mb-3"><i data-lucide="link" class="w-7 h-7 text-navy-400"></i></div>
-        <h3 class="font-bold text-navy-700 text-sm mb-1.5">Paste your URL</h3>
-        <p class="text-xs text-slate-500 leading-relaxed">Go to Settings in Menchmark and paste the script URL. Test the&nbsp;connection.</p>
-      </div>
-
-      <div class="relative bg-slate-50 border border-slate-200 rounded-2xl p-6 hover:border-gold-300 hover:shadow-lg hover:shadow-gold-400/5 transition-all duration-300">
-        <span class="absolute -top-3 left-5 bg-gold-400 text-navy-800 text-xs font-extrabold px-2.5 py-1 rounded-full">3</span>
-        <div class="mt-2 mb-3"><i data-lucide="user-plus" class="w-7 h-7 text-navy-400"></i></div>
-        <h3 class="font-bold text-navy-700 text-sm mb-1.5">Enter student names</h3>
-        <p class="text-xs text-slate-500 leading-relaxed">Type or paste your roster. QR codes are generated&nbsp;automatically.</p>
-      </div>
-
-      <div class="relative bg-slate-50 border border-slate-200 rounded-2xl p-6 hover:border-gold-300 hover:shadow-lg hover:shadow-gold-400/5 transition-all duration-300">
-        <span class="absolute -top-3 left-5 bg-gold-400 text-navy-800 text-xs font-extrabold px-2.5 py-1 rounded-full">4</span>
-        <div class="mt-2 mb-3"><i data-lucide="scan-line" class="w-7 h-7 text-gold-500"></i></div>
-        <h3 class="font-bold text-navy-700 text-sm mb-1.5">Start marking Mensches!</h3>
-        <p class="text-xs text-slate-500 leading-relaxed">Scan, tap, and award. The leaderboard updates across every device&nbsp;instantly.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- ABOUT                                                          -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<section id="about" class="py-20 sm:py-28 bg-white">
-  <div class="max-w-3xl mx-auto px-5">
-    <p class="text-sm font-bold text-gold-500 uppercase tracking-wider mb-2 text-center">Why we built this</p>
-    <h2 class="font-display text-3xl sm:text-4xl text-navy-700 text-center mb-8">Made by rebbeim, for the way you already&nbsp;teach.</h2>
-
-    <div class="prose text-slate-600 leading-relaxed space-y-5 max-w-none">
-      <p>
-        Menchmark started in a real classroom, not a boardroom. Most classroom apps ask you to stop teaching and go run an activity — open a screen, click through menus, manage a system. That's backwards. A rebbi teaches naturally, and the good moments happen on their own: a boy helps his chavrusa, davens with kavanah, holds the door without being asked.
-      </p>
-      <p>
-        We wanted a tool that just <span class="font-semibold text-navy-700">catches those moments</span> and quietly keeps track — one scan, right in the flow of the class, with the character traits our mesorah actually cares about at the center. Not points for their own sake. Middos and Derech Eretz, made visible.
-      </p>
-      <p>
-        So we built it, used it with our own talmidim, and kept it honest: it works on your own device, saves to your own Google Sheet, needs no student logins, and runs even when the internet doesn't. It's free and open source, and it always will be — because it was built to serve rebbeim, not to sell them anything.
-      </p>
-    </div>
-
-    <div class="mt-10 flex flex-wrap justify-center gap-x-8 gap-y-3 text-sm">
-      <span class="flex items-center gap-2 text-slate-500"><i data-lucide="code" class="w-4 h-4 text-navy-400"></i> Open source, MIT licensed</span>
-      <span class="flex items-center gap-2 text-slate-500"><i data-lucide="heart" class="w-4 h-4 text-navy-400"></i> Free forever</span>
-      <span class="flex items-center gap-2 text-slate-500"><i data-lucide="shield" class="w-4 h-4 text-navy-400"></i> Your data stays yours</span>
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- FINAL CTA                                                      -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<section class="bg-navy-700 text-white py-20 sm:py-28 relative overflow-hidden">
-  <!-- Subtle pattern -->
-  <div class="absolute inset-0 opacity-5" style="background-image: radial-gradient(circle at 1px 1px, white 1px, transparent 1px); background-size: 32px 32px;"></div>
-
-  <div class="relative max-w-4xl mx-auto px-5 text-center">
-    <h2 class="font-display text-3xl sm:text-4xl mb-4">Start Marking Mensches</h2>
-    <p class="text-slate-300 text-lg max-w-xl mx-auto mb-8">
-      Free, open source, and built by rebbeim who wanted it in their own classrooms. Set it up once, and it's yours.
+<!-- Split-screen final frame: dark top holds the payoff line, light bottom holds the invite.
+     grid-rows-[1fr_1fr] keeps the two halves exactly equal (content-respecting, so neither
+     clips) rather than flex-1's content-driven 43/57 split. -->
+<section class="min-h-screen grid grid-rows-[1fr_1fr]">
+  <!-- top half: dark, payoff line -->
+  <div class="bg-navy-900 flex items-center justify-center px-6 py-12">
+    <p class="font-display text-2xl sm:text-4xl text-white text-center leading-snug">
+      We took away your <span class="text-gold-400">stress</span>.<br>And replaced it with a scanner.
     </p>
-    <a href="setup.html"
-       class="inline-flex items-center gap-2 bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold rounded-xl px-8 py-4 text-base transition-colors shadow-xl shadow-gold-500/20">
-      <i data-lucide="scan-line" class="w-5 h-5"></i>
-      Get Started for Free
-    </a>
-    <p class="text-slate-400 text-xs mt-4">No account. No cost. Runs right in your browser.</p>
-
-    <!-- Mini device mockups -->
-    <div class="mt-14 flex justify-center items-end gap-4">
-      <!-- Tablet -->
-      <div class="bg-slate-800 rounded-xl p-2 shadow-2xl border border-slate-600 hidden sm:block" style="width:280px;">
-        <div class="bg-slate-50 rounded-lg p-3 text-left text-[10px]">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="w-5 h-5 rounded-full bg-gold-400 flex items-center justify-center text-[7px] text-white font-bold">M</span>
-            <span class="font-bold text-navy-700 text-[9px]">Menchmark</span>
-            <span class="ml-auto text-emerald-500 text-[7px] font-bold">● Live</span>
-          </div>
-          <div class="grid grid-cols-3 gap-1.5 mb-2">
-            <div class="bg-white rounded p-1.5 text-center border border-slate-200">
-              <p class="text-[7px] text-slate-400">Today</p>
-              <p class="text-sm font-extrabold text-navy-700">38</p>
-            </div>
-            <div class="bg-white rounded p-1.5 text-center border border-slate-200">
-              <p class="text-[7px] text-slate-400">Balance</p>
-              <p class="text-sm font-extrabold text-gold-500">7 Sela</p>
-            </div>
-            <div class="bg-white rounded p-1.5 text-center border border-slate-200">
-              <p class="text-[7px] text-slate-400">Top</p>
-              <p class="text-[9px] font-bold text-navy-700">Yossi B.</p>
-            </div>
-          </div>
-          <div class="flex items-center gap-1.5 bg-gold-50 rounded p-1.5 border border-gold-200">
-            <span class="w-4 h-4 rounded-full bg-gold-400 text-white text-[7px] font-bold flex items-center justify-center">1</span>
-            <span class="text-[9px] font-medium text-navy-700 flex-1">Yossi B.</span>
-            <span class="text-[9px] font-bold text-gold-600">🪙 3 Sela</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Phone -->
-      <div class="bg-slate-800 rounded-2xl p-2 shadow-2xl border border-slate-600" style="width:140px;">
-        <div class="bg-slate-50 rounded-xl p-2 text-left text-[8px]" style="min-height:180px;">
-          <div class="flex items-center gap-1 mb-2">
-            <span class="w-4 h-4 rounded-full bg-gold-400 flex items-center justify-center text-[6px] text-white font-bold">M</span>
-            <span class="font-bold text-navy-700 text-[7px]">Scan</span>
-          </div>
-          <div class="bg-white rounded-lg p-2 border border-slate-200 mb-2 text-center">
-            <i data-lucide="scan-line" class="w-6 h-6 text-gold-400 mx-auto"></i>
-            <p class="text-[7px] text-slate-400 mt-1">Point camera here</p>
-          </div>
-          <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-1.5 flex items-center gap-1">
-            <span class="text-[7px]">✅</span>
-            <span class="text-[7px] text-emerald-700 font-bold">Avi — Derech Eretz</span>
-          </div>
-        </div>
-      </div>
+  </div>
+  <!-- bottom half: light, invite + CTA -->
+  <div class="bg-[#f4f1ea] flex items-center justify-center px-6 py-12">
+    <div class="max-w-xl text-center">
+      <div class="font-display text-4xl sm:text-5xl text-navy-800 mb-3">Mench<span class="text-gold-400">mark</span></div>
+      <p class="font-sans text-slate-500 text-lg mb-8">Run your classroom like a mensch.</p>
+      <a href="home.html" class="inline-flex items-center gap-2 bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold text-base rounded-xl px-8 py-4 transition-colors shadow-lg shadow-gold-400/30">
+        Try Menchmark free
+      </a>
+      <p class="text-slate-400 text-xs font-sans mt-4">menchmark.app · free during beta</p>
     </div>
   </div>
 </section>
 
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- FOOTER                                                         -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<footer id="contact" class="bg-dark text-slate-400 py-10 text-sm">
-  <div class="max-w-6xl mx-auto px-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-    <div class="flex items-center gap-2">
-      <span class="w-8 h-8 rounded-full bg-gold-400 flex items-center justify-center">
-        <span class="font-display text-sm text-white font-bold">M</span>
-      </span>
-      <span class="font-extrabold text-white tracking-tight">MENCHMARK</span>
-    </div>
-    <p>Built with ❤️ for the Yeshiva classroom. MIT License.</p>
-    <div class="flex gap-4">
-      <a href="https://github.com/greenfrog367566/yeshiva-points-scanner" target="_blank" class="hover:text-white transition-colors" aria-label="GitHub">
-        <i data-lucide="github" class="w-5 h-5"></i>
-      </a>
-    </div>
-  </div>
-</footer>
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- SCRIPTS                                                        -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
 <script>
-  document.addEventListener('DOMContentLoaded', function() {
-    if (typeof lucide !== 'undefined') {
-      lucide.createIcons();
-    }
+gsap.registerPlugin(ScrollTrigger, Flip);
+window.addEventListener('load', function(){
+  var lS   = document.getElementById('lS');
+  var sFly = document.getElementById('sFly');
+  var xS   = document.getElementById('xS');
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Position the flying S so it STARTS exactly over the tagline's inline 's',
+  // and can be moved to the fixed STRESS placeholder slot via absolute coords.
+  // Both start and end are read fresh at the moment each is needed (via function-based
+  // tween values evaluated at build time, then held — but we also re-init on resize).
+  function rectCenter(el){ var r = el.getBoundingClientRect(); return { x: r.left + r.width/2, y: r.top + r.height/2, h: r.height }; }
+
+  function initPositions(){
+    var s = rectCenter(lS);
+    // size the flying S to match the tagline 's' at start, placed at its center
+    gsap.set(sFly, { left: s.x, top: s.y, xPercent:-50, yPercent:-50, x:0, y:0,
+                     fontSize: getComputedStyle(lS).fontSize, color:'#cdd6e6', scale:1 });
+  }
+  initPositions();
+
+  // draw-in prep
+  ['p1','p2','p3','p4'].forEach(function(id){
+    var p = document.getElementById(id); var len = p.getTotalLength();
+    p.style.strokeDasharray = len; p.style.strokeDashoffset = len;
   });
+  // scanRay is now a fan <g>; animate via opacity/scale, no path length needed
+  gsap.set('#scanRay', { opacity:0 });
+  gsap.set('.beamArc', { transformOrigin:'90px 26px', transformBox:'view-box', scale:0.15, y:40, opacity:0 });
+
+  gsap.set(['#xT','#xR','#xE','#xS2','#xS3'], { opacity: 0, y: 26 });
+
+  // Compute the flying-S destination: the CENTER of the hidden xS placeholder slot,
+  // and the font-size it must grow to (match STRESS letters). Read live so it's correct
+  // for the current viewport. We store deltas relative to the S's fixed start.
+  function sDestination(){
+    var start = rectCenter(lS);              // where S currently is (fixed left/top)
+    var target = rectCenter(xS);             // where it must land (STRESS slot center)
+    var stressFS = parseFloat(getComputedStyle(xS).fontSize);
+    var startFS  = parseFloat(getComputedStyle(lS).fontSize);
+    return { dx: target.x - start.x, dy: target.y - start.y, scale: stressFS/startFS };
+  }
+
+  // How far the s falls before "men"/"ch" close up behind it. Scaled to the TYPE,
+  // not the viewport: a fixed viewport fraction sends the small mobile glyph ~150px
+  // into empty space where it reads as orphaned rather than as a letter that just
+  // fell out of the word. Proportional keeps it tethered to the line at every width.
+  function dropDistance(){
+    return Math.max(lS.getBoundingClientRect().height * 2.6, 78);
+  }
+
+  var tl = gsap.timeline({
+    scrollTrigger: {
+      trigger: '#pinSpacer', start: 'top top', end: 'bottom bottom',
+      scrub: 1, pin: '#pin', invalidateOnRefresh: true,
+      onUpdate: function(self){ document.getElementById('scrollHint').style.opacity = self.progress > 0.02 ? '0':'1'; }
+    },
+    defaults: { ease: reduced ? 'none' : 'power2.inOut' }
+  });
+
+  tl
+    // PHASE 1 — inline s hands off to the flying S and turns red
+    .to(sFly, { opacity: 1, duration: 0.01 }, 0.30)
+    .to(lS,   { opacity: 0, duration: 0.20 }, 0.30)
+    .to(sFly, { color: '#e14b3c', duration: 0.45 }, 0.35)
+
+    // PHASE 2 — THE DROP. Straight down (x untouched), gravity-in, overshooting the
+    // rest point and settling back so it lands with weight instead of stopping dead.
+    // It also grows ~45% of the way to its final STRESS size on the way down: that
+    // keeps the small mobile glyph (~25px tall vs ~54px on desktop) readable as it
+    // falls, and takes the abruptness out of the later scale-up.
+    .to(sFly, {
+        y: function(){ return dropDistance() + 12; },
+        scale: function(){ return 1 + (sDestination().scale - 1) * 0.45; },
+        duration: 0.85, ease: 'power2.in'
+      }, 0.60)
+    .to(sFly, { y: function(){ return dropDistance(); }, duration: 0.22, ease: 'power2.out' }, 1.45)
+
+    // PHASE 3 — with the s clear of the line, "men" and "ch" close the gap it left.
+    // Each half travels exactly half the vacated slot width, so they meet flush —
+    // no overlap, no residual gap — and the word reads "mench" on its own for a beat.
+    .to('#menPart', { x: function(){ return  lS.getBoundingClientRect().width/2; }, duration: 0.60, ease:'power2.inOut' }, 1.75)
+    .to('#chPart',  { x: function(){ return -lS.getBoundingClientRect().width/2; }, duration: 0.60, ease:'power2.inOut' }, 1.75)
+    // (2.35 → 2.75 holds "mench" long enough to actually be read)
+
+    // PHASE 4 — the s launches from its resting place up into the STRESS slot and
+    // finishes growing to match the row's letters. The hero fades a beat later so
+    // the eye follows the s rather than the disappearing word.
+    .to(sFly, {
+        x: function(){ return sDestination().dx; },
+        y: function(){ return sDestination().dy; },
+        scale: function(){ return sDestination().scale; },
+        duration: 1.05, ease: 'power2.inOut'
+      }, 2.75)
+    .to('#heroLayer', { opacity: 0, duration: 0.65 }, 2.85)
+
+    // reveal STRESS row; swap the flying lowercase s for the row's capital S at the landing instant
+    .set('#stressRow', { opacity: 1 }, 3.80)
+    .set('#xS', { visibility: 'visible' }, 3.80)
+    .set('#sFly', { opacity: 0 }, 3.80)
+    .to(['#xT','#xR','#xE','#xS2','#xS3'], { opacity: 1, y: 0, duration: 0.6, stagger: 0.1 }, 3.85)
+
+    // PHASE 5 — STRESS fades out, scanner fades in and draws
+    .to(['#stressRow','#sFly'], { opacity: 0, duration: 0.7 }, 5.20)
+    .to('#svgWrap', { opacity: 1, duration: 0.5 }, 5.60)
+    .to(['#p1','#p2','#p3','#p4'], { strokeDashoffset: 0, duration: 2.0, stagger: 0.16 }, 5.70)
+
+    // logo M fades onto the badge once the scanner is drawn
+    .to('#logoMark', { opacity: 1, duration: 0.5 }, 7.40)
+
+    // PHASE 6 — arcs ripple OUT of the scanner, bottom-up, one after another
+    .set('#scanRay', { opacity: 1 }, 7.60)
+    .to('.beamArc', { y: 0, scale: 1, opacity: 1, duration: 0.8, stagger: 0.15, ease:'power2.out' }, 7.60)
+    .to('#qrTarget', { opacity: 1, duration: 0.5 }, 8.40)
+    .to('#qrTarget rect', { fill: '#e8b321', stroke:'#e8b321', duration: 0.4, stagger: 0.02 }, 8.70)
+
+    // PHASE 7 — beam sweep (the payoff line lives only in the split final frame)
+    .to('#beamBar', { x: '110vw', duration: 1.0, ease: 'power1.in' }, 8.90);
+
+  // keep S start position correct if the window resizes before scrolling
+  ScrollTrigger.addEventListener('refreshInit', initPositions);
+  window.addEventListener('resize', function(){ if (tl.progress() === 0) initPositions(); });
+
+  // ---- PLAY: auto-scroll the whole intro so the user can just watch ----
+  // We tween the REAL scroll position (not the timeline) and let ScrollTrigger's
+  // scrub follow it — so autoplay looks identical to a smooth manual scroll, and
+  // handing control back to the user mid-play is seamless. Any genuine scroll
+  // intent (wheel / touch-drag / key) cancels autoplay so the user can take over.
+  var playBtn = document.getElementById('playBtn');
+  var autoScroll = null;
+
+  function hidePlayBtn(){
+    if (playBtn.dataset.hidden) return;
+    playBtn.dataset.hidden = '1';
+    gsap.to(playBtn, { opacity: 0, duration: 0.45, onComplete: function(){ playBtn.style.pointerEvents = 'none'; } });
+  }
+  function cancelAutoScroll(){
+    if (autoScroll){ autoScroll.kill(); autoScroll = null; }
+  }
+  function startAutoScroll(){
+    cancelAutoScroll();
+    hidePlayBtn();
+    var maxY = document.documentElement.scrollHeight - window.innerHeight;
+    var proxy = { y: window.scrollY };
+    // pace to the scroll distance so playback always feels the same speed
+    // (~360px/s), clamped so it's never a crawl or a blur; gentle ease at the ends.
+    var dur = Math.min(22, Math.max(10, (maxY - proxy.y) / 360));
+    autoScroll = gsap.to(proxy, {
+      y: maxY, duration: dur, ease: 'power1.inOut',
+      onUpdate: function(){ window.scrollTo(0, proxy.y); },
+      onComplete: function(){ autoScroll = null; }
+    });
+  }
+  playBtn.addEventListener('click', startAutoScroll);
+
+  // Genuine user scroll intent cancels autoplay (these don't fire from scrollTo()).
+  ['wheel','touchmove','keydown'].forEach(function(ev){
+    window.addEventListener(ev, cancelAutoScroll, { passive: true });
+  });
+  // Once the user is scrolling on their own (and not being auto-played), retire Play.
+  window.addEventListener('scroll', function(){
+    if (!autoScroll && window.scrollY > 40) hidePlayBtn();
+  }, { passive: true });
+});
 </script>
 </body>
 </html>

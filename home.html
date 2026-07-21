@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Menchmark — Run Your Classroom Like a Mensch</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="alternate icon" href="/favicon.svg">
+<meta name="description" content="A classroom assistant for Yeshiva and Jewish Day School rebbeim. Recognize middos and derech eretz with a scan — QR-based, works offline, syncs to your own Google Sheet.">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.394.0/dist/umd/lucide.js"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        navy:  { 50:'#f0f3f8', 100:'#d4dce8', 200:'#a9b9d1', 300:'#7e96ba', 400:'#5373a3', 500:'#2d5086', 600:'#1a2d4d', 700:'#0f1b33', 800:'#0a1122', 900:'#050911' },
+        gold:  { 50:'#fef9ec', 100:'#fcefc4', 200:'#f9df89', 300:'#f5c84e', 400:'#e8b321', 500:'#c9961b', 600:'#9a7215', 700:'#6b4f0f', 800:'#3d2d09', 900:'#1e1604' },
+        dark:  '#0c1526',
+      },
+      fontFamily: {
+        display: ['"DM Serif Display"', 'Georgia', 'serif'],
+        body:    ['"Inter"', 'system-ui', 'sans-serif'],
+      },
+    },
+  },
+};
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { font-family: 'Inter', system-ui, sans-serif; }
+
+  /* Coin shimmer */
+  @keyframes shimmer {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.85; }
+  }
+  .coin { animation: shimmer 3s ease-in-out infinite; }
+  .coin:nth-child(2) { animation-delay: 0.4s; }
+  .coin:nth-child(3) { animation-delay: 0.8s; }
+  .coin:nth-child(4) { animation-delay: 1.2s; }
+
+  /* Mobile nav */
+  .mobile-menu { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+  .mobile-menu.open { max-height: 600px; }
+
+  /* Desktop dropdown */
+  .nav-dropdown { position: relative; }
+  .nav-dropdown-menu { display: none; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); min-width: 200px; background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 6px; padding-top: 6px; margin-top: 0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); z-index: 60; }
+  .nav-dropdown-menu::before { content: ''; position: absolute; top: -12px; left: 0; right: 0; height: 12px; }
+  .nav-dropdown:hover .nav-dropdown-menu { display: block; }
+  .nav-dropdown-menu a { display: block; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #1a2d4d; white-space: nowrap; }
+  .nav-dropdown-menu a:hover { background: #f9fafb; color: #e8b321; }
+  .nav-dropdown-menu .dd-sub { font-size: 11px; color: #94a3b8; font-weight: 400; margin-top: 1px; }
+
+  /* Mobile sections */
+  .mobile-section-label { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em; padding: 8px 0 4px; }
+</style>
+</head>
+
+<body class="bg-white text-slate-800 antialiased">
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- NAVBAR                                                         -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<nav class="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-slate-200">
+  <div class="max-w-7xl mx-auto flex items-center justify-between px-5 py-3">
+    <!-- Logo -->
+    <a href="#" class="flex items-center gap-3">
+      <span class="w-10 h-10 rounded-full bg-gold-400 flex items-center justify-center">
+        <span class="font-display text-lg text-white leading-none font-bold">M</span>
+      </span>
+      <span class="hidden sm:block">
+        <span class="block font-extrabold text-navy-700 text-lg tracking-tight leading-tight">MENCHMARK</span>
+        <span class="block text-[9px] font-bold text-navy-400 tracking-[0.2em] uppercase leading-tight">Run Your Classroom Like a Mensch</span>
+      </span>
+    </a>
+
+    <!-- Desktop links with dropdowns -->
+    <div class="hidden lg:flex items-center gap-6 text-sm font-semibold text-navy-600">
+
+      <!-- Why Menchmark dropdown -->
+      <div class="nav-dropdown">
+        <button class="hover:text-gold-500 transition-colors flex items-center gap-1 py-2">
+          Why Menchmark <i data-lucide="chevron-down" class="w-3.5 h-3.5 opacity-50"></i>
+        </button>
+        <div class="nav-dropdown-menu">
+          <a href="#why">Why rebbeim use it</a>
+          <a href="#compare">How Menchmark compares<div class="dd-sub">Record → Recognize → Reward → Repeat</div></a>
+          <a href="#audiences">Who it's for<div class="dd-sub">Rebbeim · Menahalim · Substitutes</div></a>
+        </div>
+      </div>
+
+      <a href="#features" class="hover:text-gold-500 transition-colors py-2">Features</a>
+      <a href="#walkthrough" class="hover:text-gold-500 transition-colors py-2">Setup</a>
+      <a href="#about" class="hover:text-gold-500 transition-colors py-2">About</a>
+    </div>
+
+    <!-- CTA + Hamburger -->
+    <div class="flex items-center gap-3">
+      <a href="beta.html"
+         class="bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold text-sm rounded-lg px-5 py-2.5 transition-colors">
+        Join the Beta
+      </a>
+      <button onclick="document.getElementById('mobileMenu').classList.toggle('open')" class="lg:hidden p-2 text-navy-600">
+        <i data-lucide="menu" class="w-5 h-5"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile menu -->
+  <div id="mobileMenu" class="mobile-menu lg:hidden bg-white border-t border-slate-100 px-5">
+    <div class="py-4 flex flex-col gap-1 text-sm font-semibold text-navy-600">
+      <div class="mobile-section-label">Why Menchmark</div>
+      <a href="#why" onclick="document.getElementById('mobileMenu').classList.remove('open')" class="py-2 pl-3">Why rebbeim use it</a>
+      <a href="#compare" onclick="document.getElementById('mobileMenu').classList.remove('open')" class="py-2 pl-3">How Menchmark compares</a>
+      <a href="#audiences" onclick="document.getElementById('mobileMenu').classList.remove('open')" class="py-2 pl-3">Who it's for</a>
+      <div class="mobile-section-label mt-2">More</div>
+      <a href="#features" onclick="document.getElementById('mobileMenu').classList.remove('open')" class="py-2 pl-3">Features</a>
+      <a href="#walkthrough" onclick="document.getElementById('mobileMenu').classList.remove('open')" class="py-2 pl-3">Setup</a>
+      <a href="#about" onclick="document.getElementById('mobileMenu').classList.remove('open')" class="py-2 pl-3">About</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- HERO                                                           -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="relative bg-gradient-to-br from-slate-50 via-white to-gold-50 overflow-hidden">
+  <div class="max-w-7xl mx-auto px-5 py-16 md:py-24 grid lg:grid-cols-2 gap-12 items-center">
+
+    <!-- Left: Copy -->
+    <div>
+      <h1 class="font-display text-4xl sm:text-5xl lg:text-[56px] text-navy-700 leading-[1.1] mb-6">
+        Run Your Classroom<br>Like a <span class="relative inline-block">Mensch<svg class="absolute -bottom-2 left-0 w-full" viewBox="0 0 200 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2 8 C50 2, 80 12, 120 5 C150 0, 175 10, 198 4" stroke="#E5A825" stroke-width="3.5" stroke-linecap="round" opacity="0.7"/></svg></span>
+      </h1>
+      <p class="text-lg text-slate-600 leading-relaxed mb-8 max-w-md">
+        One quick scan on an inexpensive handheld scanner records attendance, good behavior, homework, or a learning moment — without stopping the shiur. No programs to open. No systems to manage. You keep teaching, and Menchmark quietly keeps track.
+      </p>
+      <div class="flex flex-col sm:flex-row flex-wrap gap-3 mb-10">
+        <a href="beta.html"
+           class="inline-flex items-center gap-2 bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold rounded-lg px-6 py-3.5 text-base transition-colors shadow-lg shadow-gold-400/20">
+          <i data-lucide="scan-line" class="w-4 h-4"></i>
+          Join the Beta — It's Free
+        </a>
+        <a href="#walkthrough"
+           class="inline-flex items-center gap-2 border-2 border-navy-700 hover:bg-navy-700 hover:text-white text-navy-700 font-bold rounded-lg px-6 py-3.5 text-base transition-all">
+          <i data-lucide="play-circle" class="w-4 h-4"></i>
+          See How It Works
+        </a>
+      </div>
+
+      <!-- Trust badges -->
+      <div class="grid grid-cols-2 sm:flex sm:flex-wrap gap-x-6 gap-y-2 text-sm text-slate-500">
+        <span class="flex items-center gap-2"><i data-lucide="sparkles" class="w-4 h-4 text-gold-400"></i> Free During Beta</span>
+        <span class="flex items-center gap-2"><i data-lucide="wifi-off" class="w-4 h-4 text-navy-400"></i> Works Offline</span>
+        <span class="flex items-center gap-2"><i data-lucide="table" class="w-4 h-4 text-navy-400"></i> Your Own Google Sheet</span>
+        <span class="flex items-center gap-2"><i data-lucide="user-x" class="w-4 h-4 text-navy-400"></i> No Student Logins</span>
+      </div>
+    </div>
+
+    <!-- Right: Dashboard Mockup -->
+    <div class="hidden lg:block">
+      <div class="bg-white rounded-2xl shadow-2xl shadow-navy-700/10 border border-slate-200 overflow-hidden max-w-lg ml-auto">
+        <!-- Mockup top bar -->
+        <div class="bg-navy-700 px-4 py-3 flex items-center gap-3">
+          <span class="w-7 h-7 rounded-full bg-gold-400 flex items-center justify-center">
+            <span class="font-display text-xs text-white font-bold">M</span>
+          </span>
+          <span class="text-white text-sm font-semibold">Good Morning, Rabbi! 👋</span>
+        </div>
+
+        <!-- Horizontal tab bar (matches the app's nav.tabs) -->
+        <div class="bg-navy-700 px-3 flex items-stretch text-[10px]">
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 bg-gold-400 text-navy-800 font-bold border-b-[3px] border-gold-600">
+            <i data-lucide="scan-line" class="w-3 h-3"></i> Record
+          </div>
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-400 hover:text-white">
+            <i data-lucide="trophy" class="w-3 h-3"></i> Recognize
+          </div>
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-400 hover:text-white">
+            <i data-lucide="gift" class="w-3 h-3"></i> Reward
+          </div>
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-400 hover:text-white">
+            <i data-lucide="book-open" class="w-3 h-3"></i> Review
+          </div>
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-400 hover:text-white">
+            <i data-lucide="settings-2" class="w-3 h-3"></i> Run
+          </div>
+        </div>
+
+        <!-- Main dashboard content -->
+        <div class="p-3 bg-slate-50 text-[11px]">
+            <!-- Armed activity (what scanning awards right now) -->
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-[8px] text-slate-400 font-semibold uppercase tracking-wider">Now scoring</span>
+              <span class="font-display text-[10px] text-[#6b4d18] bg-[#f3e9d4] border border-[#e4cf9f] rounded-full px-2.5 py-0.5">Davening +1</span>
+            </div>
+
+            <!-- Scan box -->
+            <div class="border-2 border-dashed border-navy-300 rounded-xl bg-white px-3 py-3 text-center text-[9px] text-slate-400 tracking-wider mb-3">
+              Scan a QR code here
+            </div>
+
+            <!-- Recent scans + Leaderboard -->
+            <div class="grid grid-cols-2 gap-2">
+              <!-- Recent scans -->
+              <div class="bg-white rounded-lg p-2 border border-slate-200">
+                <p class="font-bold text-navy-700 text-[10px] mb-1.5">Recent scans</p>
+                <div class="space-y-1">
+                  <div class="flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    <span class="text-[9px] text-navy-700 flex-1">Avi K. <span class="text-[8px] text-slate-400">Davening</span></span>
+                    <span class="text-[9px] font-bold text-emerald-500">+1</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    <span class="text-[9px] text-navy-700 flex-1">Moshe L. <span class="text-[8px] text-slate-400">Helping a chavrusa</span></span>
+                    <span class="text-[9px] font-bold text-emerald-500">+2</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    <span class="text-[9px] text-navy-700 flex-1">Yossi B. <span class="text-[8px] text-slate-400">Davening</span></span>
+                    <span class="text-[9px] font-bold text-emerald-500">+1</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[9px] text-navy-700 flex-1">Levi S. <span class="text-[8px] text-slate-400">Derech Eretz</span></span>
+                    <span class="text-[9px] font-bold text-emerald-500">+1</span>
+                  </div>
+                </div>
+                <div class="mt-1.5 border border-slate-200 rounded text-center text-[8px] text-slate-500 py-1">↩ Undo last scan</div>
+              </div>
+              <!-- Leaderboard -->
+              <div class="bg-white rounded-lg p-2 border border-slate-200">
+                <div class="flex justify-between items-center mb-1.5">
+                  <p class="font-bold text-navy-700 text-[10px]">Leaderboard</p>
+                  <span class="flex items-center gap-1 text-[7px] font-bold uppercase tracking-wide text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-px"><span class="w-1 h-1 rounded-full bg-emerald-500"></span> Live</span>
+                </div>
+                <div class="space-y-1">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[8px] font-bold text-gold-500 w-3">1</span>
+                    <span class="text-[9px] text-navy-700 flex-1">Yossi B.</span>
+                    <span class="text-[9px] font-bold text-gold-500">215</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[8px] font-bold text-slate-400 w-3">2</span>
+                    <span class="text-[9px] text-navy-700 flex-1">Avi K.</span>
+                    <span class="text-[9px] font-bold text-slate-500">198</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[8px] font-bold text-slate-400 w-3">3</span>
+                    <span class="text-[9px] text-navy-700 flex-1">Moshe L.</span>
+                    <span class="text-[9px] font-bold text-slate-500">176</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[8px] font-bold text-slate-400 w-3">4</span>
+                    <span class="text-[9px] text-navy-700 flex-1">Levi S.</span>
+                    <span class="text-[9px] font-bold text-slate-500">162</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[8px] font-bold text-slate-400 w-3">5</span>
+                    <span class="text-[9px] text-navy-700 flex-1">Chaim D.</span>
+                    <span class="text-[9px] font-bold text-slate-500">148</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- WHY REBBEIM USE IT                                              -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="why" class="py-20 sm:py-28 bg-gradient-to-b from-white to-amber-50/40">
+  <div class="max-w-6xl mx-auto px-5">
+    <p class="text-sm font-bold text-gold-500 uppercase tracking-wider mb-3">Why rebbeim use it</p>
+    <h2 class="font-display text-4xl sm:text-5xl text-navy-700 mb-4">It stays out of the way.<br>You keep teaching.</h2>
+    <p class="text-slate-500 max-w-xl mb-14">Behavior changes with small, immediate feedback repeated over time. That's what one scan&nbsp;does.</p>
+
+    <div class="grid md:grid-cols-3 gap-6">
+      <!-- Card 1 -->
+      <div class="bg-slate-50 border border-slate-200 rounded-2xl p-7">
+        <div class="w-12 h-12 rounded-xl bg-navy-700 flex items-center justify-center mb-5">
+          <i data-lucide="scan-line" class="w-6 h-6 text-white"></i>
+        </div>
+        <h3 class="font-bold text-navy-700 text-lg mb-2">You never stop&nbsp;teaching.</h3>
+        <p class="text-slate-500 leading-relaxed">One scan, right in the middle of shiur. The app runs in the background or picture-in-picture — your board stays yours, and you keep teaching&nbsp;normally.</p>
+      </div>
+      <!-- Card 2 -->
+      <div class="bg-slate-50 border border-slate-200 rounded-2xl p-7">
+        <div class="w-12 h-12 rounded-xl bg-navy-700 flex items-center justify-center mb-5">
+          <i data-lucide="sparkles" class="w-6 h-6 text-gold-400"></i>
+        </div>
+        <h3 class="font-bold text-navy-700 text-lg mb-2">The good moments get&nbsp;noticed.</h3>
+        <p class="text-slate-500 leading-relaxed">A boy helps his chavrusa. A student has his finger on the place. Someone holds the door. Now it's on the&nbsp;record.</p>
+      </div>
+      <!-- Card 3 -->
+      <div class="bg-slate-50 border border-slate-200 rounded-2xl p-7">
+        <div class="w-12 h-12 rounded-xl bg-navy-700 flex items-center justify-center mb-5">
+          <i data-lucide="shield" class="w-6 h-6 text-white"></i>
+        </div>
+        <h3 class="font-bold text-navy-700 text-lg mb-2">Your data stays with&nbsp;you.</h3>
+        <p class="text-slate-500 leading-relaxed">Everything saves to your own Google Sheet and your own device. No accounts, no subscriptions, no company holding your&nbsp;information.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- FEATURES — One Scan. The Whole Room. -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="features" class="py-24 sm:py-32 bg-white">
+  <div class="max-w-6xl mx-auto px-5">
+    <h2 class="font-display text-4xl sm:text-5xl text-navy-700 text-center mb-3">One Scan. The Whole&nbsp;Room.</h2>
+    <p class="text-slate-500 text-center max-w-xl mx-auto mb-4">Everything happens through one simple scan. Attendance, behavior, homework, learning — the same quick action covers all of it, without breaking your&nbsp;stride.</p>
+    <p class="text-center mb-14">
+      <span class="inline-flex items-center gap-1.5 bg-gold-50 text-gold-700 text-xs font-bold rounded-full px-4 py-1.5 border border-gold-200">Everything Menchmark does</span>
+    </p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+
+      <!-- Record -->
+      <div class="bg-slate-50 hover:bg-gold-50 border border-slate-200 hover:border-gold-200 rounded-2xl p-6 text-center transition-all duration-300 group">
+        <div class="w-12 h-12 mx-auto mb-4 rounded-xl bg-gold-100 group-hover:bg-gold-200 flex items-center justify-center transition-colors">
+          <i data-lucide="scan-line" class="w-6 h-6 text-gold-600"></i>
+        </div>
+        <h3 class="font-bold text-navy-700 mb-1.5">Record</h3>
+        <p class="text-sm text-slate-500 leading-relaxed">One scan captures attendance, behavior, homework, or a learning moment — from anywhere in the room, without stopping the&nbsp;shiur.</p>
+      </div>
+
+      <!-- Recognize -->
+      <div class="bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 rounded-2xl p-6 text-center transition-all duration-300 group">
+        <div class="w-12 h-12 mx-auto mb-4 rounded-xl bg-emerald-100 group-hover:bg-emerald-200 flex items-center justify-center transition-colors">
+          <i data-lucide="trophy" class="w-6 h-6 text-emerald-600"></i>
+        </div>
+        <h3 class="font-bold text-navy-700 mb-1.5">Recognize</h3>
+        <p class="text-sm text-slate-500 leading-relaxed">Students see it happen. Live leaderboard, standings, and a weekly podium — all while the app runs quietly in the background, not taking over your&nbsp;board.</p>
+      </div>
+
+      <!-- Reward -->
+      <div class="bg-slate-50 hover:bg-violet-50 border border-slate-200 hover:border-violet-200 rounded-2xl p-6 text-center transition-all duration-300 group">
+        <div class="w-12 h-12 mx-auto mb-4 rounded-xl bg-violet-100 group-hover:bg-violet-200 flex items-center justify-center transition-colors">
+          <i data-lucide="gift" class="w-6 h-6 text-violet-600"></i>
+        </div>
+        <h3 class="font-bold text-navy-700 mb-1.5">Reward</h3>
+        <p class="text-sm text-slate-500 leading-relaxed">A prize store, raffle wheel, or Chinese auction — every prize tracked from the moment it's earned until it's handed&nbsp;out.</p>
+      </div>
+
+      <!-- Review -->
+      <div class="bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-2xl p-6 text-center transition-all duration-300 group">
+        <div class="w-12 h-12 mx-auto mb-4 rounded-xl bg-blue-100 group-hover:bg-blue-200 flex items-center justify-center transition-colors">
+          <i data-lucide="book-open" class="w-6 h-6 text-blue-600"></i>
+        </div>
+        <h3 class="font-bold text-navy-700 mb-1.5">Review</h3>
+        <p class="text-sm text-slate-500 leading-relaxed">Pesukim and Mishnayos with phrase-by-phrase translation, matching, and quizzes — built from the texts you're actually&nbsp;teaching.</p>
+      </div>
+
+      <!-- Run -->
+      <div class="sm:col-span-2 lg:col-span-1 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-2xl p-6 text-center transition-all duration-300 group">
+        <div class="w-12 h-12 mx-auto mb-4 rounded-xl bg-rose-100 group-hover:bg-rose-200 flex items-center justify-center transition-colors">
+          <i data-lucide="settings" class="w-6 h-6 text-rose-600"></i>
+        </div>
+        <h3 class="font-bold text-navy-700 mb-1.5">Run</h3>
+        <p class="text-sm text-slate-500 leading-relaxed">Your roster, QR labels, seating chart, Google Sheets sync, and backup — everything you need to run your classroom your&nbsp;way.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- COMPARISON — THE RECORD→RECOGNIZE→REWARD→REPEAT CYCLE -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="compare" class="py-20 sm:py-28 bg-white">
+  <div class="max-w-5xl mx-auto px-5">
+    <p class="text-sm font-bold text-gold-500 uppercase tracking-wider mb-2 text-center">How Menchmark compares</p>
+    <h2 class="font-display text-4xl sm:text-5xl text-navy-700 text-center mb-3">A good system needs four&nbsp;things:<br>Record → Recognize → Reward → Repeat</h2>
+    <p class="text-slate-500 text-center max-w-2xl mx-auto mb-12">Every system gets some of these right. None of them keeps all four&nbsp;running.</p>
+
+    <!-- Scrollable table on mobile -->
+    <div class="overflow-x-auto -mx-5 px-5">
+      <table class="w-full min-w-[700px] border-collapse text-sm">
+        <thead>
+          <tr class="border-b-2 border-slate-200">
+            <th class="text-left py-3 pr-3 font-semibold text-navy-700 w-[130px]"></th>
+            <th class="py-3 px-2 text-center">
+              <span class="font-bold text-navy-700">Record</span>
+              <span class="block text-[11px] text-slate-400 font-normal mt-0.5">log from anywhere</span>
+            </th>
+            <th class="py-3 px-2 text-center">
+              <span class="font-bold text-navy-700">Recognize</span>
+              <span class="block text-[11px] text-slate-400 font-normal mt-0.5">students see it</span>
+            </th>
+            <th class="py-3 px-2 text-center">
+              <span class="font-bold text-navy-700">Reward</span>
+              <span class="block text-[11px] text-slate-400 font-normal mt-0.5">store, raffle, auction</span>
+            </th>
+            <th class="py-3 px-2 text-center">
+              <span class="font-bold text-navy-700">Repeat</span>
+              <span class="block text-[11px] text-slate-400 font-normal mt-0.5">survives daily use</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="bg-gold-50/50 border-b border-slate-100">
+            <td class="py-4 pr-3 font-bold text-gold-600 align-top"><div class="flex items-center gap-2"><i data-lucide="scan-line" class="w-4 h-4"></i> Menchmark</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-gold-500 text-lg">●●●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">One scan from anywhere, even offline</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-gold-500 text-lg">●●●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Live leaderboard, runs in background or PIP</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-gold-500 text-lg">●●●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Store, raffle, Chinese auction built in</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-gold-500 text-lg">●●●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Nothing to restock, fill in, or lose — month seven runs like week one</div></td>
+          </tr>
+          <tr class="border-b border-slate-100">
+            <td class="py-4 pr-3 font-semibold text-navy-700 align-top"><div class="flex items-center gap-2"><i data-lucide="ticket" class="w-4 h-4 text-slate-400"></i> Raffle tickets</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●●</span><span class="text-slate-200 text-lg">●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Must walk to student, hand ticket</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●●●●</span><span class="text-slate-200 text-lg">●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Tangible, student holds it, class sees</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●●●</span><span class="text-slate-200 text-lg">●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Raffle works, but store/auction is messy</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●</span><span class="text-slate-200 text-lg">●●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Tickets wear out, get lost, need restocking — when the tickets stop, the system stops</div></td>
+          </tr>
+          <tr class="border-b border-slate-100">
+            <td class="py-4 pr-3 font-semibold text-navy-700 align-top"><div class="flex items-center gap-2"><i data-lucide="sticky-note" class="w-4 h-4 text-slate-400"></i> Point chart / post-its</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●</span><span class="text-slate-200 text-lg">●●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Walk to chart or desk to mark it</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●●●</span><span class="text-slate-200 text-lg">●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Student sees own chart, class doesn’t</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●</span><span class="text-slate-200 text-lg">●●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Manual counting, no reward system</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●</span><span class="text-slate-200 text-lg">●●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">A week of missed entries and it’s abandoned — post-its fall off, never replaced</div></td>
+          </tr>
+          <tr class="border-b border-slate-100">
+            <td class="py-4 pr-3 font-semibold text-navy-700 align-top"><div class="flex items-center gap-2"><i data-lucide="clipboard" class="w-4 h-4 text-slate-400"></i> Clipboard</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●●●</span><span class="text-slate-200 text-lg">●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Portable, but breaks eye contact</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●</span><span class="text-slate-200 text-lg">●●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Students don’t see it, delayed recognition</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●</span><span class="text-slate-200 text-lg">●●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Manual counting, no system at all</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●●</span><span class="text-slate-200 text-lg">●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Writing every entry by hand gets old fast</div></td>
+          </tr>
+          <tr>
+            <td class="py-4 pr-3 font-semibold text-navy-700 align-top"><div class="flex items-center gap-2"><i data-lucide="tablet" class="w-4 h-4 text-slate-400"></i> ClassDojo-style</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●●</span><span class="text-slate-200 text-lg">●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Needs a smartphone away from the board</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●●●●</span><span class="text-slate-200 text-lg">●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Sound effects, class-visible board, but takes over the whole screen</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●●</span><span class="text-slate-200 text-lg">●●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">No built-in store, raffle, or auction</div></td>
+            <td class="py-4 px-2 text-center align-top"><span class="text-navy-300 text-lg">●●●</span><span class="text-slate-200 text-lg">●●</span><div class="text-[11px] text-slate-400 mt-1 leading-tight">Nothing to restock, but opening the app for every point stops happening mid-year</div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="text-xs text-slate-400 text-center mt-6">Based on almost a decade of substitute teaching across dozens of classrooms.</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- AUDIENCE TOGGLE — Built for how you fit in the building -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="audiences" class="py-20 sm:py-28 bg-gradient-to-b from-white via-amber-50/40 to-white">
+  <style>
+    .aud-tab{background:#fff;border:1px solid #e2e8f0;color:#1a2d4d;font-weight:600;border-radius:9999px;padding:10px 22px;font-size:.9rem;cursor:pointer;transition:background .15s,border-color .15s,color .15s,box-shadow .15s;white-space:nowrap}
+    .aud-tab:hover{border-color:#f5c84e;background:#fef9ec}
+    .aud-tab.active{background:#e8b321;border-color:#e8b321;color:#0f1b33;box-shadow:0 4px 14px rgba(232,179,33,.3)}
+    .aud-panel{display:none}
+    .aud-panel.active{display:block}
+  </style>
+  <div class="max-w-5xl mx-auto px-5">
+    <p class="text-sm font-bold text-gold-500 uppercase tracking-wider mb-2 text-center">Who it&rsquo;s for</p>
+    <h2 class="font-display text-4xl sm:text-5xl text-navy-700 text-center mb-8">Built for how you fit in the&nbsp;building.</h2>
+
+    <!-- Tabs -->
+    <div class="flex flex-wrap justify-center gap-2 sm:gap-3 mb-10" role="tablist" aria-label="Choose your role">
+      <button class="aud-tab active" data-aud="rebbeim" role="tab" aria-selected="true" type="button">For Rebbeim</button>
+      <button class="aud-tab" data-aud="menahalim" role="tab" aria-selected="false" type="button">For Menahalim</button>
+      <button class="aud-tab" data-aud="substitutes" role="tab" aria-selected="false" type="button">For Substitutes</button>
+    </div>
+
+    <!-- Panels -->
+      <div class="aud-panel active" data-aud="rebbeim" role="tabpanel">
+        <h3 class="font-display text-3xl sm:text-4xl text-navy-700 text-center mb-3">Your classroom, running like a mensch.</h3>
+        <p class="text-slate-500 text-center text-lg max-w-2xl mx-auto mb-10">You see the good. You scan. You keep teaching. That&rsquo;s the whole system.</p>
+        <div class="grid sm:grid-cols-2 gap-5 max-w-4xl mx-auto">
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">It stays out of your way.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">No app to babble at the class, no screen between you and your talmidim. A rebbi sees a good middah, scans, and the shiur never stops.</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">The 5 R&rsquo;s, in practice.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">Record what you see, Recognize it on the board, Reward it when you&rsquo;re ready, Review the material together, and Run the whole thing from one place. It&rsquo;s how you already teach &mdash; just counted.</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">Shulchani Mode.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">Run a full classroom economy &mdash; coins, denominations, a store &mdash; if that&rsquo;s your style. Or keep it simple. The system bends to your room, not the other way around.</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">Works the way your classroom works.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">Offline, on one computer, no smartphone required. Print your codes, tape them to desks, and you&rsquo;re scanning by the second day.</p>
+        </div>
+        </div>
+      </div>
+      <div class="aud-panel" data-aud="menahalim" role="tabpanel">
+        <h3 class="font-display text-3xl sm:text-4xl text-navy-700 text-center mb-3">A chinuch tool you can stand behind.</h3>
+        <p class="text-slate-500 text-center text-lg max-w-2xl mx-auto mb-10">Built by a rebbi, for the yeshiva classroom &mdash; not a tech company&rsquo;s idea of one.</p>
+        <div class="grid sm:grid-cols-2 gap-5 max-w-4xl mx-auto">
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">No smartphones in the classroom.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">Menchmark runs on a simple, single-purpose scanner &mdash; no phone, no camera, no distractions. TAG-friendly technology your rebbeim and parents can be comfortable with.</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">Consistency across your building.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">When every rebbi is recognizing middos and derech eretz the same way, your talmidim get one clear message &mdash; and a substitute can walk into any room and keep it going without missing a beat.</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">Made by someone who gets it.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">Built by a rebbi with an MA in Jewish Education who has walked into dozens of different classrooms. This comes from the beis medrash, not a boardroom.</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">Yours to keep, simple to run.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">It runs offline in a browser &mdash; no servers, no IT department, and no student data ever leaves your building. Start with one rebbi and grow to the whole school at your pace.</p>
+        </div>
+        </div>
+      </div>
+      <div class="aud-panel" data-aud="substitutes" role="tabpanel">
+        <h3 class="font-display text-3xl sm:text-4xl text-navy-700 text-center mb-3">A substitute walks in. The system keeps going.</h3>
+        <p class="text-slate-500 text-center text-lg max-w-2xl mx-auto mb-10">This is where Menchmark came from.</p>
+        <div class="grid sm:grid-cols-2 gap-5 max-w-4xl mx-auto">
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">Walk in and pick up mid-stream.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">The class already knows the system. You scan the same way the regular rebbi does &mdash; the routine doesn&rsquo;t collapse the moment he&rsquo;s out.</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">No setup, no scramble.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">The students, the activities, the points are already there. You&rsquo;re not building anything at 8:15 in the morning with a room full of boys watching.</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">Instant credibility.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">A sub who runs the room like it&rsquo;s his own earns respect fast. Menchmark hands you the tool the regular rebbi built, ready to go.</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+          <p class="font-bold text-navy-700 mb-1.5">Built by a sub, for subs.</p>
+          <p class="text-sm text-slate-500 leading-relaxed">Menchmark was born walking into a different classroom every day for years, trying every points system out there. This is the one that actually survived contact with real classrooms.</p>
+        </div>
+        </div>
+      </div>
+  </div>
+  <script>
+    (function(){
+      var tabs = document.querySelectorAll('#audiences .aud-tab');
+      var panels = document.querySelectorAll('#audiences .aud-panel');
+      function show(key){
+        tabs.forEach(function(t){ var on = t.dataset.aud === key; t.classList.toggle('active', on); t.setAttribute('aria-selected', on ? 'true' : 'false'); });
+        panels.forEach(function(p){ p.classList.toggle('active', p.dataset.aud === key); });
+      }
+      tabs.forEach(function(t){ t.addEventListener('click', function(){ show(t.dataset.aud); }); });
+      show('rebbeim');
+    })();
+  </script>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- TESTIMONIALS (coming soon) -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="py-16 sm:py-20 bg-slate-50 border-y border-slate-200">
+  <div class="max-w-3xl mx-auto px-5 text-center">
+    <p class="text-sm font-bold text-gold-500 uppercase tracking-wider mb-2">From the front of the room</p>
+    <h2 class="font-display text-4xl sm:text-5xl text-navy-700 mb-4">Rebbeim who use&nbsp;Menchmark.</h2>
+    <p class="text-slate-400 text-base">Testimonials coming soon.</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- WALKTHROUGH — Up and running in 2 minutes -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="walkthrough" class="py-20 sm:py-28 bg-gradient-to-b from-amber-50/30 to-white">
+  <div class="max-w-5xl mx-auto px-5">
+    <p class="text-sm font-bold text-gold-500 uppercase tracking-wider mb-2 text-center">How It Works</p>
+    <h2 class="font-display text-4xl sm:text-5xl text-navy-700 text-center mb-4">Up and running in under 2&nbsp;minutes</h2>
+    <p class="text-slate-500 text-center max-w-lg mx-auto mb-14">Four steps, and you're&nbsp;scanning.</p>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div class="relative bg-slate-50 border border-slate-200 rounded-2xl p-7 hover:border-gold-300 hover:shadow-lg hover:shadow-gold-400/5 transition-all duration-300">
+        <span class="absolute -top-3 left-5 bg-gold-400 text-navy-800 text-xs font-extrabold px-3 py-1 rounded-full">1</span>
+        <div class="mt-2 mb-3"><i data-lucide="user-plus" class="w-8 h-8 text-navy-400"></i></div>
+        <h3 class="font-bold text-navy-700 text-base mb-1.5">Add your students</h3>
+        <p class="text-sm text-slate-500 leading-relaxed">Paste your class list or type names in. Each student gets his own QR code automatically — nothing to&nbsp;generate.</p>
+      </div>
+
+      <div class="relative bg-slate-50 border border-slate-200 rounded-2xl p-7 hover:border-gold-300 hover:shadow-lg hover:shadow-gold-400/5 transition-all duration-300">
+        <span class="absolute -top-3 left-5 bg-gold-400 text-navy-800 text-xs font-extrabold px-3 py-1 rounded-full">2</span>
+        <div class="mt-2 mb-3"><i data-lucide="list-checks" class="w-8 h-8 text-navy-400"></i></div>
+        <h3 class="font-bold text-navy-700 text-base mb-1.5">Set up what you reward</h3>
+        <p class="text-sm text-slate-500 leading-relaxed">Create activities with point values — three come ready to use, so you can start on day&nbsp;one.</p>
+      </div>
+
+      <div class="relative bg-slate-50 border border-slate-200 rounded-2xl p-7 hover:border-gold-300 hover:shadow-lg hover:shadow-gold-400/5 transition-all duration-300">
+        <span class="absolute -top-3 left-5 bg-gold-400 text-navy-800 text-xs font-extrabold px-3 py-1 rounded-full">3</span>
+        <div class="mt-2 mb-3"><i data-lucide="printer" class="w-8 h-8 text-navy-400"></i></div>
+        <h3 class="font-bold text-navy-700 text-base mb-1.5">Print your codes</h3>
+        <p class="text-sm text-slate-500 leading-relaxed">Print student labels and your activity menu. Tape them to desks, keep the menu by your&nbsp;side.</p>
+      </div>
+
+      <div class="relative bg-slate-50 border border-slate-200 rounded-2xl p-7 hover:border-gold-300 hover:shadow-lg hover:shadow-gold-400/5 transition-all duration-300">
+        <span class="absolute -top-3 left-5 bg-gold-400 text-navy-800 text-xs font-extrabold px-3 py-1 rounded-full">4</span>
+        <div class="mt-2 mb-3"><i data-lucide="scan-line" class="w-8 h-8 text-gold-500"></i></div>
+        <h3 class="font-bold text-navy-700 text-base mb-1.5">Start scanning</h3>
+        <p class="text-sm text-slate-500 leading-relaxed">Arm an activity, scan a student, and the points land instantly. That's the whole&nbsp;motion.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ABOUT -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="about" class="py-24 sm:py-32 bg-gradient-to-b from-white to-amber-50/30">
+  <div class="max-w-4xl mx-auto px-5">
+    <p class="text-sm font-bold text-gold-500 uppercase tracking-wider mb-2 text-center">Why we built this</p>
+    <h2 class="font-display text-4xl sm:text-5xl text-navy-700 text-center mb-8">Made by a rebbi, for the way you already&nbsp;teach.</h2>
+
+    <div class="text-slate-600 text-lg leading-relaxed space-y-5 max-w-none">
+      <p>
+        Menchmark started with almost a decade of substitute teaching and running school-wide programs. Walking into a different classroom every day means inheriting whatever points system the regular rebbi left behind — raffle tickets in a drawer, a clipboard no one can find, post-its peeling off desks, a chart on the board that half the class ignores. None of it carried over. None of it was mine. And running programs across multiple classrooms meant tracking dozens of students' points by hand — a job that got harder every&nbsp;week.
+      </p>
+      <p>
+        As an afternoon classroom teacher — I teach math — I saw the same problem from the other side. Every September I'd start strong — tracking attendance, homework, classwork, behavior — and by mid-year it was too overwhelming to keep up. The system would quietly collapse, and the students knew it. Saying <span class="font-semibold text-navy-700">"minus one"</span> to a boy who knows it's not being recorded doesn't work. You lose your credibility, and with it your ability to hold the room. I needed a way to record and give feedback <span class="font-semibold text-navy-700">immediately</span> — not at the end of the period, not after class, but right then, without&nbsp;friction. The research is clear: behavior changes with small, immediate feedback repeated over time. But that only works if the feedback is real — if it's actually being recorded, and the student knows&nbsp;it.
+      </p>
+      <p>
+        Every system got <span class="font-semibold text-navy-700">something right</span> and dropped the rest. Raffle tickets gave real recognition — but they disappeared into pockets. Clipboards were portable — but invisible to students. Point charts were visible — but took the rebbi away from teaching to update them. ClassDojo was instant — but needed a smartphone, wasn't easy to set up, and took over the entire board to stay&nbsp;visible.
+      </p>
+      <p>
+        So I stopped looking for the right system and built one. I took what actually worked from each — the speed of a scan on an inexpensive handheld scanner, the visibility of a leaderboard, the tangibility of a reward store — and put it into a single tool that a rebbi can run without stopping the shiur. Rebbeim in real classrooms are testing it now, and their feedback shapes every update. It's in beta — actively being built and refined. It works on your own device, saves to your own Google Sheet, needs no student logins, and runs even when the internet doesn't. Built to serve rebbeim, not to sell them&nbsp;anything.
+      </p>
+      <p class="text-navy-700 font-semibold mt-6">— Rabbi Berel Steinerman</p>
+    </div>
+
+    <div class="mt-14 grid sm:grid-cols-3 gap-4 max-w-2xl mx-auto">
+      <div class="flex flex-col items-center gap-2 bg-white rounded-2xl border border-slate-200 py-5 px-4">
+        <i data-lucide="code" class="w-6 h-6 text-gold-500"></i>
+        <span class="font-bold text-navy-700 text-sm">Your data stays on your device</span>
+      </div>
+      <div class="flex flex-col items-center gap-2 bg-white rounded-2xl border border-slate-200 py-5 px-4">
+        <i data-lucide="heart" class="w-6 h-6 text-gold-500"></i>
+        <span class="font-bold text-navy-700 text-sm">Free during beta</span>
+      </div>
+      <div class="flex flex-col items-center gap-2 bg-white rounded-2xl border border-slate-200 py-5 px-4">
+        <i data-lucide="shield" class="w-6 h-6 text-gold-500"></i>
+        <span class="font-bold text-navy-700 text-sm">Your data stays yours</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- FINAL CTA                                                      -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section class="bg-navy-700 text-white py-20 sm:py-28 relative overflow-hidden">
+  <!-- Subtle pattern -->
+  <div class="absolute inset-0 opacity-5" style="background-image: radial-gradient(circle at 1px 1px, white 1px, transparent 1px); background-size: 32px 32px;"></div>
+
+  <div class="relative max-w-4xl mx-auto px-5 text-center">
+    <h2 class="font-display text-4xl sm:text-5xl mb-4">Bring Menchmark to your&nbsp;classroom.</h2>
+    <p class="text-slate-300 text-lg max-w-xl mx-auto mb-8">
+      Now accepting beta testers. No account, no cost, no&nbsp;subscriptions.
+    </p>
+    <div class="flex flex-col sm:flex-row sm:flex-wrap justify-center gap-3">
+      <a href="beta.html"
+         class="inline-flex items-center justify-center gap-2 bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold rounded-xl px-8 py-4 text-base transition-colors shadow-xl shadow-gold-500/20">
+        <i data-lucide="scan-line" class="w-5 h-5"></i>
+        Join the beta free
+      </a>
+      <a href="#walkthrough"
+         class="inline-flex items-center justify-center gap-2 border-2 border-white/30 hover:border-white/60 text-white font-bold rounded-xl px-8 py-4 text-base transition-colors">
+        See setup steps
+        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+      </a>
+    </div>
+    <p class="text-slate-400 text-xs mt-4">Runs right in your browser.</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- FOOTER                                                         -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<footer id="contact" class="bg-dark text-slate-400 py-10 text-sm">
+  <div class="max-w-6xl mx-auto px-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+    <div class="flex items-center gap-2">
+      <span class="w-8 h-8 rounded-full bg-gold-400 flex items-center justify-center">
+        <span class="font-display text-sm text-white font-bold">M</span>
+      </span>
+      <span class="font-extrabold text-white tracking-tight">MENCHMARK</span>
+    </div>
+    <p>Built for the Yeshiva classroom.</p>
+    <div class="flex items-center gap-4">
+      <a href="index.html" class="hover:text-white transition-colors">Watch the intro</a>
+      <a href="mailto:support@menchmark.app" class="hover:text-white transition-colors">support@menchmark.app</a>
+    </div>
+  </div>
+  <p class="max-w-6xl mx-auto px-5 mt-6 text-center sm:text-left text-xs text-slate-500">© 2026 Menchmark. All rights reserved.</p>
+</footer>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SCRIPTS                                                        -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
+  });
+</script>
+</body>
+</html>
