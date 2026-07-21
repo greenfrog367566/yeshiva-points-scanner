@@ -158,6 +158,14 @@
   /* ---- Preview-mode banner ---- */
   #saveWarn{display:none;background:var(--bad-soft);color:#7c2d1c;border:1px solid #e3bdb5;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem}
   #saveWarn b{color:#5e1f12}
+  /* ---- Fresh/empty downloaded-copy banner (shown only on file://) ---- */
+  #freshCopyBanner{display:none;background:var(--brass-soft);border:2px solid var(--brass);border-radius:14px;padding:15px 18px;margin-bottom:18px;box-shadow:var(--shadow)}
+  #freshCopyBanner .fcb-title{font-family:Georgia,serif;font-weight:700;font-size:1.08rem;color:var(--ink);margin:0 0 6px}
+  #freshCopyBanner p{margin:0 0 8px;font-size:.92rem;color:var(--ink);line-height:1.5}
+  #freshCopyBanner ul{margin:6px 0 0;padding-left:20px;font-size:.9rem;color:var(--ink);line-height:1.5}
+  #freshCopyBanner li{margin:4px 0}
+  #freshCopyBanner.blocked{background:var(--bad-soft);border-color:#d98a80}
+  #freshCopyBanner.blocked .fcb-title{color:#7c2d1c}
 
   /* ======= SCAN VIEW ======= */
   .scan-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start}
@@ -1080,9 +1088,10 @@
 </div>
 
 <main>
+  <div id="freshCopyBanner" role="alert"></div>
   <div id="saveWarn">
     <b>Preview mode — scores won't be saved here.</b> You're viewing this inside a browser that blocks local saving.
-    To use it for real, download this file and open it in Chrome on your own computer; everything will then save automatically.
+    To use it for real, open Menchmark in your usual browser tab at menchmark.app, where everything saves automatically.
   </div>
 
   <!-- ============ SCAN ============ -->
@@ -2014,7 +2023,8 @@
       <div class="card pad bk-card">
         <h3>Download for offline use</h3>
         <p>Saves a single HTML file with your <b>current students, activities, and scores already loaded in</b> — plus the QR scanner built right in, so it works with zero internet from then on. Needs internet once, to prepare the file; after that, just open it in any browser like any other file.</p>
-        <button class="btn" id="offlineDownloadBtn">⬇ Download offline copy</button>
+        <button class="btn" id="offlineDownloadBtn">⬇ Download offline copy (with your students inside)</button>
+        <p style="margin:8px 0 0;font-size:.82rem;color:var(--muted)"><b>Use this button</b> — not your browser's own <i>Save</i> / “Save page as”. A browser-saved copy opens <b>empty</b>, because your students are stored per browser tab, not inside the page file.</p>
         <div id="offlineDownloadStatus" style="margin-top:8px;font-size:.85rem;color:var(--muted)"></div>
       </div>
       <div class="card pad bk-card">
@@ -3098,6 +3108,39 @@ function setupRoster() {
     load2fix();
   }
   function save(){ if(canSave){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} } scheduleAutoSnapshot(); }
+
+  // When the app is opened as a downloaded/local file (file:// origin) and its
+  // storage is a fresh/empty bucket — or the browser is blocking storage for
+  // local files — the roster looks "missing" even though the real data is safe
+  // in the browser tab where it was entered (a different origin). Rather than
+  // leave a confusing blank slate, explain what's going on and how to recover.
+  // Runs after load(), so data.students reflects whatever the file bucket has.
+  function maybeShowFreshCopyBanner(){
+    if(location.protocol!=="file:") return;                 // only for downloaded/local copies
+    var rosterEmpty = !data.students || data.students.length===0;
+    var blocked = !canSave;                                 // browser blocks storage for this file
+    if(!rosterEmpty && !blocked) return;                    // a seeded, working copy — nothing to say
+    var b=$("freshCopyBanner"); if(!b) return;
+    if(blocked){
+      b.className="blocked";
+      b.innerHTML =
+        '<div class="fcb-title">⚠️ This browser is blocking Menchmark from saving in a downloaded file</div>'+
+        '<p>You can restore from your Google Sheet to see your class, but any changes you make here <b>won’t be saved once you close this file.</b></p>'+
+        '<p style="margin-bottom:0">For everyday use, open Menchmark in <b>your usual browser tab</b> at <b>menchmark.app</b>, where everything saves automatically.</p>';
+      var sw=$("saveWarn"); if(sw) sw.style.display="none"; // this banner is the stronger, file-specific version
+    } else {
+      b.className="";
+      b.innerHTML =
+        '<div class="fcb-title">👋 This looks like a fresh copy of Menchmark</div>'+
+        '<p>Your students and scores live in the browser tab where you first set them up — they don’t travel inside a downloaded file, so this copy opens empty. To bring your class here:</p>'+
+        '<ul>'+
+          '<li><b>Restore from your Google Sheet backup</b> — go to <b>Run → Backup &amp; Sheets</b> and tap <b>Restore from Sheet</b>.</li>'+
+          '<li>Or just open Menchmark in <b>your usual browser tab</b> at <b>menchmark.app</b>, where your class is already there.</li>'+
+          '<li>Next time, use <b>Run → Backup &amp; Sheets → Download offline copy</b>, which bakes your current students right into the file.</li>'+
+        '</ul>';
+    }
+    b.style.display="block";
+  }
 
   /* ---------- helpers ---------- */
   var pipWin = null; // set while the floating scanner is popped out into a real OS window
@@ -12401,6 +12444,7 @@ nameLine
   // 1.5s delay so the full app is rendered before the toast appears.
   // Auto-generate only if teacher opted in (default: true)
   if (data.wizardLearning && data.wizardLearning.autoGenerate !== false) setTimeout(function(){ autoGenerateWizardTextSet(); }, 1500);
+  maybeShowFreshCopyBanner();
   setTimeout(function(){ $("scanInput").focus(); },80);
 })();
 
