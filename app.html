@@ -158,6 +158,13 @@
   /* ---- Preview-mode banner ---- */
   #saveWarn{display:none;background:var(--bad-soft);color:#7c2d1c;border:1px solid #e3bdb5;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem}
   #saveWarn b{color:#5e1f12}
+  /* ---- Data-durability guards (empty-with-Sheet restore offer; fragile-session warning) ---- */
+  #sheetRestoreOffer,#fragileWarn{display:none;border-radius:14px;padding:15px 18px;margin-bottom:18px;box-shadow:var(--shadow)}
+  #sheetRestoreOffer{background:var(--good-soft);border:2px solid var(--good)}
+  #fragileWarn{background:var(--brass-soft);border:2px solid var(--brass)}
+  #sheetRestoreOffer .dg-title,#fragileWarn .dg-title{font-family:Georgia,serif;font-weight:700;font-size:1.08rem;margin:0 0 6px;color:var(--ink)}
+  #sheetRestoreOffer p,#fragileWarn p{margin:0 0 10px;font-size:.92rem;color:var(--ink);line-height:1.5}
+  #fragileWarn .dg-dismiss{background:none;border:none;color:var(--muted);font-size:.82rem;font-weight:600;cursor:pointer;text-decoration:underline;padding:0}
 
   /* ======= SCAN VIEW ======= */
   .scan-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start}
@@ -1088,6 +1095,8 @@
 </div>
 
 <main>
+  <div id="sheetRestoreOffer" role="alert"></div>
+  <div id="fragileWarn" role="alert"></div>
   <div id="saveWarn">
     <b>Preview mode — scores won't be saved here.</b> You're viewing this inside a browser that blocks local saving.
     To use it for real, download this file and open it in Chrome on your own computer; everything will then save automatically.
@@ -3106,6 +3115,73 @@ function setupRoster() {
     load2fix();
   }
   function save(){ if(canSave){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} } scheduleAutoSnapshot(); }
+
+  /* ---------- data-durability guards ---------- */
+  // If this device shows an empty roster but a Google Sheet is still connected,
+  // proactively check the Sheet for a saved snapshot and offer a one-tap
+  // restore — framed as normal protection, not an error. This covers a device
+  // whose local storage was cleared (managed/shared Chromebook, cleared site
+  // data, etc.) while the Sheet link survived, or any state where the roster is
+  // empty but a backup exists online. Silent if there's no Sheet, no snapshot,
+  // or the Sheet can't be reached — never blocks startup.
+  function offerSheetRestoreOnEmpty(){
+    var url=(data.sheetUrl||"").trim();
+    var looksEmpty=(!data.students||data.students.length===0) && (!data.log||data.log.length===0);
+    if(!url || !looksEmpty) return;
+    fetch(url+(url.indexOf("?")>=0?"&":"?")+"action=snapshot")
+      .then(function(r){ return r.json(); })
+      .then(function(resp){
+        if(!resp || !resp.ok || !resp.snapshot) return;         // nothing saved online → stay quiet
+        var valid=false;
+        try{ var o=JSON.parse(resp.snapshot); valid=!!(o && o.students && o.students.length); }catch(e){}
+        if(!valid) return;                                       // snapshot empty/unreadable → stay quiet
+        var b=$("sheetRestoreOffer"); if(!b) return;
+        b.innerHTML=
+          '<div class="dg-title">✓ Your class is safely backed up on your Google Sheet</div>'+
+          '<p>This device is showing an empty roster, but your Google Sheet has a saved copy of your students and scores. Your data is safe even when a device clears its storage — you can pull it right back.</p>'+
+          '<button class="btn btn-primary" id="sheetRestoreOfferBtn">Restore my class from Google Sheet</button>';
+        b.style.display="block";
+        var btn=$("sheetRestoreOfferBtn");
+        if(btn) btn.addEventListener("click", function(){ pullSnapshot(); });
+      })
+      .catch(function(){ /* offline or unreachable — nothing to offer */ });
+  }
+
+  // Best-effort detection of a session whose storage may not survive being
+  // closed (Guest mode, Incognito, or an ephemeral/managed profile). We first
+  // ASK the browser to make storage persistent; only if that's refused AND the
+  // storage quota looks incognito-sized (a few hundred MB, vs many GB on a
+  // normal persistent profile) do we warn — deliberately conservative to avoid
+  // false alarms on ordinary devices. Warns the teacher to lean on the Google
+  // Sheet / a backup so nothing is lost when the session ends.
+  var fragileWarnDismissed=false;
+  function checkFragileSession(){
+    if(!(navigator.storage && navigator.storage.estimate)) return; // API missing → can't tell, stay quiet
+    var persistP = navigator.storage.persist ? navigator.storage.persist() : Promise.resolve(null);
+    persistP.then(function(granted){
+      if(granted===true) return null;                 // storage is durable → no warning needed
+      return navigator.storage.estimate();
+    }).then(function(est){
+      if(!est) return;
+      var quota=est.quota||0;
+      var likelyEphemeral = quota>0 && quota < 300*1024*1024;     // ~300MB — incognito/guest-sized
+      if(!likelyEphemeral || fragileWarnDismissed) return;
+      showFragileWarning(!(data.sheetUrl||"").trim());
+    }).catch(function(){});
+  }
+  function showFragileWarning(noSheet){
+    var b=$("fragileWarn"); if(!b) return;
+    b.innerHTML=
+      '<div class="dg-title">⚠️ This browser may not keep your data after you close it</div>'+
+      '<p>This looks like a private, guest, or shared session (for example an Incognito or Guest window, or a managed Chromebook). Anything you do here could be cleared when the window closes.</p>'+
+      (noSheet
+        ? '<p>To keep your class safe, <b>connect a Google Sheet</b> (Run → Backup &amp; Sheets → Sync to Google Sheets) so everything saves online automatically — or download a backup file before you finish.</p>'
+        : '<p>Your Google Sheet is connected, so your class is being saved online — just make sure it finishes syncing before you close this window.</p>')+
+      '<button class="dg-dismiss" id="fragileWarnDismiss">Dismiss for now</button>';
+    b.style.display="block";
+    var d=$("fragileWarnDismiss");
+    if(d) d.addEventListener("click", function(){ fragileWarnDismissed=true; b.style.display="none"; });
+  }
 
   /* ---------- helpers ---------- */
   var pipWin = null; // set while the floating scanner is popped out into a real OS window
@@ -12413,6 +12489,8 @@ nameLine
   // 1.5s delay so the full app is rendered before the toast appears.
   // Auto-generate only if teacher opted in (default: true)
   if (data.wizardLearning && data.wizardLearning.autoGenerate !== false) setTimeout(function(){ autoGenerateWizardTextSet(); }, 1500);
+  offerSheetRestoreOnEmpty();   // empty roster but a Sheet backup exists → offer restore
+  checkFragileSession();        // guest/incognito/ephemeral storage → warn to back up
   setTimeout(function(){ $("scanInput").focus(); },80);
 })();
 
