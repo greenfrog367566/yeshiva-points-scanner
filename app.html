@@ -5236,6 +5236,7 @@ function setupRoster() {
         flashTapTile(tb, armed.delta);
       });
     }
+    refreshLiveViews();
     return true;
   }
   // Shared flash + floating "+N"/"-N" effect for a tap-panel tile (list button
@@ -5254,6 +5255,29 @@ function setupRoster() {
     }, 700);
   }
 
+  // Central "live data changed" hook. When a scan (or an undo) lands while the
+  // rebbi is sitting on a tab that shows calculated/aggregated scan data, that
+  // view would otherwise stay stale until they leave the tab and come back —
+  // the scan routes through award()/processScan(), which only refreshes the
+  // Scan tab's own tiles. This re-renders whichever such view is currently open
+  // so it updates immediately, from any tab, no matter where the scan came from.
+  // Purely a re-render: it never reads, writes, or recalculates stored data, and
+  // every renderer here rebuilds from the current state while preserving its own
+  // filters/selections. Tabs with their own scan handler (Store, Passes,
+  // Attendance, Tracker, Homework, Pesukim, Shorashim) already refresh
+  // themselves and aren't listed here.
+  function refreshLiveViews(){
+    switch(activeTabName){
+      case "standings": renderStandings(); break;
+      case "trends":    renderTrends(); break;
+      case "history":   renderHistoryTab(); break;
+      case "contest":   renderContestTab(); break;
+      // The wheel is redrawn from live scores/tickets — but never mid-spin, or a
+      // scan landing would jerk the animation back to zero.
+      case "raffle":    if(!spinning) renderWheel(); break;
+    }
+  }
+
   function awardWith(s, label, delta){
     if(!studentInCurrentClass(s)){
       flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student");
@@ -5268,7 +5292,7 @@ function setupRoster() {
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
     flash(delta>=0, s.name, fmtDeltaBare(delta), label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
     beep(delta>=0);
-    renderRecent(); renderScanBoard();
+    renderRecent(); renderScanBoard(); refreshLiveViews();
     return true;
   }
   // 6-7 celebration (optional — data.sixSeven, Settings tab). Checked after any
@@ -5679,9 +5703,10 @@ function setupRoster() {
     if(affectedMain) data.scores[entry.sid]=score(entry.sid)-entry.delta;
     var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Undo: "+entry.label, delta:-entry.delta, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false});
     save(); renderRecent(); renderScanBoard();
-    if($("view-standings").classList.contains("active")) renderStandings();
-    if($("view-history").classList.contains("active")) renderHistoryTab();
-    if(typeof renderContestTab==="function" && $("view-contest") && $("view-contest").classList.contains("active")) renderContestTab();
+    // Same live-refresh path a scan uses, so undoing from the global scan bar
+    // updates whatever aggregate view is open (standings, history, contest,
+    // trends, raffle) instead of only the three that were special-cased here.
+    refreshLiveViews();
     var s=studentById(entry.sid);
     if(data.autoSheet && s){ pushToSheet({type:"correction", ts:Date.now(), name:s.name, group:s.group||"", label:corr.label, delta:corr.delta, total:score(entry.sid), id:corr.id, undoOf:entry.id}); }
   }
@@ -8412,7 +8437,7 @@ function setupRoster() {
     if(delta>0) recordEarn(s.id, label, delta);
     var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta});
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
-    save(); renderRecent(); renderScanBoard();
+    save(); renderRecent(); renderScanBoard(); refreshLiveViews();
     return logEntry;
   }
   function pesukAwardPts(){ return (data.pesukAward && data.pesukAward.on) ? Math.max(0, data.pesukAward.pts||0) : 0; }
