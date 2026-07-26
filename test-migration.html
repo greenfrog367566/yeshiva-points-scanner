@@ -216,6 +216,12 @@ function load2fix(){
   if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
   if(typeof data.fullWidth!=="boolean") data.fullWidth=false;
   if(typeof data.sixSeven!=="boolean") data.sixSeven=false;
+  // Instant (no-spin) toggles — one per random-selection tool. Additive
+  // booleans: absent on every existing save, so they backfill to false and
+  // old data keeps the current animated behavior untouched.
+  if(typeof data.pickerInstant!=="boolean") data.pickerInstant=false;
+  if(typeof data.spinnerInstant!=="boolean") data.spinnerInstant=false;
+  if(typeof data.raffleInstant!=="boolean") data.raffleInstant=false;
   if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOpts={avatarMode:"qr", showPoints:false};
   if(typeof data.seatPrintOpts.avatarMode!=="string"){
     data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
@@ -329,6 +335,9 @@ function runBuiltInTests() {
   assertField(d1, "navHidden", "object");
   assertField(d1, "features", "object");
   assert("Empty→hwActivitySeeded", d1.hwActivitySeeded === true);
+  assert("Empty→instant toggles default OFF (animation unchanged)",
+    d1.pickerInstant===false && d1.spinnerInstant===false && d1.raffleInstant===false,
+    "got picker="+d1.pickerInstant+" spinner="+d1.spinnerInstant+" raffle="+d1.raffleInstant);
 
   // --- Test 2: Pre-v2 data with "bunk" field ---
   var d2 = runMigration({ bunk: "5A Boys", students: [{id:"s1",name:"Yaakov",group:""}], scores:{s1:15} });
@@ -388,6 +397,23 @@ function runBuiltInTests() {
   assert("Real→earned seeded", d3.earnedSeeded===true && typeof d3.earned==="object");
   assert("Real→hwActivitySeeded", d3.hwActivitySeeded===true);
   assert("Real→activities got tracked flag", d3.activities.every(function(a){return typeof a.tracked==="boolean";}));
+  // An existing save has no instant fields at all — they must backfill to false
+  // so a teacher who updates sees the exact animated behavior they had before.
+  assert("Real→instant toggles backfill OFF",
+    d3.pickerInstant===false && d3.spinnerInstant===false && d3.raffleInstant===false,
+    "got picker="+d3.pickerInstant+" spinner="+d3.spinnerInstant+" raffle="+d3.raffleInstant);
+
+  // --- Test 3b: Instant toggles are REMEMBERED (the whole point of saving them) ---
+  var d3b = runMigration({ version:2, pickerInstant:true, spinnerInstant:false, raffleInstant:true });
+  assert("Instant→saved TRUE preserved", d3b.pickerInstant===true && d3b.raffleInstant===true,
+    "got picker="+d3b.pickerInstant+" raffle="+d3b.raffleInstant);
+  assert("Instant→saved FALSE preserved", d3b.spinnerInstant===false, "got: "+d3b.spinnerInstant);
+  assert("Instant→per-tool independence", d3b.pickerInstant!==d3b.spinnerInstant);
+  // A junk/corrupt value must fall back to the safe default, not survive as-is.
+  var d3c = runMigration({ version:2, pickerInstant:"yes", spinnerInstant:1, raffleInstant:null });
+  assert("Instant→non-boolean coerced to false",
+    d3c.pickerInstant===false && d3c.spinnerInstant===false && d3c.raffleInstant===false,
+    "got picker="+d3c.pickerInstant+" spinner="+d3c.spinnerInstant+" raffle="+d3c.raffleInstant);
 
   // --- Test 4: Old auction shape migration ---
   var d4 = runMigration({ version:2, auction:{prizes:[{name:"Prize1"}]}, auctionsMigrated:false });

@@ -1027,6 +1027,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     </div>
     <div class="toolbar" style="margin-bottom:10px">
       <label style="display:flex;align-items:center;gap:7px;font-size:.86rem;color:var(--muted);font-weight:600"><input type="checkbox" id="pickSkip"> Skip students who already had a turn</label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:.86rem;color:var(--muted);font-weight:600" title="Skip the spin/flash and show the pick straight away. Applies to both the wheel and the seating chart."><input type="checkbox" id="pickInstant"> ⚡ Instant (no spin)</label>
       <div class="grow"></div>
       <button class="btn btn-sm" id="pickReset">Reset round</button>
     </div>
@@ -1303,6 +1304,9 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
     <label class="toolbar" style="gap:7px;font-size:.86rem;color:var(--muted);font-weight:600;cursor:pointer">
       <input type="checkbox" id="raffleSpread"> Spread each student's tickets around the wheel (instead of one grouped slice)
+    </label>
+    <label class="toolbar" style="gap:7px;font-size:.86rem;color:var(--muted);font-weight:600;cursor:pointer" title="Skip the wheel spin and announce the winner straight away. The winner is still revealed the same way — only the animation is skipped.">
+      <input type="checkbox" id="raffleInstant"> ⚡ Instant draw (no spin) — still announces the winner, just without the wheel
     </label>
     <div class="toolbar" id="raffleAdjustRow" style="display:none">
       <span id="raffleAdjustNote" style="font-size:.85rem;color:var(--muted)"></span>
@@ -2819,6 +2823,7 @@ function setupRoster() {
       <div class="spin-side">
         <div id="spinStats" style="color:var(--muted);font-size:.92rem"></div>
         <button class="btn btn-primary" id="spinSpinBtn" style="font-size:1.1rem;padding:13px 30px;margin-top:12px">🌀 Spin</button>
+        <label style="display:flex;align-items:center;justify-content:center;gap:7px;font-size:.86rem;color:var(--muted);font-weight:600;margin-top:10px;cursor:pointer" title="Skip the wheel spin and show what came up straight away."><input type="checkbox" id="spinInstant"> ⚡ Instant (no spin)</label>
         <div class="spin-result" id="spinResult"></div>
       </div>
     </div>
@@ -3007,7 +3012,14 @@ function setupRoster() {
     gameBoards: {},
     muted: false,
     shulchaniMode: false,
-    showPrutot: false
+    showPrutot: false,
+    // "Instant" (no-spin) preference, remembered SEPARATELY per random-selection
+    // tool — a rebbi who wants the Picker instant for fast repeated turn-taking
+    // usually still wants the Raffle's wheel to spin for the class. Default false
+    // everywhere, so the animation stays exactly as it is unless it's turned on.
+    pickerInstant: false,
+    spinnerInstant: false,
+    raffleInstant: false
   };
 
   var SHOR_BANK = [
@@ -7656,6 +7668,7 @@ function setupRoster() {
     }
     $("manualPanel").style.display = mode==="manual"?"block":"none";
     $("raffleSpread").checked = !!data.raffle.spreadTickets;
+    $("raffleInstant").checked = !!data.raffleInstant;
     renderRaffleAdjustNote();
     if(mode==="manual") renderPool();
     renderWheel();
@@ -7667,6 +7680,9 @@ function setupRoster() {
     data.raffleSourceMode=b.dataset.rsm; save(); renderRaffle(); renderWheel(); renderWinners();
   });
   $("raffleSpread").addEventListener("change", function(){ data.raffle.spreadTickets=this.checked; save(); renderWheel(); });
+  // Animation-only preference — deliberately does NOT call renderWheel(), which
+  // would wipe a winner still on screen from the previous draw.
+  $("raffleInstant").addEventListener("change", function(){ data.raffleInstant=this.checked; save(); });
   $("raffleAdjustReset").addEventListener("click", function(){
     if(!confirm("Clear all after-win removals from this raffle? Everyone becomes eligible again with their full ticket count.")) return;
     data.raffle.adjust={}; data.raffle.removed={}; save(); renderWheel(); renderRaffleAdjustNote();
@@ -7762,7 +7778,16 @@ function setupRoster() {
     currentRotation=target;
     var dur=(4 + rand()*2).toFixed(2);          // 4–6 seconds, varies each time
     var g=$("wheelG");
-    if(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches){
+    // Instant draw (data.raffleInstant) takes the same no-animation path that
+    // prefers-reduced-motion already used: snap the wheel straight to the winning
+    // angle and reveal immediately. The winner was ALREADY chosen above by the
+    // identical weighted draw — instant only skips the animation, never changes
+    // who wins. NOTE (live-refresh guard): finishSpin() clears `spinning`, and
+    // here it runs synchronously inside spin(), so `spinning` is never left true
+    // across a gap. refreshLiveViews()'s `if(!spinning) renderWheel()` therefore
+    // stays correct and needs no change — in instant mode there is simply no
+    // mid-spin window for a scan to land in.
+    if(data.raffleInstant || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)){
       g.style.transition="none"; g.style.transform="rotate("+target+"deg)"; finishSpin(win);
     } else {
       armWheelSpin(g, target, dur, function(){ finishSpin(win); });
@@ -10273,7 +10298,12 @@ nameLine
                     "passed"  → PASSED: skipped THIS round but STAYS in the
                                 rotation — not "had a turn", not "out"
                                 ("not him today"); the caller clears it on reset
-       config       { minDelay,maxDelay,minSteps,loops } flash tuning (optional)
+       config       { minDelay,maxDelay,minSteps,loops } flash tuning (optional).
+                    Also { instant } — true (or a function returning true) to
+                    skip the casino flash and land immediately. Kept as a
+                    predicate so the caller can hand over a live preference
+                    without rebuilding the controller; the engine never reads
+                    any store itself.
        interactive  when true, tapping a seat cycles its eligibility
                     ELIGIBLE → OUT → PASSED → ELIGIBLE (see onEligChange)
        onLand(id,cell)        fired when the flash lands on a seat
@@ -10302,6 +10332,9 @@ nameLine
     var loops     = cfg.loops!=null    ? cfg.loops    : 2;     // full sweeps before landing
     var minColPx  = cfg.minColPx!=null ? cfg.minColPx : 0;     // floor on column width (0 = shrink freely)
     var reduced   = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Resolved at spin time (not construction) so a toggle flipped after the
+    // controller was built takes effect on the very next pick.
+    function wantInstant(){ return typeof cfg.instant==="function" ? !!cfg.instant() : !!cfg.instant; }
 
     var seatEls=[], sweep=[], spinning=false, timer=null;
 
@@ -10372,7 +10405,11 @@ nameLine
       spinning=true; clearLanded();
       if(opts.onSpinStart) opts.onSpinStart();
       var winPos = Math.floor(rand()*sweep.length), winIdx = sweep[winPos], winCell = state.cells[winIdx];
-      if(reduced){ land(winIdx, winCell); return true; }
+      // Instant / reduced-motion: land on the ALREADY-chosen seat right away.
+      // The winner is drawn from the same `sweep` (in-play seats only) either
+      // way, so had-a-turn dimming, out/passed and the round all still apply —
+      // only the flash is skipped. land() clears `spinning`, so it never sticks.
+      if(reduced || wantInstant()){ land(winIdx, winCell); return true; }
       var total = loops*sweep.length + winPos;                 // full sweeps, then stop on the winner
       while(total < minSteps) total += sweep.length;           // guarantee a lively minimum run
       var step=0;
@@ -10414,6 +10451,7 @@ nameLine
     return activeStudents().filter(function(s){ return !(skip && pickedSet[s.id]); });
   }
   function renderPicker(){
+    $("pickInstant").checked = !!data.pickerInstant;   // one saved toggle, both modes
     if(pickViewMode==="seat") renderSeatPicker(); else renderPickWheel();
     renderPicked();
   }
@@ -10448,7 +10486,11 @@ nameLine
     var base=pickRot, needed=(((-(win.mid - jitter) - base)%360)+360)%360, spins=4+Math.floor(rand()*4);
     var target=base+360*spins+needed; pickRot=target;
     var g=$("pickWheelG");
-    if(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches){
+    // Instant (data.pickerInstant) reuses the existing no-animation path: the
+    // wheel snaps to the already-chosen winner and the name shows at once. The
+    // pick itself is unchanged — same rand() draw over the same pickEntries(),
+    // so skip-had-a-turn and the rotation behave identically.
+    if(data.pickerInstant || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)){
       g.style.transition="none"; g.style.transform="rotate("+target+"deg)"; pickDone(win);
     } else {
       armWheelSpin(g, target, (4+rand()*2).toFixed(2), function(){ pickDone(win); });
@@ -10478,6 +10520,9 @@ nameLine
     renderPicker();
   });
   $("pickSkip").addEventListener("change", renderPickWheel);
+  // Saved preference — persists across sessions, so a rebbi who picks Instant
+  // keeps it. Purely presentational: nothing else re-renders.
+  $("pickInstant").addEventListener("change", function(){ data.pickerInstant=this.checked; save(); });
 
   /* ---------- PICKER: seating-chart mode (first caller of SeatPicker) ----------
      Shares pickedSet as its turn-state, so a student dimmed in the seating
@@ -10526,7 +10571,10 @@ nameLine
       seatPickerCtl=SeatPicker($("pickSeatChart"), {
         rows:d.rows, cols:d.cols, cells:d.cells, used:d.used, elig:d.elig,
         interactive:true,
-        config:{minColPx:76},   // keep cards readable; sp-wrap scrolls if they don't fit
+        // minColPx keeps cards readable (sp-wrap scrolls if they don't fit).
+        // instant is a live predicate, so toggling Instant applies to the next
+        // flash without rebuilding the controller.
+        config:{minColPx:76, instant:function(){ return !!data.pickerInstant; }},
         emptyNote:"No students in this class yet.",
         onSpinStart:function(){
           $("pickSeatSpin").disabled=true;
@@ -10583,6 +10631,7 @@ nameLine
     $("spinClassList").style.display = data.spinListOpen ? "block" : "none";
     $("spinList").style.display      = data.spinListOpen ? "block" : "none";
     $("spinListToggle").textContent  = data.spinListOpen ? "Hide list" : "Show list";
+    $("spinInstant").checked = !!data.spinnerInstant;
     renderSpinClassList();
     renderSpinSavedList();
     renderSpinList();
@@ -10765,7 +10814,11 @@ nameLine
     var base=spinRot, needed=(((-(win.mid - jitter) - base)%360)+360)%360, spins=4+Math.floor(rand()*4);
     var target=base+360*spins+needed; spinRot=target;
     var gEl=$("spinWheelG");
-    if(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches){
+    // Instant (data.spinnerInstant) reuses the existing no-animation path — the
+    // wheel snaps to the already-chosen entry and it shows immediately. Same
+    // draw over the same spinEntries(), so class/saved/custom modes and the
+    // exclusion checkboxes all behave exactly as before.
+    if(data.spinnerInstant || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)){
       gEl.style.transition="none"; gEl.style.transform="rotate("+target+"deg)"; spinDone(win);
     } else {
       armWheelSpin(gEl, target, (4+rand()*2).toFixed(2), function(){ spinDone(win); });
@@ -10778,6 +10831,9 @@ nameLine
     beep(true); $("spinSpinBtn").disabled=false;
   }
   $("spinSpinBtn").addEventListener("click", spinSpin);
+  // Animation-only preference — no renderSpinner() call, so a result already on
+  // screen from the last spin stays put.
+  $("spinInstant").addEventListener("change", function(){ data.spinnerInstant=this.checked; save(); });
 
   /* ---------- STUDENTS ---------- */
   var studentBreakdownOpen = {};
@@ -12161,6 +12217,12 @@ nameLine
     if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
     if(typeof data.fullWidth!=="boolean") data.fullWidth=false;
     if(typeof data.sixSeven!=="boolean") data.sixSeven=false;
+    // Instant (no-spin) toggles — one per random-selection tool. Additive
+    // booleans: absent on every existing save, so they backfill to false and
+    // old data keeps the current animated behavior untouched.
+    if(typeof data.pickerInstant!=="boolean") data.pickerInstant=false;
+    if(typeof data.spinnerInstant!=="boolean") data.spinnerInstant=false;
+    if(typeof data.raffleInstant!=="boolean") data.raffleInstant=false;
     if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOpts={avatarMode:"qr", showPoints:false};
     if(typeof data.seatPrintOpts.avatarMode!=="string"){
       data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
