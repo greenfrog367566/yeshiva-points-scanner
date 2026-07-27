@@ -40,10 +40,32 @@ Rabbi Steinerman's review (see CONTRIBUTING.md).
 
 **⚠️ `dev` is stale — do not branch off it.** README.md and CONTRIBUTING.md still
 describe a `dev` → `main` promotion flow, but actual practice since 2026-07-21
-(PRs #96–#101) is **branch off `main`, PR into `main`**. `origin/dev` last moved
-2026-07-21 and has diverged (11 commits never merged forward, 15 commits behind).
-Branch off freshly-pulled `main` unless the maintainer says otherwise; the README
-wording is a known open item to reconcile.
+(PRs #96–#102) is **branch off `main`, PR into `main`**. Branch off freshly-pulled
+`main` unless the maintainer says otherwise; the README wording is a known open
+item to reconcile. `dev`'s content is **fully on `main`** — it was squash-merged as
+PR #94 (verified 2026-07-27: `git diff --stat 7c7ca9f 3fe47d9` is empty, so main
+holds dev's tip byte-for-byte). It reads as diverged only for the reason below.
+
+### ⚠️ Squash-merges make merged branches look unmerged
+
+A squash-merge strips commit ancestry while preserving content. The squash commit
+has a **single parent** (the merge-base), so git sees no link back to the branch —
+and `git log`/`git status`/`git cherry` will report the branch as diverged, "N
+commits ahead," or "never merged forward" even when **every line of its content is
+already on `main`.**
+
+**Never treat ahead/behind counts alone as evidence of unmerged work.** Before
+assuming anything needs porting — or is at risk of being lost in a branch prune —
+verify *content*, not ancestry:
+
+```bash
+git diff --stat <branch-tip> <suspected-squash-commit>   # empty = content is on main
+git log -1 --format='%h parents:[%p]' <merge-commit>      # one parent = squash
+git ls-tree -r --name-only <branch> | ...                 # any files only on branch?
+```
+`git cherry` and `git merge-base --is-ancestor` both answer the *ancestry* question,
+not the content question — they will report a squash-merged branch as unmerged. That
+is expected, not a warning sign.
 
 Branch naming:
 
