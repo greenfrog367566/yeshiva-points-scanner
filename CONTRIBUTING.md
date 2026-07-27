@@ -26,7 +26,8 @@ This is what stops one person's update from silently overwriting someone else's 
    ```
 2. **Make your changes** in that branch only.
 3. **Test locally** — open `app.html` in a browser and click through the feature you changed. Check that:
-   - Existing features still work (Scan, Standings, Rewards, Manage, Learn, Sheets sync, Backup/Restore)
+   - Existing features still work (Record, Recognize, Reward, Review, Run, Sheets sync, Backup/Restore)
+   - **Note for anyone reading the code:** those five nav groups display as the "5 R's" above, but their **internal keys are still the old names** — `scan`, `standings`, `rewards`, `learn`, `manage` (see `TAB_GROUPS` / `GROUP_ORDER` in `app.html`). The keys are persisted in teachers' saved state, so the mismatch is deliberate — renaming a key to match its label would break saved data. Change the `label`, never the key.
    - Nothing in `localStorage` gets wiped when the app loads
    - If you changed the landing page (`index.html`), open that too and verify links work
 4. **Commit and push** your branch:
