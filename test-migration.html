@@ -41,7 +41,7 @@
 // These must match what's in app.html. When you change migrateData or
 // load2fix in the app, update them here too and re-run.
 
-var DATA_VERSION = 2;
+var DATA_VERSION = 3;
 
 function newId(){ return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
 
@@ -51,6 +51,10 @@ function migrateData(d){
     if(typeof d.bunk==="string" && typeof d.className!=="string") d.className = d.bunk;
     delete d.bunk;
     d.version = 2;
+  }
+  if(d.version===2){
+    if(typeof d.pickerSkip!=="boolean") d.pickerSkip = true;
+    d.version = 3;
   }
   return d;
 }
@@ -222,6 +226,10 @@ function load2fix(){
   if(typeof data.pickerInstant!=="boolean") data.pickerInstant=false;
   if(typeof data.spinnerInstant!=="boolean") data.spinnerInstant=false;
   if(typeof data.raffleInstant!=="boolean") data.raffleInstant=false;
+  // Shared Picker skip preference (wheel + seating chart). Defaults ON — see
+  // the v2->v3 migration note. Belt-and-braces alongside that migration, so a
+  // save that somehow arrives already stamped v3 without the field still gets it.
+  if(typeof data.pickerSkip!=="boolean") data.pickerSkip=true;
   if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOpts={avatarMode:"qr", showPoints:false};
   if(typeof data.seatPrintOpts.avatarMode!=="string"){
     data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
@@ -414,6 +422,22 @@ function runBuiltInTests() {
   assert("Instant→non-boolean coerced to false",
     d3c.pickerInstant===false && d3c.spinnerInstant===false && d3c.raffleInstant===false,
     "got picker="+d3c.pickerInstant+" spinner="+d3c.spinnerInstant+" raffle="+d3c.raffleInstant);
+
+  // --- Test 3d: v2 -> v3 Picker skip preference ---
+  // The seating chart used to skip had-a-turn students unconditionally. The
+  // setting is now saved and shared with the wheel, so every pre-v3 save must
+  // come out with it ON or the seating chart would silently stop skipping.
+  var d3d = runMigration({ version:2, students:[{id:"s1",name:"Dovid",group:""}], scores:{s1:10} });
+  assert("v2→v3 version bumped", d3d.version===3, "got v"+d3d.version);
+  assert("v2→v3 pickerSkip defaults ON (seating keeps skipping)", d3d.pickerSkip===true, "got: "+d3d.pickerSkip);
+  assert("v2→v3 existing data untouched", d3d.scores.s1===10 && d3d.students.length===1);
+  // A rebbi who deliberately turned it OFF must keep it off across reloads.
+  var d3e = runMigration({ version:3, pickerSkip:false });
+  assert("pickerSkip=false is preserved (not re-defaulted)", d3e.pickerSkip===false, "got: "+d3e.pickerSkip);
+  var d3f = runMigration({ version:3, pickerSkip:"maybe" });
+  assert("pickerSkip non-boolean coerced to ON", d3f.pickerSkip===true, "got: "+d3f.pickerSkip);
+  // Brand-new installs get it on too.
+  assert("Empty→pickerSkip defaults ON", d1.pickerSkip===true, "got: "+d1.pickerSkip);
 
   // --- Test 4: Old auction shape migration ---
   var d4 = runMigration({ version:2, auction:{prizes:[{name:"Prize1"}]}, auctionsMigrated:false });
