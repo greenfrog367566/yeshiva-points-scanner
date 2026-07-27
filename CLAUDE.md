@@ -38,13 +38,11 @@ Menchmark is a free, open-source classroom assistant for Yeshiva and Jewish Day 
 All work happens on a **branch**, merged into `main` only via pull request after
 Rabbi Steinerman's review (see CONTRIBUTING.md).
 
-**⚠️ `dev` is stale — do not branch off it.** README.md and CONTRIBUTING.md still
-describe a `dev` → `main` promotion flow, but actual practice since 2026-07-21
-(PRs #96–#102) is **branch off `main`, PR into `main`**. Branch off freshly-pulled
-`main` unless the maintainer says otherwise; the README wording is a known open
-item to reconcile. `dev`'s content is **fully on `main`** — it was squash-merged as
-PR #94 (verified 2026-07-27: `git diff --stat 7c7ca9f 3fe47d9` is empty, so main
-holds dev's tip byte-for-byte). It reads as diverged only for the reason below.
+**There is no `dev` branch.** `main` is the only long-lived branch: branch off
+freshly-pulled `main`, PR back into `main`. The old `dev` → `main` promotion flow
+was retired — `dev` stopped moving 2026-07-21, its content was confirmed fully
+present on `main` (squash-merged as PR #94), and the branch was deleted. Don't
+recreate it or look for it; if a doc still mentions it, that doc is out of date.
 
 ### ⚠️ Squash-merges make merged branches look unmerged
 
