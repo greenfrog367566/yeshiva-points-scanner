@@ -2954,6 +2954,61 @@ function setupRoster() {
   // pass tile back into a plain 0-point activity.
   var PASS_ACT_NAME = "Bathroom Pass";
 
+  /* ---------- Tracked Items (Phase 2a — data shell only) ----------------
+   * One engine for the "student + timestamp + value" pattern that Attendance,
+   * Homework, Tracker and Passes each hand-built separately.
+   *
+   *   data.trackedItems = [ {id, name, method, config} ]
+   *   data.trackedData  = { [itemId]: { [studentId]: [ {value, ts}, ... ] } }
+   *
+   * trackedData keeps an ORDERED list per student per item. The last entry is
+   * the current value; earlier entries are history and are never overwritten
+   * in place. That is the whole reason this replaces four stores that each
+   * only kept "now".
+   *
+   * This phase adds the shell and nothing else — no UI, no Gradebook, no
+   * change to scanning or arming (2b/2d). The four old stores are untouched
+   * and still drive their existing tabs; they are retired in 2c.
+   *
+   * `method` is an OPEN enum, deliberately not a three-way branch. Four more
+   * shapes are designed but not built (checked, number, star scale,
+   * checklist). Adding one means adding a row here and nothing else — no
+   * caller does its own method switch, and an unrecognised method arriving
+   * from a newer save is left strictly alone rather than "repaired" away.
+   *
+   * `fill` only supplies the keys ITS method needs and never strips a key it
+   * does not recognise, because `config` is an open per-item bag that later
+   * phases extend (which gradebook an item belongs to, whether the
+   * seating-chart picker is attached, shift-lock, buy-more-with-points cost).
+   */
+  var TRACKED_METHODS = {
+    // Pick one of N labels; advancing cycles forward and wraps.
+    preselect: { fill: function(c){
+      if(!Array.isArray(c.options) || !c.options.length) c.options = ["present","absent"];
+      if(typeof c["default"]!=="string" || c.options.indexOf(c["default"])<0) c["default"] = c.options[0];
+    } },
+    // Tap = +1 (Chazan, Called On, Line Leader...).
+    count: { fill: function(c){
+      if(typeof c.step!=="number" || !isFinite(c.step) || c.step<=0) c.step = 1;
+    } },
+    // Capped per period, manually reset (Bathroom Pass).
+    limited: { fill: function(c){
+      if(typeof c.cap!=="number" || !isFinite(c.cap) || c.cap<1) c.cap = 1;
+    } }
+  };
+
+  // Advance a preselect item one step through its options, wrapping past the
+  // end back to the first. Pure — no DOM, no save. It lives in the data layer
+  // so the cycle order is defined once here rather than re-derived by every
+  // future caller in 2b/2d. An unknown current value lands on the first
+  // option, which is also the item's default.
+  function nextTrackedValue(item, current){
+    if(!item || item.method!=="preselect") return current;
+    var opts = (item.config && item.config.options) || [];
+    if(!opts.length) return current;
+    return opts[(opts.indexOf(current) + 1) % opts.length];
+  }
+
   /* ---------- first-run: route new users through setup wizard ---------- */
   try {
     if (!localStorage.getItem(KEY) &&
@@ -12525,6 +12580,64 @@ nameLine
     // "received" checkbox on the Store's own purchase log (see storeReceived
     // backfill below). Any already-seeded copy from that earlier version is
     // left alone if present — harmless, just no longer created for new data.
+
+    /* ----- Tracked Items shell (Phase 2a). Purely additive. -------------
+     * NOTE the four old stores above (data.attendance, data.hw,
+     * data.trackerLog, data.passes) are deliberately NOT read, converted or
+     * touched here. Phase 2a is a clean start, not a conversion: the presets
+     * below seed empty and the old records stay exactly where they are,
+     * still driving their existing tabs, so they remain recoverable if a
+     * conversion is ever wanted. They are retired in 2c.
+     */
+    if(!Array.isArray(data.trackedItems)) data.trackedItems=[];
+    if(!data.trackedData || typeof data.trackedData!=="object" || Array.isArray(data.trackedData)) data.trackedData={};
+
+    // One-shot seeding of the four presets, mirroring hwActivitySeeded /
+    // passActivitySeeded above: a rebbi who deletes a preset keeps it deleted,
+    // and an item they have since renamed or reconfigured is never reset.
+    if(!data.trackedItemsSeeded){
+      var seedItems=[];
+      seedItems.push({ id:"ti-attendance", name:"Attendance", method:"preselect",
+        config:{ options:["present","late","absent"], "default":"present" } });
+      // Homework is a FOUR-state cycle now, not the old boolean. "unchecked"
+      // (not collected) and "no credit" (handed in, below standard) are
+      // genuinely different facts and are not synonyms. Order matters: this
+      // is the cycle order, and it wraps from "no credit" to "unchecked".
+      seedItems.push({ id:"ti-homework", name:"Homework", method:"preselect",
+        config:{ options:["unchecked","full credit","partial credit","no credit"], "default":"unchecked" } });
+      // One count item per existing tracked activity, carrying its name.
+      // "Homework Checked" and the Bathroom Pass activity are skipped on
+      // purpose: both are tracked:true activities, but each already has its
+      // own preset here with the right shape. Without this skip they would
+      // each also get a second, wrong-shaped count item.
+      data.activities.forEach(function(a){
+        if(!a || a.tracked!==true) return;
+        if(a.name==="Homework Checked" || a.name===PASS_ACT_NAME) return;
+        seedItems.push({ id:"ti-act-"+a.id, name:a.name, method:"count", config:{ step:1 } });
+      });
+      seedItems.push({ id:"ti-pass", name:PASS_ACT_NAME, method:"limited", config:{ cap:1 } });
+      // Defensive: the one-shot flag should make a collision impossible, but a
+      // restored backup could arrive carrying these ids already.
+      var haveTi={}; data.trackedItems.forEach(function(it){ if(it && it.id) haveTi[it.id]=1; });
+      seedItems.forEach(function(it){ if(!haveTi[it.id]) data.trackedItems.push(it); });
+      data.trackedItemsSeeded=true;
+    }
+
+    // Shape guards. An item whose method we do not recognise is left strictly
+    // alone — it may come from a newer version, and silently "fixing" it would
+    // be the data loss this whole file exists to prevent.
+    data.trackedItems.forEach(function(it){
+      if(!it || typeof it!=="object") return;
+      if(typeof it.name!=="string") it.name="";
+      if(!it.config || typeof it.config!=="object" || Array.isArray(it.config)) it.config={};
+      var spec=TRACKED_METHODS[it.method];
+      if(spec) spec.fill(it.config);
+    });
+    Object.keys(data.trackedData).forEach(function(itemId){
+      var per=data.trackedData[itemId];
+      if(!per || typeof per!=="object" || Array.isArray(per)){ data.trackedData[itemId]={}; return; }
+      Object.keys(per).forEach(function(sid){ if(!Array.isArray(per[sid])) per[sid]=[]; });
+    });
   }
   // Shared by the Backup tab's "Reset all scores" button and the "End
   // contest" flow's optional reset — one real implementation either way.

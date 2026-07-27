@@ -49,6 +49,29 @@ var PASS_ACT_NAME = "Bathroom Pass";
 
 function newId(){ return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
 
+// Tracked Items support (copied from app.html alongside the two migration
+// functions). Not covered by the drift check — that compares migrateData() and
+// load2fix() only — so keep this in step by hand when app.html's copy changes.
+var TRACKED_METHODS = {
+  preselect: { fill: function(c){
+    if(!Array.isArray(c.options) || !c.options.length) c.options = ["present","absent"];
+    if(typeof c["default"]!=="string" || c.options.indexOf(c["default"])<0) c["default"] = c.options[0];
+  } },
+  count: { fill: function(c){
+    if(typeof c.step!=="number" || !isFinite(c.step) || c.step<=0) c.step = 1;
+  } },
+  limited: { fill: function(c){
+    if(typeof c.cap!=="number" || !isFinite(c.cap) || c.cap<1) c.cap = 1;
+  } }
+};
+
+function nextTrackedValue(item, current){
+  if(!item || item.method!=="preselect") return current;
+  var opts = (item.config && item.config.options) || [];
+  if(!opts.length) return current;
+  return opts[(opts.indexOf(current) + 1) % opts.length];
+}
+
 function migrateData(d){
   if(!d.version) d.version = 1;
   if(d.version===1){
@@ -312,6 +335,69 @@ function load2fix(){
     data.activities.push({id:nextActId(), name:PASS_ACT_NAME, pts:0, tracked:true, groups:[]});
     data.passActivitySeeded=true;
   }
+  // "Prize Received" used to be a standalone tracked activity here, but that
+  // had no real link to an actual Store purchase. Superseded by a per-purchase
+  // "received" checkbox on the Store's own purchase log (see storeReceived
+  // backfill below). Any already-seeded copy from that earlier version is
+  // left alone if present — harmless, just no longer created for new data.
+
+  /* ----- Tracked Items shell (Phase 2a). Purely additive. -------------
+   * NOTE the four old stores above (data.attendance, data.hw,
+   * data.trackerLog, data.passes) are deliberately NOT read, converted or
+   * touched here. Phase 2a is a clean start, not a conversion: the presets
+   * below seed empty and the old records stay exactly where they are,
+   * still driving their existing tabs, so they remain recoverable if a
+   * conversion is ever wanted. They are retired in 2c.
+   */
+  if(!Array.isArray(data.trackedItems)) data.trackedItems=[];
+  if(!data.trackedData || typeof data.trackedData!=="object" || Array.isArray(data.trackedData)) data.trackedData={};
+
+  // One-shot seeding of the four presets, mirroring hwActivitySeeded /
+  // passActivitySeeded above: a rebbi who deletes a preset keeps it deleted,
+  // and an item they have since renamed or reconfigured is never reset.
+  if(!data.trackedItemsSeeded){
+    var seedItems=[];
+    seedItems.push({ id:"ti-attendance", name:"Attendance", method:"preselect",
+      config:{ options:["present","late","absent"], "default":"present" } });
+    // Homework is a FOUR-state cycle now, not the old boolean. "unchecked"
+    // (not collected) and "no credit" (handed in, below standard) are
+    // genuinely different facts and are not synonyms. Order matters: this
+    // is the cycle order, and it wraps from "no credit" to "unchecked".
+    seedItems.push({ id:"ti-homework", name:"Homework", method:"preselect",
+      config:{ options:["unchecked","full credit","partial credit","no credit"], "default":"unchecked" } });
+    // One count item per existing tracked activity, carrying its name.
+    // "Homework Checked" and the Bathroom Pass activity are skipped on
+    // purpose: both are tracked:true activities, but each already has its
+    // own preset here with the right shape. Without this skip they would
+    // each also get a second, wrong-shaped count item.
+    data.activities.forEach(function(a){
+      if(!a || a.tracked!==true) return;
+      if(a.name==="Homework Checked" || a.name===PASS_ACT_NAME) return;
+      seedItems.push({ id:"ti-act-"+a.id, name:a.name, method:"count", config:{ step:1 } });
+    });
+    seedItems.push({ id:"ti-pass", name:PASS_ACT_NAME, method:"limited", config:{ cap:1 } });
+    // Defensive: the one-shot flag should make a collision impossible, but a
+    // restored backup could arrive carrying these ids already.
+    var haveTi={}; data.trackedItems.forEach(function(it){ if(it && it.id) haveTi[it.id]=1; });
+    seedItems.forEach(function(it){ if(!haveTi[it.id]) data.trackedItems.push(it); });
+    data.trackedItemsSeeded=true;
+  }
+
+  // Shape guards. An item whose method we do not recognise is left strictly
+  // alone — it may come from a newer version, and silently "fixing" it would
+  // be the data loss this whole file exists to prevent.
+  data.trackedItems.forEach(function(it){
+    if(!it || typeof it!=="object") return;
+    if(typeof it.name!=="string") it.name="";
+    if(!it.config || typeof it.config!=="object" || Array.isArray(it.config)) it.config={};
+    var spec=TRACKED_METHODS[it.method];
+    if(spec) spec.fill(it.config);
+  });
+  Object.keys(data.trackedData).forEach(function(itemId){
+    var per=data.trackedData[itemId];
+    if(!per || typeof per!=="object" || Array.isArray(per)){ data.trackedData[itemId]={}; return; }
+    Object.keys(per).forEach(function(sid){ if(!Array.isArray(per[sid])) per[sid]=[]; });
+  });
 }
 
 // ===== Drift check =====
@@ -647,6 +733,161 @@ function runBuiltInTests() {
   assert("Phase1→current group keys kept", d8.navHidden.groups.rewards===true);
   assert("Phase1→seats tab key removed", d8.navHidden.tabs.seats===undefined);
   assert("Phase1→other tab keys kept", d8.navHidden.tabs.brachos===true);
+
+  // --- Test 9: Phase 2a Tracked Items shell ---
+  // 9a. Brand-new save seeds the four presets.
+  var t9 = d1; // the empty-object run from Test 1
+  assert("2a→trackedItems is an array", Array.isArray(t9.trackedItems));
+  assert("2a→trackedData is an object", !!t9.trackedData && typeof t9.trackedData==="object" && !Array.isArray(t9.trackedData));
+  assert("2a→trackedData starts EMPTY (clean start, not a conversion)",
+    Object.keys(t9.trackedData).length===0, "got "+JSON.stringify(t9.trackedData));
+  var byId = {}; t9.trackedItems.forEach(function(it){ byId[it.id]=it; });
+  assert("2a→Attendance preset seeded", !!byId["ti-attendance"] && byId["ti-attendance"].method==="preselect");
+  assert("2a→Attendance options + default",
+    JSON.stringify(byId["ti-attendance"].config.options)===JSON.stringify(["present","late","absent"])
+    && byId["ti-attendance"].config["default"]==="present",
+    "got "+JSON.stringify(byId["ti-attendance"].config));
+  assert("2a→Homework preset seeded", !!byId["ti-homework"] && byId["ti-homework"].method==="preselect");
+  assert("2a→Bathroom Pass preset seeded as limited cap 1",
+    !!byId["ti-pass"] && byId["ti-pass"].method==="limited" && byId["ti-pass"].config.cap===1,
+    "got "+JSON.stringify(byId["ti-pass"]));
+  // The two tracked activities that already have their own presets must NOT
+  // also appear as count items — that would be a second, wrong-shaped copy.
+  var dupCount = t9.trackedItems.filter(function(it){
+    return it.method==="count" && (it.name==="Homework Checked" || it.name===PASS_ACT_NAME);
+  });
+  assert("2a→Homework Checked / Bathroom Pass NOT duplicated as count items",
+    dupCount.length===0, "got "+JSON.stringify(dupCount.map(function(i){return i.name;})));
+
+  // 9b. Homework's exact option order, and the wrap.
+  var hwOpts = byId["ti-homework"].config.options;
+  assert("2a→Homework option ORDER exact",
+    JSON.stringify(hwOpts)===JSON.stringify(["unchecked","full credit","partial credit","no credit"]),
+    "got "+JSON.stringify(hwOpts));
+  assert("2a→Homework default is 'unchecked'", byId["ti-homework"].config["default"]==="unchecked");
+  var hwItem = byId["ti-homework"];
+  assert("2a→HW cycle unchecked→full credit", nextTrackedValue(hwItem,"unchecked")==="full credit");
+  assert("2a→HW cycle full→partial credit", nextTrackedValue(hwItem,"full credit")==="partial credit");
+  assert("2a→HW cycle partial→no credit", nextTrackedValue(hwItem,"partial credit")==="no credit");
+  assert("2a→HW cycle WRAPS no credit→unchecked", nextTrackedValue(hwItem,"no credit")==="unchecked",
+    "got "+nextTrackedValue(hwItem,"no credit"));
+  assert("2a→HW unknown value lands on first option", nextTrackedValue(hwItem,"garbage")==="unchecked");
+  // "unchecked" and "no credit" are distinct facts, not synonyms.
+  assert("2a→'unchecked' and 'no credit' are distinct states",
+    hwOpts.indexOf("unchecked")>=0 && hwOpts.indexOf("no credit")>=0
+    && hwOpts.indexOf("unchecked")!==hwOpts.indexOf("no credit"));
+
+  // 9c. Existing save with none of the new fields seeds correctly, and its
+  //     tracked activities each become their own count item.
+  var t9c = runMigration({ version:4, hwActivitySeeded:true, passActivitySeeded:true,
+    students:[{id:"s1",name:"Dovid",group:""}],
+    activities:[
+      {id:"a1",name:"On time",pts:1},
+      {id:"a2",name:"Chazan",pts:0,tracked:true},
+      {id:"a3",name:"Called On",pts:0,tracked:true}
+    ] });
+  var c9c = t9c.trackedItems.filter(function(it){ return it.method==="count"; });
+  assert("2a→existing save: one count item per tracked activity", c9c.length===2, "got "+c9c.length);
+  assert("2a→count items carry the activity name",
+    c9c.map(function(i){return i.name;}).sort().join(",")==="Called On,Chazan",
+    "got "+c9c.map(function(i){return i.name;}).join(","));
+  assert("2a→untracked activity gets NO count item",
+    !t9c.trackedItems.some(function(it){ return it.name==="On time"; }));
+  assert("2a→existing save still gets all three non-count presets",
+    t9c.trackedItems.some(function(i){return i.id==="ti-attendance";})
+    && t9c.trackedItems.some(function(i){return i.id==="ti-homework";})
+    && t9c.trackedItems.some(function(i){return i.id==="ti-pass";}));
+
+  // 9d. Idempotence — re-running must not duplicate or reset.
+  var beforeIdem = JSON.stringify(t9c.trackedItems);
+  var t9d = runMigration(t9c);
+  assert("2a→re-run does not duplicate items",
+    t9d.trackedItems.length===t9c.trackedItems.length,
+    t9c.trackedItems.length+" → "+t9d.trackedItems.length);
+  assert("2a→re-run leaves items byte-identical", JSON.stringify(t9d.trackedItems)===beforeIdem);
+  // A rebbi's edits to a seeded preset must survive a reload.
+  var edited = JSON.parse(JSON.stringify(t9c));
+  edited.trackedItems.forEach(function(it){ if(it.id==="ti-attendance"){ it.name="Roll Call"; it.config.options=["here","not here"]; it.config["default"]="here"; } });
+  var t9e = runMigration(edited);
+  var att9e = t9e.trackedItems.filter(function(i){return i.id==="ti-attendance";})[0];
+  assert("2a→edited preset NOT reset on reload",
+    att9e.name==="Roll Call" && JSON.stringify(att9e.config.options)===JSON.stringify(["here","not here"]),
+    "got "+JSON.stringify(att9e));
+  // A deleted preset stays deleted (same contract as Homework Checked).
+  var deleted = JSON.parse(JSON.stringify(t9c));
+  deleted.trackedItems = deleted.trackedItems.filter(function(i){ return i.id!=="ti-pass"; });
+  var t9f = runMigration(deleted);
+  assert("2a→deleted preset is NOT re-seeded",
+    !t9f.trackedItems.some(function(i){ return i.id==="ti-pass"; }));
+
+  // 9g. An unrecognised method (from a NEWER save) must survive untouched —
+  //     this is what makes `method` an open enum rather than a fixed branch.
+  var t9g = runMigration({ version:4, trackedItemsSeeded:true,
+    trackedItems:[{ id:"ti-future", name:"Star Scale", method:"star",
+                    config:{ max:5, weirdFutureKey:"keep me" } }] });
+  var fut = t9g.trackedItems[0];
+  assert("2a→unknown method preserved, not dropped", !!fut && fut.method==="star");
+  assert("2a→unknown method's config left intact",
+    fut.config.max===5 && fut.config.weirdFutureKey==="keep me", "got "+JSON.stringify(fut.config));
+  // And an unrecognised key on a KNOWN method is never stripped either.
+  var t9h = runMigration({ version:4, trackedItemsSeeded:true,
+    trackedItems:[{ id:"ti-x", name:"X", method:"count", config:{ gradebook:"private", futureThing:1 } }] });
+  assert("2a→open config: unknown keys survive on a known method",
+    t9h.trackedItems[0].config.gradebook==="private" && t9h.trackedItems[0].config.futureThing===1,
+    "got "+JSON.stringify(t9h.trackedItems[0].config));
+  assert("2a→known method still gets its own defaults filled",
+    t9h.trackedItems[0].config.step===1, "got step="+t9h.trackedItems[0].config.step);
+
+  // 9i. Corrupted tracked stores repair without throwing.
+  var t9i = runMigration({ version:4, trackedItemsSeeded:true,
+    trackedItems:"not an array", trackedData:"not an object" });
+  assert("2a→corrupt trackedItems repaired to array", Array.isArray(t9i.trackedItems));
+  assert("2a→corrupt trackedData repaired to object",
+    !!t9i.trackedData && typeof t9i.trackedData==="object" && !Array.isArray(t9i.trackedData));
+  var t9j = runMigration({ version:4, trackedItemsSeeded:true, trackedItems:[],
+    trackedData:{ "ti-x": { s1:"not an array", s2:[{value:"present",ts:1}] } } });
+  assert("2a→corrupt per-student entry list repaired", Array.isArray(t9j.trackedData["ti-x"].s1));
+  assert("2a→valid entry history preserved",
+    t9j.trackedData["ti-x"].s2.length===1 && t9j.trackedData["ti-x"].s2[0].value==="present");
+
+  // --- Test 10: THE ONE THAT MATTERS — old stores are untouched ---
+  // Phase 2a parks data.attendance / data.hw / data.trackerLog / data.passes.
+  // They must come out of load2fix byte-identical, so the old tabs keep
+  // working and the records stay recoverable for a later conversion.
+  var oldSrc = {
+    version: 4, hwActivitySeeded:true, passActivitySeeded:true,
+    students:[{id:"s1",name:"Dovid",group:""},{id:"s2",name:"Moshe",group:""}],
+    activities:[{id:"a1",name:"On time",pts:1},{id:"a2",name:"Chazan",pts:0,tracked:true}],
+    attendance: { "2026-07-20": {s1:"present", s2:"absent"}, "2026-07-21": {s1:"late"} },
+    hw: { "2026-07-20": {s1:true, s2:false} },
+    trackerLog: [ {ts:1720000000000, sid:"s1", actId:"a2"}, {ts:1720000005000, sid:"s2", actId:"a2"} ],
+    passes: { used:{ s1:1720000000000 }, reset:1719000000000 }
+  };
+  var snapBefore = {
+    attendance: JSON.stringify(oldSrc.attendance),
+    hw:         JSON.stringify(oldSrc.hw),
+    trackerLog: JSON.stringify(oldSrc.trackerLog),
+    passes:     JSON.stringify(oldSrc.passes)
+  };
+  var t10 = runMigration(oldSrc);
+  assert("2a→data.attendance byte-identical after load",
+    JSON.stringify(t10.attendance)===snapBefore.attendance,
+    "before "+snapBefore.attendance+"\nafter  "+JSON.stringify(t10.attendance));
+  assert("2a→data.hw byte-identical after load",
+    JSON.stringify(t10.hw)===snapBefore.hw,
+    "before "+snapBefore.hw+"\nafter  "+JSON.stringify(t10.hw));
+  assert("2a→data.trackerLog byte-identical after load",
+    JSON.stringify(t10.trackerLog)===snapBefore.trackerLog,
+    "before "+snapBefore.trackerLog+"\nafter  "+JSON.stringify(t10.trackerLog));
+  assert("2a→data.passes byte-identical after load",
+    JSON.stringify(t10.passes)===snapBefore.passes,
+    "before "+snapBefore.passes+"\nafter  "+JSON.stringify(t10.passes));
+  // And the new shell really did seed alongside them, so this is a genuine
+  // co-existence check rather than a run where 2a simply did nothing.
+  assert("2a→new shell seeded alongside the untouched old stores",
+    t10.trackedItems.length>0 && t10.trackedItemsSeeded===true);
+  assert("2a→DATA_VERSION NOT bumped (purely additive)", t10.version===4 && DATA_VERSION===4,
+    "got v"+t10.version+", DATA_VERSION="+DATA_VERSION);
 
   // Runs last so its card sits at the bottom, but it gates the render: nothing
   // is shown until we know whether this harness is testing current code.
