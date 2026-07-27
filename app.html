@@ -6711,22 +6711,29 @@ function setupRoster() {
   // Currently used by the Seats tab's activity pill. (An earlier header pill
   // this was also shared with is gone; the comment used to still claim it.)
   //
-  // TRACKED activities are excluded, matching renderActButtons(), fpRenderActs(),
-  // armActivityByCode() and the printed Activity Menu — this was the only arming
-  // surface that still listed them. Tracked activities do not award points: the
-  // Tracker writes to data.trackerLog via trackerAward() and Homework Checked
-  // writes to data.hw, so arming one here and scanning sent it to award() and
-  // produced points plus a log entry instead of the record the rebbi expected.
-  // Excluding them (rather than special-casing Homework Checked) fixes the whole
-  // class of bug in one place, and keeps every arming surface showing the same
-  // list. Each tracked tool is still reached its own way: the Tracker tab, the
-  // Homework tab, or a student's personal Homework Checked QR code.
+  // TRACKER activities are excluded (they were the real hole: they write to
+  // data.trackerLog via trackerAward(), so arming one here sent the next scan to
+  // award() and produced points instead of a tracker entry — and award() has no
+  // backstop for them, so exclusion is the only thing protecting them).
+  //
+  // HOMEWORK CHECKED is deliberately kept, even though it is also tracked. It is
+  // safe to arm from here precisely because award() DOES have a backstop for it:
+  // an armed Homework Checked is rerouted to markHwCheckedToday() regardless of
+  // which tab the scan came from, so arming it here marks homework for real. It
+  // is also the only way to reach homework from the seating-chart scan bar —
+  // there is no button or QR code for it there — so excluding it removed a
+  // working workflow rather than preventing a bug.
+  //
+  // This is the one arming surface that intentionally differs from
+  // renderActButtons() / fpRenderActs() / armActivityByCode(), which still show
+  // neither. Those sit next to the Homework tab in normal use; this one does not.
+  function homeworkActivity(a){ return a.tracked && a.name==="Homework Checked"; }
   function populateActivityDropdown(dd, focusInputId, closeFn){
     dd.innerHTML="";
-    var armable=data.activities.filter(function(a){ return !a.tracked; });
+    var armable=data.activities.filter(function(a){ return !a.tracked || homeworkActivity(a); });
     if(!armable.length){
       dd.appendChild(el("div","hd-empty", data.activities.length
-        ? "No point activities yet — the Tracker and Homework have their own tabs."
+        ? "No point activities yet — the Tracker has its own tab."
         : "No activities yet — add some on the Activities tab."));
     } else {
       armable.forEach(function(a){
