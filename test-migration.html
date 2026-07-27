@@ -41,7 +41,8 @@
 // These must match what's in app.html. When you change migrateData or
 // load2fix in the app, update them here too and re-run.
 
-var DATA_VERSION = 3;
+var DATA_VERSION = 4;
+var PASS_ACT_NAME = "Bathroom Pass";
 
 function newId(){ return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
 
@@ -55,6 +56,9 @@ function migrateData(d){
   if(d.version===2){
     if(typeof d.pickerSkip!=="boolean") d.pickerSkip = true;
     d.version = 3;
+  }
+  if(d.version===3){
+    d.version = 4;
   }
   return d;
 }
@@ -296,6 +300,15 @@ function load2fix(){
     data.activities.push({id:nextActId(), name:"Homework Checked", pts:0, tracked:true, groups:[]});
     data.hwActivitySeeded=true;
   }
+  // Bathroom Pass as a tracked 0-point activity, purely so it has an id to
+  // build its Record-tab button and its ACT:/PA: QR codes from. Same shape and
+  // same one-shot flag as Homework Checked above, so a teacher who deletes the
+  // button doesn't get it back on the next load. Pass usage itself still lives
+  // in data.passes — this activity is a handle, not a second store.
+  if(!data.passActivitySeeded){
+    data.activities.push({id:nextActId(), name:PASS_ACT_NAME, pts:0, tracked:true, groups:[]});
+    data.passActivitySeeded=true;
+  }
 }
 
 // ===== Test framework =====
@@ -428,7 +441,9 @@ function runBuiltInTests() {
   // setting is now saved and shared with the wheel, so every pre-v3 save must
   // come out with it ON or the seating chart would silently stop skipping.
   var d3d = runMigration({ version:2, students:[{id:"s1",name:"Dovid",group:""}], scores:{s1:10} });
-  assert("v2→v3 version bumped", d3d.version===3, "got v"+d3d.version);
+  // Migrates all the way to current, not just to 3 — assert against DATA_VERSION
+  // so this doesn't need editing on every future bump.
+  assert("v2→current version bumped", d3d.version===DATA_VERSION, "got v"+d3d.version);
   assert("v2→v3 pickerSkip defaults ON (seating keeps skipping)", d3d.pickerSkip===true, "got: "+d3d.pickerSkip);
   assert("v2→v3 existing data untouched", d3d.scores.s1===10 && d3d.students.length===1);
   // A rebbi who deliberately turned it OFF must keep it off across reloads.
@@ -438,6 +453,35 @@ function runBuiltInTests() {
   assert("pickerSkip non-boolean coerced to ON", d3f.pickerSkip===true, "got: "+d3f.pickerSkip);
   // Brand-new installs get it on too.
   assert("Empty→pickerSkip defaults ON", d1.pickerSkip===true, "got: "+d1.pickerSkip);
+
+  // --- Test 3g: v3 -> v4 Bathroom Pass seeded as an activity ---
+  // It needs an id so the Record-tab button and its ACT:/PA: QR codes can be
+  // built. Seeding must be one-shot and must not disturb anything existing.
+  var d3g = runMigration({ version:3,
+    activities:[{id:"a1",name:"Davening nicely",pts:2}],
+    scores:{s1:12}, students:[{id:"s1",name:"Dovid",group:""}],
+    passes:{used:{s1:1720000000000}, reset:1719000000000} });
+  assert("v3→v4 version bumped", d3g.version===4, "got v"+d3g.version);
+  var passAct = d3g.activities.filter(function(a){ return a.name===PASS_ACT_NAME; });
+  assert("v3→v4 Bathroom Pass activity seeded once", passAct.length===1, "got "+passAct.length);
+  assert("v3→v4 seeded tracked + 0 points", passAct[0] && passAct[0].tracked===true && passAct[0].pts===0);
+  assert("v3→v4 seeded activity has an id", !!(passAct[0] && passAct[0].id));
+  assert("v3→v4 seeded id is unique", d3g.activities.filter(function(a){ return a.id===passAct[0].id; }).length===1);
+  assert("v3→v4 existing activity untouched", d3g.activities[0].name==="Davening nicely" && d3g.activities[0].pts===2);
+  assert("v3→v4 flag set", d3g.passActivitySeeded===true);
+  // THE data-safety check: existing pass records must survive untouched.
+  assert("v3→v4 data.passes preserved", d3g.passes.used.s1===1720000000000 && d3g.passes.reset===1719000000000,
+    "got "+JSON.stringify(d3g.passes));
+  assert("v3→v4 scores preserved", d3g.scores.s1===12);
+  // Re-running must NOT seed a second copy (the one-shot flag doing its job).
+  var d3h = runMigration(d3g);
+  assert("re-run does not duplicate the pass activity",
+    d3h.activities.filter(function(a){ return a.name===PASS_ACT_NAME; }).length===1);
+  // A teacher who deletes the button must not have it come back.
+  var d3i = runMigration({ version:4, passActivitySeeded:true, activities:[{id:"a1",name:"On time",pts:1}] });
+  assert("deleted pass activity is NOT re-seeded",
+    d3i.activities.filter(function(a){ return a.name===PASS_ACT_NAME; }).length===0);
+  assert("Empty→pass activity seeded", d1.activities.some(function(a){ return a.name===PASS_ACT_NAME; }));
 
   // --- Test 4: Old auction shape migration ---
   var d4 = runMigration({ version:2, auction:{prizes:[{name:"Prize1"}]}, auctionsMigrated:false });

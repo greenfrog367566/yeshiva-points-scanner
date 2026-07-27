@@ -2948,6 +2948,11 @@ function setupRoster() {
 (function(){
   "use strict";
   var KEY = "qrPointsData_v1";
+  // The seeded Bathroom Pass activity's name. It is matched BY NAME in several
+  // places (the same way "Homework Checked" is), so it lives in one constant —
+  // renaming the seeded activity without updating this would quietly turn the
+  // pass tile back into a plain 0-point activity.
+  var PASS_ACT_NAME = "Bathroom Pass";
 
   /* ---------- first-run: route new users through setup wizard ---------- */
   try {
@@ -3106,7 +3111,7 @@ function setupRoster() {
   // establishing the baseline every migration counts up from. Bump
   // DATA_VERSION and add a new `if(data.version===N)` branch here whenever a
   // future release changes the shape of stored data.
-  var DATA_VERSION = 3;
+  var DATA_VERSION = 4;
   function migrateData(d){
     if(!d.version) d.version = 1;
     // v1 -> v2: rename data.bunk to data.className. This app is a Yeshiva/
@@ -3131,6 +3136,20 @@ function setupRoster() {
     if(d.version===2){
       if(typeof d.pickerSkip!=="boolean") d.pickerSkip = true;
       d.version = 3;
+    }
+    // v3 -> v4: Bathroom Pass becomes a real (tracked, 0-point) entry in
+    // data.activities, so it can have a Record-tab button and printable QR
+    // codes the same way Homework Checked does — both need an activity id to
+    // build ACT:/PA: codes from. Only a version stamp here; the seeding itself
+    // is the passActivitySeeded block in load2fix(), mirroring exactly how
+    // hwActivitySeeded seeds Homework Checked. Purely ADDITIVE: it appends one
+    // activity and one boolean flag. Nothing is read, renamed, removed or
+    // rewritten — existing activities, scores, logs and data.passes are all
+    // untouched, and the pass records themselves keep living in data.passes
+    // exactly as before. The worst case for a teacher who doesn't want it is
+    // one extra button, deletable like any other activity.
+    if(d.version===3){
+      d.version = 4;
     }
     return d;
   }
@@ -3374,7 +3393,7 @@ function setupRoster() {
     var pill=$("armedPill");
     // Homework Checked earns no points, so the "Now scoring" pill shows the name
     // alone — appending its 0 would read as "this scan is worth nothing".
-    var armedIsHw = data.activities.some(function(a){ return homeworkActivity(a) && a.name===label; });
+    var armedIsHw = data.activities.some(function(a){ return reroutedActivity(a) && a.name===label; });
     pill.textContent = armedIsHw ? label : (label + "  " + fmtDeltaBare(delta));
     pill.classList.toggle("neg", delta<0);
     // highlight matching activity button
@@ -3614,13 +3633,27 @@ function setupRoster() {
     if(data.autoSheet && s) pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:0, total:score(sid)});
     save();
   }
+  // THE single "this student is using their pass" rule, shared by the Passes
+  // tab's scan box and by an armed Bathroom Pass scanned from anywhere else, so
+  // the two can never diverge. Deliberately does NOT flash: each caller owns its
+  // own feedback surface (the Passes tab has its own passFlash element, which is
+  // invisible from other tabs). Returns "already" or "ok".
+  // Matches the tab's SCAN behavior — one pass per student per week; a second
+  // scan is refused rather than toggling the pass back off. (The tab's per-row
+  // button is a separate, deliberate toggle, "Mark used" / "Give back", for
+  // manual correction. A scan must never silently hand a pass back.)
+  function passMarkUsed(s){
+    if(passUsed(s.id)) return "already";
+    setPass(s.id, true);
+    return "ok";
+  }
   function passScan(code){
     code=(code||"").trim(); if(!code) return;
     var s=studentById(code);
     if(!s){ passFlash(false,"Unknown code","\u201C"+code+"\u201D isn't a student"); beep(false); return; }
     if(!studentInCurrentClass(s)){ passFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D", "switch class to use this pass"); beep(false); return; }
-    if(passUsed(s.id)){ passFlash(false, s.name+" already used their pass", "this week"); beep(false); renderPasses(); return; }
-    setPass(s.id,true); passFlash(true, s.name+" — pass used", "that's their one for this week"); beep(true); renderPasses();
+    if(passMarkUsed(s)==="already"){ passFlash(false, s.name+" already used their pass", "this week"); beep(false); renderPasses(); return; }
+    passFlash(true, s.name+" — pass used", "that's their one for this week"); beep(true); renderPasses();
   }
   function renderPasses(){
     var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
@@ -3880,10 +3913,21 @@ function setupRoster() {
   // excluded from every arming surface. Same tracked+name test award() and the
   // personal-QR path use — kept in one place now that four callers need it.
   function homeworkActivity(a){ return !!a && a.tracked && a.name==="Homework Checked"; }
-  // Activities offerable as an armable choice: point activities, plus Homework
-  // Checked. Shared by the Scan tab's buttons, the seating-chart dropdown and
-  // the printed Activity Menu so the three can't drift apart.
-  function armableActivities(){ return data.activities.filter(function(a){ return !a.tracked || homeworkActivity(a); }); }
+  function passActivity(a){ return !!a && a.tracked && a.name===PASS_ACT_NAME; }
+  // Tracked activities that award() REROUTES to their own store instead of the
+  // points path, and are therefore safe to arm anywhere. Tracker activities are
+  // not on this list — they have no reroute, so arming one would write points.
+  // Anything added here must have a matching branch in award().
+  function reroutedActivity(a){ return homeworkActivity(a) || passActivity(a); }
+  // Activities offerable as an armable choice: point activities, plus the
+  // rerouted ones. Shared by the Scan tab's buttons, the seating-chart dropdown
+  // and the printed Activity Menu so the three can't drift apart.
+  function armableActivities(){ return data.activities.filter(function(a){ return !a.tracked || reroutedActivity(a); }); }
+  // Wording for the rerouted activities on printed cards, where a point value
+  // would be wrong. Kept next to the predicates so a future rerouted activity
+  // gets its wording here rather than in three separate print call sites.
+  function personalActionSub(a){ return homeworkActivity(a) ? "marks homework checked" : "uses their weekly pass"; }
+  function personalActionVerb(a){ return homeworkActivity(a) ? "mark homework checked" : "use the weekly bathroom pass"; }
   function renderTrackerActSel(){
     var sel=$("trackerActSel");
     var prev=sel.value||data.trackerActId;
@@ -5227,7 +5271,7 @@ function setupRoster() {
       // Homework Checked earns no points, so it shows no value line at all — a
       // "+0" would read as "scanning this gives nothing". Name only. Both .an and
       // .av are display:block, so omitting .av just makes a shorter card.
-      if(!homeworkActivity(a)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
+      if(!reroutedActivity(a)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
       b.addEventListener("click", function(){ setArmed(a.name, a.pts); $("scanInput").focus(); });
       wrap.appendChild(b);
     });
@@ -5291,6 +5335,22 @@ function setupRoster() {
       markHwCheckedToday(s.id);
       flash(true, s.name, "HW Checked", "Homework marked checked (today)");
       beep(true);
+      return true;
+    }
+    // Bathroom Pass, same idea: pass usage lives in data.passes, not points.
+    // Goes through passMarkUsed(), the SAME function the Passes tab's own scan
+    // box uses, so the one-pass-per-week rule can't drift between the two —
+    // including the refusal on a second scan (a scan never hands a pass back;
+    // that's the Passes tab's per-row toggle, the manual correction path).
+    if(armedAct && passActivity(armedAct)){
+      if(passMarkUsed(s)==="already"){
+        flash(false, s.name, "Already used their pass", "this week — give it back on Run → Passes if that's wrong");
+        beep(false);
+      } else {
+        flash(true, s.name, "Pass used", "that's their one for this week");
+        beep(true);
+      }
+      if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
       return true;
     }
     var tag=contestTagForScan();
@@ -5440,6 +5500,24 @@ function setupRoster() {
         markHwCheckedToday(ps.id);
         flash(true, ps.name, "HW Checked", "Homework marked checked (today)");
         beep(true);
+        return;
+      }
+      // A student's personal Bathroom Pass code — one scan, no arming step.
+      // Same passMarkUsed() rule as everywhere else, so a second scan is refused
+      // rather than quietly handing the pass back.
+      if(passActivity(pa)){
+        if(!studentInCurrentClass(ps)){
+          flash(false, ps.name, "Not in selected class", "Switch to “"+data.currentClass+"” or choose “All classes” to use this pass");
+          beep(false); return;
+        }
+        if(passMarkUsed(ps)==="already"){
+          flash(false, ps.name, "Already used their pass", "this week — give it back on Run → Passes if that's wrong");
+          beep(false);
+        } else {
+          flash(true, ps.name, "Pass used", "that's their one for this week");
+          beep(true);
+        }
+        if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
         return;
       }
       awardWith(ps, pa.name, pa.pts);
@@ -6785,13 +6863,15 @@ function setupRoster() {
     // path. Homework Checked NO LONGER refuses here \u2014 it is printed on the
     // Activity Menu again, and award() reroutes it to markHwCheckedToday(), so
     // arming it by code then scanning students marks homework for real.
-    if(a.tracked && !homeworkActivity(a)){
+    if(a.tracked && !reroutedActivity(a)){
       flash(false, "Not scannable here", "Use the Tracker tab", "“"+a.name+"” keeps its own record");
       beep(false); return;
     }
     setArmed(a.name, a.pts);
     if(homeworkActivity(a)){
       flash(true, "Now marking", a.name, "Scan students to mark homework checked");
+    } else if(passActivity(a)){
+      flash(true, "Now marking", a.name, "Scan students to use their weekly pass");
     } else {
       flash(true, "Now scoring", a.name+"  "+fmtDeltaBare(a.pts), "Scan students to give "+fmtDelta(a.pts));
     }
@@ -11523,10 +11603,12 @@ nameLine
     // activities stay excluded (armableActivities()), since they have no such
     // reroute and would still land on the points path.
     var items=armableActivities().filter(actVisibleInCurrentClass).map(function(a){
-      // No "+0" for Homework Checked — it earns nothing, so the sub-line says
-      // what the code actually does instead of quoting a point value.
+      // No "+0" for the rerouted activities — they earn nothing, so the sub-line
+      // says what the code actually does instead of quoting a point value.
       return {qrText:"ACT:"+a.id, name:a.name,
-              sub: homeworkActivity(a) ? "marks homework checked" : fmtDelta(a.pts)};
+              sub: homeworkActivity(a) ? "marks homework checked"
+                 : passActivity(a)     ? "marks a bathroom pass used"
+                 : fmtDelta(a.pts)};
     });
     items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount"});
     items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount"});
@@ -11654,7 +11736,8 @@ nameLine
       var items=[];
       list.forEach(function(s){
         actsToShow.forEach(function(a){
-          items.push({qrText:"PA:"+s.id+":"+a.id, line1:a.name, line2:s.name+" · "+fmtDelta(a.pts)});
+          items.push({qrText:"PA:"+s.id+":"+a.id, line1:a.name,
+            line2:s.name+" · "+(reroutedActivity(a) ? personalActionSub(a) : fmtDelta(a.pts))});
         });
         if(showCustom) items.push({qrText:"PC:"+s.id, line1:"Custom", line2:s.name});
       });
@@ -11669,8 +11752,13 @@ nameLine
       page.appendChild(el("div","personal-sub",(s.group?s.group+" · ":"")+"Personal scoring QR codes"));
       var qgrid=el("div","personal-qr-grid");
       actsToShow.forEach(function(a){
-        addPersonalQrCard(qgrid, "PA:"+s.id+":"+a.id, a.name, fmtDelta(a.pts),
-          "Scan this to give "+s.name+" this activity.", a.pts<0, hasQR);
+        // Homework Checked / Bathroom Pass earn no points, so their cards say
+        // what the scan does instead of printing a meaningless "+0".
+        addPersonalQrCard(qgrid, "PA:"+s.id+":"+a.id, a.name,
+          reroutedActivity(a) ? personalActionSub(a) : fmtDelta(a.pts),
+          reroutedActivity(a) ? ("Scan this to "+personalActionVerb(a)+" for "+s.name+".")
+                              : ("Scan this to give "+s.name+" this activity."),
+          a.pts<0, hasQR);
       });
       if(showCustom) addPersonalQrCard(qgrid, "PC:"+s.id, "Custom", "live custom amount",
         "Uses the current Custom amount on the Scan tab when scanned, not the amount at print time.", false, hasQR);
@@ -12422,6 +12510,15 @@ nameLine
     if(!data.hwActivitySeeded){
       data.activities.push({id:nextActId(), name:"Homework Checked", pts:0, tracked:true, groups:[]});
       data.hwActivitySeeded=true;
+    }
+    // Bathroom Pass as a tracked 0-point activity, purely so it has an id to
+    // build its Record-tab button and its ACT:/PA: QR codes from. Same shape and
+    // same one-shot flag as Homework Checked above, so a teacher who deletes the
+    // button doesn't get it back on the next load. Pass usage itself still lives
+    // in data.passes — this activity is a handle, not a second store.
+    if(!data.passActivitySeeded){
+      data.activities.push({id:nextActId(), name:PASS_ACT_NAME, pts:0, tracked:true, groups:[]});
+      data.passActivitySeeded=true;
     }
     // "Prize Received" used to be a standalone tracked activity here, but that
     // had no real link to an actual Store purchase. Superseded by a per-purchase
