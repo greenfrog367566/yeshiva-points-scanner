@@ -3372,7 +3372,10 @@ function setupRoster() {
     }
     armed = {label:label, delta:delta};
     var pill=$("armedPill");
-    pill.textContent = label + "  " + fmtDeltaBare(delta);
+    // Homework Checked earns no points, so the "Now scoring" pill shows the name
+    // alone — appending its 0 would read as "this scan is worth nothing".
+    var armedIsHw = data.activities.some(function(a){ return homeworkActivity(a) && a.name===label; });
+    pill.textContent = armedIsHw ? label : (label + "  " + fmtDeltaBare(delta));
     pill.classList.toggle("neg", delta<0);
     // highlight matching activity button
     document.querySelectorAll(".act-btn").forEach(function(b){
@@ -3871,6 +3874,16 @@ function setupRoster() {
   // default arm must never land on one — activities[0] can be tracked once a
   // teacher deletes the starter point activities.
   function firstArmableActivity(){ return data.activities.filter(function(a){ return !a.tracked; })[0]; }
+  // THE tracked activity that is nonetheless safe to arm anywhere, because
+  // award() reroutes it to markHwCheckedToday() no matter which tab the scan
+  // came from. Tracker activities have no such backstop, which is why they stay
+  // excluded from every arming surface. Same tracked+name test award() and the
+  // personal-QR path use — kept in one place now that four callers need it.
+  function homeworkActivity(a){ return !!a && a.tracked && a.name==="Homework Checked"; }
+  // Activities offerable as an armable choice: point activities, plus Homework
+  // Checked. Shared by the Scan tab's buttons, the seating-chart dropdown and
+  // the printed Activity Menu so the three can't drift apart.
+  function armableActivities(){ return data.activities.filter(function(a){ return !a.tracked || homeworkActivity(a); }); }
   function renderTrackerActSel(){
     var sel=$("trackerActSel");
     var prev=sel.value||data.trackerActId;
@@ -4426,10 +4439,13 @@ function setupRoster() {
       var id=code.slice(4).trim(), a=null;
       for(var i=0;i<data.activities.length;i++){ if(data.activities[i].id.toUpperCase()===id.toUpperCase()){ a=data.activities[i]; break; } }
       if(!a){ fpFlash(false,"Unknown activity code"); beep(false); return; }
-      // Same guard armActivityByCode() already applies: a tracked activity
-      // writes to its own store, so arming one here would send the next scan to
-      // awardPointsSilent() as plain points. Defends against a pre-fix printed
-      // Activity Menu still floating around a classroom.
+      // Rejects ALL tracked activities, Homework Checked included — deliberately
+      // stricter than armActivityByCode(), which now allows Homework Checked.
+      // The difference is where the scan lands: the main scan bar goes through
+      // award(), which reroutes Homework Checked to markHwCheckedToday(); this
+      // panel goes through fpAward() -> awardPointsSilent(), which has no such
+      // reroute, so arming it here would still write points. fpRenderActs() hides
+      // tracked activities from this panel's buttons for the same reason.
       if(a.tracked){ fpFlash(false,"Not scannable here — "+a.name+" has its own tab"); beep(false); return; }
       fpActId=a.id; fpCustomAct=null; fpRenderActs();
       fpFlash(true, "Now scoring: "+a.name+"  "+fmtDeltaBare(a.pts));
@@ -5198,15 +5214,20 @@ function setupRoster() {
   }
   function renderActButtons(){
     var wrap=$("actButtons"); wrap.innerHTML="";
-    var visible=data.activities.filter(actVisibleInCurrentClass).filter(function(a){ return !a.tracked; });
+    // Homework Checked gets a button here like any other activity — arming it and
+    // scanning marks homework for real via award()'s reroute. Tracker activities
+    // stay out: they still fall through to the points path with no backstop.
+    var visible=armableActivities().filter(actVisibleInCurrentClass);
     if(!data.activities.length){ wrap.appendChild(el("span","recent-empty","No activities yet — add some on the Activities tab.")); return; }
     if(!visible.length){ wrap.appendChild(el("span","recent-empty","No activities are set up for this group — check the Activities tab.")); return; }
     visible.forEach(function(a){
       var b=el("button","act-btn");
       b.dataset.label=a.name; b.dataset.delta=a.pts;
-      var n=el("span","an",a.name);
-      var v=el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts));
-      b.appendChild(n); b.appendChild(v);
+      b.appendChild(el("span","an",a.name));
+      // Homework Checked earns no points, so it shows no value line at all — a
+      // "+0" would read as "scanning this gives nothing". Name only. Both .an and
+      // .av are display:block, so omitting .av just makes a shorter card.
+      if(!homeworkActivity(a)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
       b.addEventListener("click", function(){ setArmed(a.name, a.pts); $("scanInput").focus(); });
       wrap.appendChild(b);
     });
@@ -6727,10 +6748,9 @@ function setupRoster() {
   // This is the one arming surface that intentionally differs from
   // renderActButtons() / fpRenderActs() / armActivityByCode(), which still show
   // neither. Those sit next to the Homework tab in normal use; this one does not.
-  function homeworkActivity(a){ return a.tracked && a.name==="Homework Checked"; }
   function populateActivityDropdown(dd, focusInputId, closeFn){
     dd.innerHTML="";
-    var armable=data.activities.filter(function(a){ return !a.tracked || homeworkActivity(a); });
+    var armable=armableActivities();
     if(!armable.length){
       dd.appendChild(el("div","hd-empty", data.activities.length
         ? "No point activities yet — the Tracker has its own tab."
@@ -6761,15 +6781,20 @@ function setupRoster() {
     var a=null;
     for(var i=0;i<data.activities.length;i++){ if(data.activities[i].id.toUpperCase()===id.toUpperCase()){ a=data.activities[i]; break; } }
     if(!a){ flash(false,"Unknown activity code","","\u201C"+c+"\u201D"); beep(false); return; }
-    // Defends against an already-printed, pre-fix Activity Menu sheet still
-    // floating around a classroom \u2014 even if that paper QR code exists,
-    // scanning it must not silently arm Homework Checked as a plain activity.
-    if(a.name==="Homework Checked"){
-      flash(false, "Not scannable here", "Use the Homework tab", "or a student's own Homework Checked QR code");
+    // Tracker activities still can't be armed by code: they'd land on the points
+    // path. Homework Checked NO LONGER refuses here \u2014 it is printed on the
+    // Activity Menu again, and award() reroutes it to markHwCheckedToday(), so
+    // arming it by code then scanning students marks homework for real.
+    if(a.tracked && !homeworkActivity(a)){
+      flash(false, "Not scannable here", "Use the Tracker tab", "“"+a.name+"” keeps its own record");
       beep(false); return;
     }
     setArmed(a.name, a.pts);
-    flash(true, "Now scoring", a.name+"  "+fmtDeltaBare(a.pts), "Scan students to give "+fmtDelta(a.pts));
+    if(homeworkActivity(a)){
+      flash(true, "Now marking", a.name, "Scan students to mark homework checked");
+    } else {
+      flash(true, "Now scoring", a.name+"  "+fmtDeltaBare(a.pts), "Scan students to give "+fmtDelta(a.pts));
+    }
     beep(true);
   }
   // scan input (points)
@@ -11490,14 +11515,18 @@ nameLine
     // activities that apply to the currently selected class (same group-restriction
     // logic the Scan tab's activity buttons already use) — the control codes below
     // (Custom, Undo, phrase-nav) aren't activity-specific, so they always show.
-    // Homework Checked deliberately excluded from the printed Activity Menu —
-    // arming it here would let a teacher scan it as a normal 0-point activity,
-    // creating a plain data.log entry instead of actually marking homework
-    // checked in data.hw (the same disconnect already fixed for the Tracker
-    // tab's own dropdown). The Homework tab's own scan box and each student's
-    // personal "Homework Checked" QR code are the only supported ways to mark it.
-    var items=data.activities.filter(actVisibleInCurrentClass).filter(function(a){ return a.name!=="Homework Checked"; }).map(function(a){
-      return {qrText:"ACT:"+a.id, name:a.name, sub:fmtDelta(a.pts)};
+    // Homework Checked IS printed here now. It used to be excluded because arming
+    // it meant scanning it as a plain 0-point activity, writing a data.log entry
+    // instead of marking homework — that disconnect is fixed: award() reroutes an
+    // armed Homework Checked to markHwCheckedToday() from any tab, so the printed
+    // code arms it and the next student scan marks homework for real. Tracker
+    // activities stay excluded (armableActivities()), since they have no such
+    // reroute and would still land on the points path.
+    var items=armableActivities().filter(actVisibleInCurrentClass).map(function(a){
+      // No "+0" for Homework Checked — it earns nothing, so the sub-line says
+      // what the code actually does instead of quoting a point value.
+      return {qrText:"ACT:"+a.id, name:a.name,
+              sub: homeworkActivity(a) ? "marks homework checked" : fmtDelta(a.pts)};
     });
     items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount"});
     items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount"});
