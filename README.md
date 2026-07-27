@@ -79,15 +79,15 @@ LICENSE              MIT license
 ```
 
 **Branches:**
-- `main` — the safe, tested version. Only promote here when something is confirmed working in production.
-- `dev` — active development and experiments. All new features, Claude Code sessions, and untested changes go here first.
-- Feature branches — short-lived, named `steinerman/description` or `fix/description`, branched off `dev` and merged back into `dev`. Only merge to `main` deliberately.
+- `main` — the single long-lived branch, and the version that is live for teachers. Anything merged here deploys immediately.
+- Feature branches — short-lived, named `steinerman/description` or `fix/description`, branched off `main` and merged back into `main` via pull request. Delete them after merge.
 
-**Never work directly on `main`.** If something breaks on `dev` and you need to reset it:
+There is no `dev` branch. An earlier `dev` → `main` promotion flow was retired; work now goes straight from a feature branch into `main` through a reviewed PR.
+
+**Never work directly on `main`.** Start each piece of work from a fresh branch:
 ```bash
-git checkout dev
-git reset --hard main
-git push origin dev --force
+git checkout main && git pull origin main
+git checkout -b steinerman/short-description
 ```
 
 ## Contributing
@@ -96,9 +96,9 @@ We welcome bug reports, feature suggestions, and pull requests from other teache
 
 **Short version:**
 - Never commit directly to `main`
-- Branch off `dev` for new work (`steinerman/feature-name`, `fix/bug-name`)
-- Test on `dev` before promoting to `main`
-- Open a pull request from your branch → `dev`, then `dev` → `main` when ready
+- Branch off `main` for new work (`steinerman/feature-name`, `fix/bug-name`)
+- Test your branch locally before opening the PR — `main` deploys straight to classrooms
+- Open a pull request from your branch → `main`; a maintainer reviews and merges
 - **Data safety rule:** never break `migrateData()` / `load2fix()` — teachers' localStorage must survive every update
 
 ## License
