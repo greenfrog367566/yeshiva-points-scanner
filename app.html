@@ -10369,11 +10369,10 @@ nameLine
     var seatEls=[], sweep=[], spinning=false, timer=null;
 
     function eligOf(id){ return state.elig[id]==="out" ? "out" : (state.elig[id]==="passed" ? "passed" : "eligible"); }
-    // In the flash + landable only if present, eligible, and not yet used.
     // Landable = present, eligible, and — only when skipUsed is on — not yet
-    // used. Deliberately independent of the "picked" dimming in render(), which
-    // always reflects state.used: with skipping off a dimmed seat still says
-    // "already had a turn", it just stays in play.
+    // used. render()'s dimming is gated on the same flag, so the two always
+    // agree: a seat is dimmed exactly when being used is what keeps it out of
+    // the running. With skipping off, nothing is excluded and nothing dims.
     function inPlay(c){ return c && (!wantSkipUsed() || !state.used[c.id]) && eligOf(c.id)==="eligible"; }
 
     function render(){
@@ -10387,16 +10386,22 @@ nameLine
       state.cells.forEach(function(c,i){
         if(!c){ var e0=el("div","sp-seat empty",""); seatEls[i]=null; grid.appendChild(e0); return; }
         var seat=el("div","sp-seat");
-        // TWO INDEPENDENT facts, ONE signal each so they never disagree and
-        // never repeat themselves, each read from its own single source:
-        //   1. HAD-A-TURN  (state.used[id])  → dimming (grey wash + faded name).
+        // TWO facts, ONE signal each so they never disagree and never repeat
+        // themselves, each read from its own single source:
+        //   1. HAD-A-TURN  (state.used[id])  → dimming (grey wash + faded name),
+        //      but ONLY while skipUsed is on. Dimming means "out of the running
+        //      this round", so when skipping is off — and a picked student is
+        //      genuinely pickable again — dimming would be telling the rebbi
+        //      something untrue, and the seat renders fully normal instead.
         //      Set only by being picked, cleared only by round-reset.
         //   2. ELIGIBILITY (eligOf(id))      → one small OUT/PASSED pill
         //      (eligible shows none). Changed only by tap-to-cycle.
         // dim(yes/no) × pill(none/out/passed) keeps every combination
         // distinguishable, and cycling eligibility never hides had-a-turn.
+        // state.used itself is untouched either way — only its DISPLAY is gated,
+        // so turning skipping back on re-dims exactly who it did before.
         var e=eligOf(c.id);
-        if(state.used[c.id]) seat.classList.add("picked");
+        if(state.used[c.id] && wantSkipUsed()) seat.classList.add("picked");
         seat.appendChild(el("div","sp-name", c.name||""));
         if(e==="out") seat.appendChild(el("div","sp-elig out","Out"));
         else if(e==="passed") seat.appendChild(el("div","sp-elig passed","Passed"));
