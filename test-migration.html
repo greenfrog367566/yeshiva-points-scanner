@@ -8,12 +8,15 @@
   h1 { font-size: 1.4rem; }
   .pass { color: #1f8a5b; font-weight: 700; }
   .fail { color: #b04432; font-weight: 700; }
+  .unknown { color: #9a6b1f; font-weight: 700; }
   .test { background: #fff; border: 1px solid #d8dbe4; border-radius: 10px; padding: 14px 18px; margin: 10px 0; }
+  .test.warnbox { border-color: #e0b352; background: #fdf8ee; }
   .test h3 { margin: 0 0 6px; font-size: .95rem; }
   .detail { font-size: .85rem; color: #6a7187; white-space: pre-wrap; }
   #summary { font-size: 1.1rem; margin: 20px 0; padding: 16px; border-radius: 10px; font-weight: 700; }
   #summary.all-pass { background: #e3f3ea; color: #1f8a5b; }
   #summary.has-fail { background: #f6e6e2; color: #b04432; }
+  #summary.has-warn { background: #fbf1dc; color: #9a6b1f; }
   button { font-size: 1rem; padding: 10px 20px; cursor: pointer; border-radius: 8px; border: 1px solid #d8dbe4; background: #1b2440; color: #fff; }
   button:hover { background: #2c3860; }
   #dropZone { border: 2px dashed #d8dbe4; border-radius: 10px; padding: 30px; text-align: center; color: #6a7187; margin: 16px 0; }
@@ -311,6 +314,117 @@ function load2fix(){
   }
 }
 
+// ===== Drift check =====
+// This file hand-copies migrateData() and load2fix() out of app.html. Nothing
+// in git enforces that the copies stay current, and the failure mode is silent
+// and nasty: a stale harness happily tests OLD migration code and reports all
+// green, so a real regression in app.html sails through the one gate meant to
+// catch it. This check makes that impossible to miss.
+//
+// The extraction and normalization below are deliberately identical to
+// CLAUDE.md § "Validate before every commit" check 3 — same brace-matching
+// grab, same comment-stripping/whitespace-collapsing normalize — so the
+// automatic check here and the manual node command can never disagree about
+// whether the copies match.
+//
+// Normalizing (rather than comparing raw text) is required, not sloppiness:
+// app.html's copies live indented inside the app's IIFE while this file keeps
+// them at column 0, so a byte-for-byte diff is always noise.
+
+var DRIFT_FNS = ["migrateData", "load2fix"];
+
+// Brace-match the function body out of a source string, starting at the "{"
+// that opens it. Returns null if the function isn't found.
+function driftGrab(t, n) {
+  var i = t.indexOf("function " + n + "(");
+  if (i < 0) return null;
+  var d = 0, s = t.indexOf("{", i), j = s;
+  for (; j < t.length; j++) {
+    if (t[j] === "{") d++;
+    else if (t[j] === "}") { d--; if (!d) { j++; break; } }
+  }
+  return t.slice(s, j);
+}
+
+function driftNorm(s) {
+  return s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/\s+/g, " ").trim();
+}
+
+// The harness side is read from the live function object rather than from this
+// file's text, so what gets compared is exactly the code the tests above just
+// ran — not a second copy that could itself drift.
+function driftLocalBody(fn) {
+  var src = fn.toString();
+  return src.slice(src.indexOf("{"));
+}
+
+// Index of the first character at which two normalized bodies diverge.
+function driftFirstDiff(a, b) {
+  var n = Math.min(a.length, b.length);
+  for (var i = 0; i < n; i++) if (a[i] !== b[i]) return i;
+  return n; // identical up to the shorter one; the tail is the difference
+}
+
+// A window of context around the divergence point, so the message points at
+// the actual line rather than just a number.
+function driftExcerpt(s, at) {
+  return s.slice(Math.max(0, at - 30), at + 45);
+}
+
+function driftCheck() {
+  return fetch("app.html", { cache: "no-store" })
+    .then(function(res) {
+      if (!res.ok) throw new Error("HTTP " + res.status + " fetching app.html");
+      return res.text();
+    })
+    .then(function(appSrc) {
+      DRIFT_FNS.forEach(function(name) {
+        var appBody = driftGrab(appSrc, name);
+        if (appBody === null) {
+          assertStatus("Drift check — " + name + "() not found in app.html", "unknown",
+            "Could not locate \"function " + name + "(\" in app.html.\n"
+            + "If it was renamed or restructured, this harness must be updated to match — "
+            + "until then the copies below are unverified.");
+          return;
+        }
+        var app = driftNorm(appBody);
+        var here = driftNorm(driftLocalBody(name === "migrateData" ? migrateData : load2fix));
+        if (app === here) {
+          assertStatus("Drift check — " + name + "() matches app.html", "pass",
+            "In sync (" + app.length + " normalized chars).");
+        } else {
+          // Length alone is not enough to locate the problem — an edit that
+          // swaps one character for another leaves both counts identical, so
+          // report where they first diverge as well.
+          var at = driftFirstDiff(app, here);
+          assertStatus("DRIFT — " + name + "() no longer matches app.html", "fail",
+            "This harness is testing STALE code. Every result above for "
+            + name + "() describes app.html as it USED to be.\n\n"
+            + "  app.html            " + app.length + " normalized chars\n"
+            + "  test-migration.html " + here.length + " normalized chars\n"
+            + "  difference          " + (here.length - app.length) + " chars"
+            + (here.length === app.length ? "  (same length — content differs)" : "") + "\n\n"
+            + "  first differs at normalized char " + at + ":\n"
+            + "    app.html     …" + driftExcerpt(app, at) + "…\n"
+            + "    this file    …" + driftExcerpt(here, at) + "…\n\n"
+            + "Fix: re-copy " + name + "() from app.html into this file, then re-run.");
+        }
+      });
+    })
+    .catch(function(err) {
+      assertStatus("Drift check could not run", "unknown",
+        "Could not load app.html to compare against: " + err.message + "\n\n"
+        + "THIS IS NOT A PASS. The copies of migrateData()/load2fix() in this file "
+        + "were not verified against app.html on this run — they may be stale.\n\n"
+        + "Most likely cause: this page was opened directly from disk (file://), "
+        + "where browsers block fetch. Serve the repo over http and reload — e.g. "
+        + "`npx --yes serve .` from the repo root, then open "
+        + "http://localhost:3000/test-migration.html\n\n"
+        + "Or run the equivalent check from the command line: "
+        + "CLAUDE.md § \"Validate before every commit\", check 3.");
+    });
+}
+
 // ===== Test framework =====
 var data; // global, like in the real app
 var results = [];
@@ -323,7 +437,15 @@ function runMigration(blob) {
 }
 
 function assert(name, condition, detail) {
-  results.push({ name: name, pass: !!condition, detail: detail || "" });
+  results.push({ name: name, status: condition ? "pass" : "fail", detail: detail || "" });
+}
+
+// Three-state push, for checks that can be genuinely INDETERMINATE rather than
+// just pass/fail. "unknown" renders amber and keeps the summary out of the
+// green state — a check that could not run must never look like a check that
+// passed.
+function assertStatus(name, status, detail) {
+  results.push({ name: name, status: status, detail: detail || "" });
 }
 
 function assertField(d, field, type, label) {
@@ -338,6 +460,13 @@ function assertField(d, field, type, label) {
 // ===== Built-in test scenarios =====
 function runBuiltInTests() {
   results = [];
+  // Render only once, after the async drift check settles. Rendering the sync
+  // results first would flash an "all pass" summary before the drift card
+  // lands, which is exactly the misleading green this check exists to prevent.
+  document.getElementById("results").innerHTML = "";
+  var sum0 = document.getElementById("summary");
+  sum0.className = "";
+  sum0.textContent = "Running tests…";
 
   // --- Test 1: Empty object (brand new, never-saved) ---
   var d1 = runMigration({});
@@ -408,7 +537,15 @@ function runBuiltInTests() {
   assert("Real→raffle preserved", d3.raffle.mode==="manual" && d3.raffle.entries.s1===3);
   assert("Real→shulchaniMode preserved", d3.shulchaniMode === true);
   assert("Real→seating preserved", d3.seating.default && d3.seating.default.seats[0]==="s1");
-  assert("Real→navHidden preserved", d3.navHidden.groups.print===true && d3.navHidden.tabs.brachos===true);
+  // Phase 1 dissolved the "print" group (its tabs moved to 🖨 buttons on the
+  // data-owner tabs), so load2fix deletes navHidden.groups.print on purpose.
+  // This test used to assert that key SURVIVED, which contradicted Test 8 and
+  // failed on every run — the assertion was simply never updated when Phase 1
+  // landed. Hidden-state for tabs that still exist must still be preserved.
+  assert("Real→navHidden.groups.print dissolved (Phase 1 cleanup)", d3.navHidden.groups.print===undefined,
+    "got: "+JSON.stringify(d3.navHidden.groups.print));
+  assert("Real→navHidden tab state preserved", d3.navHidden.tabs.brachos===true,
+    "got: "+JSON.stringify(d3.navHidden.tabs.brachos));
   assert("Real→contest preserved", d3.contest && d3.contest.id==="c1");
   assert("Real→version unchanged", d3.version === DATA_VERSION);
   // Backfilled fields present:
@@ -511,7 +648,9 @@ function runBuiltInTests() {
   assert("Phase1→seats tab key removed", d8.navHidden.tabs.seats===undefined);
   assert("Phase1→other tab keys kept", d8.navHidden.tabs.brachos===true);
 
-  renderResults();
+  // Runs last so its card sits at the bottom, but it gates the render: nothing
+  // is shown until we know whether this harness is testing current code.
+  driftCheck().then(renderResults);
 }
 
 function runCustomTest() {
@@ -557,19 +696,29 @@ function runCustomTest() {
 
 function renderResults() {
   var box = document.getElementById("results");
-  var passed = 0, failed = 0;
+  var passed = 0, failed = 0, unknown = 0;
+  var LABEL = { pass:"PASS", fail:"FAIL", unknown:"COULD NOT RUN" };
   box.innerHTML = "";
   results.forEach(function(r) {
-    if (r.pass) passed++; else failed++;
+    var st = r.status || "fail";
+    if (st === "pass") passed++; else if (st === "unknown") unknown++; else failed++;
     var div = document.createElement("div");
-    div.className = "test";
-    div.innerHTML = '<h3><span class="'+(r.pass?"pass":"fail")+'">'+(r.pass?"PASS":"FAIL")+'</span> '+r.name+'</h3>'
-      + (r.detail ? '<div class="detail">'+r.detail+'</div>' : '');
+    div.className = "test" + (st === "unknown" ? " warnbox" : "");
+    div.innerHTML = '<h3><span class="'+st+'">'+LABEL[st]+'</span> '+esc(r.name)+'</h3>'
+      + (r.detail ? '<div class="detail">'+esc(r.detail)+'</div>' : '');
     box.appendChild(div);
   });
   var sum = document.getElementById("summary");
-  sum.className = failed ? "has-fail" : "all-pass";
-  sum.textContent = passed+" passed, "+failed+" failed out of "+(passed+failed)+" checks.";
+  // A run with an indeterminate check is NOT a green run.
+  sum.className = failed ? "has-fail" : (unknown ? "has-warn" : "all-pass");
+  sum.textContent = passed+" passed, "+failed+" failed"
+    + (unknown ? ", "+unknown+" could not run" : "")
+    + " out of "+(passed+failed+unknown)+" checks."
+    + (unknown ? "  ⚠ An unrun check is not a passing check — see the amber card(s) above." : "");
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
 
 // Drop zone
