@@ -1026,7 +1026,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button class="sp-modebtn" id="pickModeSeat">🪑 Seating chart</button>
     </div>
     <div class="toolbar" style="margin-bottom:10px">
-      <label style="display:flex;align-items:center;gap:7px;font-size:.86rem;color:var(--muted);font-weight:600"><input type="checkbox" id="pickSkip"> Skip students who already had a turn</label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:.86rem;color:var(--muted);font-weight:600" title="Applies to both the wheel and the seating chart. Students who already had a turn stay dimmed either way — unchecking just makes them pickable again."><input type="checkbox" id="pickSkip"> Skip students who already had a turn</label>
       <label style="display:flex;align-items:center;gap:7px;font-size:.86rem;color:var(--muted);font-weight:600" title="Skip the spin/flash and show the pick straight away. Applies to both the wheel and the seating chart."><input type="checkbox" id="pickInstant"> ⚡ Instant (no spin)</label>
       <div class="grow"></div>
       <button class="btn btn-sm" id="pickReset">Reset round</button>
@@ -3019,7 +3019,11 @@ function setupRoster() {
     // everywhere, so the animation stays exactly as it is unless it's turned on.
     pickerInstant: false,
     spinnerInstant: false,
-    raffleInstant: false
+    raffleInstant: false,
+    // Picker's "skip students who already had a turn" — shared by BOTH picker
+    // modes (wheel + seating chart). Defaults ON so the seating chart keeps
+    // the skip-until-everyone-has-had-a-turn rotation it has always had.
+    pickerSkip: true
   };
 
   var SHOR_BANK = [
@@ -3102,7 +3106,7 @@ function setupRoster() {
   // establishing the baseline every migration counts up from. Bump
   // DATA_VERSION and add a new `if(data.version===N)` branch here whenever a
   // future release changes the shape of stored data.
-  var DATA_VERSION = 2;
+  var DATA_VERSION = 3;
   function migrateData(d){
     if(!d.version) d.version = 1;
     // v1 -> v2: rename data.bunk to data.className. This app is a Yeshiva/
@@ -3114,6 +3118,19 @@ function setupRoster() {
       if(typeof d.bunk==="string" && typeof d.className!=="string") d.className = d.bunk;
       delete d.bunk;
       d.version = 2;
+    }
+    // v2 -> v3: the Picker's "skip students who already had a turn" setting
+    // becomes a SAVED, SHARED preference (data.pickerSkip). It used to be an
+    // unsaved checkbox that governed the wheel only and reset to OFF every
+    // reload, while the seating chart skipped unconditionally with no way to
+    // turn it off. Existing saves have no such field, so default it to ON —
+    // that keeps the seating chart behaving exactly as it does today. (Note
+    // this does change the WHEEL's start-of-session default from off to on;
+    // the two modes now share one setting.) Purely additive: nothing is read,
+    // renamed or removed, so no saved data can be lost here.
+    if(d.version===2){
+      if(typeof d.pickerSkip!=="boolean") d.pickerSkip = true;
+      d.version = 3;
     }
     return d;
   }
@@ -10304,6 +10321,12 @@ nameLine
                     predicate so the caller can hand over a live preference
                     without rebuilding the controller; the engine never reads
                     any store itself.
+                    Also { skipUsed } — whether people who already had a turn
+                    are EXCLUDED from the flash. Boolean or predicate; defaults
+                    to true (the historical behavior). When false, everyone
+                    eligible stays landable even if already used — but `used`
+                    still DIMS them, since dimming reports the fact and this
+                    flag only controls landability.
        interactive  when true, tapping a seat cycles its eligibility
                     ELIGIBLE → OUT → PASSED → ELIGIBLE (see onEligChange)
        onLand(id,cell)        fired when the flash lands on a seat
@@ -10335,12 +10358,22 @@ nameLine
     // Resolved at spin time (not construction) so a toggle flipped after the
     // controller was built takes effect on the very next pick.
     function wantInstant(){ return typeof cfg.instant==="function" ? !!cfg.instant() : !!cfg.instant; }
+    // Same live-predicate treatment for skipUsed, but defaulting to TRUE when
+    // unset so existing / future callers that pass no config keep the original
+    // skip-who-had-a-turn rotation.
+    function wantSkipUsed(){
+      if(cfg.skipUsed===undefined || cfg.skipUsed===null) return true;
+      return typeof cfg.skipUsed==="function" ? !!cfg.skipUsed() : !!cfg.skipUsed;
+    }
 
     var seatEls=[], sweep=[], spinning=false, timer=null;
 
     function eligOf(id){ return state.elig[id]==="out" ? "out" : (state.elig[id]==="passed" ? "passed" : "eligible"); }
-    // In the flash + landable only if present, eligible, and not yet used.
-    function inPlay(c){ return c && !state.used[c.id] && eligOf(c.id)==="eligible"; }
+    // Landable = present, eligible, and — only when skipUsed is on — not yet
+    // used. render()'s dimming is gated on the same flag, so the two always
+    // agree: a seat is dimmed exactly when being used is what keeps it out of
+    // the running. With skipping off, nothing is excluded and nothing dims.
+    function inPlay(c){ return c && (!wantSkipUsed() || !state.used[c.id]) && eligOf(c.id)==="eligible"; }
 
     function render(){
       container.innerHTML=""; seatEls=new Array(state.cells.length); sweep=[];
@@ -10353,16 +10386,22 @@ nameLine
       state.cells.forEach(function(c,i){
         if(!c){ var e0=el("div","sp-seat empty",""); seatEls[i]=null; grid.appendChild(e0); return; }
         var seat=el("div","sp-seat");
-        // TWO INDEPENDENT facts, ONE signal each so they never disagree and
-        // never repeat themselves, each read from its own single source:
-        //   1. HAD-A-TURN  (state.used[id])  → dimming (grey wash + faded name).
+        // TWO facts, ONE signal each so they never disagree and never repeat
+        // themselves, each read from its own single source:
+        //   1. HAD-A-TURN  (state.used[id])  → dimming (grey wash + faded name),
+        //      but ONLY while skipUsed is on. Dimming means "out of the running
+        //      this round", so when skipping is off — and a picked student is
+        //      genuinely pickable again — dimming would be telling the rebbi
+        //      something untrue, and the seat renders fully normal instead.
         //      Set only by being picked, cleared only by round-reset.
         //   2. ELIGIBILITY (eligOf(id))      → one small OUT/PASSED pill
         //      (eligible shows none). Changed only by tap-to-cycle.
         // dim(yes/no) × pill(none/out/passed) keeps every combination
         // distinguishable, and cycling eligibility never hides had-a-turn.
+        // state.used itself is untouched either way — only its DISPLAY is gated,
+        // so turning skipping back on re-dims exactly who it did before.
         var e=eligOf(c.id);
-        if(state.used[c.id]) seat.classList.add("picked");
+        if(state.used[c.id] && wantSkipUsed()) seat.classList.add("picked");
         seat.appendChild(el("div","sp-name", c.name||""));
         if(e==="out") seat.appendChild(el("div","sp-elig out","Out"));
         else if(e==="passed") seat.appendChild(el("div","sp-elig passed","Passed"));
@@ -10447,11 +10486,12 @@ nameLine
   /* ---------- PICKER (class spinner) ---------- */
   var pickSlices=[], pickRot=0, pickSpinning=false, pickedSet={};
   function pickEntries(){
-    var skip=$("pickSkip").checked;
+    var skip=!!data.pickerSkip;   // saved pref is the source of truth (checkbox mirrors it)
     return activeStudents().filter(function(s){ return !(skip && pickedSet[s.id]); });
   }
   function renderPicker(){
     $("pickInstant").checked = !!data.pickerInstant;   // one saved toggle, both modes
+    $("pickSkip").checked    = !!data.pickerSkip;      // ditto — governs wheel AND seating
     if(pickViewMode==="seat") renderSeatPicker(); else renderPickWheel();
     renderPicked();
   }
@@ -10501,7 +10541,7 @@ nameLine
     var res=$("pickResult"); res.className="spin-result show"; res.innerHTML="";
     res.appendChild(el("div","rr-label","It's their turn")); res.appendChild(el("div","rr-name",win.name));
     pickedSet[win.sid]=true; beep(true); renderPicked();
-    if($("pickSkip").checked) renderPickWheel(); else $("pickSpinBtn").disabled=false;
+    if(data.pickerSkip) renderPickWheel(); else $("pickSpinBtn").disabled=false;
   }
   function renderPicked(){
     var box=$("pickedList");
@@ -10519,7 +10559,11 @@ nameLine
     $("pickSeatResult").className="spin-result"; $("pickSeatResult").innerHTML="";
     renderPicker();
   });
-  $("pickSkip").addEventListener("change", renderPickWheel);
+  // Now a SAVED preference shared by both Picker modes, so it re-renders
+  // whichever mode is showing (renderPicker dispatches) instead of the wheel only.
+  $("pickSkip").addEventListener("change", function(){
+    data.pickerSkip=this.checked; save(); renderPicker();
+  });
   // Saved preference — persists across sessions, so a rebbi who picks Instant
   // keeps it. Purely presentational: nothing else re-renders.
   $("pickInstant").addEventListener("change", function(){ data.pickerInstant=this.checked; save(); });
@@ -10574,7 +10618,12 @@ nameLine
         // minColPx keeps cards readable (sp-wrap scrolls if they don't fit).
         // instant is a live predicate, so toggling Instant applies to the next
         // flash without rebuilding the controller.
-        config:{minColPx:76, instant:function(){ return !!data.pickerInstant; }},
+        // skipUsed is the SAME saved preference the wheel reads, as a live
+        // predicate — so the checkbox governs both modes and takes effect on
+        // the next flash without rebuilding the controller.
+        config:{minColPx:76,
+                instant:function(){ return !!data.pickerInstant; },
+                skipUsed:function(){ return !!data.pickerSkip; }},
         emptyNote:"No students in this class yet.",
         onSpinStart:function(){
           $("pickSeatSpin").disabled=true;
@@ -12223,6 +12272,10 @@ nameLine
     if(typeof data.pickerInstant!=="boolean") data.pickerInstant=false;
     if(typeof data.spinnerInstant!=="boolean") data.spinnerInstant=false;
     if(typeof data.raffleInstant!=="boolean") data.raffleInstant=false;
+    // Shared Picker skip preference (wheel + seating chart). Defaults ON — see
+    // the v2->v3 migration note. Belt-and-braces alongside that migration, so a
+    // save that somehow arrives already stamped v3 without the field still gets it.
+    if(typeof data.pickerSkip!=="boolean") data.pickerSkip=true;
     if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOpts={avatarMode:"qr", showPoints:false};
     if(typeof data.seatPrintOpts.avatarMode!=="string"){
       data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
