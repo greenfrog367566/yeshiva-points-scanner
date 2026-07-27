@@ -3866,6 +3866,11 @@ function setupRoster() {
   // data.trackerLog. Letting it appear in Tracker's dropdown meant scanning it
   // there silently logged into the wrong bucket, invisible to the Homework tab.
   function trackedActivities(){ return data.activities.filter(function(a){ return a.tracked && a.name!=="Homework Checked"; }); }
+  // First activity that may legitimately be ARMED for point-scoring. Tracked
+  // activities (Tracker, Homework Checked) write to their own stores, so the
+  // default arm must never land on one — activities[0] can be tracked once a
+  // teacher deletes the starter point activities.
+  function firstArmableActivity(){ return data.activities.filter(function(a){ return !a.tracked; })[0]; }
   function renderTrackerActSel(){
     var sel=$("trackerActSel");
     var prev=sel.value||data.trackerActId;
@@ -4421,6 +4426,11 @@ function setupRoster() {
       var id=code.slice(4).trim(), a=null;
       for(var i=0;i<data.activities.length;i++){ if(data.activities[i].id.toUpperCase()===id.toUpperCase()){ a=data.activities[i]; break; } }
       if(!a){ fpFlash(false,"Unknown activity code"); beep(false); return; }
+      // Same guard armActivityByCode() already applies: a tracked activity
+      // writes to its own store, so arming one here would send the next scan to
+      // awardPointsSilent() as plain points. Defends against a pre-fix printed
+      // Activity Menu still floating around a classroom.
+      if(a.tracked){ fpFlash(false,"Not scannable here — "+a.name+" has its own tab"); beep(false); return; }
       fpActId=a.id; fpCustomAct=null; fpRenderActs();
       fpFlash(true, "Now scoring: "+a.name+"  "+fmtDeltaBare(a.pts));
       beep(true);
@@ -5106,7 +5116,7 @@ function setupRoster() {
     $("setShulchani").checked=newMode;
     renderShulchaniStatus();
     renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities(); renderActButtons();
-    if(data.activities.length) setArmed(data.activities[0].name, data.activities[0].pts);
+    var fa0=firstArmableActivity(); if(fa0) setArmed(fa0.name, fa0.pts);
   }
   function renderShulchaniStatus(){
     var box=$("shulchaniStatus");
@@ -5242,6 +5252,25 @@ function setupRoster() {
         flash(false, s.name, "Not in this activity's groups", armedAct.groups.join(", ")+" only");
         beep(false); return false;
       }
+    }
+    // Homework Checked is NOT a point-earning activity — it lives in its own
+    // store (data.hw), so awarding it here would write a 0-point log entry and
+    // flash "+0" as if it had worked while the Homework tab stayed empty.
+    // Scanning only marked homework when the Homework TAB was open, because
+    // handleScannedCode routes on the active tab, not on what's armed; arming it
+    // anywhere else silently fell through to points. Route it to the real
+    // homework write instead, so an armed Homework Checked behaves the same from
+    // any tab. Identified exactly the way the personal-QR path does it
+    // (tracked + name), the inverse of trackedActivities()'s own exclusion.
+    // markHwCheckedToday (not setHw) is deliberate: setHw writes to hwDate, the
+    // date the Homework TAB happens to be showing, which is meaningless when
+    // scanning from elsewhere — markHwCheckedToday always marks real today.
+    // Placed after the class/group checks above so the same gating still applies.
+    if(armedAct && armedAct.tracked && armedAct.name==="Homework Checked"){
+      markHwCheckedToday(s.id);
+      flash(true, s.name, "HW Checked", "Homework marked checked (today)");
+      beep(true);
+      return true;
     }
     var tag=contestTagForScan();
     if(tag.scoreToMain) data.scores[s.id]=score(s.id)+armed.delta;
@@ -6677,15 +6706,30 @@ function setupRoster() {
     document.body.appendChild(overlay);
     setTimeout(function(){ amtIn.focus(); amtIn.select(); }, 50);
   }
-  // Builds the activity list + Custom option into any dropdown element —
-  // shared by the header's activity pill and the Seats tab's, so there's one
-  // real implementation of "pick an activity from a dropdown" in the app.
+  // Builds the activity list + Custom option into any dropdown element — the
+  // one real implementation of "pick an activity from a dropdown" in the app.
+  // Currently used by the Seats tab's activity pill. (An earlier header pill
+  // this was also shared with is gone; the comment used to still claim it.)
+  //
+  // TRACKED activities are excluded, matching renderActButtons(), fpRenderActs(),
+  // armActivityByCode() and the printed Activity Menu — this was the only arming
+  // surface that still listed them. Tracked activities do not award points: the
+  // Tracker writes to data.trackerLog via trackerAward() and Homework Checked
+  // writes to data.hw, so arming one here and scanning sent it to award() and
+  // produced points plus a log entry instead of the record the rebbi expected.
+  // Excluding them (rather than special-casing Homework Checked) fixes the whole
+  // class of bug in one place, and keeps every arming surface showing the same
+  // list. Each tracked tool is still reached its own way: the Tracker tab, the
+  // Homework tab, or a student's personal Homework Checked QR code.
   function populateActivityDropdown(dd, focusInputId, closeFn){
     dd.innerHTML="";
-    if(!data.activities.length){
-      dd.appendChild(el("div","hd-empty","No activities yet — add some on the Activities tab."));
+    var armable=data.activities.filter(function(a){ return !a.tracked; });
+    if(!armable.length){
+      dd.appendChild(el("div","hd-empty", data.activities.length
+        ? "No point activities yet — the Tracker and Homework have their own tabs."
+        : "No activities yet — add some on the Activities tab."));
     } else {
-      data.activities.forEach(function(a){
+      armable.forEach(function(a){
         var b=el("button"); b.type="button";
         b.appendChild(el("span",null,a.name));
         b.appendChild(el("span","hd-pts"+(a.pts<0?" neg":""), fmtDeltaBare(a.pts)));
@@ -12555,7 +12599,7 @@ nameLine
   renderHeaderScanContext();
   renderActButtons();
   syncCustomButtons();
-  if(data.activities.length) setArmed(data.activities[0].name, data.activities[0].pts);
+  var fa0=firstArmableActivity(); if(fa0) setArmed(fa0.name, fa0.pts);
   renderRecent();
   renderScanBoard();
   renderTapPanel();
