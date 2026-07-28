@@ -36,6 +36,11 @@
 <textarea id="pasteBox" placeholder="…or paste raw JSON here"></textarea>
 <button onclick="runCustomTest()" style="margin-top:8px">Test this blob</button>
 
+<h2 style="margin-top:30px;font-size:1.1rem">Gradebook sample data (Phase 2b)</h2>
+<p style="font-size:.9rem;color:#6a7187"><code>data.trackedData</code> is empty on every real save until scanning writes into it, so the Gradebook has nothing to draw. These build a fake three-week shiur — attendance, homework, two count items and a capped pass — for checking that the grid renders, filters and prints. <b>Sample data lives here, never in app.html.</b></p>
+<button id="gbSampleBtn">Download sample backup</button>
+<button id="gbSampleLoad" style="margin-left:8px">Load it into the box above</button>
+
 <div id="results"></div>
 <div id="summary"></div>
 
@@ -282,6 +287,16 @@ function load2fix(){
   if(typeof data.standCustomTo!=="string") data.standCustomTo="";
   if(typeof data.studCustomFrom!=="string") data.studCustomFrom="";
   if(typeof data.studCustomTo!=="string") data.studCustomTo="";
+  // Gradebook view state (Phase 2b). Purely additive — five preference
+  // fields, no DATA_VERSION bump, nothing existing read or converted.
+  // gbExcluded stores the items HIDDEN rather than the ones shown, so a
+  // tracked item added later appears as a column on its own. That is the
+  // whole point of the 2a shell and an "included" list would quietly break it.
+  if(!data.gbExcluded || typeof data.gbExcluded!=="object" || Array.isArray(data.gbExcluded)) data.gbExcluded={};
+  if(["today","7d","30d","custom"].indexOf(data.gbPeriod)<0) data.gbPeriod="7d";
+  if(typeof data.gbFrom!=="string") data.gbFrom="";
+  if(typeof data.gbTo!=="string") data.gbTo="";
+  if(typeof data.gbItemsOpen!=="boolean") data.gbItemsOpen=false;
   ensureScanLayout();
   if(typeof data.teachRepeatMode!=="boolean") data.teachRepeatMode=true;
   if(typeof data.teachFlipKeys!=="boolean") data.teachFlipKeys=false;
@@ -889,10 +904,115 @@ function runBuiltInTests() {
   assert("2a→DATA_VERSION NOT bumped (purely additive)", t10.version===4 && DATA_VERSION===4,
     "got v"+t10.version+", DATA_VERSION="+DATA_VERSION);
 
+  // --- Test 11: Phase 2b Gradebook view state ---
+  // Five preference fields, purely additive. The Gradebook itself is a pure
+  // READER — it has no migration of its own — so what has to hold here is
+  // that its five fields backfill safely and that adding them changed nothing.
+  assert("2b→gbExcluded backfills to {}",
+    !!d1.gbExcluded && typeof d1.gbExcluded==="object" && !Array.isArray(d1.gbExcluded)
+    && Object.keys(d1.gbExcluded).length===0, "got "+JSON.stringify(d1.gbExcluded));
+  assert("2b→gbPeriod defaults to 7d", d1.gbPeriod==="7d", "got "+d1.gbPeriod);
+  assert("2b→gbFrom / gbTo backfill to empty strings", d1.gbFrom==="" && d1.gbTo==="");
+  assert("2b→gbItemsOpen backfills to false", d1.gbItemsOpen===false);
+  // A garbage period must land on a value the <select> actually has, or the
+  // control renders blank and the range silently means nothing.
+  var t11 = runMigration({ version:4, gbPeriod:"last tuesday" });
+  assert("2b→unknown gbPeriod repaired to 7d", t11.gbPeriod==="7d", "got "+t11.gbPeriod);
+  var t11b = runMigration({ version:4, gbPeriod:"custom", gbFrom:"2026-07-01", gbTo:"2026-07-20" });
+  assert("2b→a valid custom range is left alone",
+    t11b.gbPeriod==="custom" && t11b.gbFrom==="2026-07-01" && t11b.gbTo==="2026-07-20");
+  // gbExcluded holds HIDDEN items, so an item the rebbi never saw must not be
+  // hidden by default — that is what keeps columns auto-populating.
+  var t11c = runMigration({ version:4, trackedItemsSeeded:true,
+    trackedItems:[{id:"ti-a",name:"A",method:"count",config:{step:1}},
+                  {id:"ti-b",name:"B",method:"count",config:{step:1}}],
+    gbExcluded:{ "ti-a":true } });
+  assert("2b→a new item is NOT excluded by default",
+    t11c.gbExcluded["ti-a"]===true && t11c.gbExcluded["ti-b"]===undefined,
+    "got "+JSON.stringify(t11c.gbExcluded));
+  var t11d = runMigration({ version:4, gbExcluded:["not","an","object"] });
+  assert("2b→corrupt gbExcluded repaired to {}",
+    !Array.isArray(t11d.gbExcluded) && typeof t11d.gbExcluded==="object");
+  // The 2b fields must not have disturbed 2a's promise from Test 10.
+  assert("2b→old stores STILL byte-identical with 2b fields present",
+    JSON.stringify(t10.attendance)===snapBefore.attendance
+    && JSON.stringify(t10.hw)===snapBefore.hw
+    && JSON.stringify(t10.trackerLog)===snapBefore.trackerLog
+    && JSON.stringify(t10.passes)===snapBefore.passes);
+  assert("2b→DATA_VERSION still NOT bumped", t10.version===4 && DATA_VERSION===4);
+
   // Runs last so its card sits at the bottom, but it gates the render: nothing
   // is shown until we know whether this harness is testing current code.
   driftCheck().then(renderResults);
 }
+
+/* ---------- Gradebook sample fixture (Phase 2b) ------------------------
+ * data.trackedData is empty on every real save until 2d starts writing to
+ * it, so the Gradebook has nothing to draw. This builds a realistic backup
+ * — three weeks of attendance, homework, a couple of count items and a
+ * capped pass — that can be restored into app.html's Backup & Restore to
+ * see the grid render, filter and print with actual values in it.
+ *
+ * It lives HERE and never in app.html: the app must not ship fake records
+ * that could land in a rebbi's save.
+ */
+function buildGradebookSample(){
+  var studentNames=["Dovid Berkowitz","Moshe Klein","Yaakov Stern","Shimon Adler","Eliyahu Rosen","Nachum Weiss"];
+  var students=studentNames.map(function(n,i){ return {id:"S"+(101+i), name:n, group:""}; });
+  var d=new Date(); d.setHours(9,0,0,0);
+  function dayBack(n){ var x=new Date(d.getTime()); x.setDate(x.getDate()-n); return x; }
+  var attendance={}, homework={}, chazan={}, calledOn={}, passes={};
+  students.forEach(function(s){ attendance[s.id]=[]; homework[s.id]=[]; chazan[s.id]=[]; calledOn[s.id]=[]; passes[s.id]=[]; });
+  // 21 days back to today, skipping Shabbos and Sunday so the grid looks like
+  // a real week rather than an unbroken block.
+  for(var n=20;n>=0;n--){
+    var day=dayBack(n), dow=day.getDay();
+    if(dow===6||dow===0) continue;
+    var ts=day.getTime();
+    students.forEach(function(s,i){
+      var seed=(n*7+i*13)%10;
+      attendance[s.id].push({ value: seed===0?"absent":(seed<3?"late":"present"), ts:ts });
+      homework[s.id].push({ value: seed<2?"no credit":(seed<4?"partial credit":"full credit"), ts:ts+3600000 });
+      if(seed%5===0) chazan[s.id].push({ value:1, ts:ts+1800000 });
+      if(seed%4===0) calledOn[s.id].push({ value:1, ts:ts+2700000 });
+      if(seed===7) passes[s.id].push({ value:1, ts:ts+5400000 });
+    });
+  }
+  return {
+    version:4, school:"Sample Yeshiva", className:"Sample Shiur",
+    hwActivitySeeded:true, passActivitySeeded:true, trackedItemsSeeded:true,
+    students:students, scores:{}, log:[],
+    activities:[
+      {id:"a1",name:"On time",pts:1,tracked:false,groups:[]},
+      {id:"a2",name:"Homework Checked",pts:0,tracked:true,groups:[]},
+      {id:"a3",name:"Bathroom Pass",pts:0,tracked:true,groups:[]},
+      {id:"a4",name:"Chazan",pts:0,tracked:true,groups:[]},
+      {id:"a5",name:"Called On",pts:0,tracked:true,groups:[]}
+    ],
+    trackedItems:[
+      {id:"ti-attendance",name:"Attendance",method:"preselect",config:{options:["present","late","absent"],"default":"present"}},
+      {id:"ti-homework",name:"Homework",method:"preselect",config:{options:["unchecked","full credit","partial credit","no credit"],"default":"unchecked"}},
+      {id:"ti-act-a4",name:"Chazan",method:"count",config:{step:1}},
+      {id:"ti-act-a5",name:"Called On",method:"count",config:{step:1}},
+      {id:"ti-pass",name:"Bathroom Pass",method:"limited",config:{cap:1}}
+    ],
+    trackedData:{
+      "ti-attendance":attendance, "ti-homework":homework,
+      "ti-act-a4":chazan, "ti-act-a5":calledOn, "ti-pass":passes
+    }
+  };
+}
+document.getElementById("gbSampleBtn").addEventListener("click", function(){
+  var blob=new Blob([JSON.stringify(buildGradebookSample(),null,2)],{type:"application/json"});
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="gradebook-sample-backup.json";
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); },1000);
+});
+document.getElementById("gbSampleLoad").addEventListener("click", function(){
+  document.getElementById("pasteBox").value=JSON.stringify(buildGradebookSample(),null,2);
+});
 
 function runCustomTest() {
   var raw = document.getElementById("pasteBox").value.trim();
