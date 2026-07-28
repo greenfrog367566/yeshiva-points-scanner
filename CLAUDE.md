@@ -22,7 +22,7 @@ Menchmark is a free, open-source classroom assistant for Yeshiva and Jewish Day 
 | `apps-script/beta-signup.gs` | Apps Script backend for beta signups (deploy instructions in the file header) |
 | `docs/ai-proxy-worker.js` | Cloudflare Worker that holds the Gemini key for the optional AI text-import (`AI_PROXY_URL` in app.html) |
 | `docs/user-guide.md`, `docs/scanner-setup.md` | Teacher-facing documentation |
-| `docs/*_Spec.md`, `docs/Menchmark_*.md` | The settled design record — see DECISION RECORD below |
+| `docs/*_Spec.md`, `docs/Menchmark_*.md`, `docs/Positioning.md` | The settled design record — see DECISION RECORD below |
 | `branding/`, `icons/`, `favicon.svg` | Menchmark mark, PWA icons, tab favicon |
 | `samples/`, `sample-backup.json` | Safe demo data — the only data allowed in this repo |
 
@@ -242,6 +242,7 @@ These docs in `docs/` are the settled design. They answer most "should we..." qu
 - **Library_Review_Wizard_Spec.md** — the shared text library, per-pasuk Review Wizard, reviewed-version callback. Share-back deliberately deferred.
 - **Print_Wizard_Spec.md** — the Print Wizard, six print components, Shulchani coin cards, the Tera-barcode constraint.
 - **Offline_NoComputer_Secretary_Spec.md** — Offline Mode, Batch Import parser (spec'd against real scanner data), Secretary Mode.
+- **Positioning.md** — settled copy decisions: the canonical self-description, "classroom economy" rejected as positioning (with its one permitted exception), "rebbeim" not "teachers", no licensing/free-forever language in user-facing copy, no AI framing. **Check it before writing or editing any user-facing copy.**
 
 If a spec and this CLAUDE.md ever conflict, **CLAUDE.md wins**; flag the conflict to the maintainer.
 
