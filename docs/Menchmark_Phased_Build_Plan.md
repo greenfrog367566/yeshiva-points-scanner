@@ -48,7 +48,7 @@ The lowest-risk high-visibility change: move existing tabs into the new 5-group 
 
 The biggest single lift, and the one the most other things wait on. Built in testable sub-slices:
 
-**2a. The Tracked Item data model — a fresh, empty shell.** *(BUILT on `steinerman/phase2a-tracked-items`; not yet merged to `main`)*
+**2a. The Tracked Item data model — a fresh, empty shell.** *(SHIPPED — merged to `main` 2026-07-28 via PR #107)*
 - Define the value types and register them openly (`TRACKED_METHODS`), so an unbuilt shape is a new row rather than a new branch.
 - Add `data.trackedItems` (the item definitions) and `data.trackedData` (an ordered, timestamped list per student per item — last entry is the current value, earlier entries are history that is never overwritten). Seed the presets: Attendance, Homework, one count item per existing tracked activity, Bathroom Pass.
 - **Reset, not conversion.** No existing data is converted. `data.attendance`, `data.hw`, `data.trackerLog` and `data.passes` are not read, modified or deleted — they stay wired to their existing tabs and keep working exactly as before, while the new stores start empty. Agreed with the maintainer: it is summer, the beta cohort is small and notified, and the pre-#100 homework data is partly fictional (dashboard-armed homework scans flashed success but wrote nothing).
