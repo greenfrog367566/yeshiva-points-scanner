@@ -48,13 +48,16 @@ The lowest-risk high-visibility change: move existing tabs into the new 5-group 
 
 The biggest single lift, and the one the most other things wait on. Built in testable sub-slices:
 
-**2a. The Tracked Item data model + migration.**
-- Define the five value types (Count / Status / Checked / Limited-use / Grade).
-- Write the migration that converts existing Attendance / Homework / Passes / Tracker data into Tracked Items **without loss.** Test against real data (Phase 0 harness). This is the scary part — do it first, alone, verify it.
+**2a. The Tracked Item data model — a fresh, empty shell.** *(BUILT on `steinerman/phase2a-tracked-items`; not yet merged to `main`)*
+- Define the value types and register them openly (`TRACKED_METHODS`), so an unbuilt shape is a new row rather than a new branch.
+- Add `data.trackedItems` (the item definitions) and `data.trackedData` (an ordered, timestamped list per student per item — last entry is the current value, earlier entries are history that is never overwritten). Seed the presets: Attendance, Homework, one count item per existing tracked activity, Bathroom Pass.
+- **Reset, not conversion.** No existing data is converted. `data.attendance`, `data.hw`, `data.trackerLog` and `data.passes` are not read, modified or deleted — they stay wired to their existing tabs and keep working exactly as before, while the new stores start empty. Agreed with the maintainer: it is summer, the beta cohort is small and notified, and the pre-#100 homework data is partly fictional (dashboard-armed homework scans flashed success but wrote nothing).
+- Purely additive: `load2fix()` backfills only, `DATA_VERSION` unchanged. Verified against the Phase 0 harness, including snapshots proving the four old stores are byte-identical after a load.
 
 **2b. The Gradebook UI** — the one full interface: auto-populated matrix, toggleable columns, search + date filter, weekly grid view, by-student drill-down, print.
 
 **2c. Retire the old tabs** — Attendance/Homework/Passes/Tracker become presets (Gradebook columns + armable scan items), their old standalone tabs removed once the Gradebook covers them.
+- ⚠️ **2c inherits the data question 2a set aside.** `data.attendance`, `data.hw`, `data.trackerLog` and `data.passes` still hold every pre-2a record, and nothing has ever carried them into `data.trackedData`. Do **not** plan 2c on the assumption that the old data is already forward-ported. Retiring a tab therefore means deciding, per store, whether to convert its records, export them, or accept the reset — and saying so explicitly before the old tab's read path goes away.
 
 **2d. The armed-item scan mechanic + tile staleness badges** (Count-type "last: 3d / never", Status "unmarked", Limited-use "used/available").
 
@@ -62,7 +65,7 @@ The biggest single lift, and the one the most other things wait on. Built in tes
 
 **Ships:** a working Gradebook; Attendance/Homework/Passes/Tracker still work but now through one engine.
 
-**Risk:** high (data migration). Mitigated entirely by Phase 0's harness and shipping 2a in isolation first.
+**Risk:** 2a came in low — additive stores only, nothing existing touched, verified by Phase 0's harness. The data risk now sits in **2c**, where the old stores are retired and their pre-2a records have to be dealt with (see the 2c note above).
 
 ---
 
@@ -184,6 +187,6 @@ Phase 7d (Offline/Batch/Secretary) ──> UNBLOCKED (scanner format confirmed);
 
 1. **Phase 0 migration harness** — boring, essential, unblocks fearless iteration.
 2. **Phase 1 tab restructure** — high-visibility, low-risk, makes the app match the vision immediately.
-3. **Phase 2a Tracked-Item migration** — the scary data step, done in isolation and verified, before building the Gradebook UI on top.
+3. **Phase 2a Tracked-Item data shell** — the new stores added in isolation and verified, before building the Gradebook UI on top.
 
 Everything after that has room to flex based on what you and Rabbi Goldwasser actually feel the classroom needs next.
