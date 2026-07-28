@@ -191,6 +191,10 @@ window.addEventListener('load', function(){
   var sFly = document.getElementById('sFly');
   var xS   = document.getElementById('xS');
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // The flying-letter s-drop measures live rects to land the s in the STRESS slot. That
+  // mechanic is fragile on real mobile browsers (visualViewport / address-bar resizes throw
+  // the position math off and the s can vanish), so ≤640px gets a bulletproof fade instead.
+  var isMobile = window.matchMedia('(max-width: 640px)').matches;
 
   // Position the flying S so it STARTS exactly over the tagline's inline 's',
   // and can be moved to the fixed STRESS placeholder slot via absolute coords.
@@ -215,7 +219,17 @@ window.addEventListener('load', function(){
   gsap.set('#scanRay', { opacity:0 });
   gsap.set('.beamArc', { transformOrigin:'90px 26px', transformBox:'view-box', scale:0.15, y:40, opacity:0 });
 
-  gsap.set(['#xT','#xR','#xE','#xS2','#xS3'], { opacity: 0, y: 26 });
+  if (isMobile) {
+    // Mobile: STRESS is a pre-positioned unit that fades/scales in as a whole — the "S" is a
+    // real letter here (not a landing slot), and the flying letter is never used.
+    gsap.set(xS, { visibility: 'visible' });
+    gsap.set(['#xT','#xR','#xE','#xS2','#xS3'], { opacity: 1, y: 0 });
+    gsap.set('#stressRow', { scale: 0.86, transformOrigin: '50% 50%' });
+    gsap.set(sFly, { opacity: 0 });
+  } else {
+    // Desktop: letters after the flying "S" start hidden and stagger in once it lands.
+    gsap.set(['#xT','#xR','#xE','#xS2','#xS3'], { opacity: 0, y: 26 });
+  }
 
   // Compute the flying-S destination: the CENTER of the hidden xS placeholder slot,
   // and the font-size it must grow to (match STRESS letters). Read live so it's correct
@@ -245,48 +259,59 @@ window.addEventListener('load', function(){
     defaults: { ease: reduced ? 'none' : 'power2.inOut' }
   });
 
+  if (isMobile) {
+    // ── MOBILE s-beat — simple, unbreakable fade (no flying element, no measurement) ──
+    tl
+      // 1. the inline "s" turns red in place, then fades out — no drop, nothing to land
+      .to(lS, { color: '#e14b3c', duration: 0.50 }, 0.35)
+      .to(lS, { opacity: 0, duration: 0.60 }, 1.00)
+      // 3. "men"/"ch" don't slide — they just fade out with the rest of the hero
+      .to('#heroLayer', { opacity: 0, duration: 0.90 }, 1.50)
+      // 2. STRESS fades + scales in at screen center (pre-positioned; no landing slot)
+      .to('#stressRow', { opacity: 1, scale: 1, duration: 1.00, ease: 'power2.out' }, 2.80);
+  } else {
+    // ── DESKTOP s-beat — full flying-s-drop + men/ch slide (works reliably >640px) ──
+    tl
+      // PHASE 1 — inline s hands off to the flying S and turns red
+      .to(sFly, { opacity: 1, duration: 0.01 }, 0.30)
+      .to(lS,   { opacity: 0, duration: 0.20 }, 0.30)
+      .to(sFly, { color: '#e14b3c', duration: 0.45 }, 0.35)
+
+      // PHASE 2 — THE DROP. Straight down (x untouched), gravity-in, overshooting the
+      // rest point and settling back so it lands with weight instead of stopping dead.
+      // It also grows ~45% of the way to its final STRESS size on the way down.
+      .to(sFly, {
+          y: function(){ return dropDistance() + 12; },
+          scale: function(){ return 1 + (sDestination().scale - 1) * 0.45; },
+          duration: 0.85, ease: 'power2.in'
+        }, 0.60)
+      .to(sFly, { y: function(){ return dropDistance(); }, duration: 0.22, ease: 'power2.out' }, 1.45)
+
+      // PHASE 3 — with the s clear of the line, "men" and "ch" close the gap it left.
+      // Each half travels exactly half the vacated slot width, so they meet flush.
+      .to('#menPart', { x: function(){ return  lS.getBoundingClientRect().width/2; }, duration: 0.60, ease:'power2.inOut' }, 1.75)
+      .to('#chPart',  { x: function(){ return -lS.getBoundingClientRect().width/2; }, duration: 0.60, ease:'power2.inOut' }, 1.75)
+      // (2.35 → 2.75 holds "mench" long enough to actually be read)
+
+      // PHASE 4 — the s launches from its resting place up into the STRESS slot and
+      // finishes growing to match the row's letters. The hero fades a beat later.
+      .to(sFly, {
+          x: function(){ return sDestination().dx; },
+          y: function(){ return sDestination().dy; },
+          scale: function(){ return sDestination().scale; },
+          duration: 1.05, ease: 'power2.inOut'
+        }, 2.75)
+      .to('#heroLayer', { opacity: 0, duration: 0.65 }, 2.85)
+
+      // reveal STRESS row; swap the flying lowercase s for the row's capital S at the landing instant
+      .set('#stressRow', { opacity: 1 }, 3.80)
+      .set('#xS', { visibility: 'visible' }, 3.80)
+      .set('#sFly', { opacity: 0 }, 3.80)
+      .to(['#xT','#xR','#xE','#xS2','#xS3'], { opacity: 1, y: 0, duration: 0.6, stagger: 0.1 }, 3.85);
+  }
+
+  // ── SHARED tail — both branches converge here: STRESS → scanner → arcs → QR → beam ──
   tl
-    // PHASE 1 — inline s hands off to the flying S and turns red
-    .to(sFly, { opacity: 1, duration: 0.01 }, 0.30)
-    .to(lS,   { opacity: 0, duration: 0.20 }, 0.30)
-    .to(sFly, { color: '#e14b3c', duration: 0.45 }, 0.35)
-
-    // PHASE 2 — THE DROP. Straight down (x untouched), gravity-in, overshooting the
-    // rest point and settling back so it lands with weight instead of stopping dead.
-    // It also grows ~45% of the way to its final STRESS size on the way down: that
-    // keeps the small mobile glyph (~25px tall vs ~54px on desktop) readable as it
-    // falls, and takes the abruptness out of the later scale-up.
-    .to(sFly, {
-        y: function(){ return dropDistance() + 12; },
-        scale: function(){ return 1 + (sDestination().scale - 1) * 0.45; },
-        duration: 0.85, ease: 'power2.in'
-      }, 0.60)
-    .to(sFly, { y: function(){ return dropDistance(); }, duration: 0.22, ease: 'power2.out' }, 1.45)
-
-    // PHASE 3 — with the s clear of the line, "men" and "ch" close the gap it left.
-    // Each half travels exactly half the vacated slot width, so they meet flush —
-    // no overlap, no residual gap — and the word reads "mench" on its own for a beat.
-    .to('#menPart', { x: function(){ return  lS.getBoundingClientRect().width/2; }, duration: 0.60, ease:'power2.inOut' }, 1.75)
-    .to('#chPart',  { x: function(){ return -lS.getBoundingClientRect().width/2; }, duration: 0.60, ease:'power2.inOut' }, 1.75)
-    // (2.35 → 2.75 holds "mench" long enough to actually be read)
-
-    // PHASE 4 — the s launches from its resting place up into the STRESS slot and
-    // finishes growing to match the row's letters. The hero fades a beat later so
-    // the eye follows the s rather than the disappearing word.
-    .to(sFly, {
-        x: function(){ return sDestination().dx; },
-        y: function(){ return sDestination().dy; },
-        scale: function(){ return sDestination().scale; },
-        duration: 1.05, ease: 'power2.inOut'
-      }, 2.75)
-    .to('#heroLayer', { opacity: 0, duration: 0.65 }, 2.85)
-
-    // reveal STRESS row; swap the flying lowercase s for the row's capital S at the landing instant
-    .set('#stressRow', { opacity: 1 }, 3.80)
-    .set('#xS', { visibility: 'visible' }, 3.80)
-    .set('#sFly', { opacity: 0 }, 3.80)
-    .to(['#xT','#xR','#xE','#xS2','#xS3'], { opacity: 1, y: 0, duration: 0.6, stagger: 0.1 }, 3.85)
-
     // PHASE 5 — STRESS fades out, scanner fades in and draws
     .to(['#stressRow','#sFly'], { opacity: 0, duration: 0.7 }, 5.20)
     .to('#svgWrap', { opacity: 1, duration: 0.5 }, 5.60)
