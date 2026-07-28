@@ -789,6 +789,24 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .trend-tbl td.wk{text-align:left;font-weight:600;white-space:nowrap}
   .tr-up{color:var(--good);font-weight:700} .tr-dn{color:var(--bad);font-weight:700} .tr-flat{color:var(--muted)}
 
+  /* ---- Gradebook (Phase 2b) ---- */
+  .gb-tbl{width:100%;border-collapse:collapse;font-size:.85rem}
+  .gb-tbl th,.gb-tbl td{border:1px solid var(--line);padding:5px 7px;text-align:center;white-space:nowrap}
+  .gb-tbl th{background:#f1f3f8;font-weight:700}
+  .gb-tbl th.gb-item{background:#e6eaf5;font-family:var(--serif)}
+  .gb-tbl th.gb-name,.gb-tbl td.gb-name{text-align:left;white-space:nowrap;position:sticky;left:0;z-index:1}
+  .gb-tbl td.gb-name{background:var(--card);font-weight:600}
+  .gb-tbl th.gb-name{background:#f1f3f8}
+  .gb-tbl th.gb-total,.gb-tbl td.gb-total{background:#fafbfe;font-weight:700}
+  .gb-tbl td.gb-blank{color:var(--muted)}
+  .gb-items{display:flex;flex-wrap:wrap;gap:8px 18px}
+  .gb-items label{display:flex;align-items:center;gap:6px;margin:0;font-size:.86rem;font-weight:600}
+  .gb-legend{margin-top:12px;font-size:.78rem;color:var(--muted);line-height:1.7}
+  .gb-legend b{color:var(--ink)}
+  .gb-note{margin-top:12px;font-size:.84rem;color:var(--muted);line-height:1.6}
+  .gb-warn{margin-top:10px;font-size:.82rem;color:var(--bad);font-weight:600}
+  .gb-print-head{display:none}
+
   /* ---- Leader Board dashboard ---- */
   .lb-stage{display:flex;flex-direction:column;gap:18px}
   .lb-hero{position:relative;overflow:hidden;border-radius:24px;background:linear-gradient(135deg,#141c34 0%,#26345f 52%,#a8772a 160%);color:#fff;border:1px solid rgba(255,255,255,.12);box-shadow:0 18px 50px rgba(27,36,64,.22);padding:24px 26px}
@@ -933,6 +951,20 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     .av-sheet{border:none;margin:0;width:8.5in;height:11in;overflow:hidden;page-break-after:always;break-after:page}
     .av-sheet:last-child{page-break-after:auto;break-after:auto}
     .av-cell{outline:none}
+    /* Gradebook: what is on screen is what prints — same table, no separate
+       print config. Only the chrome is stripped and the type shrunk to fit. */
+    body.print-gradebook #view-gradebook.active{display:block!important}
+    body.print-gradebook .card{border:none!important;box-shadow:none!important;padding:0!important;background:#fff}
+    body.print-gradebook #gbItemsCard,body.print-gradebook #gbWarn{display:none!important}
+    body.print-gradebook .gb-print-head{display:block!important;text-align:center;margin:0 0 10px}
+    body.print-gradebook .gb-print-title{font-family:var(--serif);font-size:1.2rem;font-weight:700}
+    body.print-gradebook .gb-print-sub{font-size:.8rem;color:#555;margin-top:2px}
+    body.print-gradebook .gb-tbl{font-size:8pt}
+    body.print-gradebook .gb-tbl th,body.print-gradebook .gb-tbl td{padding:3px 4px;border:1px solid #999}
+    body.print-gradebook .gb-tbl td.gb-name{position:static;background:#fff}
+    body.print-gradebook .gb-tbl th.gb-name,body.print-gradebook .gb-tbl th.gb-item,body.print-gradebook .gb-tbl th{position:static;background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body.print-gradebook .gb-legend{margin-top:8px;font-size:7.5pt;color:#333}
+    body.print-gradebook main{padding:0.35in}
   }
 
   /* On-screen preview of the seating chart print (not the print output
@@ -2775,6 +2807,50 @@ function setupRoster() {
     </div>
   </section>
 
+  <!-- ============ GRADEBOOK (Phase 2b — reads the 2a tracked-item shell) ============ -->
+  <section id="view-gradebook" class="view">
+    <h2 class="view-title">Gradebook</h2>
+    <p class="view-note">One grid for everything tracked: students down the side, tracked items across the top. Columns come straight from your tracked items — add an item and it shows up here on its own. Pick which items to show and over what dates, then print exactly what you see.</p>
+
+    <div class="toolbar" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+      <label class="lbl" style="margin:0">Dates:</label>
+      <select id="gbPeriod" class="field" style="flex:0 1 170px">
+        <option value="today">Today</option>
+        <option value="7d">Last 7 days</option>
+        <option value="30d">Last 30 days</option>
+        <option value="custom">A date range…</option>
+      </select>
+      <span id="gbCustomInline" style="display:none;align-items:center;gap:8px">
+        <input type="date" id="gbFrom" class="field" style="flex:0 1 160px">
+        <span style="color:var(--muted)">to</span>
+        <input type="date" id="gbTo" class="field" style="flex:0 1 160px">
+      </span>
+      <span class="grow"></span>
+      <button class="btn btn-sm" id="gbItemsToggle">Choose items</button>
+      <button class="btn btn-sm btn-primary" id="gbPrint">🖨 Print</button>
+    </div>
+
+    <div class="card pad" id="gbItemsCard" style="margin-bottom:12px;display:none">
+      <div class="toolbar" style="margin-bottom:8px;gap:6px">
+        <button class="btn btn-sm" id="gbSelectAll">All</button>
+        <button class="btn btn-sm" id="gbSelectNone">None</button>
+        <span id="gbSelectedCount" style="font-size:.82rem;color:var(--muted);font-weight:600"></span>
+      </div>
+      <div id="gbItemsList" class="gb-items"></div>
+    </div>
+
+    <div class="card pad" style="overflow:auto">
+      <div class="gb-print-head">
+        <div class="gb-print-title" id="gbPrintTitle"></div>
+        <div class="gb-print-sub" id="gbPrintSub"></div>
+      </div>
+      <table class="gb-tbl" id="gbTable"></table>
+      <div class="gb-legend" id="gbLegend"></div>
+      <div class="gb-note" id="gbNote"></div>
+    </div>
+    <div class="gb-warn" id="gbWarn"></div>
+  </section>
+
   <!-- ============ SPINNER ============ -->
   <section id="view-spinner" class="view">
     <h2 class="view-title">Spinner</h2>
@@ -3467,7 +3543,7 @@ function setupRoster() {
     scan:        { label:"Record",       icon:'<path d="M2 5V3.5A1.5 1.5 0 0 1 3.5 2H5"/><path d="M11 2h1.5A1.5 1.5 0 0 1 14 3.5V5"/><path d="M14 11v1.5a1.5 1.5 0 0 1-1.5 1.5H11"/><path d="M5 14H3.5A1.5 1.5 0 0 1 2 12.5V11"/><path d="M5 8h6"/>', tabs:["scan","history"] },
     standings:   { label:"Recognize",    icon:'<path d="M5 2.5h6V7a3 3 0 0 1-6 0V2.5z"/><path d="M5 4H2.5v.6A2.4 2.4 0 0 0 5 7"/><path d="M11 4h2.5v.6A2.4 2.4 0 0 1 11 7"/><path d="M8 10v3.5"/><path d="M5.5 13.5h5"/>', tabs:["standings","trends","contest"] },
     rewards:     { label:"Reward",       icon:'<path d="M2 4.5h12V8H2z"/><path d="M3 8v5.5h10V8"/><path d="M8 4.5v9"/><path d="M8 4.5C8 3 7.2 1.7 6 1.7a1.4 1.4 0 0 0 0 2.8"/><path d="M8 4.5C8 3 8.8 1.7 10 1.7a1.4 1.4 0 0 1 0 2.8"/>', tabs:["raffle","auction","store"] },
-    manage:      { label:"Run",          icon:'<circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1.7"/><path d="M8 1.2v2.3M8 12.5v2.3M1.2 8h2.3M12.5 8h2.3M3.2 3.2l1.6 1.6M11.2 11.2l1.6 1.6M12.8 3.2l-1.6 1.6M4.8 11.2l-1.6 1.6"/>', tabs:["students","activities","brachos","spinner","passes","attendance","tracker","homework","backup","settings"] },
+    manage:      { label:"Run",          icon:'<circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1.7"/><path d="M8 1.2v2.3M8 12.5v2.3M1.2 8h2.3M12.5 8h2.3M3.2 3.2l1.6 1.6M11.2 11.2l1.6 1.6M12.8 3.2l-1.6 1.6M4.8 11.2l-1.6 1.6"/>', tabs:["students","activities","brachos","spinner","passes","attendance","tracker","homework","gradebook","backup","settings"] },
     learn:       { label:"Review",       icon:'<path d="M2 2.5c2.4 0 4.4.5 6 1.7V14c-1.6-1.2-3.6-1.7-6-1.7V2.5z"/><path d="M14 2.5c-2.4 0-4.4.5-6 1.7V14c1.6-1.2 3.6-1.7 6-1.7V2.5z"/>', tabs:["learn-text","learn-chart","learn-pesukim","learn-mishnayos","learn-shorashim"] }
   };
   var GROUP_ORDER=["scan","standings","rewards","learn","manage"];
@@ -3480,7 +3556,7 @@ function setupRoster() {
     standings:"Leader Board", trends:"Trends", contest:"Contest",
     raffle:"Raffle", auction:"Auction", store:"Store",
     students:"Students", activities:"Activities", brachos:"Brachos", spinner:"Spinner",
-    passes:"Passes", attendance:"Attendance", tracker:"Tracker", homework:"Homework",
+    passes:"Passes", attendance:"Attendance", tracker:"Tracker", homework:"Homework", gradebook:"Gradebook",
     backup:"Backup & Restore", settings:"Settings",
     "learn-text":"Text", "learn-chart":"Chart", "learn-pesukim":"Pesukim", "learn-mishnayos":"Mishnayos", "learn-shorashim":"Shorashim",
     // Print views (no longer navigable tabs — accessed via buttons on data-owner tabs)
@@ -3644,6 +3720,7 @@ function setupRoster() {
     }
     if(tab==="brachos"){ $("brRch").checked=false; $("brRchBox").style.display="none"; }
     if(tab==="spinner") renderSpinner();
+    if(tab==="gradebook") renderGradebook();
     if(tab==="passes"){ renderPasses(); setTimeout(function(){ $("passScanInput").focus(); },50); }
     renderHeaderScanContext();
   }
@@ -11095,6 +11172,281 @@ nameLine
   // screen from the last spin stays put.
   $("spinInstant").addEventListener("change", function(){ data.spinnerInstant=this.checked; save(); });
 
+  /* ---------- GRADEBOOK (Phase 2b) --------------------------------------
+   * READ-ONLY over the Phase 2a shell. Nothing here writes data.trackedData,
+   * and nothing here reads data.attendance / data.hw / data.trackerLog /
+   * data.passes — those four keep driving their own tabs untouched until 2c
+   * retires them, and recording into tracked items arrives in 2d.
+   *
+   * LAYOUT. Three shapes fall out of ONE grid instead of three code paths:
+   *   one item over a range      -> columns are dates, under one item header
+   *   several items on one date  -> columns are items (second header row is
+   *                                 dropped, since nothing spans a range)
+   *   several items over a range -> dates grouped under each item's header,
+   *                                 with a Total column per multi-date item
+   * The switch is `grouped` below: it is on exactly when some item has more
+   * than one dated column. So "columns are items" is not a special case, it
+   * is the degenerate case of the same table.
+   *
+   * Only dates that actually carry an entry become columns. Three weeks with
+   * twelve school days of homework is twelve columns, not twenty-one — sparse
+   * columns are what make this printable at all.
+   */
+  var GB_MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  function gbDateKeyForTs(ts){ return new Date(ts-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10); }
+  function gbDateLabel(key){ var p=String(key).split("-"); return (GB_MONTHS[(+p[1])-1]||"?")+" "+(+p[2]); }
+  function gbShiftDays(key,n){
+    var d=new Date(key+"T12:00:00"); d.setDate(d.getDate()+n);
+    var m=d.getMonth()+1, day=d.getDate();
+    return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(day<10?"0":"")+day;
+  }
+  function gbRange(){
+    var to=todayKey(), from=to;
+    if(data.gbPeriod==="7d") from=gbShiftDays(to,-6);
+    else if(data.gbPeriod==="30d") from=gbShiftDays(to,-29);
+    else if(data.gbPeriod==="custom"){
+      from=data.gbFrom||"0000-01-01";
+      to=data.gbTo||"9999-12-31";
+      // Typed backwards is a slip, not a request for an empty table.
+      if(from>to){ var t=from; from=to; to=t; }
+    }
+    return {from:from, to:to};
+  }
+  function gbRangeLabel(r){
+    if(data.gbPeriod==="today") return "Today ("+r.from+")";
+    if(r.from===r.to) return r.from;
+    return (r.from==="0000-01-01"?"start":r.from)+" to "+(r.to==="9999-12-31"?"today":r.to);
+  }
+  function gbSelectedItems(){
+    return (data.trackedItems||[]).filter(function(it){ return it && it.id && !data.gbExcluded[it.id]; });
+  }
+  // Single-letter cell codes, disambiguated per item: two options starting
+  // with the same letter grow until they differ. Built once per render so a
+  // cell and the printed legend can never disagree about what "P" means.
+  function gbCodeMap(item){
+    var opts=(item.config && item.config.options) || [], used={}, map={};
+    opts.forEach(function(o){
+      var s=String(o).trim(), code=s.charAt(0).toUpperCase(), n=1;
+      while(used[code] && n<s.length){ n++; code=s.charAt(0).toUpperCase()+s.slice(1,n); }
+      if(used[code]) code=s.toUpperCase();
+      used[code]=1; map[o]=code;
+    });
+    return map;
+  }
+  function gbCode(map,v){
+    var s=(v==null?"":String(v));
+    return (map && map[s]) || (s?s.charAt(0).toUpperCase():"");
+  }
+  // A count item's entries may carry a numeric value (a step) or nothing at
+  // all. Sum the numbers when there are any, otherwise fall back to counting
+  // entries — both readings mean "how many times" and 2d has not fixed the
+  // shape yet.
+  function gbCountOf(entries){
+    var sum=0, sawNumber=false;
+    entries.forEach(function(e){ if(e && typeof e.value==="number" && isFinite(e.value)){ sum+=e.value; sawNumber=true; } });
+    return sawNumber ? sum : entries.length;
+  }
+  function gbCellText(item, entries, codeMap){
+    if(!entries || !entries.length) return "";
+    if(item.method==="preselect") return gbCode(codeMap, entries[entries.length-1].value);
+    if(item.method==="count") return String(gbCountOf(entries));
+    if(item.method==="limited"){
+      var cap=(item.config && typeof item.config.cap==="number") ? item.config.cap : 1;
+      return entries.length+"/"+cap;
+    }
+    // An unrecognised method is READ, not repaired — the 2a rule. How many
+    // entries landed is the one thing true of every possible shape.
+    return String(entries.length);
+  }
+  function gbTotalText(item, byDate, codeMap){
+    var keys=Object.keys(byDate||{});
+    if(!keys.length) return "";
+    if(item.method==="count"){ var n=0; keys.forEach(function(k){ n+=gbCountOf(byDate[k]); }); return String(n); }
+    if(item.method==="limited"){ var u=0; keys.forEach(function(k){ u+=byDate[k].length; }); return String(u); }
+    if(item.method==="preselect"){
+      // Only the values that are NOT the default. The exceptions are why a
+      // rebbi looks at a range at all ("how many times absent"); tallying
+      // every "present" would just restate the column count.
+      var def=(item.config && item.config["default"]) || "", tally={}, order=[];
+      keys.sort().forEach(function(k){
+        var v=byDate[k][byDate[k].length-1].value;
+        if(v===def) return;
+        var c=gbCode(codeMap,v);
+        if(!tally[c]){ tally[c]=0; order.push(c); }
+        tally[c]++;
+      });
+      if(!order.length) return "—";
+      return order.map(function(c){ return c+tally[c]; }).join(" ");
+    }
+    return String(keys.length);
+  }
+  // itemId -> studentId -> dateKey -> [entries], clipped to the visible range.
+  function gbCollect(items, studs, r){
+    var out={};
+    items.forEach(function(it){
+      var perStud=(data.trackedData && data.trackedData[it.id]) || {}, byStud={};
+      studs.forEach(function(s){
+        var list=perStud[s.id];
+        if(!Array.isArray(list)) return;
+        var byDate={};
+        list.forEach(function(e){
+          if(!e || typeof e.ts!=="number" || !isFinite(e.ts)) return;
+          var k=gbDateKeyForTs(e.ts);
+          if(k<r.from || k>r.to) return;
+          (byDate[k]=byDate[k]||[]).push(e);
+        });
+        byStud[s.id]=byDate;
+      });
+      out[it.id]=byStud;
+    });
+    return out;
+  }
+  function gbDatesFor(itemId, studs, collected){
+    var seen={};
+    studs.forEach(function(s){
+      var byDate=(collected[itemId]||{})[s.id]||{};
+      Object.keys(byDate).forEach(function(k){ seen[k]=1; });
+    });
+    return Object.keys(seen).sort();
+  }
+  function renderGbItemsList(){
+    var box=$("gbItemsList"); box.innerHTML="";
+    var items=(data.trackedItems||[]).filter(function(it){ return it && it.id; });
+    if(!items.length){
+      box.appendChild(el("div","recent-empty","No tracked items yet."));
+      $("gbSelectedCount").textContent="";
+      return;
+    }
+    items.forEach(function(it){
+      var lab=el("label"), cb=document.createElement("input");
+      cb.type="checkbox"; cb.checked=!data.gbExcluded[it.id];
+      cb.addEventListener("change", function(){
+        if(this.checked) delete data.gbExcluded[it.id]; else data.gbExcluded[it.id]=true;
+        save(); renderGbItemsList(); renderGbTable();
+      });
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(it.name||it.id));
+      box.appendChild(lab);
+    });
+    $("gbSelectedCount").textContent=gbSelectedItems().length+" of "+items.length+" showing";
+  }
+  function renderGbTable(){
+    var tbl=$("gbTable"), legend=$("gbLegend"), note=$("gbNote"), warn=$("gbWarn");
+    tbl.innerHTML=""; legend.innerHTML=""; note.textContent=""; warn.textContent="";
+    var r=gbRange();
+    $("gbPrintTitle").textContent=(data.className||data.school||"")+" — Gradebook";
+    $("gbPrintSub").textContent=gbRangeLabel(r);
+
+    var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+    if(!studs.length){ note.textContent="No students in this class yet — add them on the Students tab."; return; }
+    if(!(data.trackedItems||[]).length){ note.textContent="No tracked items yet."; return; }
+    var items=gbSelectedItems();
+    if(!items.length){ note.textContent="No items selected. Use “Choose items” to pick which ones appear as columns."; return; }
+
+    var collected=gbCollect(items, studs, r);
+    var datesByItem={}, codeMaps={}, maxDates=0, anyData=false;
+    items.forEach(function(it){
+      var ds=gbDatesFor(it.id, studs, collected);
+      datesByItem[it.id]=ds;
+      codeMaps[it.id]=(it.method==="preselect") ? gbCodeMap(it) : null;
+      if(ds.length>maxDates) maxDates=ds.length;
+      if(ds.length) anyData=true;
+    });
+    var grouped = maxDates>1;
+
+    var thead=document.createElement("thead"), hr1=document.createElement("tr");
+    var nameTh=el("th","gb-name","Student");
+    if(grouped) nameTh.rowSpan=2;
+    hr1.appendChild(nameTh);
+    items.forEach(function(it){
+      var ds=datesByItem[it.id], th=el("th","gb-item",it.name||it.id);
+      if(grouped) th.colSpan=Math.max(ds.length,1)+(ds.length>1?1:0);
+      hr1.appendChild(th);
+    });
+    thead.appendChild(hr1);
+    if(grouped){
+      var hr2=document.createElement("tr");
+      items.forEach(function(it){
+        var ds=datesByItem[it.id];
+        if(!ds.length){ hr2.appendChild(el("th",null,"—")); return; }
+        ds.forEach(function(k){ hr2.appendChild(el("th",null,gbDateLabel(k))); });
+        if(ds.length>1) hr2.appendChild(el("th","gb-total","Total"));
+      });
+      thead.appendChild(hr2);
+    }
+    tbl.appendChild(thead);
+
+    var tbody=document.createElement("tbody");
+    studs.forEach(function(s){
+      var tr=document.createElement("tr");
+      tr.appendChild(el("td","gb-name",s.name));
+      items.forEach(function(it){
+        var ds=datesByItem[it.id], byDate=(collected[it.id]||{})[s.id]||{};
+        if(!ds.length){ tr.appendChild(el("td","gb-blank","—")); return; }
+        ds.forEach(function(k){
+          var ents=byDate[k]||[], txt=gbCellText(it, ents, codeMaps[it.id]);
+          var td=el("td", txt?null:"gb-blank", txt||"·");
+          if(txt) td.title=(it.name||it.id)+" · "+gbDateLabel(k)+": "+
+            (it.method==="preselect" ? String(ents[ents.length-1].value) : txt);
+          tr.appendChild(td);
+        });
+        if(ds.length>1) tr.appendChild(el("td","gb-total",gbTotalText(it,byDate,codeMaps[it.id])||"—"));
+      });
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+
+    // Preselect cells are single letters, so anything printed has to carry its
+    // own key — a page handed to someone else must explain itself.
+    items.forEach(function(it){
+      if(it.method!=="preselect") return;
+      var opts=(it.config && it.config.options) || [];
+      if(!opts.length) return;
+      var line=el("div"), map=codeMaps[it.id];
+      line.appendChild(el("b",null,(it.name||it.id)+": "));
+      line.appendChild(document.createTextNode(opts.map(function(o){ return gbCode(map,o)+" = "+o; }).join("   ")));
+      legend.appendChild(line);
+    });
+
+    if(!anyData){
+      note.textContent="Nothing recorded in this range yet. Tracked items are the new shared record and start filling once scanning writes into them; Attendance, Homework, Tracker and Passes are still the live record on their own tabs in the meantime.";
+    }
+    var cols=0;
+    items.forEach(function(it){ var d=datesByItem[it.id]; cols+=Math.max(d.length,1)+(d.length>1?1:0); });
+    if(cols>25) warn.textContent=cols+" columns — more than a printed page holds. Narrow the dates or turn off a few items.";
+  }
+  function renderGradebook(){
+    $("gbPeriod").value=data.gbPeriod;
+    $("gbCustomInline").style.display = data.gbPeriod==="custom" ? "inline-flex" : "none";
+    $("gbFrom").value=data.gbFrom||"";
+    $("gbTo").value=data.gbTo||"";
+    $("gbItemsCard").style.display = data.gbItemsOpen ? "block" : "none";
+    $("gbItemsToggle").textContent = data.gbItemsOpen ? "Hide items" : "Choose items";
+    renderGbItemsList();
+    renderGbTable();
+  }
+  $("gbPeriod").addEventListener("change", function(){ data.gbPeriod=this.value; save(); renderGradebook(); });
+  $("gbFrom").addEventListener("change", function(){ data.gbFrom=this.value||""; save(); renderGbTable(); });
+  $("gbTo").addEventListener("change", function(){ data.gbTo=this.value||""; save(); renderGbTable(); });
+  $("gbItemsToggle").addEventListener("click", function(){ data.gbItemsOpen=!data.gbItemsOpen; save(); renderGradebook(); });
+  $("gbSelectAll").addEventListener("click", function(){ data.gbExcluded={}; save(); renderGbItemsList(); renderGbTable(); });
+  $("gbSelectNone").addEventListener("click", function(){
+    var ex={}; (data.trackedItems||[]).forEach(function(it){ if(it&&it.id) ex[it.id]=true; });
+    data.gbExcluded=ex; save(); renderGbItemsList(); renderGbTable();
+  });
+  // Print = exactly what is on screen. No second configuration to keep in
+  // step with the filters, so the item checkboxes and the date range ARE the
+  // print settings. @page cannot be scoped by a body class, so landscape is
+  // injected for the duration and removed in afterprint — the same trick the
+  // seating chart uses, and a gradebook is almost always wider than it is tall.
+  var gbLandscapeStyleEl=null;
+  $("gbPrint").addEventListener("click", function(){
+    document.body.classList.add("print-gradebook");
+    gbLandscapeStyleEl=document.createElement("style");
+    gbLandscapeStyleEl.textContent="@page{size:letter landscape;margin:0}";
+    document.head.appendChild(gbLandscapeStyleEl);
+    window.print();
+  });
+
   /* ---------- STUDENTS ---------- */
   var studentBreakdownOpen = {};
   function breakdownPeriodCutoff(period){
@@ -11988,8 +12340,9 @@ nameLine
   }
   $("printSeatChart").addEventListener("click", function(){ triggerSeatChartPrint(seatPrintOrient); });
   window.addEventListener("afterprint", function(){
-    document.body.classList.remove("print-students","print-menu","print-personal","print-seating","print-seating-landscape");
+    document.body.classList.remove("print-students","print-menu","print-personal","print-seating","print-seating-landscape","print-gradebook");
     if(seatLandscapeStyleEl){ seatLandscapeStyleEl.remove(); seatLandscapeStyleEl=null; }
+    if(gbLandscapeStyleEl){ gbLandscapeStyleEl.remove(); gbLandscapeStyleEl=null; }
     if(seatPrintPrevView){
       $("view-printSeats").classList.remove("active");
       seatPrintPrevView.classList.add("active");
@@ -12521,6 +12874,16 @@ nameLine
     if(typeof data.standCustomTo!=="string") data.standCustomTo="";
     if(typeof data.studCustomFrom!=="string") data.studCustomFrom="";
     if(typeof data.studCustomTo!=="string") data.studCustomTo="";
+    // Gradebook view state (Phase 2b). Purely additive — five preference
+    // fields, no DATA_VERSION bump, nothing existing read or converted.
+    // gbExcluded stores the items HIDDEN rather than the ones shown, so a
+    // tracked item added later appears as a column on its own. That is the
+    // whole point of the 2a shell and an "included" list would quietly break it.
+    if(!data.gbExcluded || typeof data.gbExcluded!=="object" || Array.isArray(data.gbExcluded)) data.gbExcluded={};
+    if(["today","7d","30d","custom"].indexOf(data.gbPeriod)<0) data.gbPeriod="7d";
+    if(typeof data.gbFrom!=="string") data.gbFrom="";
+    if(typeof data.gbTo!=="string") data.gbTo="";
+    if(typeof data.gbItemsOpen!=="boolean") data.gbItemsOpen=false;
     ensureScanLayout();
     if(typeof data.teachRepeatMode!=="boolean") data.teachRepeatMode=true;
     if(typeof data.teachFlipKeys!=="boolean") data.teachFlipKeys=false;
