@@ -303,21 +303,14 @@ if(["qr","photo","none"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrin
 delete data.seatPrintOpts.showQR;
 if(typeof data.seatPrintOpts.showPoints!=="boolean") data.seatPrintOpts.showPoints=false;
 if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
+// NEW installs get the activities footer on, via `defaults` above. Reaching
+// this line means the field is absent from a save that already existed, so
+// the install predates the field — and per CLAUDE.md's data-safety rule and
+// #121's, an existing rebbi keeps the behaviour he has. He prints the same
+// sheet every Monday; it must not quietly become a different sheet on a
+// Monday he didn't ask for. A save that already carries the field, either
+// way, is left exactly as the rebbi set it.
 if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
-// The activity codes ARE the point of the class sheet: student codes in
-// seats plus every code needed to score them, on one page. Shipping that
-// off by default meant the sheet only became useful if a rebbi found a
-// checkbox, so it defaults ON.
-//
-// ONE-SHOT, exactly like contestHiddenSeeded: it turns on once, then never
-// touches the setting again — so a rebbi who deliberately turns it off
-// keeps it off through every future load. Existing installs get it switched
-// on once too, which is the intent: they have been printing the weaker
-// sheet without knowing there was a better one.
-if(!data.seatActFooterSeeded){
-  data.seatPrintOpts.showActivities=true;
-  data.seatActFooterSeeded=true;
-}
 // Page orientation for the class sheet. It was a module-level variable, so
 // it reset to portrait on every reload and a rebbi whose chart only fits
 // landscape had to re-pick it every single time.
@@ -1477,6 +1470,72 @@ function runBuiltInTests() {
   assert("2c→data.attendance still an object the Attendance tab can write to",
     !!t10.attendance && typeof t10.attendance==="object" && !Array.isArray(t10.attendance)
     && Object.keys(t10.attendance).length===2);
+
+  // --- Test 16: class sheet — activities footer must not change under anyone ---
+  // NEW installs get showActivities:true from app.html's `defaults`. Everything
+  // that reaches load2fix() is by definition a save that already existed, so the
+  // one thing that must hold here is that load2fix NEVER turns it on. A rebbi
+  // who prints the same sheet every Monday must not get a different one on a
+  // Monday he didn't ask for.
+  //
+  // `defaults` is not reachable from this harness (runMigration always starts
+  // from a supplied blob), so these cover the three save-shaped states.
+  var t16a = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:false} });
+  assert("sheet→an existing OFF stays off (the silent-change guard)",
+    t16a.seatPrintOpts.showActivities===false, "got "+t16a.seatPrintOpts.showActivities);
+  var t16b = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true} });
+  assert("sheet→an existing ON stays on", t16b.seatPrintOpts.showActivities===true);
+  // Predates the field: has the options object, but not this key.
+  var t16c = runMigration({ version:4, seatPrintOpts:{avatarMode:"photo", showPoints:true} });
+  assert("sheet→a save predating the field keeps its old behaviour (off)",
+    t16c.seatPrintOpts.showActivities===false, "got "+t16c.seatPrintOpts.showActivities);
+  assert("sheet→predating save keeps its other print choices",
+    t16c.seatPrintOpts.avatarMode==="photo" && t16c.seatPrintOpts.showPoints===true,
+    "got "+JSON.stringify(t16c.seatPrintOpts));
+  // Predates the whole options object.
+  var t16d = runMigration({ version:4 });
+  assert("sheet→a save with no print options at all defaults off",
+    t16d.seatPrintOpts.showActivities===false, "got "+t16d.seatPrintOpts.showActivities);
+  // The blanket statement: no path through load2fix may switch it on.
+  assert("sheet→load2fix NEVER turns the footer on by itself",
+    t16a.seatPrintOpts.showActivities===false
+    && t16c.seatPrintOpts.showActivities===false
+    && t16d.seatPrintOpts.showActivities===false,
+    "if this fails, existing rebbeim just had their printed sheet changed for them");
+  // Orientation is now remembered rather than resetting to portrait each load.
+  assert("sheet→orientation defaults to portrait", t16d.seatPrintOrient==="portrait");
+  var t16e = runMigration({ version:4, seatPrintOrient:"landscape" });
+  assert("sheet→a saved landscape survives a reload", t16e.seatPrintOrient==="landscape");
+  var t16f = runMigration({ version:4, seatPrintOrient:"sideways" });
+  assert("sheet→a garbage orientation repairs to portrait", t16f.seatPrintOrient==="portrait");
+
+  // --- Test 17: #117 printed-code selection ---
+  assert("codes→printExcluded backfills to an object",
+    !!d1.printExcluded && typeof d1.printExcluded==="object" && !Array.isArray(d1.printExcluded));
+  // Seeded ONCE, so a rebbi who deliberately ticks one keeps it ticked.
+  assert("codes→the three default-off codes are seeded",
+    d1.printExcluded["CTRL:PASUKPREV"]===true && d1.printExcluded["CTRL:PASUKNEXT"]===true
+    && d1.printExcluded["CTRL:CUSTOM-"]===true, "got "+JSON.stringify(d1.printExcluded));
+  assert("codes→nothing else is excluded by default",
+    Object.keys(d1.printExcluded).length===3, "got "+JSON.stringify(d1.printExcluded));
+  assert("codes→one-shot flag stamped", d1.printExcludedSeeded===true);
+  var t17 = runMigration({ version:4, printExcludedSeeded:true, printExcluded:{} });
+  assert("codes→a deliberate re-tick is NOT undone on the next load",
+    Object.keys(t17.printExcluded).length===0, "got "+JSON.stringify(t17.printExcluded));
+  var t17b = runMigration({ version:4, printExcludedSeeded:true, printExcluded:{"ACT:a9":true} });
+  assert("codes→an activity turned off stays off", t17b.printExcluded["ACT:a9"]===true);
+  assert("codes→an activity never mentioned is NOT excluded (new ones appear by themselves)",
+    t17b.printExcluded["ACT:a1"]===undefined);
+  var t17c = runMigration({ version:4, printExcluded:["not","an","object"] });
+  assert("codes→corrupt printExcluded repaired to an object",
+    !Array.isArray(t17c.printExcluded) && typeof t17c.printExcluded==="object");
+  assert("codes→DATA_VERSION still NOT bumped", t17.version===4 && DATA_VERSION===4);
+  // And none of this disturbed the Phase 2a promise.
+  assert("codes→old stores STILL byte-identical",
+    JSON.stringify(t10.attendance)===snapBefore.attendance
+    && JSON.stringify(t10.hw)===snapBefore.hw
+    && JSON.stringify(t10.trackerLog)===snapBefore.trackerLog
+    && JSON.stringify(t10.passes)===snapBefore.passes);
 
   // Runs last so its card sits at the bottom, but it gates the render: nothing
   // is shown until we know whether this harness is testing current code.

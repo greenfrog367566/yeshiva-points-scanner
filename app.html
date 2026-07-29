@@ -3296,7 +3296,20 @@ function setupRoster() {
     // Picker's "skip students who already had a turn" — shared by BOTH picker
     // modes (wheel + seating chart). Defaults ON so the seating chart keeps
     // the skip-until-everyone-has-had-a-turn rotation it has always had.
-    pickerSkip: true
+    pickerSkip: true,
+    // Class-sheet print options. Present HERE, in defaults, purely so a
+    // brand-new install can be told apart from an existing save — which is the
+    // only way to give new rebbeim the activities footer without silently
+    // changing the sheet an existing rebbi already prints every Monday.
+    //
+    // The three states, per #121's rule:
+    //   new install            -> takes showActivities:true from this object
+    //   save that HAS it       -> load2fix leaves whatever the rebbi chose
+    //   save PREDATING it      -> load2fix backfills false, its old behaviour
+    //
+    // Discoverability is fixed by putting the checkbox on a page rebbeim
+    // actually reach, not by flipping a setting under them.
+    seatPrintOpts: { avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true }
   };
 
   var SHOR_BANK = [
@@ -13756,21 +13769,14 @@ nameLine
     delete data.seatPrintOpts.showQR;
     if(typeof data.seatPrintOpts.showPoints!=="boolean") data.seatPrintOpts.showPoints=false;
     if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
+    // NEW installs get the activities footer on, via `defaults` above. Reaching
+    // this line means the field is absent from a save that already existed, so
+    // the install predates the field — and per CLAUDE.md's data-safety rule and
+    // #121's, an existing rebbi keeps the behaviour he has. He prints the same
+    // sheet every Monday; it must not quietly become a different sheet on a
+    // Monday he didn't ask for. A save that already carries the field, either
+    // way, is left exactly as the rebbi set it.
     if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
-    // The activity codes ARE the point of the class sheet: student codes in
-    // seats plus every code needed to score them, on one page. Shipping that
-    // off by default meant the sheet only became useful if a rebbi found a
-    // checkbox, so it defaults ON.
-    //
-    // ONE-SHOT, exactly like contestHiddenSeeded: it turns on once, then never
-    // touches the setting again — so a rebbi who deliberately turns it off
-    // keeps it off through every future load. Existing installs get it switched
-    // on once too, which is the intent: they have been printing the weaker
-    // sheet without knowing there was a better one.
-    if(!data.seatActFooterSeeded){
-      data.seatPrintOpts.showActivities=true;
-      data.seatActFooterSeeded=true;
-    }
     // Page orientation for the class sheet. It was a module-level variable, so
     // it reset to portrait on every reload and a rebbi whose chart only fits
     // landscape had to re-pick it every single time.
