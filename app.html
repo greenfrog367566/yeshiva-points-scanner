@@ -817,6 +817,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
                      padding:4px 10px;line-height:1.6;background:var(--card)}
   .gb-legend b{color:var(--ink)}
   .gb-legend .gb-code{color:var(--ink);font-weight:700}
+  /* "(empty)" names the blank code rather than showing it — it is a word about
+     the cell, not the cell's contents, so it must not read as a code itself. */
+  .gb-legend .gb-code-blank{font-weight:600;font-style:italic;color:var(--muted)}
+  /* A recorded value whose code is blank ("unchecked"). Distinct from gb-blank,
+     which is the "·" shown when nothing was ever recorded. */
+  .gb-tbl td.gb-empty{background:var(--card)}
   .gb-note{margin-top:12px;font-size:.84rem;color:var(--muted);line-height:1.6}
   .gb-warn{margin-top:10px;font-size:.82rem;color:var(--bad);font-weight:600}
   .gb-print-head{display:none}
@@ -11465,53 +11471,100 @@ nameLine
   function gbSelectedItems(){
     return (data.trackedItems||[]).filter(function(it){ return it && it.id && !data.gbExcluded[it.id]; });
   }
-  // Single-letter cell codes, disambiguated per item: two options starting
-  // with the same letter grow until they differ. Built once per render so a
-  // cell and the printed legend can never disagree about what "P" means.
-  // A value's code is derived from ITS OWN TEXT and nothing else: word initials
-  // for a multi-word value ("partial credit" -> PC), the first letter for a
-  // single word ("present" -> P).
-  //
-  // That independence is the whole point. Attendance's "present" and Homework's
-  // "partial credit" both used to render as a bare "P" — the same letter with
-  // two meanings in adjacent columns, and two lines of the legend that read as
-  // a contradiction. The obvious fix is one shared disambiguation map for the
-  // whole grid, so the second P grows to "Pa". It was rejected: the code would
-  // then depend on which OTHER items happen to be on screen and in what order,
-  // so hiding Attendance would flip Homework's "Pa" back to "P" and two
-  // printouts of the same data would disagree about what a letter means. A code
-  // a rebbi has learned must not move because of an unrelated item.
-  //
-  // Deriving from the value's own text keeps every code stable across renders,
-  // prints and item toggles, and removes the actual collision as a side effect.
-  // Two items CAN still collide if a rebbi names their values that way; the
-  // column header and the per-item legend line stay the disambiguator, which is
-  // the right place for it — scoping a code to its item is correct, and only
-  // looked wrong because the legend presented the scoped keys as one flat list.
+  /* ---------- cell codes -------------------------------------------------
+   * A cell shows one short code. Two rules govern which:
+   *
+   * ANCHORED. A known option has a FIXED code, keyed by the option's own text
+   * (below). It never moves — not for item order, not for which other items
+   * are on screen, not between two prints. A symbol is used only where the
+   * meaning is unambiguous: "late" and "partial" both keep letters, because
+   * neither has a natural symbol and both fail in the Total column, where the
+   * code sits directly against its count ("/3" reads as "out of 3", and the
+   * Bathroom Pass column in this same grid really does print an n/cap
+   * fraction).
+   *
+   * DERIVED. Anything else — a rebbi's own scale — falls back to word
+   * initials ("partial credit" -> PC), the first letter for a single word.
+   *
+   * Note ✓ and ✗ deliberately appear in BOTH Attendance and Homework. That is
+   * not the collision this replaced: they mean the same KIND of thing in each
+   * (the good outcome, the bad one), and that consistency is the point of
+   * using symbols at all. The old fault was P meaning "present" in one column
+   * and "partial credit" in the next — two unrelated facts sharing a letter.
+   *
+   * FONT DEPENDENCY: U+2713 / U+2717 are text-default (not emoji) but resolve
+   * from a system symbol font rather than the primary sans stack. Present on
+   * Windows, macOS and Android; worth knowing before anyone changes the font.
+   */
+  var GB_FIXED_CODES = {
+    "present":"✓", "late":"L", "absent":"✗",
+    "unchecked":"", "full credit":"✓", "partial credit":"P", "no credit":"✗"
+  };
+  function gbFixedCode(s){
+    var k=String(s).trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(GB_FIXED_CODES,k) ? GB_FIXED_CODES[k] : null;
+  }
   function gbCodeBase(s){
     var words=s.split(/[\s\-_/]+/).filter(function(w){ return w.length; });
     if(words.length>1) return words.map(function(w){ return w.charAt(0).toUpperCase(); }).join("");
     return s.charAt(0).toUpperCase();
   }
-  function gbCodeMap(item){
-    var opts=(item.config && item.config.options) || [], used={}, map={};
-    opts.forEach(function(o){
-      var s=String(o).trim(), code=gbCodeBase(s), n=1;
-      // Within ONE item, two values can still land on the same code ("full
-      // credit" / "final copy"). Grow the source text until they differ, exactly
-      // as before — this fallback is per-item and so stays order-stable.
-      while(used[code] && n<s.length){ n++; code=s.charAt(0).toUpperCase()+s.slice(1,n); }
-      if(used[code]) code=s.toUpperCase();
-      used[code]=1; map[o]=code;
+  // Builds every visible item's map together, in TWO passes, because uniqueness
+  // has to hold across the whole view and not just within one item: a rebbi's
+  // custom "Proficient" derives P and would otherwise sit one column from
+  // Homework's anchored P.
+  //
+  // Pass 1 places every anchored code first, so they are all claimed before
+  // anything is derived. Pass 2 derives the rest and grows any that would clash
+  // with a code already taken. The asymmetry is deliberate — anchored codes are
+  // immovable and derived ones yield to them, never the reverse.
+  //
+  // The honest limit: two CUSTOM options that derive the same letters cannot
+  // both keep it, so the second one grows, and which is "second" depends on
+  // item order. Perfect stability and guaranteed uniqueness are not both
+  // available for arbitrary text. Anchored codes — everything a rebbi sees out
+  // of the box — get stability; only custom scales can shift, and only against
+  // each other.
+  function gbBuildCodeMaps(items){
+    var claimed={}, slots={};
+    items.forEach(function(it){
+      if(!it || it.method!=="preselect") return;
+      var map={}, own={};
+      ((it.config && it.config.options)||[]).forEach(function(o){
+        var code=gbFixedCode(o);
+        if(code===null) return;
+        map[o]=code; own[code]=1;
+        // The empty code (unchecked) is not a claim — a blank cell is not a
+        // glyph anyone else could collide with.
+        if(code!=="") claimed[code]=1;
+      });
+      slots[it.id]={map:map, own:own};
     });
-    return map;
+    items.forEach(function(it){
+      if(!it || it.method!=="preselect") return;
+      var slot=slots[it.id], map=slot.map, own=slot.own;
+      ((it.config && it.config.options)||[]).forEach(function(o){
+        if(Object.prototype.hasOwnProperty.call(map,o)) return;
+        var s=String(o).trim(), code=gbCodeBase(s), n=1;
+        while((own[code]||claimed[code]) && n<s.length){ n++; code=s.charAt(0).toUpperCase()+s.slice(1,n); }
+        if(own[code]||claimed[code]) code=s.toUpperCase();
+        map[o]=code; own[code]=1; claimed[code]=1;
+      });
+    });
+    var out={};
+    Object.keys(slots).forEach(function(id){ out[id]=slots[id].map; });
+    return out;
   }
   // A value not in the map — recorded before an option was renamed, or arriving
-  // from a newer save — still gets a code, derived the same way so it reads
-  // consistently with its neighbours rather than reverting to a bare letter.
+  // from a newer save — still gets a code: its anchored one if it has one, so a
+  // stored "present" keeps its ✓ even after the option list changed underneath
+  // it, otherwise derived the same way as its neighbours.
   function gbCode(map,v){
     var s=(v==null?"":String(v));
-    return (map && map[s]) || (s?gbCodeBase(s.trim()):"");
+    if(map && Object.prototype.hasOwnProperty.call(map,s)) return map[s];
+    var fixed=gbFixedCode(s);
+    if(fixed!==null) return fixed;
+    return s?gbCodeBase(s.trim()):"";
   }
   // A count item's entries may carry a numeric value (a step) or nothing at
   // all. Sum the numbers when there are any, otherwise fall back to counting
@@ -11534,27 +11587,55 @@ nameLine
     // entries landed is the one thing true of every possible shape.
     return String(entries.length);
   }
-  function gbTotalText(item, byDate, codeMap){
+  // What a cell MEANS, in words, for the screen reader. A cell showing "✓"
+  // announces as "check mark" or is skipped entirely at low verbosity, and a
+  // blank one is indistinguishable from a cell with nothing in it — so the
+  // spoken value is never derived from the code, always from the record.
+  function gbCellSpoken(item, entries){
+    if(!entries || !entries.length) return "no record";
+    if(item.method==="preselect") return String(entries[entries.length-1].value);
+    if(item.method==="count") return String(gbCountOf(entries));
+    if(item.method==="limited"){
+      var cap=(item.config && typeof item.config.cap==="number") ? item.config.cap : 1;
+      return entries.length+" of "+cap;
+    }
+    return String(entries.length);
+  }
+  // Returns BOTH forms: `text` for the cell, `label` for the screen reader.
+  // They are built from one walk so they can never describe different numbers.
+  function gbTotalParts(item, byDate, codeMap){
     var keys=Object.keys(byDate||{});
-    if(!keys.length) return "";
-    if(item.method==="count"){ var n=0; keys.forEach(function(k){ n+=gbCountOf(byDate[k]); }); return String(n); }
-    if(item.method==="limited"){ var u=0; keys.forEach(function(k){ u+=byDate[k].length; }); return String(u); }
+    if(!keys.length) return {text:"", label:""};
+    if(item.method==="count"){
+      var n=0; keys.forEach(function(k){ n+=gbCountOf(byDate[k]); });
+      return {text:String(n), label:n+" in total"};
+    }
+    if(item.method==="limited"){
+      var u=0; keys.forEach(function(k){ u+=byDate[k].length; });
+      return {text:String(u), label:u+" used in total"};
+    }
     if(item.method==="preselect"){
       // Only the values that are NOT the default. The exceptions are why a
       // rebbi looks at a range at all ("how many times absent"); tallying
       // every "present" would just restate the column count.
+      //
+      // Tallied by VALUE rather than by code, so the spoken form has the real
+      // word to read out and two values can never be silently merged by
+      // sharing a code.
       var def=(item.config && item.config["default"]) || "", tally={}, order=[];
       keys.sort().forEach(function(k){
         var v=byDate[k][byDate[k].length-1].value;
         if(v===def) return;
-        var c=gbCode(codeMap,v);
-        if(!tally[c]){ tally[c]=0; order.push(c); }
-        tally[c]++;
+        if(!tally[v]){ tally[v]=0; order.push(v); }
+        tally[v]++;
       });
-      if(!order.length) return "—";
-      return order.map(function(c){ return c+tally[c]; }).join(" ");
+      if(!order.length) return {text:"—", label:"none"};
+      return {
+        text: order.map(function(v){ return gbCode(codeMap,v)+tally[v]; }).join(" "),
+        label: order.map(function(v){ return v+" "+tally[v]; }).join(", ")
+      };
     }
-    return String(keys.length);
+    return {text:String(keys.length), label:keys.length+" in total"};
   }
   // itemId -> studentId -> dateKey -> [entries], clipped to the visible range.
   function gbCollect(items, studs, r){
@@ -11623,11 +11704,14 @@ nameLine
     if(!items.length){ note.textContent="No items selected. Use “Choose items” to pick which ones appear as columns."; return; }
 
     var collected=gbCollect(items, studs, r);
-    var datesByItem={}, codeMaps={}, maxDates=0, anyData=false;
+    // Built for ALL visible items at once — uniqueness has to hold across the
+    // view, not just inside one item, so this cannot be done per item in the
+    // loop below.
+    var codeMaps=gbBuildCodeMaps(items);
+    var datesByItem={}, maxDates=0, anyData=false;
     items.forEach(function(it){
       var ds=gbDatesFor(it.id, studs, collected);
       datesByItem[it.id]=ds;
-      codeMaps[it.id]=(it.method==="preselect") ? gbCodeMap(it) : null;
       if(ds.length>maxDates) maxDates=ds.length;
       if(ds.length) anyData=true;
     });
@@ -11663,20 +11747,42 @@ nameLine
         var ds=datesByItem[it.id], byDate=(collected[it.id]||{})[s.id]||{};
         if(!ds.length){ tr.appendChild(el("td","gb-blank","—")); return; }
         ds.forEach(function(k){
-          var ents=byDate[k]||[], txt=gbCellText(it, ents, codeMaps[it.id]);
-          var td=el("td", txt?null:"gb-blank", txt||"·");
-          if(txt) td.title=(it.name||it.id)+" · "+gbDateLabel(k)+": "+
-            (it.method==="preselect" ? String(ents[ents.length-1].value) : txt);
+          var ents=byDate[k]||[], has=!!ents.length;
+          var txt=gbCellText(it, ents, codeMaps[it.id]);
+          var td;
+          if(!has){
+            // Nothing was ever recorded here.
+            td=el("td","gb-blank","·");
+          }else{
+            // A record EXISTS. Its code may legitimately be empty — "unchecked"
+            // is drawn as a genuinely empty cell — and that must not fall back
+            // to the "·" above, or "we recorded that it wasn't collected" and
+            // "nothing here" would look identical. They are different facts.
+            td=el("td", txt?null:"gb-empty", txt);
+          }
+          var spoken=(it.name||it.id)+", "+gbDateLabel(k)+", "+gbCellSpoken(it, ents);
+          // aria-label, not title: titles are not reliably announced by screen
+          // readers and never surface on touch. With symbol cells the code
+          // alone announces as "check mark" or nothing at all, so the real word
+          // has to be carried explicitly.
+          td.setAttribute("aria-label", spoken);
+          if(has) td.title=spoken;
           tr.appendChild(td);
         });
-        if(ds.length>1) tr.appendChild(el("td","gb-total",gbTotalText(it,byDate,codeMaps[it.id])||"—"));
+        if(ds.length>1){
+          var tot=gbTotalParts(it, byDate, codeMaps[it.id]);
+          var totTd=el("td","gb-total",tot.text||"—");
+          totTd.setAttribute("aria-label",(it.name||it.id)+", total, "+(tot.label||"none"));
+          tr.appendChild(totTd);
+        }
       });
       tbody.appendChild(tr);
     });
     tbl.appendChild(tbody);
 
-    // Preselect cells are single letters, so anything printed has to carry its
-    // own key — a page handed to someone else must explain itself.
+    // Preselect cells are one short code, so anything printed has to carry its
+    // own key — a page handed to someone else must explain itself. It still has
+    // to explain the letters and any custom scale, not just the symbols.
     items.forEach(function(it){
       if(it.method!=="preselect") return;
       var opts=(it.config && it.config.options) || [];
@@ -11684,10 +11790,14 @@ nameLine
       var line=el("div","gb-key"), map=codeMaps[it.id];
       line.appendChild(el("b",null,(it.name||it.id)+": "));
       // Codes are emphasised individually rather than dropped into one text
-      // node, so the letter a rebbi is looking up stands out from the words.
+      // node, so the code a rebbi is looking up stands out from the words.
       opts.forEach(function(o,i){
         if(i) line.appendChild(document.createTextNode("  ·  "));
-        line.appendChild(el("span","gb-code",gbCode(map,o)));
+        var code=gbCode(map,o);
+        // A blank code has to be named, or the line reads " = unchecked" and
+        // looks broken rather than deliberate.
+        var span=el("span", code?"gb-code":"gb-code gb-code-blank", code||"(empty)");
+        line.appendChild(span);
         line.appendChild(document.createTextNode(" = "+o));
       });
       legend.appendChild(line);
