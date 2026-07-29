@@ -114,6 +114,17 @@ Every teacher's roster, scores, and history live in their browser's `localStorag
 - **Run `test-migration.html` after any change to `migrateData()`/`load2fix()`**, and keep its copies of those functions in sync with app.html.
 - **Never rename the core storage primitives:** `data`, `KEY` (`"qrPointsData_v1"` — the actual localStorage key, never change the string), `defaults`, `load()`, `load2fix()`, `save()`. Never use localStorage directly — always go through `save()`/`load()`.
 
+**Before shipping any feature that stores or destroys data, ask what happens when its underlying data is gone or wrong.** Four questions:
+
+- If this feature's data can be truncated, wiped, or overwritten, does the feature still behave correctly — or does it silently show wrong numbers?
+- Does anything destructive share a button with something benign?
+- Does any dialog promise something the code then destroys?
+- Is there a way back — a log entry, a stored previous value, a backup path?
+
+Learned from Contest (#131, #133, #134). The data model was sound: scans carried a `contestId`, merge stamped entries individually, undo read those flags correctly. But contest totals were only ever computed by walking `data.log`, which is capped at 500 and was wipeable — so "saving" a contest saved a label with no scores behind it. Separately, ending a contest and resetting all scores shared one OK button, and the dialog promised the contest's history would survive while the code deleted the log it was computed from.
+
+The same question is open elsewhere: **#129** (the log cap, general version), **#130** (batch class assign writes with no trail), **#125** (roster import silently overwrites classes).
+
 ### 2. Validate before every commit
 
 **Python is NOT installed on this machine, and `node --check app.html` fails on
