@@ -7477,11 +7477,33 @@ function setupRoster() {
   $("viewContestBtn").addEventListener("click", function(){ standRange="contest"; renderStandings(); });
   // Shared by the Standings banner's End button and the Contest tab's own —
   // one real implementation, so the confirm wording and the actual effects
-  // (marking ended, not clearing; optionally resetting all scores) can never
-  // drift apart between the two entry points.
+  // can never drift apart between the two entry points.
+  //
+  // Ending a contest does ONE thing: it ends the contest. It never touches
+  // anyone's points.
+  //
+  // It used to bundle a full score-and-log wipe onto the OK button, and the old
+  // dialog copy described behaviour that was never true: it promised the
+  // contest's own history and its Merge option would survive, while OK called
+  // resetAllScores(), which empties data.log — exactly what contestScoreFor()
+  // and mergeContestIntoMain() walk to produce both of those. That copy is
+  // deleted rather than reworded. Resetting scores is now reachable only from
+  // its own button in Settings, behind its own confirm that names the log.
+  //
+  // Cancel now genuinely cancels. Previously the contest ended on BOTH buttons
+  // — the confirm's return value only chose whether to ALSO wipe — so a rebbi
+  // who opened this by accident had no way back out.
   function endContestFlow(){
     if(!data.contest) return;
-    var alsoReset=confirm("End \u201C"+data.contest.name+"\u201D?\n\nOK also resets every student's score to zero (roster and activities stay) — a separate, permanent action, useful once you've handed out prizes. Cancel just ends the contest without touching anyone's points.\n\nEither way, the contest's own history stays available on the Contest tab afterward, along with a Merge option if it was running in \u201Ccontest only\u201D mode.");
+    var msg="End \u201C"+data.contest.name+"\u201D?\n\n"
+      + "It stops counting straight away and its results stay on the Contest tab. "
+      + "Nobody's points are touched.";
+    if(data.contest.mode==="contestOnly"){
+      msg+="\n\nThis one is in \u201Ccontest only\u201D mode, so its points are still "
+        + "separate from regular scores. The Contest tab keeps its Merge option for "
+        + "adding them in whenever you want to.";
+    }
+    if(!confirm(msg)) return;
     // Marks ended rather than clearing outright — the Contest tab still needs
     // access to this contest's own history and (if applicable) its merge
     // option afterward. "Clear contest" on that tab is the actual final step.
@@ -7489,7 +7511,6 @@ function setupRoster() {
     data.contest.counting=false;
     if(standRange==="contest") standRange="all";
     save();
-    if(alsoReset) resetAllScores();
     if($("view-standings").classList.contains("active")) renderStandings();
     if(typeof renderContestTab==="function") renderContestTab();
   }
@@ -13210,15 +13231,45 @@ nameLine
       Object.keys(per).forEach(function(sid){ if(!Array.isArray(per[sid])) per[sid]=[]; });
     });
   }
-  // Shared by the Backup tab's "Reset all scores" button and the "End
-  // contest" flow's optional reset — one real implementation either way.
+  // Reached from exactly ONE place: the "Reset all scores" button in Settings.
+  // The end-contest flow used to call this too, bundled onto its OK button; that
+  // is gone, and ending a contest no longer touches anyone's points.
+  //
+  // Zeroes every balance AND deletes the whole scan log. Both, deliberately —
+  // a score with no log behind it is a number nobody can explain, so the two
+  // are cleared together rather than leaving History describing points that no
+  // longer exist.
+  //
+  // data.earned and data.weekly are DELIBERATELY LEFT ALONE. They are
+  // independent running aggregates maintained by recordEarn(), not derived from
+  // data.log, so Trends survives this. That is not an accident of the
+  // implementation — it is the only thing that makes a partial recovery
+  // possible after a reset, and it is what the confirm text promises. Anything
+  // that later "tidies up" by clearing them here breaks that promise and
+  // removes the last record of what a class earned.
+  //
+  // Callers must confirm FIRST, naming the log explicitly. This function does
+  // not ask; it is not safe to reach without a deliberate yes.
   function resetAllScores(){
     data.scores={}; data.log=[]; save(); renderRecent();
   }
+  // The one confirm that guards it. It has to name three things the old wording
+  // never did: that the scan log goes too, how many students are affected, and
+  // that Trends is kept.
+  function resetScoresConfirmText(){
+    var n=data.students.length;
+    return "Reset every student's score to zero?\n\n"
+      + "This affects all "+n+" student"+(n===1?"":"s")+" — every class, not just the one selected.\n\n"
+      + "It also DELETES the entire scan history: every entry in History, for everyone. "
+      + "Undo and contest totals both read from that history, so they go with it.\n\n"
+      + "Kept: your roster, your activities, and your Trends history "
+      + "(lifetime per-activity totals and weekly history are stored separately and are not touched).\n\n"
+      + "This cannot be undone. Download a backup first if you are not certain.";
+  }
   $("resetScores").addEventListener("click", function(){
-    if(confirm("Reset every student's score to zero? Roster and activities stay. This can't be undone.")){
+    if(confirm(resetScoresConfirmText())){
       resetAllScores();
-      alert("All scores reset to zero.");
+      alert("All scores reset to zero, and the scan history cleared. Trends history was kept.");
     }
   });
   // Full wipe — institution/class name, roster, activities, scores, log, raffle
