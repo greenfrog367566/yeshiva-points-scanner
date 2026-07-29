@@ -296,6 +296,32 @@ function load2fix(){
   if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
   if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
   if(!Array.isArray(data.pastContests)) data.pastContests=[];
+  // Saved contests used to store metadata only, and their numbers were
+  // recomputed from data.log on every render — so they decayed to nothing as
+  // the 500-entry log cap rolled past them. Back-fill a results snapshot for
+  // any saved contest that has none, recomputing from whatever of its entries
+  // are STILL in the log. This is a rescue: it recovers exactly what has not
+  // yet been lost, and every load that happens before this ships recovers
+  // less. Purely additive — two new fields on each saved-contest record, no
+  // DATA_VERSION bump, and nothing existing is read destructively, renamed or
+  // removed.
+  //
+  // A contest whose entries are already gone gets an empty snapshot rather
+  // than none: `{}` records "we looked, and there was nothing left to save",
+  // which stops every later load from re-walking the log for it and lets the
+  // card tell the rebbi the truth instead of implying no points were scored.
+  data.pastContests.forEach(function(pc){
+    if(!pc || typeof pc!=="object") return;
+    if(pc.totals && typeof pc.totals==="object" && !Array.isArray(pc.totals)) return;
+    var totals={}, n=0;
+    data.log.forEach(function(e){
+      if(e.contestId!==pc.id || e.undone || e.kind==="correction") return;
+      totals[e.sid]=(totals[e.sid]||0)+(e.delta||0);
+      n++;
+    });
+    pc.totals=totals;
+    if(typeof pc.entryCount!=="number" || !isFinite(pc.entryCount)) pc.entryCount=n;
+  });
   if(data.contest!==null && (typeof data.contest!=="object" || !data.contest.startTs)) data.contest=null;
   if(data.contest){
     if(typeof data.contest.id!=="string") data.contest.id=newId();
@@ -997,6 +1023,66 @@ function runBuiltInTests() {
   assert("cap→no automatic rollover was introduced",
     t12.passes.reset===1719000000000 && Object.keys(t12.passes.used).length===2,
     "an old reset timestamp must not clear anyone's passes on load");
+
+  // --- Test 13: saved-contest results snapshot ---
+  // The point of the change: a saved contest must stop depending on data.log
+  // surviving. These check the rescue backfill, since that is the part that
+  // runs over real teacher data.
+  var cLog=[
+    {id:"L1", ts:1, sid:"s1", label:"On time", delta:3, contestId:"c1"},
+    {id:"L2", ts:2, sid:"s2", label:"On time", delta:5, contestId:"c1"},
+    {id:"L3", ts:3, sid:"s1", label:"On time", delta:2, contestId:"c1"},
+    {id:"L4", ts:4, sid:"s1", label:"Undone one", delta:9, contestId:"c1", undone:true},
+    {id:"L5", ts:5, sid:"s1", label:"Undo: x", delta:-9, kind:"correction", contestId:"c1"},
+    {id:"L6", ts:6, sid:"s3", label:"Other contest", delta:7, contestId:"c2"}
+  ];
+  var t13=runMigration({ version:4, log:JSON.parse(JSON.stringify(cLog)),
+    pastContests:[{id:"c1", name:"Chanukah", startTs:1, endTs:9, mode:"both", merged:false, savedTs:9}] });
+  var pc13=t13.pastContests[0];
+  assert("snap→totals backfilled from the log", !!pc13.totals && typeof pc13.totals==="object",
+    "got "+JSON.stringify(pc13.totals));
+  assert("snap→totals sum per student", pc13.totals.s1===5 && pc13.totals.s2===5,
+    "got "+JSON.stringify(pc13.totals));
+  assert("snap→undone entries excluded", pc13.totals.s1===5, "s1 would be 14 if the undone +9 counted");
+  assert("snap→correction entries excluded", pc13.totals.s1===5, "s1 would be -4 if the correction counted");
+  assert("snap→other contests excluded", pc13.totals.s3===undefined, "got "+JSON.stringify(pc13.totals));
+  assert("snap→entryCount counts real scans only", pc13.entryCount===3, "got "+pc13.entryCount);
+  // The rescue must not invent numbers for a contest whose entries are gone —
+  // it records an empty snapshot so the card can say so honestly.
+  var t13b=runMigration({ version:4, log:[],
+    pastContests:[{id:"c9", name:"Rolled off", startTs:1, endTs:2, mode:"both", savedTs:3}] });
+  assert("snap→rolled-off contest gets an EMPTY snapshot, not none",
+    !!t13b.pastContests[0].totals && Object.keys(t13b.pastContests[0].totals).length===0,
+    "got "+JSON.stringify(t13b.pastContests[0].totals));
+  assert("snap→rolled-off contest records entryCount 0", t13b.pastContests[0].entryCount===0);
+  // An existing snapshot is authoritative and must never be recomputed away —
+  // that is the whole point once the log no longer holds the entries.
+  var t13c=runMigration({ version:4, log:[],
+    pastContests:[{id:"c1", name:"Kept", startTs:1, endTs:2, mode:"both", savedTs:3,
+                   totals:{s1:42, s2:17}, entryCount:12}] });
+  assert("snap→existing snapshot survives an empty log",
+    t13c.pastContests[0].totals.s1===42 && t13c.pastContests[0].totals.s2===17,
+    "got "+JSON.stringify(t13c.pastContests[0].totals));
+  assert("snap→existing entryCount survives", t13c.pastContests[0].entryCount===12);
+  // And a stored snapshot wins over a log that has only PART of the contest
+  // left — the partial walk is the silently-wrong case this exists to prevent.
+  var t13d=runMigration({ version:4, log:[{id:"L1",ts:1,sid:"s1",label:"x",delta:1,contestId:"c1"}],
+    pastContests:[{id:"c1", name:"Partial", startTs:1, endTs:2, mode:"both", savedTs:3,
+                   totals:{s1:40}, entryCount:20}] });
+  assert("snap→stored snapshot not overwritten by a partial log",
+    t13d.pastContests[0].totals.s1===40, "got "+t13d.pastContests[0].totals.s1);
+  // Corrupt shapes must repair rather than throw.
+  var t13e=runMigration({ version:4, log:[],
+    pastContests:[{id:"cX", name:"Bad", startTs:1, endTs:2, mode:"both", savedTs:3, totals:["not","an","object"]}] });
+  assert("snap→array totals repaired to an object",
+    !Array.isArray(t13e.pastContests[0].totals) && typeof t13e.pastContests[0].totals==="object");
+  assert("snap→DATA_VERSION still NOT bumped", t13.version===4 && DATA_VERSION===4);
+  // The four Phase 2a stores stay untouched by all of this.
+  assert("snap→old stores STILL byte-identical",
+    JSON.stringify(t10.attendance)===snapBefore.attendance
+    && JSON.stringify(t10.hw)===snapBefore.hw
+    && JSON.stringify(t10.trackerLog)===snapBefore.trackerLog
+    && JSON.stringify(t10.passes)===snapBefore.passes);
 
   // Runs last so its card sits at the bottom, but it gates the render: nothing
   // is shown until we know whether this harness is testing current code.

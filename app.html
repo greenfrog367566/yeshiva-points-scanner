@@ -7554,14 +7554,64 @@ function setupRoster() {
   /* ---------- Contest tab ---------- */
 
   // Save a snapshot of the current contest to pastContests history.
+  // Saving a contest snapshots its RESULTS, not just its name.
+  //
+  // This used to store metadata only — {id, name, startTs, endTs, mode, merged,
+  // savedTs} — and every display recomputed the numbers by walking data.log.
+  // data.log is capped at 500 entries, so a saved contest quietly became a
+  // label with no scores behind it after a few days of ordinary scanning, and
+  // its card rendered "No scan data found for this contest". `totals` fixes
+  // that: a saved contest now carries its own per-student results and no longer
+  // depends on the log outliving it.
+  //
+  // Deliberately totals ONLY, not the individual entries. The per-scan list in
+  // a saved contest's card exists to offer undo, and undo has to mutate the
+  // real data.log entry — so copying entries here would let the list render
+  // rows whose undo arrows could not work. Storing totals keeps every number
+  // correct forever while leaving the per-scan detail honestly tied to the log
+  // that can still act on it. entryCount is kept so the card can say how many
+  // scans a contest had even once their detail is gone.
   function saveContestToHistory(c){
     if(!c || !c.startTs) return;
     var existing = data.pastContests.findIndex(function(p){ return p.id===c.id; });
+    var totals = contestTotalsById(c.id);
     var snap = { id:c.id, name:c.name, startTs:c.startTs, endTs:c.endTs,
-                 mode:c.mode, merged:!!c.merged, savedTs:Date.now() };
+                 mode:c.mode, merged:!!c.merged, savedTs:Date.now(),
+                 totals:totals, entryCount:contestEntryCount(c.id) };
     if(existing>=0) data.pastContests[existing]=snap;
     else data.pastContests.unshift(snap);
     save();
+  }
+  // How many real (non-undone, non-correction) scans a contest holds in the
+  // live log right now. Snapshotted alongside the totals so a card can still
+  // report "42 scans" after the detail has rolled off.
+  function contestEntryCount(contestId){
+    var n=0;
+    data.log.forEach(function(e){
+      if(e.contestId!==contestId || e.undone || e.kind==="correction") return;
+      n++;
+    });
+    return n;
+  }
+  // THE accessor every saved-contest display goes through.
+  //
+  // Prefers the stored snapshot, because it is the only source that stays
+  // correct: once the log starts rolling, walking it returns totals that are
+  // silently PARTIAL — some of a contest's entries present, the rest gone —
+  // which is worse than either the full answer or an honest blank.
+  //
+  // The one exception is a saved contest that is ALSO the contest currently
+  // running. Its snapshot was taken at some earlier moment and more scans have
+  // landed since, so the live log is the truthful source there.
+  //
+  // Returns the source alongside the numbers so callers can say where they came
+  // from rather than presenting a stale figure as a live one.
+  function contestTotalsFor(pc){
+    var isLive = !!(data.contest && data.contest.id===pc.id && !data.contest.ended);
+    if(!isLive && pc.totals && typeof pc.totals==="object" && !Array.isArray(pc.totals)){
+      return { totals:pc.totals, source:"snapshot" };
+    }
+    return { totals:contestTotalsById(pc.id), source:"log" };
   }
 
   // Returns {sid: totalPts} for every student in a contest.
@@ -7803,10 +7853,16 @@ function setupRoster() {
       card.appendChild(hdr);
 
       // Student totals chips + filter
-      var totals=contestTotalsById(pc.id);
+      var tRes=contestTotalsFor(pc), totals=tRes.totals;
       var stuIds=Object.keys(totals).sort(function(a,b){ return (totals[b]||0)-(totals[a]||0); });
       if(!stuIds.length){
-        card.appendChild(el("div","recent-empty","No scan data found for this contest."));
+        // Genuinely nothing: either a contest nobody scanned into, or one saved
+        // before results were snapshotted whose entries have since rolled off
+        // the log. Say which, rather than implying the contest never happened.
+        card.appendChild(el("div","recent-empty",
+          (pc.totals && typeof pc.totals==="object")
+            ? "No points were scored in this contest."
+            : "No results were saved for this contest, and its scans are no longer in the scan log."));
       } else {
         // Ranked chips
         var chipsWrap=el("div",null,""); chipsWrap.style.cssText="display:flex;flex-wrap:wrap;gap:5px 10px;margin-bottom:10px";
@@ -7853,7 +7909,18 @@ function setupRoster() {
               else if(e.undone){ row.appendChild(el("span","undone-tag","undone")); }
               listEl.appendChild(row);
             });
-            if(!shown) listEl.appendChild(el("div","recent-empty",fSid?"No scans for this student in this contest.":"No scan log entries found."));
+            // The per-scan detail lives only in data.log, which is capped — so
+            // it can be gone while the totals above are still exact. Say so,
+            // rather than leaving a blank list that reads as "nothing happened".
+            if(!shown){
+              var gone = !fSid && typeof pc.entryCount==="number" && pc.entryCount>0;
+              listEl.appendChild(el("div","recent-empty",
+                fSid ? "No scans for this student in this contest."
+                     : (gone ? ("The scan-by-scan detail for this contest is no longer in the scan log ("
+                                + pc.entryCount + " scan" + (pc.entryCount===1?"":"s")
+                                + " at the time it was saved). The totals above are the saved results.")
+                             : "No scan log entries found.")));
+            }
           }
           selEl.addEventListener("change", draw);
           draw();
@@ -13091,6 +13158,32 @@ nameLine
     if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
     if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
     if(!Array.isArray(data.pastContests)) data.pastContests=[];
+    // Saved contests used to store metadata only, and their numbers were
+    // recomputed from data.log on every render — so they decayed to nothing as
+    // the 500-entry log cap rolled past them. Back-fill a results snapshot for
+    // any saved contest that has none, recomputing from whatever of its entries
+    // are STILL in the log. This is a rescue: it recovers exactly what has not
+    // yet been lost, and every load that happens before this ships recovers
+    // less. Purely additive — two new fields on each saved-contest record, no
+    // DATA_VERSION bump, and nothing existing is read destructively, renamed or
+    // removed.
+    //
+    // A contest whose entries are already gone gets an empty snapshot rather
+    // than none: `{}` records "we looked, and there was nothing left to save",
+    // which stops every later load from re-walking the log for it and lets the
+    // card tell the rebbi the truth instead of implying no points were scored.
+    data.pastContests.forEach(function(pc){
+      if(!pc || typeof pc!=="object") return;
+      if(pc.totals && typeof pc.totals==="object" && !Array.isArray(pc.totals)) return;
+      var totals={}, n=0;
+      data.log.forEach(function(e){
+        if(e.contestId!==pc.id || e.undone || e.kind==="correction") return;
+        totals[e.sid]=(totals[e.sid]||0)+(e.delta||0);
+        n++;
+      });
+      pc.totals=totals;
+      if(typeof pc.entryCount!=="number" || !isFinite(pc.entryCount)) pc.entryCount=n;
+    });
     if(data.contest!==null && (typeof data.contest!=="object" || !data.contest.startTs)) data.contest=null;
     if(data.contest){
       if(typeof data.contest.id!=="string") data.contest.id=newId();
