@@ -3602,6 +3602,16 @@ function setupRoster() {
     return data.navHidden;
   }
   function isTabVisible(t){ return t==="settings" || t==="scan" || !navHidden().tabs[t]; }
+  // Contest is hidden pending the lifecycle rework (#133). It is HIDDEN, not
+  // removed: every line of contest code is still here and still runs, because
+  // it is woven through the scan log, the raffle's ticket sources and the merge
+  // path, and tearing it out would be real risk for no benefit.
+  //
+  // One setting drives every contest surface — the tab, the Leader Board banner
+  // and the raffle's "Current contest" ticket source — so un-hiding it in
+  // Settings brings the whole feature back at once, with nothing left behind
+  // half-shown.
+  function contestFeatureVisible(){ return isTabVisible("contest"); }
   function groupVisibleTabs(g){ return TAB_GROUPS[g] ? TAB_GROUPS[g].tabs.filter(isTabVisible) : []; }
   function isGroupVisible(g){
     if(g==="scan" || g==="manage") return true;
@@ -7447,6 +7457,19 @@ function setupRoster() {
   // on a slow timer so the countdown stays roughly current even if a teacher
   // leaves this tab open on a projector for a while.
   function renderContestBanner(){
+    // The whole card goes when the feature is hidden — it lives on the Leader
+    // Board, not the Contest tab, so hiding the tab alone would leave "Start a
+    // contest…" on the most-projected page in the app with nowhere to manage
+    // what it started.
+    var card=$("contestCard");
+    if(!contestFeatureVisible()){
+      if(card) card.style.display="none";
+      $("standRangeContestBtn").style.display="none";
+      if(standRange==="contest"){ standRange="all"; }
+      updateRaffleSourceModeAvailability();
+      return;
+    }
+    if(card) card.style.display="";
     var has=!!(data.contest && data.contest.startTs);
     $("contestInactive").style.display = has ? "none" : "flex";
     $("contestActiveWrap").style.display = has ? "flex" : "none";
@@ -8135,7 +8158,15 @@ function setupRoster() {
   function updateRaffleSourceModeAvailability(){
     var contestBtn = document.querySelector('#raffleSourceMode button[data-rsm="contest"]');
     if(!contestBtn) return;
-    var hasActiveContest = !!(data.contest && data.contest.startTs && !data.contest.ended);
+    // With the feature hidden, the button is removed rather than left disabled.
+    // A greyed-out "Current contest" advertises something a rebbi cannot reach
+    // and cannot switch on from here — and it is dead either way, since no
+    // contest can be started while the feature is hidden. The existing
+    // fall-back below still runs, so a raffle left on "contest" mode drops to
+    // all-time points rather than stranding on a source that no longer exists.
+    var featureOn = contestFeatureVisible();
+    contestBtn.style.display = featureOn ? "" : "none";
+    var hasActiveContest = featureOn && !!(data.contest && data.contest.startTs && !data.contest.ended);
     contestBtn.disabled = !hasActiveContest;
     contestBtn.title = hasActiveContest ? "" : "No contest is currently running.";
     if(!hasActiveContest && data.raffleSourceMode==="contest"){
@@ -13233,6 +13264,20 @@ nameLine
     delete data.navHidden.groups.print;
     // Seats tab no longer exists — remove any saved hidden state for it
     delete data.navHidden.tabs.seats;
+    // Hide Contest pending the lifecycle rework (#133). ONE-SHOT, exactly like
+    // hwActivitySeeded / passActivitySeeded: it hides the tab once, then never
+    // touches the setting again — so a rebbi who deliberately switches Contest
+    // back on in Settings keeps it on through every future load. Sits here,
+    // after the nav guards above, so data.navHidden.tabs is known to be a real
+    // object by this point.
+    //
+    // HIDDEN, NOT REMOVED. No contest code is deleted: contests still tag
+    // scans, saved contests keep their totals, and the merge path is untouched.
+    // Only the surfaces are gated, all from this one setting.
+    if(!data.contestHiddenSeeded){
+      data.navHidden.tabs.contest=true;
+      data.contestHiddenSeeded=true;
+    }
     if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
     if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
     if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;

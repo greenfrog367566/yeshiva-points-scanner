@@ -371,6 +371,20 @@ function load2fix(){
   delete data.navHidden.groups.print;
   // Seats tab no longer exists — remove any saved hidden state for it
   delete data.navHidden.tabs.seats;
+  // Hide Contest pending the lifecycle rework (#133). ONE-SHOT, exactly like
+  // hwActivitySeeded / passActivitySeeded: it hides the tab once, then never
+  // touches the setting again — so a rebbi who deliberately switches Contest
+  // back on in Settings keeps it on through every future load. Sits here,
+  // after the nav guards above, so data.navHidden.tabs is known to be a real
+  // object by this point.
+  //
+  // HIDDEN, NOT REMOVED. No contest code is deleted: contests still tag
+  // scans, saved contests keep their totals, and the merge path is untouched.
+  // Only the surfaces are gated, all from this one setting.
+  if(!data.contestHiddenSeeded){
+    data.navHidden.tabs.contest=true;
+    data.contestHiddenSeeded=true;
+  }
   if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
   if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
   if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
@@ -1083,6 +1097,37 @@ function runBuiltInTests() {
     && JSON.stringify(t10.hw)===snapBefore.hw
     && JSON.stringify(t10.trackerLog)===snapBefore.trackerLog
     && JSON.stringify(t10.passes)===snapBefore.passes);
+
+  // --- Test 14: Contest hidden (not removed) ---
+  assert("hide→contest tab hidden on a new save", d1.navHidden.tabs.contest===true);
+  assert("hide→one-shot flag set", d1.contestHiddenSeeded===true);
+  // The whole point of the one-shot: a rebbi who turns it back on keeps it on.
+  var t14=runMigration({ version:4, contestHiddenSeeded:true,
+    navHidden:{groups:{}, tabs:{}} });
+  assert("hide→a deliberate un-hide is NOT re-hidden on the next load",
+    t14.navHidden.tabs.contest===undefined, "got "+JSON.stringify(t14.navHidden.tabs));
+  // An existing save that has never seen this gets hidden exactly once.
+  var t14b=runMigration({ version:4, navHidden:{groups:{}, tabs:{trends:true}} });
+  assert("hide→existing save gets contest hidden", t14b.navHidden.tabs.contest===true);
+  assert("hide→other hidden tabs are left alone", t14b.navHidden.tabs.trends===true);
+  assert("hide→flag stamped so it only happens once", t14b.contestHiddenSeeded===true);
+  // Hiding is a NAV setting only — no contest data may be touched by it.
+  var contestSrc={ version:4,
+    contest:{id:"c1", name:"Live one", startTs:1, endTs:9, mode:"contestOnly", counting:true, ended:false, merged:false},
+    pastContests:[{id:"c0", name:"Old", startTs:1, endTs:2, mode:"both", totals:{s1:7}, entryCount:3, savedTs:5}],
+    log:[{id:"L1", ts:1, sid:"s1", label:"x", delta:7, contestId:"c0"}] };
+  var beforeContest=JSON.stringify(contestSrc.contest);
+  var beforePast=JSON.stringify(contestSrc.pastContests);
+  var t14c=runMigration(JSON.parse(JSON.stringify(contestSrc)));
+  assert("hide→data.contest untouched by hiding",
+    JSON.stringify(t14c.contest)===beforeContest,
+    "before "+beforeContest+"\nafter  "+JSON.stringify(t14c.contest));
+  assert("hide→saved contests and their totals untouched",
+    JSON.stringify(t14c.pastContests)===beforePast,
+    "before "+beforePast+"\nafter  "+JSON.stringify(t14c.pastContests));
+  assert("hide→contest-tagged log entries untouched",
+    t14c.log.length===1 && t14c.log[0].contestId==="c0" && t14c.log[0].delta===7);
+  assert("hide→DATA_VERSION still NOT bumped", t14c.version===4 && DATA_VERSION===4);
 
   // Runs last so its card sits at the bottom, but it gates the render: nothing
   // is shown until we know whether this harness is testing current code.
