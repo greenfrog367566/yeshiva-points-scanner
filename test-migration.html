@@ -418,12 +418,16 @@ function load2fix(){
   // left alone if present — harmless, just no longer created for new data.
 
   /* ----- Tracked Items shell (Phase 2a). Purely additive. -------------
-   * NOTE the four old stores above (data.attendance, data.hw,
-   * data.trackerLog, data.passes) are deliberately NOT read, converted or
-   * touched here. Phase 2a is a clean start, not a conversion: the presets
-   * below seed empty and the old records stay exactly where they are,
-   * still driving their existing tabs, so they remain recoverable if a
-   * conversion is ever wanted. They are retired in 2c.
+   * The presets below seed EMPTY. Nothing here reads or converts an old
+   * store; the conversion is a separate, later block.
+   *
+   * data.hw, data.trackerLog and data.passes are still untouched by every
+   * line in this function — 2c converts Attendance only, and those three
+   * stay parked exactly as 2a left them, still driving their own tabs.
+   *
+   * data.attendance is now READ, once, by the Phase 2c block at the end of
+   * this function. Read, never written: it is still byte-identical coming
+   * out of a load, and the Attendance tab still owns it.
    */
   if(!Array.isArray(data.trackedItems)) data.trackedItems=[];
   if(!data.trackedData || typeof data.trackedData!=="object" || Array.isArray(data.trackedData)) data.trackedData={};
@@ -474,6 +478,106 @@ function load2fix(){
     if(!per || typeof per!=="object" || Array.isArray(per)){ data.trackedData[itemId]={}; return; }
     Object.keys(per).forEach(function(sid){ if(!Array.isArray(per[sid])) per[sid]=[]; });
   });
+
+  /* ----- Attendance conversion (Phase 2c). Additive, one-shot. ---------
+   * Reads data.attendance and writes the same records into the tracked
+   * item "ti-attendance", so a rebbi's real attendance history shows up in
+   * the Gradebook instead of the empty column 2a left there.
+   *
+   * data.attendance IS NOT MODIFIED. Not one byte — no status rewritten, no
+   * timestamp stamped, no day object created. It stays parked exactly as 2a
+   * left it and keeps driving the Attendance tab, which is unchanged. This
+   * is a READ, and Test 10 in test-migration.html asserts it stays one.
+   *
+   * WHY NO DATA_VERSION BUMP: nothing existing is converted in place. This
+   * derives a second, new store from an old one and leaves the old one
+   * alone — exactly the shape of the earnedSeeded backfill above, which
+   * walks data.log to build data.earned without a version bump either.
+   *
+   * TIMESTAMPS ARE COPIED, NEVER MINTED. rec.ts goes across verbatim. The
+   * Sheet's send diff is `rec.ts > day._sentAt` and the Attendance Log has
+   * no dedup, so touching a stored ts would re-push a rebbi's history into
+   * their Sheet as duplicate rows. Nothing here writes a ts at all.
+   *
+   * WHAT IS DELIBERATELY DROPPED: any record with no real numeric ts.
+   * renderAttendance() auto-writes {status:"present", ts:null} for every
+   * unmarked student the moment the tab is merely LOOKED AT. Those are
+   * assumptions, not observations, and must not enter the gradebook as
+   * attendance history. Only records someone actually marked come across.
+   * (Known gap: on a day that was SENT, sendAttendance() stamped a real ts
+   * onto those auto-filled records, making them indistinguishable from
+   * explicit marks. Those do convert. There is no way to tell them apart
+   * after the fact.)
+   *
+   * ALL THREE STATES SURVIVE. present / late / absent are three recorded
+   * facts with three Sheet statuses; none is collapsed into another. An
+   * unrecognised status is copied across verbatim rather than dropped or
+   * "repaired" — same open-enum rule the tracked methods follow.
+   *
+   * The `date` field carries the school day the record is ABOUT, which is
+   * not always the day it was typed: a rebbi who pages back to Monday on
+   * Wednesday to fix a record produces dateKey Monday with a Wednesday ts.
+   * Without this the Gradebook, which derives its column from e.ts, would
+   * file that mark on the wrong day. Additive on the entry, and readers
+   * that don't know the field simply fall back to ts.
+   *
+   * IDEMPOTENT BY CONSTRUCTION, not just by the flag. Every entry is keyed
+   * date@ts against what is already in the item, so a second run — a
+   * restored backup, a corrupted receipt — cannot duplicate a record.
+   *
+   * The receipt in data.attConversion is the "way back": it records what
+   * came across and what did not, so the numbers can be checked against the
+   * Attendance tab rather than taken on trust.
+   */
+  if(!data.attConversion || typeof data.attConversion!=="object" || Array.isArray(data.attConversion)){
+    // Materialized lazily, on the first record that actually converts. A
+    // brand-new save has no attendance, and creating an empty container for
+    // it would break 2a's "trackedData starts empty" contract for a rebbi
+    // who has nothing to convert. (Any corrupt value here was already
+    // repaired to {} by the shape guard above, so this is either absent or
+    // a real object.)
+    var attOut=data.trackedData["ti-attendance"];
+    if(attOut && (typeof attOut!=="object" || Array.isArray(attOut))) attOut=null;
+    var attKey=function(e){ return (e && typeof e.date==="string" ? e.date : "")+"@"+(e?e.ts:""); };
+    var attSeen={};
+    if(attOut) Object.keys(attOut).forEach(function(sid){
+      if(!Array.isArray(attOut[sid])) return;
+      var m=attSeen[sid]={};
+      attOut[sid].forEach(function(e){ if(e) m[attKey(e)]=1; });
+    });
+    var attStats={ ts:Date.now(), days:0, converted:0, droppedNoTs:0, skippedShape:0, alreadyPresent:0 };
+    var attTouched={};
+    Object.keys(data.attendance).sort().forEach(function(dk){
+      var day=data.attendance[dk];
+      if(!day || typeof day!=="object" || Array.isArray(day)) return;
+      attStats.days++;
+      Object.keys(day).forEach(function(sid){
+        // _sentAt and _lastSendCount sit alongside student ids in this very
+        // object. They are day metadata, not students.
+        if(sid.charAt(0)==="_") return;
+        var rec=day[sid];
+        if(!rec || typeof rec!=="object" || Array.isArray(rec) || typeof rec.status!=="string"){ attStats.skippedShape++; return; }
+        if(typeof rec.ts!=="number" || !isFinite(rec.ts)){ attStats.droppedNoTs++; return; }
+        var entry={ value:rec.status, ts:rec.ts, date:dk };
+        var seen=attSeen[sid] || (attSeen[sid]={});
+        if(seen[attKey(entry)]){ attStats.alreadyPresent++; return; }
+        seen[attKey(entry)]=1;
+        // If the rebbi deleted the Attendance preset, the records still land
+        // under its id. Unread is recoverable; unwritten is not.
+        if(!attOut) attOut=data.trackedData["ti-attendance"]={};
+        if(!Array.isArray(attOut[sid])) attOut[sid]=[];
+        attOut[sid].push(entry);
+        attTouched[sid]=1;
+        attStats.converted++;
+      });
+    });
+    // trackedData keeps an ORDERED list per student — last entry is current.
+    // Days arrive sorted, but a merge into an existing list needs the sort.
+    Object.keys(attTouched).forEach(function(sid){
+      attOut[sid].sort(function(a,b){ return (a.ts||0)-(b.ts||0); });
+    });
+    data.attConversion=attStats;
+  }
 }
 
 // ===== Drift check =====
@@ -929,12 +1033,28 @@ function runBuiltInTests() {
   // --- Test 10: THE ONE THAT MATTERS — old stores are untouched ---
   // Phase 2a parks data.attendance / data.hw / data.trackerLog / data.passes.
   // They must come out of load2fix byte-identical, so the old tabs keep
-  // working and the records stay recoverable for a later conversion.
+  // working and the records stay recoverable for a later conversion. Phase 2c
+  // now READS data.attendance — this is the check that it only reads.
+  //
+  // The attendance fixture used to be {s1:"present"} — bare strings. That is
+  // not the shape the app stores; setAttendance() writes {status, ts}, and a
+  // day object also carries _sentAt / _lastSendCount alongside the student
+  // ids. The old fixture passed only because this test asserts byte-identity,
+  // which any shape satisfies. It is the real shape now, so the 2c checks
+  // below run against something a rebbi could actually have on disk.
   var oldSrc = {
     version: 4, hwActivitySeeded:true, passActivitySeeded:true,
     students:[{id:"s1",name:"Dovid",group:""},{id:"s2",name:"Moshe",group:""}],
     activities:[{id:"a1",name:"On time",pts:1},{id:"a2",name:"Chazan",pts:0,tracked:true}],
-    attendance: { "2026-07-20": {s1:"present", s2:"absent"}, "2026-07-21": {s1:"late"} },
+    attendance: {
+      // A sent day: real timestamps on every record, plus the two meta keys.
+      "2026-07-20": { s1:{status:"present",ts:1721460000000}, s2:{status:"absent",ts:1721460060000},
+                      _sentAt:1721463600000, _lastSendCount:2 },
+      // An unsent day: s1 was actually marked late, s2 was never touched by
+      // anyone — renderAttendance() wrote that "present" merely because the
+      // tab was opened.
+      "2026-07-21": { s1:{status:"late",ts:1721546400000}, s2:{status:"present",ts:null} }
+    },
     hw: { "2026-07-20": {s1:true, s2:false} },
     trackerLog: [ {ts:1720000000000, sid:"s1", actId:"a2"}, {ts:1720000005000, sid:"s2", actId:"a2"} ],
     passes: { used:{ s1:1720000000000 }, reset:1719000000000 }
@@ -1129,6 +1249,189 @@ function runBuiltInTests() {
     t14c.log.length===1 && t14c.log[0].contestId==="c0" && t14c.log[0].delta===7);
   assert("hide→DATA_VERSION still NOT bumped", t14c.version===4 && DATA_VERSION===4);
 
+  // --- Test 15: Phase 2c — Attendance converted into the tracked item ---
+  // These run over the REAL {status, ts} shape (see Test 10's fixture), which
+  // is the only reason they mean anything. t10 above already ran the
+  // conversion; its receipt and output are what get checked here.
+  var att10 = t10.trackedData["ti-attendance"] || {};
+  assert("2c→conversion wrote into ti-attendance",
+    Array.isArray(att10.s1) && att10.s1.length>0, "got "+JSON.stringify(att10.s1));
+
+  // ts:null records are DROPPED. s2 has two records in the fixture — a real
+  // "absent" on the 20th and an auto-filled ts:null "present" on the 21st.
+  // Exactly one may come across, and it must be the absent one. If this ever
+  // fails, the gradebook is being told a boy was present on a day nobody
+  // marked him.
+  assert("2c→ts:null record DROPPED (never marked by anyone)",
+    att10.s2.length===1, "expected 1 entry for s2, got "+JSON.stringify(att10.s2));
+  assert("2c→the surviving s2 entry is the real one, not the assumed one",
+    att10.s2[0].value==="absent" && att10.s2[0].ts===1721460060000,
+    "got "+JSON.stringify(att10.s2[0]));
+  assert("2c→receipt counts the drop", t10.attConversion.droppedNoTs===1,
+    "got "+t10.attConversion.droppedNoTs);
+  assert("2c→receipt counts what came across", t10.attConversion.converted===3,
+    "got "+t10.attConversion.converted);
+  assert("2c→receipt counts the days walked", t10.attConversion.days===2,
+    "got "+t10.attConversion.days);
+
+  // ts and _sentAt are immutable. A rewritten ts re-pushes history into a real
+  // rebbi's Sheet as duplicate rows, because the send diff is rec.ts >
+  // day._sentAt and the Attendance Log has no dedup.
+  assert("2c→ts copied verbatim, never re-minted",
+    t10.attendance["2026-07-20"].s1.ts===1721460000000
+    && t10.attendance["2026-07-20"].s2.ts===1721460060000
+    && t10.attendance["2026-07-21"].s1.ts===1721546400000,
+    "got "+JSON.stringify(t10.attendance));
+  assert("2c→a ts:null record is still null in data.attendance (not stamped)",
+    t10.attendance["2026-07-21"].s2.ts===null,
+    "got "+JSON.stringify(t10.attendance["2026-07-21"].s2));
+  assert("2c→_sentAt unchanged", t10.attendance["2026-07-20"]._sentAt===1721463600000);
+  assert("2c→_lastSendCount unchanged", t10.attendance["2026-07-20"]._lastSendCount===2);
+  assert("2c→converted entry carries the SAME ts as its source record",
+    att10.s1.every(function(e){
+      return t10.attendance[e.date][ "s1" ].ts===e.ts;
+    }), "got "+JSON.stringify(att10.s1));
+
+  // The two meta keys live in the same object as the student ids. Treating
+  // either as a student invents a boy called "_sentAt" with one attendance
+  // record — and _lastSendCount:2 is not a status at all.
+  assert("2c→_sentAt not converted as a student", att10._sentAt===undefined);
+  assert("2c→_lastSendCount not converted as a student", att10._lastSendCount===undefined);
+  assert("2c→only real student ids became keys",
+    Object.keys(att10).every(function(k){ return k.charAt(0)!=="_"; }),
+    "got "+Object.keys(att10).join(","));
+
+  // data.attendance is READ, never written. Test 10 already asserts
+  // byte-identity; restate it here so a 2c regression names 2c.
+  assert("2c→data.attendance byte-identical after the conversion read it",
+    JSON.stringify(t10.attendance)===snapBefore.attendance,
+    "before "+snapBefore.attendance+"\nafter  "+JSON.stringify(t10.attendance));
+  assert("2c→the other three old stores are still not read at all",
+    JSON.stringify(t10.hw)===snapBefore.hw
+    && JSON.stringify(t10.trackerLog)===snapBefore.trackerLog
+    && JSON.stringify(t10.passes)===snapBefore.passes);
+  assert("2c→DATA_VERSION NOT bumped (derives a new store, converts nothing in place)",
+    t10.version===4 && DATA_VERSION===4, "got v"+t10.version);
+
+  // All THREE states convert. "late" is a real recorded state with its own
+  // button and its own Sheet status — collapsing it into present or absent
+  // would destroy a distinction a rebbi deliberately made.
+  var t15 = runMigration({ version:4, hwActivitySeeded:true, passActivitySeeded:true,
+    students:[{id:"s1",name:"A"},{id:"s2",name:"B"},{id:"s3",name:"C"}],
+    activities:[{id:"a1",name:"On time",pts:1}],
+    attendance:{ "2026-07-20":{ s1:{status:"present",ts:1721460000000},
+                                s2:{status:"late",ts:1721460060000},
+                                s3:{status:"absent",ts:1721460120000} } } });
+  var a15=t15.trackedData["ti-attendance"];
+  assert("2c→present survives as 'present'", a15.s1[0].value==="present", "got "+a15.s1[0].value);
+  assert("2c→late survives as 'late' (NOT collapsed)", a15.s2[0].value==="late", "got "+a15.s2[0].value);
+  assert("2c→absent survives as 'absent'", a15.s3[0].value==="absent", "got "+a15.s3[0].value);
+  assert("2c→the three states match the Attendance preset's options",
+    JSON.stringify(t15.trackedItems.filter(function(i){return i.id==="ti-attendance";})[0].config.options)
+      ===JSON.stringify(["present","late","absent"]));
+
+  // The school day a record is ABOUT is not always the day it was typed: a
+  // rebbi paging back to Monday on Wednesday produces a Monday dateKey with a
+  // Wednesday ts. Losing the dateKey files that mark in the wrong column.
+  var t15b = runMigration({ version:4, hwActivitySeeded:true, passActivitySeeded:true,
+    students:[{id:"s1",name:"A"}], activities:[{id:"a1",name:"On time",pts:1}],
+    attendance:{ "2026-07-20":{ s1:{status:"absent", ts:1721718000000} } } });
+  assert("2c→entry carries the school day it is about, not just the ts",
+    t15b.trackedData["ti-attendance"].s1[0].date==="2026-07-20",
+    "got "+JSON.stringify(t15b.trackedData["ti-attendance"].s1[0]));
+
+  // Entries are an ORDERED list, last = current. Out-of-order days must sort.
+  var t15c = runMigration({ version:4, hwActivitySeeded:true, passActivitySeeded:true,
+    students:[{id:"s1",name:"A"}], activities:[{id:"a1",name:"On time",pts:1}],
+    attendance:{ "2026-07-22":{ s1:{status:"absent",ts:3000} },
+                 "2026-07-20":{ s1:{status:"present",ts:1000} },
+                 "2026-07-21":{ s1:{status:"late",ts:2000} } } });
+  assert("2c→entries end up in timestamp order",
+    t15c.trackedData["ti-attendance"].s1.map(function(e){return e.ts;}).join(",")==="1000,2000,3000",
+    "got "+t15c.trackedData["ti-attendance"].s1.map(function(e){return e.ts;}).join(","));
+  assert("2c→last entry is the most recent status",
+    t15c.trackedData["ti-attendance"].s1[2].value==="absent");
+
+  // Idempotence. A second load must not double a rebbi's history — and the
+  // guard is the date@ts key, not just the receipt flag, so a corrupted or
+  // missing receipt still cannot duplicate.
+  var beforeConv = JSON.stringify(t15c.trackedData["ti-attendance"]);
+  var t15d = runMigration(t15c);
+  assert("2c→re-running the whole load does not duplicate entries",
+    JSON.stringify(t15d.trackedData["ti-attendance"])===beforeConv,
+    "before "+beforeConv+"\nafter  "+JSON.stringify(t15d.trackedData["ti-attendance"]));
+  var wiped = JSON.parse(JSON.stringify(t15c));
+  delete wiped.attConversion;
+  var t15e = runMigration(wiped);
+  assert("2c→a LOST receipt still cannot duplicate (keyed by date@ts)",
+    t15e.trackedData["ti-attendance"].s1.length===3,
+    "got "+t15e.trackedData["ti-attendance"].s1.length+" entries");
+  assert("2c→the re-run reports them as already present, not as new",
+    t15e.attConversion.alreadyPresent===3 && t15e.attConversion.converted===0,
+    "got "+JSON.stringify(t15e.attConversion));
+  var corruptReceipt = JSON.parse(JSON.stringify(t15c));
+  corruptReceipt.attConversion = "nonsense";
+  var t15f = runMigration(corruptReceipt);
+  assert("2c→a corrupt receipt is repaired without duplicating",
+    t15f.trackedData["ti-attendance"].s1.length===3
+    && typeof t15f.attConversion==="object",
+    "got "+t15f.trackedData["ti-attendance"].s1.length+" entries");
+
+  // An unrecognised status is COPIED, not dropped and not "repaired" — the
+  // same open-enum rule the tracked methods follow. A value that isn't a
+  // record at all is counted as skippedShape; a record whose ts is unusable
+  // is counted as a drop, exactly like ts:null, because that is what it is.
+  var t15g = runMigration({ version:4, hwActivitySeeded:true, passActivitySeeded:true,
+    students:[{id:"s1",name:"A"},{id:"s2",name:"B"},{id:"s3",name:"C"}],
+    activities:[{id:"a1",name:"On time",pts:1}],
+    attendance:{ "2026-07-20":{ s1:{status:"excused",ts:1000},
+                                s2:"present",
+                                s3:{status:"present",ts:"not a number"} } } });
+  assert("2c→unknown status preserved verbatim",
+    t15g.trackedData["ti-attendance"].s1[0].value==="excused",
+    "got "+JSON.stringify(t15g.trackedData["ti-attendance"].s1));
+  assert("2c→a bare-string record is skipped, not guessed at",
+    !t15g.trackedData["ti-attendance"].s2 || t15g.trackedData["ti-attendance"].s2.length===0);
+  assert("2c→a record with an unusable ts is dropped, not converted",
+    !t15g.trackedData["ti-attendance"].s3 || t15g.trackedData["ti-attendance"].s3.length===0);
+  assert("2c→non-records and unusable-ts records counted separately",
+    t15g.attConversion.skippedShape===1 && t15g.attConversion.droppedNoTs===1
+    && t15g.attConversion.converted===1,
+    "got "+JSON.stringify(t15g.attConversion));
+
+  // Corrupt containers must repair rather than throw and brick startup.
+  var t15h = runMigration({ version:4, hwActivitySeeded:true, passActivitySeeded:true,
+    students:[{id:"s1",name:"A"}], activities:[{id:"a1",name:"On time",pts:1}],
+    attendance:{ "2026-07-20":"not a day object", "2026-07-21":null,
+                 "2026-07-22":{ s1:{status:"late",ts:9000} } } });
+  assert("2c→corrupt day objects skipped without throwing",
+    t15h.trackedData["ti-attendance"].s1.length===1
+    && t15h.trackedData["ti-attendance"].s1[0].value==="late",
+    "got "+JSON.stringify(t15h.trackedData["ti-attendance"].s1));
+  assert("2c→a new save converts nothing and says so",
+    d1.attConversion && d1.attConversion.converted===0 && d1.attConversion.days===0,
+    "got "+JSON.stringify(d1.attConversion));
+  // …and does not leave an empty container behind, which would break 2a's
+  // "trackedData starts EMPTY" contract for a rebbi with nothing to convert.
+  assert("2c→a new save leaves trackedData genuinely empty",
+    Object.keys(d1.trackedData).length===0, "got "+JSON.stringify(d1.trackedData));
+
+  // A rebbi who deleted the Attendance preset still gets their records stored.
+  // Unread is recoverable; unwritten is not.
+  var noItem = { version:4, hwActivitySeeded:true, passActivitySeeded:true, trackedItemsSeeded:true,
+    students:[{id:"s1",name:"A"}], activities:[{id:"a1",name:"On time",pts:1}],
+    trackedItems:[], attendance:{ "2026-07-20":{ s1:{status:"absent",ts:5000} } } };
+  var t15i = runMigration(noItem);
+  assert("2c→records still stored even with the preset deleted",
+    t15i.trackedData["ti-attendance"] && t15i.trackedData["ti-attendance"].s1.length===1,
+    "got "+JSON.stringify(t15i.trackedData["ti-attendance"]));
+
+  // The Attendance tab is NOT retired in 2c. Its store must still be a live,
+  // writable object after the conversion, or the tab breaks on the next mark.
+  assert("2c→data.attendance still an object the Attendance tab can write to",
+    !!t10.attendance && typeof t10.attendance==="object" && !Array.isArray(t10.attendance)
+    && Object.keys(t10.attendance).length===2);
+
   // Runs last so its card sits at the bottom, but it gates the render: nothing
   // is shown until we know whether this harness is testing current code.
   driftCheck().then(renderResults);
@@ -1230,6 +1533,35 @@ function runCustomTest() {
       var ks = Object.keys(before.scores);
       var allKept = ks.every(function(k){ return after.scores[k] === before.scores[k]; });
       assert("Custom→all scores preserved", allKept, ks.length+" score entries checked");
+    }
+
+    // Phase 2c: report what the attendance conversion actually did to THIS
+    // blob. The built-in tests prove the rules; this is the only way to see
+    // the shape of a real class's history coming across — how many days, how
+    // many marks, and how many were auto-filled assumptions that got dropped.
+    if (before.attendance && typeof before.attendance === "object") {
+      var cv = after.attConversion;
+      if (cv && typeof cv === "object") {
+        var totalRecs = 0;
+        Object.keys(before.attendance).forEach(function(dk){
+          var day = before.attendance[dk];
+          if (!day || typeof day !== "object") return;
+          Object.keys(day).forEach(function(k){ if (k.charAt(0) !== "_") totalRecs++; });
+        });
+        assert("Custom→2c attendance conversion ran", true,
+          cv.days + " day(s), " + totalRecs + " student record(s) in data.attendance\n"
+          + "  converted        " + cv.converted + "\n"
+          + "  dropped (no ts)  " + cv.droppedNoTs + "   ← auto-filled “present” nobody actually marked\n"
+          + "  skipped (shape)  " + cv.skippedShape + "\n"
+          + "  already present  " + cv.alreadyPresent);
+        assert("Custom→2c every record is accounted for",
+          cv.converted + cv.droppedNoTs + cv.skippedShape + cv.alreadyPresent === totalRecs,
+          cv.converted + "+" + cv.droppedNoTs + "+" + cv.skippedShape + "+" + cv.alreadyPresent
+          + " vs " + totalRecs + " records");
+      }
+      assert("Custom→2c data.attendance untouched by the conversion",
+        JSON.stringify(after.attendance) === JSON.stringify(before.attendance),
+        "The conversion must only READ this store.");
     }
 
     assertField(after, "scanLayout", "object", "Custom→scanLayout exists");
