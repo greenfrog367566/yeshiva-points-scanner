@@ -807,6 +807,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .gb-warn{margin-top:10px;font-size:.82rem;color:var(--bad);font-weight:600}
   .gb-print-head{display:none}
 
+  /* Batch-select checkbox on a student row — sized to sit with the avatar
+     rather than the text, so the row's height doesn't change. */
+  .stud-pick{width:17px;height:17px;flex:0 0 auto;margin:0 2px 0 0;cursor:pointer}
+
   /* ---- Leader Board dashboard ---- */
   .lb-stage{display:flex;flex-direction:column;gap:18px}
   .lb-hero{position:relative;overflow:hidden;border-radius:24px;background:linear-gradient(135deg,#141c34 0%,#26345f 52%,#a8772a 160%);color:#fff;border:1px solid rgba(255,255,255,.12);box-shadow:0 18px 50px rgba(27,36,64,.22);padding:24px 26px}
@@ -1910,6 +1914,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <label class="lbl" style="margin:0;display:flex;align-items:center;gap:6px">From <input type="date" id="studCustomFrom" class="field" style="width:auto"></label>
       <label class="lbl" style="margin:0;display:flex;align-items:center;gap:6px">To <input type="date" id="studCustomTo" class="field" style="width:auto"></label>
     </div>
+    <div class="toolbar" id="studBatchBar" style="gap:8px;flex-wrap:wrap">
+      <label class="lbl" style="margin:0;display:flex;align-items:center;gap:6px" title="Selects everyone currently shown by the search and class filter above">
+        <input type="checkbox" id="studSelectAll"> Select all shown
+      </label>
+      <span id="studSelCount" style="font-size:.85rem;color:var(--muted);font-weight:600"></span>
+      <span class="grow"></span>
+      <button class="btn btn-sm" id="studBatchClass" disabled>Assign to class…</button>
+      <button class="btn btn-sm btn-primary" id="studBatchPoints" disabled>Give points…</button>
+      <button class="btn btn-sm" id="studSelClear" disabled>Clear</button>
+    </div>
     <div class="card pad"><div class="row-list" id="studentList"></div></div>
   </section>
 
@@ -2067,15 +2081,17 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <button class="btn btn-primary" id="exportJson">Download backup file</button>
       </div>
       <div class="card pad bk-card">
-        <h3>Install Menchmark as an app</h3>
-        <p>Install Menchmark from your browser (look for <b>Install</b> in the menu, or the ⊕ / install icon in the address bar) to run it like a real app — its own window, an icon on your device, and <b>persistent storage</b> that resists the browser clearing your data. Works fully offline once installed.</p>
+        <h3>Install Menchmark as an app <span style="font-size:.72rem;font-weight:700;color:var(--good);background:var(--good-soft);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px">Best way to work offline</span></h3>
+        <p>Install Menchmark from your browser (look for <b>Install</b> in the menu, or the ⊕ / install icon in the address bar) to run it like a real app — its own window, an icon on your device, and <b>persistent storage</b> that resists the browser clearing your data. Works fully offline once installed, <b>and it stays the same Menchmark</b> — the same students, the same scores, whether you are online or not.</p>
         <div id="pwaStorageStatus" style="margin-top:6px;font-size:.85rem;font-weight:600"></div>
         <p style="margin:8px 0 0;font-size:.82rem;color:var(--muted)">Installing helps a lot, but on locked-down or shared school Chromebooks an administrator can still clear data on sign-out — so keep your <b>Google Sheet backup</b> connected as your ultimate safety net.</p>
       </div>
       <div class="card pad bk-card">
-        <h3>Download for offline use</h3>
-        <p>Saves a single HTML file with your <b>current students, activities, and scores already loaded in</b> — plus the QR scanner built right in, so it works with zero internet from then on. Needs internet once, to prepare the file; after that, just open it in any browser like any other file.</p>
-        <button class="btn" id="offlineDownloadBtn">⬇ Download offline copy</button>
+        <h3>Download a separate copy — for a computer with no internet at all</h3>
+        <p>Saves a single HTML file with your <b>current students, activities, and scores already loaded in</b> — plus the QR scanner built right in. For a classroom computer that never goes online, or a spare machine you want a self-contained copy on. Needs internet once, to prepare the file; after that, just open it in any browser like any other file.</p>
+        <p style="margin:8px 0 0;font-size:.86rem;color:var(--bad);font-weight:600">The downloaded copy keeps its own separate data. Points you enter in it stay in it — they will not appear here, and points entered here will not appear there.</p>
+        <p style="margin:6px 0 0;font-size:.82rem;color:var(--muted)">If you just want Menchmark to work without internet, <b>install it as an app</b> above instead — that keeps one set of data. Use this download only when you need a copy that lives entirely on its own.</p>
+        <button class="btn" id="offlineDownloadBtn" style="margin-top:10px">⬇ Download separate offline copy</button>
         <div id="offlineDownloadStatus" style="margin-top:8px;font-size:.85rem;color:var(--muted)"></div>
       </div>
       <div class="card pad bk-card">
@@ -2646,15 +2662,18 @@ function setupRoster() {
   <!-- ============ BATHROOM PASSES ============ -->
   <section id="view-passes" class="view">
     <h2 class="view-title">Bathroom Passes</h2>
-    <p class="view-note">Each student gets 1 pass per week. Scan a student's QR code when they use it. Reset the passes at the start of each week.</p>
+    <p class="view-note" id="passViewNote">Each student gets 1 pass per week. Scan a student's QR code when they use one. Reset the passes at the start of each week.</p>
 
     <div class="scan-box card pad" style="margin-bottom:16px">
       <input id="passScanInput" autocomplete="off" placeholder="Scan a student to use their bathroom pass">
-      <div class="scan-hint">Scan or type a student. Each one can only use their pass once per week.</div>
+      <div class="scan-hint">Scan or type a student. Once a student has used all their passes, further scans are refused.</div>
       <div class="flash" id="passFlash"></div>
     </div>
 
-    <div class="toolbar" style="margin-bottom:12px">
+    <div class="toolbar" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+      <label class="lbl" style="margin:0;display:flex;align-items:center;gap:6px">Passes per student
+        <input type="number" id="passCap" class="field" min="1" step="1" value="1" style="width:72px">
+      </label>
       <span class="grow" id="passSummary" style="font-weight:700"></span>
       <button class="btn btn-sm btn-bad" id="passReset">↺ Reset all passes (new week)</button>
     </div>
@@ -3755,10 +3774,44 @@ function setupRoster() {
     if(l2) f.appendChild(el("div","total",l2));
     clearTimeout(f._t); f._t=setTimeout(function(){ f.classList.remove("show"); },1500);
   }
-  function passUsed(sid){ return !!(data.passes.used && data.passes.used[sid]); }
+  // How many passes each student gets per period. Settable (data.passes.cap),
+  // defaults to 1 — which is exactly what every existing save behaved as, so
+  // nothing changes for anyone who never touches the setting.
+  function passCap(){
+    var c=data.passCap;
+    return (typeof c==="number" && isFinite(c) && c>=1) ? Math.floor(c) : 1;
+  }
+  // Uses so far. data.passes.used[sid] KEEPS its original meaning — the
+  // timestamp of the most recent use — because that is what every existing save
+  // already holds and what the row's "used at" line reads. The count lives in a
+  // separate top-level map (see the load2fix note on why it is not nested
+  // inside data.passes), backfilled to 1 for anyone who had a use recorded
+  // before the cap existed. Nothing existing is reinterpreted.
+  function passCount(sid){
+    var n=data.passCount && data.passCount[sid];
+    if(typeof n==="number" && isFinite(n) && n>0) return Math.floor(n);
+    return (data.passes.used && data.passes.used[sid]) ? 1 : 0;
+  }
+  function passUsed(sid){ return passCount(sid)>0; }
+  // "Has nothing left" — the test that actually refuses a scan. At cap 1 this is
+  // identical to the old passUsed(), which is why every caller of that test now
+  // calls this one instead.
+  function passExhausted(sid){ return passCount(sid) >= passCap(); }
   function setPass(sid,on){
     if(!data.passes.used) data.passes.used={};
-    if(on){ data.passes.used[sid]=Date.now(); } else { delete data.passes.used[sid]; }
+    if(!data.passCount || typeof data.passCount!=="object") data.passCount={};
+    var n=passCount(sid);
+    if(on){
+      if(n>=passCap()) return;              // already exhausted — never overshoot the cap
+      n++; data.passCount[sid]=n; data.passes.used[sid]=Date.now();
+    } else {
+      // "Give back" hands ONE pass back rather than clearing the student, so a
+      // cap above 1 can be corrected a step at a time. At zero the student is
+      // removed from both maps, which is the exact state a fresh save is in.
+      n--;
+      if(n<=0){ delete data.passCount[sid]; delete data.passes.used[sid]; }
+      else data.passCount[sid]=n;
+    }
     var s=studentById(sid);
     var label=on?"Bathroom pass used":"Bathroom pass returned";
     addLogEntry({ts:Date.now(), sid:sid, label:label, delta:0});
@@ -3775,30 +3828,43 @@ function setupRoster() {
   // button is a separate, deliberate toggle, "Mark used" / "Give back", for
   // manual correction. A scan must never silently hand a pass back.)
   function passMarkUsed(s){
-    if(passUsed(s.id)) return "already";
+    if(passExhausted(s.id)) return "already";
     setPass(s.id, true);
     return "ok";
   }
+  // "1 pass" / "2 passes" — used in the refusal message and the tab's own note,
+  // so the number a rebbi set is the number he is told about.
+  function passCapPhrase(){ var c=passCap(); return c+" pass"+(c===1?"":"es"); }
   function passScan(code){
     code=(code||"").trim(); if(!code) return;
     var s=studentById(code);
     if(!s){ passFlash(false,"Unknown code","\u201C"+code+"\u201D isn't a student"); beep(false); return; }
     if(!studentInCurrentClass(s)){ passFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D", "switch class to use this pass"); beep(false); return; }
-    if(passMarkUsed(s)==="already"){ passFlash(false, s.name+" already used their pass", "this week"); beep(false); renderPasses(); return; }
-    passFlash(true, s.name+" — pass used", "that's their one for this week"); beep(true); renderPasses();
+    if(passMarkUsed(s)==="already"){ passFlash(false, s.name+" has used all their passes", "that's "+passCapPhrase()+" this week"); beep(false); renderPasses(); return; }
+    var left=passCap()-passCount(s.id);
+    passFlash(true, s.name+" — pass used", left>0 ? (left+" left this week") : "that was their last one this week"); beep(true); renderPasses();
   }
   function renderPasses(){
+    var cap=passCap();
+    $("passCap").value=cap;
+    var note=$("passViewNote");
+    if(note) note.textContent="Each student gets "+passCapPhrase()+" per week. Scan a student's QR code when they use one. Reset the passes at the start of each week.";
     var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
-    var usedCount=studs.filter(function(s){ return passUsed(s.id); }).length;
-    var avail=studs.length-usedCount;
-    $("passSummary").textContent = studs.length ? (avail+" of "+studs.length+" still have their pass") : "";
+    var doneCount=studs.filter(function(s){ return passExhausted(s.id); }).length;
+    var avail=studs.length-doneCount;
+    $("passSummary").textContent = studs.length ? (avail+" of "+studs.length+" still have a pass left") : "";
     var list=$("passList"); list.innerHTML="";
     if(!studs.length){ list.appendChild(el("div","recent-empty","Add students on the Students tab first.")); return; }
     studs.forEach(function(s){
-      var on=passUsed(s.id);
+      var used=passCount(s.id), done=passExhausted(s.id), on=used>0;
       var row=el("div","erow");
       var name=el("span","grow"); name.appendChild(document.createTextNode(s.name+"  ")); if(s.group) name.appendChild(el("span","grp-tag",s.group));
-      var badge=el("span", on?"au-win":"au-rem", on?"✓ used":"available");
+      // At cap 1 this reads exactly as it always did ("✓ used" / "available");
+      // above 1 it has to show how many are gone, or the row cannot say whether
+      // a student has any left.
+      var badge = cap===1
+        ? el("span", done?"au-win":"au-rem", done?"✓ used":"available")
+        : el("span", done?"au-win":"au-rem", done?("✓ all "+cap+" used"):(used+" of "+cap+" used"));
       row.appendChild(name); row.appendChild(badge);
       // Reuses the same absolute-clock-time format already established in
       // Tracker (fmtClockTime) and History (history-ts class), so passes
@@ -3808,9 +3874,18 @@ function setupRoster() {
         var usedAt=new Date(data.passes.used[s.id]);
         row.appendChild(el("span","history-ts", usedAt.toLocaleDateString(undefined,{month:"short",day:"numeric"})+"  "+fmtClockTime(data.passes.used[s.id])));
       }
-      var btn=el("button","btn btn-sm"+(on?"":" btn-primary"), on?"Give back":"Mark used");
-      btn.addEventListener("click", function(){ setPass(s.id,!on); renderPasses(); });
-      row.appendChild(btn);
+      // Above cap 1 a student can be part-way through, so "used" and "give back"
+      // stop being one toggle and become two separate corrections.
+      if(on){
+        var back=el("button","btn btn-sm","Give back");
+        back.addEventListener("click", function(){ setPass(s.id,false); renderPasses(); });
+        row.appendChild(back);
+      }
+      if(!done){
+        var use=el("button","btn btn-sm btn-primary","Mark used");
+        use.addEventListener("click", function(){ setPass(s.id,true); renderPasses(); });
+        row.appendChild(use);
+      }
       list.appendChild(row);
     });
   }
@@ -3823,11 +3898,22 @@ function setupRoster() {
       addLogEntry({ts:now, sid:sid, label:"Bathroom pass used (weekly reset)", delta:0});
       if(data.autoSheet && s) pushToSheet({type:"scan", ts:now, name:s.name, group:s.group||"", label:"Bathroom pass used (weekly reset)", delta:0, total:score(sid)});
     });
-    data.passes.used={}; data.passes.reset=now; save(); renderPasses();
-    passFlash(true,"Passes reset","Everyone has their pass again");
+    data.passes.used={}; data.passCount={}; data.passes.reset=now; save(); renderPasses();
+    passFlash(true,"Passes reset","Everyone has their passes again");
   });
   $("passScanInput").addEventListener("keydown", function(e){
     if(e.key==="Enter"){ e.preventDefault(); var v=this.value; this.value=""; passScan(v); }
+  });
+  // Lowering the cap never rewrites anyone's count — a student already over the
+  // new cap simply reads as exhausted until the next reset. Nothing stored is
+  // reinterpreted or thrown away, so raising it again restores exactly what was
+  // there. Automatic weekly rollover is deliberately NOT here: passes still
+  // clear only when the rebbi presses Reset (see 2c, where Passes becomes a
+  // tracked item and rollover gets designed properly).
+  $("passCap").addEventListener("change", function(){
+    var n=parseInt(this.value,10);
+    if(!isFinite(n) || n<1) n=1;
+    data.passCap=n; save(); renderPasses();
   });
 
   /* ==================== ATTENDANCE ==================== */
@@ -5549,21 +5635,33 @@ function setupRoster() {
     }
   }
 
-  function awardWith(s, label, delta){
+  // `quiet` suppresses only the per-scan FEEDBACK \u2014 the flash, the beep, the 6-7
+  // celebration and the three re-renders. Everything that touches data is
+  // deliberately identical: the batch award on the Students tab calls straight
+  // into here rather than carrying its own copy of the scoring path, so a point
+  // given to twenty-five boys at once is the same kind of event as a point given
+  // by scanning one \u2014 same log entry, same contest tagging, same Sheet push,
+  // same undo. A quiet caller owns the re-render itself.
+  function awardWith(s, label, delta, quiet){
     if(!studentInCurrentClass(s)){
-      flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student");
-      beep(false); return false;
+      if(!quiet){
+        flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student");
+        beep(false);
+      }
+      return false;
     }
     var tag=contestTagForScan();
     if(tag.scoreToMain) data.scores[s.id]=score(s.id)+delta;
     if(delta>0 && tag.scoreToMain) recordEarn(s.id, label, delta);
-    if(tag.scoreToMain) maybeSixSeven(s);
+    if(tag.scoreToMain && !quiet) maybeSixSeven(s);
     var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly});
     save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
-    flash(delta>=0, s.name, fmtDeltaBare(delta), label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
-    beep(delta>=0);
-    renderRecent(); renderScanBoard(); refreshLiveViews();
+    if(!quiet){
+      flash(delta>=0, s.name, fmtDeltaBare(delta), label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
+      beep(delta>=0);
+      renderRecent(); renderScanBoard(); refreshLiveViews();
+    }
     return true;
   }
   // 6-7 celebration (optional — data.sixSeven, Settings tab). Checked after any
@@ -11449,6 +11547,26 @@ nameLine
 
   /* ---------- STUDENTS ---------- */
   var studentBreakdownOpen = {};
+  // Batch-selection state. IN-MEMORY only, exactly like studentBreakdownOpen —
+  // a tick box is a thing you are doing right now, not a preference worth
+  // surviving a reload, so this adds no stored field and needs no migration.
+  var studSelected = {};
+  // The rows the search + class filter are currently showing. Select-all works
+  // over THIS, not the whole roster, so "select all" after filtering to a class
+  // means that class — which is the way a rebbi will actually reach for it.
+  var studShown = [];
+  function studSelectedList(){
+    return data.students.filter(function(s){ return studSelected[s.id]; });
+  }
+  function renderStudBatchBar(){
+    var sel=studSelectedList(), n=sel.length;
+    $("studSelCount").textContent = n ? (n+" selected") : "";
+    ["studBatchClass","studBatchPoints","studSelClear"].forEach(function(id){ $(id).disabled = !n; });
+    var shownSel=studShown.filter(function(s){ return studSelected[s.id]; }).length;
+    var all=$("studSelectAll");
+    all.checked = studShown.length>0 && shownSel===studShown.length;
+    all.indeterminate = shownSel>0 && shownSel<studShown.length;
+  }
   function breakdownPeriodCutoff(period){
     var now=Date.now();
     if(period==="7d") return now-7*24*60*60*1000;
@@ -11554,9 +11672,19 @@ nameLine
       return !q || s.name.toLowerCase().indexOf(q)>=0;
     });
     $("studCount").textContent=shown.length+" of "+data.students.length+" student"+(data.students.length===1?"":"s");
+    studShown=shown;
+    renderStudBatchBar();
     if(!shown.length){ list.appendChild(el("div","recent-empty", data.students.length?"No students match.":"No students yet.")); return; }
     shown.sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); }).forEach(function(s){
       var row=el("div","erow");
+      var pick=el("input"); pick.type="checkbox"; pick.className="stud-pick";
+      pick.checked=!!studSelected[s.id];
+      pick.title="Select for a batch action";
+      pick.addEventListener("change", function(){
+        if(this.checked) studSelected[s.id]=true; else delete studSelected[s.id];
+        renderStudBatchBar();
+      });
+      row.appendChild(pick);
       var avatar=avatarEl(s, 40); avatar.classList.add("editable");
       avatar.title="Click to upload a photo, or drag one here";
       var fileIn=el("input"); fileIn.type="file"; fileIn.accept="image/*"; fileIn.style.display="none";
@@ -11622,6 +11750,9 @@ nameLine
         }
       });
       row.appendChild(avatar); row.appendChild(name); row.appendChild(code); row.appendChild(step); row.appendChild(bdBtn); row.appendChild(edit); row.appendChild(photoUrlBtn);
+      // NOTE (row width): this row now carries a checkbox plus 8-9 controls. See
+      // the PR discussion — Rename / Photo URL / Delete are the candidates for
+      // folding behind a per-row menu, deliberately NOT done here.
       if(removePhotoBtn) row.appendChild(removePhotoBtn);
       row.appendChild(del);
       list.appendChild(row);
@@ -11630,6 +11761,62 @@ nameLine
   }
   $("studSearch").addEventListener("input", renderStudents);
   $("studGroupFilter").addEventListener("change", renderStudents);
+  $("studSelectAll").addEventListener("change", function(){
+    var on=this.checked;
+    studShown.forEach(function(s){ if(on) studSelected[s.id]=true; else delete studSelected[s.id]; });
+    renderStudents();
+  });
+  $("studSelClear").addEventListener("click", function(){ studSelected={}; renderStudents(); });
+  // (a) Assign every selected student to one class in a single action. Uses the
+  // same prompt shape as the row's own Rename, so it behaves like the control
+  // beside it rather than introducing a second idiom.
+  $("studBatchClass").addEventListener("click", function(){
+    var sel=studSelectedList(); if(!sel.length) return;
+    var existing=groups();
+    var msg="Assign "+sel.length+" student"+(sel.length===1?"":"s")+" to which class?"
+      + (existing.length ? "\n\nClasses you already have: "+existing.join(", ") : "")
+      + "\n\nLeave blank to clear their class.";
+    var cls=prompt(msg, existing.length===1?existing[0]:"");
+    if(cls===null) return;
+    cls=cls.trim();
+    sel.forEach(function(s){ s.group=cls; });
+    save(); renderStudents(); renderClassSel(); renderScanBoard(); renderTapPanel(); renderStandings();
+    alert(sel.length+" student"+(sel.length===1?"":"s")+(cls?(" moved to “"+cls+"”."):" cleared of their class."));
+  });
+  // (b) Award the same amount, with a typed reason, to everyone selected.
+  //
+  // CRITICAL: this goes through awardWith() — the ordinary scan path — once per
+  // student, NOT by writing data.scores. Every point in the app arrives as a
+  // logged event, and History, Undo, Trends and the contest merge all read that
+  // log. A batch that set totals directly would leave twenty-five scores with
+  // nothing in the log to explain them, and no way to undo. Each student here
+  // gets a normal log entry carrying the typed reason, exactly as if scanned.
+  $("studBatchPoints").addEventListener("click", function(){
+    var sel=studSelectedList(); if(!sel.length) return;
+    var unit=isShulchani()?"prutot":"points";
+    var raw=prompt("Give how many "+unit+" to each of the "+sel.length+" selected student"+(sel.length===1?"":"s")+"?\n\nUse a negative number to take "+unit+" away.", "1");
+    if(raw===null) return;
+    var amt=parseInt(raw,10);
+    if(!isFinite(amt) || amt===0){ alert("Enter a whole number other than zero."); return; }
+    var reason=(prompt("What is this for?\n\nThis is what shows in History, in each student's breakdown, and on your Google Sheet — so make it something you'll recognise later.", "")||"").trim();
+    if(!reason){ alert("A reason is needed — it's what the History entry will say."); return; }
+    if(!confirm(fmtDelta(amt)+" "+unit+" to "+sel.length+" student"+(sel.length===1?"":"s")+"\nReason: “"+reason+"”\n\nThis logs one entry per student, exactly like scanning them, so it can be undone from History.")) return;
+    var done=0, skipped=[];
+    sel.forEach(function(s){
+      if(awardWith(s, reason, amt, true)) done++;
+      else skipped.push(s.name);
+    });
+    renderStudents(); renderRecent(); renderScanBoard(); renderStandings(); refreshLiveViews();
+    var msg=fmtDelta(amt)+" "+unit+" given to "+done+" student"+(done===1?"":"s")+" for “"+reason+"”.";
+    // Students outside the class selected in the top-right corner are refused by
+    // awardWith's own guard. Silently dropping a ticked box would be the worst
+    // outcome, so say exactly who and why.
+    if(skipped.length){
+      msg+="\n\n"+skipped.length+" skipped — not in “"+data.currentClass+"”:\n"+skipped.join(", ")
+         + "\n\nSwitch the class selector in the top-right corner to “All classes” to include them.";
+    }
+    alert(msg);
+  });
   $("breakdownPeriod").addEventListener("change", function(){
     $("studCustomRangeRow").style.display = this.value==="custom" ? "flex" : "none";
     renderStudents();
@@ -12830,6 +13017,27 @@ nameLine
     if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5;
     if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()};
     if(!data.passes.used||typeof data.passes.used!=="object") data.passes.used={};
+    // Settable passes-per-student, and the per-student use count.
+    //
+    // These live at the TOP LEVEL, deliberately NOT inside data.passes. Phase 2a
+    // promises that data.attendance / data.hw / data.trackerLog / data.passes
+    // come through a load byte-identical, and the harness asserts it — adding
+    // keys inside data.passes would break that guarantee for the sake of tidier
+    // nesting. It also keeps a clean boundary for 2c, which converts data.passes
+    // into a tracked item and should not have to tell old records apart from
+    // new sidecar fields inside the same object.
+    //
+    // Both purely additive with safe defaults: cap 1 is exactly how every save
+    // behaved before this existed, so no DATA_VERSION bump and nothing to convert.
+    if(typeof data.passCap!=="number" || !isFinite(data.passCap) || data.passCap<1) data.passCap=1;
+    if(!data.passCount||typeof data.passCount!=="object"||Array.isArray(data.passCount)) data.passCount={};
+    // Anyone holding a used-record from before the cap existed backfills to
+    // exactly 1 use, so their state is unchanged. data.passes is READ here and
+    // never written.
+    Object.keys(data.passes.used).forEach(function(sid){
+      var n=data.passCount[sid];
+      if(typeof n!=="number" || !isFinite(n) || n<1) data.passCount[sid]=1;
+    });
     if(typeof data.fpCompact!=="boolean") data.fpCompact=false;
     if(typeof data.currentClass!=="string") data.currentClass="";
     if(typeof data.labelFormat!=="string") data.labelFormat="avery5160";
@@ -13127,7 +13335,6 @@ nameLine
           }
           /* Store other feature flags for subsystems to read */
           if (!data.features || typeof data.features !== "object") data.features = {};
-          data.features.chavrusa = s.features.chavrusa === true;
           if (s.features && s.features.learning === true && s.learning && s.learning.type) {
             data.features.learningType = s.learning.type;
             if (s.learning.parshaLabel || s.learning.mesechtaLabel) {
@@ -13139,9 +13346,16 @@ nameLine
           if (!data.navHidden || typeof data.navHidden !== "object") data.navHidden = {groups:{},tabs:{}};
           if (!data.navHidden.groups) data.navHidden.groups = {};
           if (!data.navHidden.tabs)   data.navHidden.tabs   = {};
-          if (s.features.teams    === false) data.navHidden.groups.leaderboard = true;
-          if (s.features.learning === false) data.navHidden.groups.learn       = true;
-          if (s.features.qr       === false) data.navHidden.tabs.labels        = true;
+          // Only `learning` is still emitted by the wizard, and `learn` is a real
+          // group key. The `teams` -> groups.leaderboard and `qr` -> tabs.labels
+          // lines that used to sit here were vestigial from the pre-redesign
+          // wizard: it no longer emits either flag, so both tested
+          // `undefined === false` and never ran — and both named keys that do
+          // not exist anyway (the group is `standings`, and there is no `labels`
+          // tab). Removed rather than corrected, since there is nothing left to
+          // drive them. Lean mode (#121) will sit on this path, so it should
+          // start from keys that are known-good.
+          if (s.features.learning === false) data.navHidden.groups.learn = true;
           changed = true;
         }
 

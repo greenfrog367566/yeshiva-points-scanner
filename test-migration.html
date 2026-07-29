@@ -243,6 +243,27 @@ function load2fix(){
   if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5;
   if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()};
   if(!data.passes.used||typeof data.passes.used!=="object") data.passes.used={};
+  // Settable passes-per-student, and the per-student use count.
+  //
+  // These live at the TOP LEVEL, deliberately NOT inside data.passes. Phase 2a
+  // promises that data.attendance / data.hw / data.trackerLog / data.passes
+  // come through a load byte-identical, and the harness asserts it — adding
+  // keys inside data.passes would break that guarantee for the sake of tidier
+  // nesting. It also keeps a clean boundary for 2c, which converts data.passes
+  // into a tracked item and should not have to tell old records apart from
+  // new sidecar fields inside the same object.
+  //
+  // Both purely additive with safe defaults: cap 1 is exactly how every save
+  // behaved before this existed, so no DATA_VERSION bump and nothing to convert.
+  if(typeof data.passCap!=="number" || !isFinite(data.passCap) || data.passCap<1) data.passCap=1;
+  if(!data.passCount||typeof data.passCount!=="object"||Array.isArray(data.passCount)) data.passCount={};
+  // Anyone holding a used-record from before the cap existed backfills to
+  // exactly 1 use, so their state is unchanged. data.passes is READ here and
+  // never written.
+  Object.keys(data.passes.used).forEach(function(sid){
+    var n=data.passCount[sid];
+    if(typeof n!=="number" || !isFinite(n) || n<1) data.passCount[sid]=1;
+  });
   if(typeof data.fpCompact!=="boolean") data.fpCompact=false;
   if(typeof data.currentClass!=="string") data.currentClass="";
   if(typeof data.labelFormat!=="string") data.labelFormat="avery5160";
@@ -940,6 +961,42 @@ function runBuiltInTests() {
     && JSON.stringify(t10.trackerLog)===snapBefore.trackerLog
     && JSON.stringify(t10.passes)===snapBefore.passes);
   assert("2b→DATA_VERSION still NOT bumped", t10.version===4 && DATA_VERSION===4);
+
+  // --- Test 12: settable Bathroom Pass cap ---
+  // The whole point is that data.passes.used keeps its old meaning and its old
+  // contents, and the new count is derived beside it.
+  assert("cap→defaults to 1 on a new save", d1.passCap===1, "got "+d1.passCap);
+  assert("cap→count map created empty on a new save",
+    !!d1.passCount && Object.keys(d1.passCount).length===0);
+  var oldPasses={ used:{ s1:1720000000000, s2:1720000009000 }, reset:1719000000000 };
+  var passSnap=JSON.stringify(oldPasses);
+  var t12=runMigration({ version:4, passes:JSON.parse(JSON.stringify(oldPasses)) });
+  // THE one that matters: the new fields must not be nested inside data.passes,
+  // because Phase 2a promised that whole object comes through untouched.
+  assert("cap→data.passes is byte-identical (new fields are NOT nested in it)",
+    JSON.stringify(t12.passes)===passSnap,
+    "before "+passSnap+"\nafter  "+JSON.stringify(t12.passes));
+  assert("cap→each pre-existing use backfills to exactly 1",
+    t12.passCount.s1===1 && t12.passCount.s2===1, "got "+JSON.stringify(t12.passCount));
+  assert("cap→existing save defaults to cap 1 (behaviour unchanged)", t12.passCap===1);
+  assert("cap→reset timestamp untouched", t12.passes.reset===1719000000000);
+  // A real cap and real counts must survive a reload without being reset.
+  var t12b=runMigration({ version:4, passes:{ used:{s1:1720000000000}, reset:1 }, passCount:{s1:3}, passCap:4 });
+  assert("cap→a set cap survives reload", t12b.passCap===4, "got "+t12b.passCap);
+  assert("cap→a partial count survives reload", t12b.passCount.s1===3, "got "+t12b.passCount.s1);
+  // Garbage must land on the safe default rather than disabling passes entirely.
+  var t12c=runMigration({ version:4, passes:{ used:{} }, passCap:0, passCount:"nonsense" });
+  assert("cap→cap below 1 repaired to 1", t12c.passCap===1, "got "+t12c.passCap);
+  assert("cap→corrupt count map repaired to {}",
+    !!t12c.passCount && typeof t12c.passCount==="object" && !Array.isArray(t12c.passCount));
+  var t12d=runMigration({ version:4, passes:{ used:{} }, passCap:"three" });
+  assert("cap→non-numeric cap repaired to 1", t12d.passCap===1, "got "+t12d.passCap);
+  assert("cap→DATA_VERSION still NOT bumped", t12.version===4 && DATA_VERSION===4);
+  // data.passes.reset is written but deliberately never read — automatic weekly
+  // rollover is 2c's problem. If this ever fails, someone has started reading it.
+  assert("cap→no automatic rollover was introduced",
+    t12.passes.reset===1719000000000 && Object.keys(t12.passes.used).length===2,
+    "an old reset timestamp must not clear anyone's passes on load");
 
   // Runs last so its card sits at the bottom, but it gates the render: nothing
   // is shown until we know whether this harness is testing current code.
