@@ -11392,8 +11392,9 @@ nameLine
   /* ---------- GRADEBOOK (Phase 2b) --------------------------------------
    * READ-ONLY over the Phase 2a shell. Nothing here writes data.trackedData,
    * and nothing here reads data.attendance / data.hw / data.trackerLog /
-   * data.passes — those four keep driving their own tabs untouched until 2c
-   * retires them, and recording into tracked items arrives in 2d.
+   * data.passes directly — those keep driving their own tabs, and recording
+   * into tracked items arrives in 2d. Attendance reaches this grid only as
+   * converted entries under "ti-attendance" (Phase 2c, in load2fix).
    *
    * LAYOUT. Three shapes fall out of ONE grid instead of three code paths:
    *   one item over a range      -> columns are dates, under one item header
@@ -11508,7 +11509,11 @@ nameLine
         var byDate={};
         list.forEach(function(e){
           if(!e || typeof e.ts!=="number" || !isFinite(e.ts)) return;
-          var k=gbDateKeyForTs(e.ts);
+          // An entry may carry the school day it is ABOUT, which is not always
+          // the day it was typed — a mark backfilled on Wednesday for Monday
+          // belongs in Monday's column. Converted attendance (2c) sets it;
+          // entries without it fall back to the timestamp, as before.
+          var k=(typeof e.date==="string" && e.date) ? e.date : gbDateKeyForTs(e.ts);
           if(k<r.from || k>r.to) return;
           (byDate[k]=byDate[k]||[]).push(e);
         });
@@ -13312,12 +13317,16 @@ nameLine
     // left alone if present — harmless, just no longer created for new data.
 
     /* ----- Tracked Items shell (Phase 2a). Purely additive. -------------
-     * NOTE the four old stores above (data.attendance, data.hw,
-     * data.trackerLog, data.passes) are deliberately NOT read, converted or
-     * touched here. Phase 2a is a clean start, not a conversion: the presets
-     * below seed empty and the old records stay exactly where they are,
-     * still driving their existing tabs, so they remain recoverable if a
-     * conversion is ever wanted. They are retired in 2c.
+     * The presets below seed EMPTY. Nothing here reads or converts an old
+     * store; the conversion is a separate, later block.
+     *
+     * data.hw, data.trackerLog and data.passes are still untouched by every
+     * line in this function — 2c converts Attendance only, and those three
+     * stay parked exactly as 2a left them, still driving their own tabs.
+     *
+     * data.attendance is now READ, once, by the Phase 2c block at the end of
+     * this function. Read, never written: it is still byte-identical coming
+     * out of a load, and the Attendance tab still owns it.
      */
     if(!Array.isArray(data.trackedItems)) data.trackedItems=[];
     if(!data.trackedData || typeof data.trackedData!=="object" || Array.isArray(data.trackedData)) data.trackedData={};
@@ -13368,6 +13377,106 @@ nameLine
       if(!per || typeof per!=="object" || Array.isArray(per)){ data.trackedData[itemId]={}; return; }
       Object.keys(per).forEach(function(sid){ if(!Array.isArray(per[sid])) per[sid]=[]; });
     });
+
+    /* ----- Attendance conversion (Phase 2c). Additive, one-shot. ---------
+     * Reads data.attendance and writes the same records into the tracked
+     * item "ti-attendance", so a rebbi's real attendance history shows up in
+     * the Gradebook instead of the empty column 2a left there.
+     *
+     * data.attendance IS NOT MODIFIED. Not one byte — no status rewritten, no
+     * timestamp stamped, no day object created. It stays parked exactly as 2a
+     * left it and keeps driving the Attendance tab, which is unchanged. This
+     * is a READ, and Test 10 in test-migration.html asserts it stays one.
+     *
+     * WHY NO DATA_VERSION BUMP: nothing existing is converted in place. This
+     * derives a second, new store from an old one and leaves the old one
+     * alone — exactly the shape of the earnedSeeded backfill above, which
+     * walks data.log to build data.earned without a version bump either.
+     *
+     * TIMESTAMPS ARE COPIED, NEVER MINTED. rec.ts goes across verbatim. The
+     * Sheet's send diff is `rec.ts > day._sentAt` and the Attendance Log has
+     * no dedup, so touching a stored ts would re-push a rebbi's history into
+     * their Sheet as duplicate rows. Nothing here writes a ts at all.
+     *
+     * WHAT IS DELIBERATELY DROPPED: any record with no real numeric ts.
+     * renderAttendance() auto-writes {status:"present", ts:null} for every
+     * unmarked student the moment the tab is merely LOOKED AT. Those are
+     * assumptions, not observations, and must not enter the gradebook as
+     * attendance history. Only records someone actually marked come across.
+     * (Known gap: on a day that was SENT, sendAttendance() stamped a real ts
+     * onto those auto-filled records, making them indistinguishable from
+     * explicit marks. Those do convert. There is no way to tell them apart
+     * after the fact.)
+     *
+     * ALL THREE STATES SURVIVE. present / late / absent are three recorded
+     * facts with three Sheet statuses; none is collapsed into another. An
+     * unrecognised status is copied across verbatim rather than dropped or
+     * "repaired" — same open-enum rule the tracked methods follow.
+     *
+     * The `date` field carries the school day the record is ABOUT, which is
+     * not always the day it was typed: a rebbi who pages back to Monday on
+     * Wednesday to fix a record produces dateKey Monday with a Wednesday ts.
+     * Without this the Gradebook, which derives its column from e.ts, would
+     * file that mark on the wrong day. Additive on the entry, and readers
+     * that don't know the field simply fall back to ts.
+     *
+     * IDEMPOTENT BY CONSTRUCTION, not just by the flag. Every entry is keyed
+     * date@ts against what is already in the item, so a second run — a
+     * restored backup, a corrupted receipt — cannot duplicate a record.
+     *
+     * The receipt in data.attConversion is the "way back": it records what
+     * came across and what did not, so the numbers can be checked against the
+     * Attendance tab rather than taken on trust.
+     */
+    if(!data.attConversion || typeof data.attConversion!=="object" || Array.isArray(data.attConversion)){
+      // Materialized lazily, on the first record that actually converts. A
+      // brand-new save has no attendance, and creating an empty container for
+      // it would break 2a's "trackedData starts empty" contract for a rebbi
+      // who has nothing to convert. (Any corrupt value here was already
+      // repaired to {} by the shape guard above, so this is either absent or
+      // a real object.)
+      var attOut=data.trackedData["ti-attendance"];
+      if(attOut && (typeof attOut!=="object" || Array.isArray(attOut))) attOut=null;
+      var attKey=function(e){ return (e && typeof e.date==="string" ? e.date : "")+"@"+(e?e.ts:""); };
+      var attSeen={};
+      if(attOut) Object.keys(attOut).forEach(function(sid){
+        if(!Array.isArray(attOut[sid])) return;
+        var m=attSeen[sid]={};
+        attOut[sid].forEach(function(e){ if(e) m[attKey(e)]=1; });
+      });
+      var attStats={ ts:Date.now(), days:0, converted:0, droppedNoTs:0, skippedShape:0, alreadyPresent:0 };
+      var attTouched={};
+      Object.keys(data.attendance).sort().forEach(function(dk){
+        var day=data.attendance[dk];
+        if(!day || typeof day!=="object" || Array.isArray(day)) return;
+        attStats.days++;
+        Object.keys(day).forEach(function(sid){
+          // _sentAt and _lastSendCount sit alongside student ids in this very
+          // object. They are day metadata, not students.
+          if(sid.charAt(0)==="_") return;
+          var rec=day[sid];
+          if(!rec || typeof rec!=="object" || Array.isArray(rec) || typeof rec.status!=="string"){ attStats.skippedShape++; return; }
+          if(typeof rec.ts!=="number" || !isFinite(rec.ts)){ attStats.droppedNoTs++; return; }
+          var entry={ value:rec.status, ts:rec.ts, date:dk };
+          var seen=attSeen[sid] || (attSeen[sid]={});
+          if(seen[attKey(entry)]){ attStats.alreadyPresent++; return; }
+          seen[attKey(entry)]=1;
+          // If the rebbi deleted the Attendance preset, the records still land
+          // under its id. Unread is recoverable; unwritten is not.
+          if(!attOut) attOut=data.trackedData["ti-attendance"]={};
+          if(!Array.isArray(attOut[sid])) attOut[sid]=[];
+          attOut[sid].push(entry);
+          attTouched[sid]=1;
+          attStats.converted++;
+        });
+      });
+      // trackedData keeps an ORDERED list per student — last entry is current.
+      // Days arrive sorted, but a merge into an existing list needs the sort.
+      Object.keys(attTouched).forEach(function(sid){
+        attOut[sid].sort(function(a,b){ return (a.ts||0)-(b.ts||0); });
+      });
+      data.attConversion=attStats;
+    }
   }
   // Reached from exactly ONE place: the "Reset all scores" button in Settings.
   // The end-contest flow used to call this too, bundled onto its OK button; that
