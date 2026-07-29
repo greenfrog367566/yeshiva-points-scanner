@@ -800,9 +800,58 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .gb-tbl th{background:#f1f3f8;font-weight:700}
   .gb-tbl th.gb-item{background:#e6eaf5;font-family:var(--serif)}
   .gb-tbl th.gb-name,.gb-tbl td.gb-name{text-align:left;white-space:nowrap;position:sticky;left:0;z-index:1}
-  .gb-tbl td.gb-name{background:var(--card);font-weight:600}
   .gb-tbl th.gb-name{background:#f1f3f8}
-  .gb-tbl th.gb-total,.gb-tbl td.gb-total{background:#fafbfe;font-weight:700}
+  /* Identity repeated at the right edge, pinned the same way the names are on
+     the left. .gb-scroll carries no horizontal padding, so right:0 lands flush
+     against the clip edge — the same reason left:0 does. */
+  .gb-tbl th.gb-initials,.gb-tbl td.gb-initials{position:sticky;right:0;z-index:1;
+    font-weight:700;font-size:.78rem;letter-spacing:.3px;white-space:nowrap}
+  .gb-tbl th.gb-initials{background:#f1f3f8}
+  .gb-tbl th.gb-total{background:#fafbfe;font-weight:700}
+  /* Date over weekday. The weekday is the secondary line — it is there to place
+     the date in the week, not to be read first. */
+  .gb-tbl th.gb-date{padding-top:3px;padding-bottom:3px;line-height:1.15}
+  .gb-tbl th.gb-date .gb-d{font-weight:700}
+  .gb-tbl th.gb-date .gb-dow{font-weight:600;font-size:.72rem;color:var(--muted);margin-top:1px}
+  /* Week grouping, Sunday to Friday. Two signals, both cheap: a rule down the
+     first day of each week, and alternating weeks shaded a shade apart in the
+     HEADER only — shading the body would fight the value tints for the same
+     background, and the tints carry meaning while this is only grouping. */
+  .gb-tbl th.gb-wk,.gb-tbl td.gb-wk{border-left:2px solid var(--ink-soft)}
+  .gb-tbl th.gb-date.gb-wk-alt{background:#e7ebf5}
+  /* Row striping. The stripe is held as a VARIABLE on the row rather than being
+     painted straight onto the cells, so a tinted cell can override it with a
+     plain background rule instead of having to out-specify an :nth-child
+     selector. --gb-row-alt is the same stripe a shade deeper, for the Total
+     column, which keeps its own tint as a visual separator while still striping.
+     The sticky name column MUST take the stripe too, and stay fully opaque —
+     it is what the scrolled cells slide underneath. */
+  /* Every tint comes in TWO shades — one per stripe parity — because the row
+     stripe and the value tint otherwise compete for the same channel. Tint-wins
+     would kill the stripe across the whole middle of the grid, which is exactly
+     where a rebbi needs to stay on the right boy's row; stripe-wins would kill
+     the colour coding. Two shades of the same hue carry both at once. Even rows
+     use the palette's soft colours unchanged; odd rows get a lighter mix of the
+     same hue, so the pairs track the plain stripe above them. */
+  .gb-tbl tbody tr{
+    --gb-row:var(--card);--gb-row-alt:#f4f6fb;
+    --gb-good:#eff9f4;--gb-warn:#f9f3e7;--gb-bad:#fbf2f0;
+  }
+  .gb-tbl tbody tr:nth-child(even){
+    --gb-row:#f7f8fc;--gb-row-alt:#eceff7;
+    --gb-good:var(--good-soft);--gb-warn:var(--brass-soft);--gb-bad:var(--bad-soft);
+  }
+  .gb-tbl tbody td{background:var(--gb-row)}
+  /* Both pinned columns must take the stripe AND stay fully opaque — they are
+     what the scrolled cells slide underneath at either edge. */
+  .gb-tbl tbody td.gb-name{background:var(--gb-row);font-weight:600}
+  .gb-tbl tbody td.gb-initials{background:var(--gb-row)}
+  .gb-tbl tbody td.gb-total{background:var(--gb-row-alt);font-weight:700}
+  /* Value tints. Redundant reinforcement of the code, never the only signal —
+     the glyph carries the meaning and the aria-label carries the word. */
+  .gb-tbl tbody td.gb-t-good{background:var(--gb-good);color:var(--good)}
+  .gb-tbl tbody td.gb-t-warn{background:var(--gb-warn);color:#6b4d18}
+  .gb-tbl tbody td.gb-t-bad{background:var(--gb-bad);color:var(--bad)}
   .gb-tbl td.gb-blank{color:var(--muted)}
   .gb-items{display:flex;flex-wrap:wrap;gap:8px 18px}
   .gb-items label{display:flex;align-items:center;gap:6px;margin:0;font-size:.86rem;font-weight:600}
@@ -825,6 +874,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .gb-tbl td.gb-empty{background:var(--card)}
   .gb-note{margin-top:12px;font-size:.84rem;color:var(--muted);line-height:1.6}
   .gb-warn{margin-top:10px;font-size:.82rem;color:var(--bad);font-weight:600}
+  /* Built on every render but only ever shown on paper. */
+  .gb-print-pages{display:none}
   .gb-print-head{display:none}
 
   /* Batch-select checkbox on a student row — sized to sit with the avatar
@@ -975,23 +1026,41 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     .av-sheet{border:none;margin:0;width:8.5in;height:11in;overflow:hidden;page-break-after:always;break-after:page}
     .av-sheet:last-child{page-break-after:auto;break-after:auto}
     .av-cell{outline:none}
-    /* Gradebook: what is on screen is what prints — same table, no separate
-       print config. Only the chrome is stripped and the type shrunk to fit. */
+    /* Gradebook. The print output carries exactly the data that is on screen —
+       the item checkboxes and the date range are still the only settings, with
+       no second print config to drift out of step. What differs is PAGINATION:
+       on screen the items sit in one grid that scrolls sideways, and on paper
+       each item gets its own page. A combined grid never fitted a sheet (58
+       columns was routine), so the screen's one strength is exactly the paper's
+       one weakness. */
     body.print-gradebook #view-gradebook.active{display:block!important}
     body.print-gradebook .card{border:none!important;box-shadow:none!important;padding:0!important;background:#fff}
     body.print-gradebook #gbItemsCard,body.print-gradebook #gbWarn{display:none!important}
-    body.print-gradebook .gb-print-head{display:block!important;text-align:center;margin:0 0 10px}
-    body.print-gradebook .gb-print-title{font-family:var(--serif);font-size:1.2rem;font-weight:700}
-    body.print-gradebook .gb-print-sub{font-size:.8rem;color:#555;margin-top:2px}
-    /* The screen scrollport must not clip on paper — there is nothing to
-       scroll on a printed page, so a hidden overflow here would silently cut
-       off every column past the first pageful. */
-    body.print-gradebook .gb-scroll{overflow:visible!important}
+    /* The screen grid, its key, and the single shared heading all give way to
+       the per-item pages. */
+    body.print-gradebook .gb-scroll,
+    body.print-gradebook #gbLegend,
+    body.print-gradebook .gb-print-head{display:none!important}
+    body.print-gradebook .gb-print-pages{display:block!important}
+    body.print-gradebook .gb-page{page-break-after:always;break-after:page;break-inside:avoid}
+    body.print-gradebook .gb-page:last-child{page-break-after:auto;break-after:auto}
+    body.print-gradebook .gb-page-title{font-family:var(--serif);font-size:1.2rem;font-weight:700;text-align:center}
+    body.print-gradebook .gb-page-sub{font-size:.8rem;color:#555;margin:2px 0 10px;text-align:center}
     body.print-gradebook .gb-tbl{font-size:8pt}
     body.print-gradebook .gb-tbl th,body.print-gradebook .gb-tbl td{padding:3px 4px;border:1px solid #999}
-    body.print-gradebook .gb-tbl td.gb-name{position:static;background:#fff}
+    body.print-gradebook .gb-tbl td.gb-name,body.print-gradebook .gb-tbl td.gb-initials{position:static}
     body.print-gradebook .gb-tbl th.gb-name,body.print-gradebook .gb-tbl th.gb-item,body.print-gradebook .gb-tbl th{position:static;background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    /* The alternating week shade has to beat the blanket #eee above, and the
+       week rule has to survive the 1px #999 border every cell gets. */
+    body.print-gradebook .gb-tbl th.gb-date.gb-wk-alt{background:#dfe4f0!important}
+    body.print-gradebook .gb-tbl th.gb-wk,body.print-gradebook .gb-tbl td.gb-wk{border-left:2px solid #444!important}
+    /* Row stripes and value tints have to be told to print — browsers drop
+       backgrounds by default, and on a wide grid the stripe is what keeps a
+       rebbi's eye on the right boy's row. They survive a mono printer as three
+       distinguishable greys. */
+    body.print-gradebook .gb-tbl tbody td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     body.print-gradebook .gb-legend{margin-top:8px;font-size:7.5pt;color:#333}
+    body.print-gradebook .gb-legend .gb-key{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     body.print-gradebook main{padding:0.35in}
   }
 
@@ -2898,6 +2967,11 @@ function setupRoster() {
         <table class="gb-tbl" id="gbTable"></table>
       </div>
       <div class="gb-legend" id="gbLegend"></div>
+      <!-- Print only. One page per tracked item: the combined grid above is the
+           right thing on screen, where it scrolls, but 58 columns has never fitted
+           a sheet of paper. Built from the SAME collected data and the SAME code
+           maps as the screen grid, so a code means the same thing on every page. -->
+      <div class="gb-print-pages" id="gbPrintPages"></div>
       <div class="gb-note" id="gbNote"></div>
     </div>
     <div class="gb-warn" id="gbWarn"></div>
@@ -11444,8 +11518,51 @@ nameLine
    * columns are what make this printable at all.
    */
   var GB_MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var GB_DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Shab"];
   function gbDateKeyForTs(ts){ return new Date(ts-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10); }
   function gbDateLabel(key){ var p=String(key).split("-"); return (GB_MONTHS[(+p[1])-1]||"?")+" "+(+p[2]); }
+  // Parsed at NOON, not midnight: a date-only string parsed as UTC midnight
+  // lands on the previous day for anyone west of Greenwich, which would print
+  // every weekday off by one.
+  function gbDateObj(key){ return new Date(String(key)+"T12:00:00"); }
+  function gbDowLabel(key){ var d=gbDateObj(key); return isNaN(d) ? "" : GB_DOW[d.getDay()]; }
+  // The school week runs SUNDAY to FRIDAY, so weeks are grouped from Sunday.
+  //
+  // Deliberately NOT weekKeyOf(), which starts weeks on Monday and whose output
+  // is a persisted key in data.weekly — changing it would silently re-bucket
+  // every rebbi's saved Trends history. This is a display-only grouping and
+  // keeps its own function.
+  function gbWeekStart(key){
+    var d=gbDateObj(key);
+    if(isNaN(d)) return String(key);
+    d.setDate(d.getDate()-d.getDay());
+    var m=d.getMonth()+1, day=d.getDate();
+    return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(day<10?"0":"")+day;
+  }
+  // Short identity for the right-hand column, so a row can still be read after
+  // scrolling past the names — or on a wide printed page, where there is no
+  // scrolling but the same tracking problem.
+  //
+  // Two boys in one shiur sharing initials is ordinary, and would defeat the
+  // whole point for exactly those two, so a duplicate grows into the surname
+  // until it is distinct. Same idea as the cell codes, and order-stable because
+  // the roster is already sorted before this is called.
+  function gbBuildInitials(studs){
+    var used={}, out={};
+    studs.forEach(function(s){
+      var parts=String(s.name||"").trim().split(/\s+/).filter(function(w){ return w.length; });
+      if(!parts.length){ out[s.id]=""; return; }
+      var first=parts[0], last=parts.length>1 ? parts[parts.length-1] : "";
+      var base=first.charAt(0).toUpperCase()+(last?last.charAt(0).toUpperCase():"");
+      var code=base, n=1;
+      while(used[code] && last && n<last.length){ n++; code=base+last.slice(1,n); }
+      // Still taken (identical names, or no surname to grow into) — fall back to
+      // a counter rather than showing two rows the same label.
+      if(used[code]){ var k=2; while(used[code+k]) k++; code=code+k; }
+      used[code]=1; out[s.id]=code;
+    });
+    return out;
+  }
   function gbShiftDays(key,n){
     var d=new Date(key+"T12:00:00"); d.setDate(d.getDate()+n);
     var m=d.getMonth()+1, day=d.getDate();
@@ -11500,9 +11617,34 @@ nameLine
     "present":"✓", "late":"L", "absent":"✗",
     "unchecked":"", "full credit":"✓", "partial credit":"P", "no credit":"✗"
   };
+  // Cell tint, anchored to the option's own text exactly like its code, and for
+  // the same reason: a colour that shifted with what else is on screen would be
+  // the instability the fixed codes exist to avoid.
+  //
+  // Colour is REDUNDANT here, never the only signal — the code glyph still
+  // carries the meaning, and the aria-label still carries the word. A rebbi who
+  // cannot distinguish the tints loses nothing, and a mono printer renders them
+  // as three distinguishable greys.
+  //
+  // "warn" reuses --brass-soft, which is already the Attendance tab's own "late"
+  // badge colour, so late means the same shade in both places.
+  //
+  // Only preselect values are tinted. A count of 3 or a pass at 1/1 has no
+  // inherent good/bad polarity, and inventing one would be the app asserting
+  // something about a rebbi's classroom that it does not know.
+  var GB_FIXED_TONES = {
+    "present":"good", "late":"warn", "absent":"bad",
+    "full credit":"good", "partial credit":"warn", "no credit":"bad"
+  };
   function gbFixedCode(s){
     var k=String(s).trim().toLowerCase();
     return Object.prototype.hasOwnProperty.call(GB_FIXED_CODES,k) ? GB_FIXED_CODES[k] : null;
+  }
+  // Custom options get no tone: their polarity is unknowable, and guessing from
+  // the wording would be worse than leaving them neutral.
+  function gbToneClass(v){
+    var k=String(v==null?"":v).trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(GB_FIXED_TONES,k) ? ("gb-t-"+GB_FIXED_TONES[k]) : "";
   }
   function gbCodeBase(s){
     var words=s.split(/[\s\-_/]+/).filter(function(w){ return w.length; });
@@ -11690,49 +11832,69 @@ nameLine
     });
     $("gbSelectedCount").textContent=gbSelectedItems().length+" of "+items.length+" showing";
   }
-  function renderGbTable(){
-    var tbl=$("gbTable"), legend=$("gbLegend"), note=$("gbNote"), warn=$("gbWarn");
-    tbl.innerHTML=""; legend.innerHTML=""; note.textContent=""; warn.textContent="";
-    var r=gbRange();
-    $("gbPrintTitle").textContent=(data.className||data.school||"")+" — Gradebook";
-    $("gbPrintSub").textContent=gbRangeLabel(r);
-
-    var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
-    if(!studs.length){ note.textContent="No students in this class yet — add them on the Students tab."; return; }
-    if(!(data.trackedItems||[]).length){ note.textContent="No tracked items yet."; return; }
-    var items=gbSelectedItems();
-    if(!items.length){ note.textContent="No items selected. Use “Choose items” to pick which ones appear as columns."; return; }
-
-    var collected=gbCollect(items, studs, r);
-    // Built for ALL visible items at once — uniqueness has to hold across the
-    // view, not just inside one item, so this cannot be done per item in the
-    // loop below.
-    var codeMaps=gbBuildCodeMaps(items);
-    var datesByItem={}, maxDates=0, anyData=false;
+  /* Builds ONE table for the given items. Called once with every selected item
+   * (the screen grid) and once per item (the printed pages), so the two can
+   * never drift into separate rendering rules. `ctx` carries the work that must
+   * be shared rather than recomputed: the collected entries, the date lists, and
+   * critically the code maps — built across ALL selected items, so a code means
+   * the same thing on the screen grid and on every printed page.
+   */
+  function gbBuildTable(items, studs, ctx){
+    var collected=ctx.collected, codeMaps=ctx.codeMaps, datesByItem=ctx.datesByItem;
+    var initials=ctx.initials||{};
+    var tbl=el("table","gb-tbl");
+    var maxDates=0;
     items.forEach(function(it){
-      var ds=gbDatesFor(it.id, studs, collected);
-      datesByItem[it.id]=ds;
-      if(ds.length>maxDates) maxDates=ds.length;
-      if(ds.length) anyData=true;
+      var n=(datesByItem[it.id]||[]).length;
+      if(n>maxDates) maxDates=n;
     });
     var grouped = maxDates>1;
+
+    // Which date columns START a school week, and whether that week is an odd or
+    // even one, per item. Computed once here so the header and every body row
+    // agree about where a week begins — derived twice, they could disagree.
+    var weekInfo={};
+    items.forEach(function(it){
+      var ds=datesByItem[it.id]||[], prev=null, parity=0, info={};
+      ds.forEach(function(k){
+        var ws=gbWeekStart(k);
+        if(ws!==prev){ prev=ws; parity=1-parity; info[k]={start:true, alt:parity===1}; }
+        else info[k]={start:false, alt:parity===1};
+      });
+      weekInfo[it.id]=info;
+    });
+    function weekCls(itemId, k, base){
+      var w=(weekInfo[itemId]||{})[k]||{};
+      return (base?base+" ":"")+(w.start?"gb-wk ":"")+(w.alt?"gb-wk-alt":"");
+    }
 
     var thead=document.createElement("thead"), hr1=document.createElement("tr");
     var nameTh=el("th","gb-name","Student");
     if(grouped) nameTh.rowSpan=2;
     hr1.appendChild(nameTh);
     items.forEach(function(it){
-      var ds=datesByItem[it.id], th=el("th","gb-item",it.name||it.id);
+      var ds=datesByItem[it.id]||[], th=el("th","gb-item",it.name||it.id);
       if(grouped) th.colSpan=Math.max(ds.length,1)+(ds.length>1?1:0);
       hr1.appendChild(th);
     });
+    // Right-hand identity column. Mirrors the left so a row stays readable in
+    // the far columns — scrolled past the names on screen, or simply a long way
+    // from them on a printed page.
+    var initTh=el("th","gb-initials","Who");
+    if(grouped) initTh.rowSpan=2;
+    hr1.appendChild(initTh);
     thead.appendChild(hr1);
     if(grouped){
       var hr2=document.createElement("tr");
       items.forEach(function(it){
-        var ds=datesByItem[it.id];
+        var ds=datesByItem[it.id]||[];
         if(!ds.length){ hr2.appendChild(el("th",null,"—")); return; }
-        ds.forEach(function(k){ hr2.appendChild(el("th",null,gbDateLabel(k))); });
+        ds.forEach(function(k){
+          var th=el("th", weekCls(it.id,k,"gb-date")||null);
+          th.appendChild(el("div","gb-d",gbDateLabel(k)));
+          th.appendChild(el("div","gb-dow",gbDowLabel(k)));
+          hr2.appendChild(th);
+        });
         if(ds.length>1) hr2.appendChild(el("th","gb-total","Total"));
       });
       thead.appendChild(hr2);
@@ -11744,7 +11906,7 @@ nameLine
       var tr=document.createElement("tr");
       tr.appendChild(el("td","gb-name",s.name));
       items.forEach(function(it){
-        var ds=datesByItem[it.id], byDate=(collected[it.id]||{})[s.id]||{};
+        var ds=datesByItem[it.id]||[], byDate=(collected[it.id]||{})[s.id]||{};
         if(!ds.length){ tr.appendChild(el("td","gb-blank","—")); return; }
         ds.forEach(function(k){
           var ents=byDate[k]||[], has=!!ents.length;
@@ -11752,15 +11914,21 @@ nameLine
           var td;
           if(!has){
             // Nothing was ever recorded here.
-            td=el("td","gb-blank","·");
+            td=el("td",weekCls(it.id,k,"gb-blank"),"·");
           }else{
             // A record EXISTS. Its code may legitimately be empty — "unchecked"
             // is drawn as a genuinely empty cell — and that must not fall back
             // to the "·" above, or "we recorded that it wasn't collected" and
             // "nothing here" would look identical. They are different facts.
-            td=el("td", txt?null:"gb-empty", txt);
+            var cls=txt?"":"gb-empty";
+            // Tint only a preselect value, and only a known one.
+            if(it.method==="preselect"){
+              var tone=gbToneClass(ents[ents.length-1].value);
+              if(tone) cls=(cls?cls+" ":"")+tone;
+            }
+            td=el("td", weekCls(it.id,k,cls)||null, txt);
           }
-          var spoken=(it.name||it.id)+", "+gbDateLabel(k)+", "+gbCellSpoken(it, ents);
+          var spoken=(it.name||it.id)+", "+gbDateLabel(k)+" "+gbDowLabel(k)+", "+gbCellSpoken(it, ents);
           // aria-label, not title: titles are not reliably announced by screen
           // readers and never surface on touch. With symbol cells the code
           // alone announces as "check mark" or nothing at all, so the real word
@@ -11776,13 +11944,23 @@ nameLine
           tr.appendChild(totTd);
         }
       });
+      // Initials repeat the row's identity at the right edge. The full name goes
+      // on title and aria-label, so hovering and a screen reader both get the
+      // real name rather than two letters.
+      var initTd=el("td","gb-initials",initials[s.id]||"");
+      initTd.title=s.name;
+      initTd.setAttribute("aria-label",s.name);
+      tr.appendChild(initTd);
       tbody.appendChild(tr);
     });
     tbl.appendChild(tbody);
-
-    // Preselect cells are one short code, so anything printed has to carry its
-    // own key — a page handed to someone else must explain itself. It still has
-    // to explain the letters and any custom scale, not just the symbols.
+    return tbl;
+  }
+  // Appends one bordered key block per preselect item into `into`. Preselect
+  // cells are one short code, so anything printed has to carry its own key — a
+  // page handed to someone else must explain itself. It still has to explain the
+  // letters and any custom scale, not just the symbols.
+  function gbBuildLegend(items, codeMaps, into){
     items.forEach(function(it){
       if(it.method!=="preselect") return;
       var opts=(it.config && it.config.options) || [];
@@ -11800,15 +11978,74 @@ nameLine
         line.appendChild(span);
         line.appendChild(document.createTextNode(" = "+o));
       });
-      legend.appendChild(line);
+      into.appendChild(line);
+    });
+  }
+  function renderGbTable(){
+    var tbl=$("gbTable"), legend=$("gbLegend"), note=$("gbNote"), warn=$("gbWarn");
+    var pages=$("gbPrintPages");
+    tbl.innerHTML=""; legend.innerHTML=""; pages.innerHTML="";
+    note.textContent=""; warn.textContent="";
+    var r=gbRange();
+    $("gbPrintTitle").textContent=(data.className||data.school||"")+" — Gradebook";
+    $("gbPrintSub").textContent=gbRangeLabel(r);
+
+    var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+    if(!studs.length){ note.textContent="No students in this class yet — add them on the Students tab."; return; }
+    if(!(data.trackedItems||[]).length){ note.textContent="No tracked items yet."; return; }
+    var items=gbSelectedItems();
+    if(!items.length){ note.textContent="No items selected. Use “Choose items” to pick which ones appear as columns."; return; }
+
+    var collected=gbCollect(items, studs, r);
+    // Built for ALL selected items at once — uniqueness has to hold across the
+    // view, not just inside one item. It is also what keeps a code identical on
+    // the screen grid and on every printed page.
+    var codeMaps=gbBuildCodeMaps(items);
+    var datesByItem={}, widestItem=0, anyData=false;
+    items.forEach(function(it){
+      var ds=gbDatesFor(it.id, studs, collected);
+      datesByItem[it.id]=ds;
+      if(ds.length>widestItem) widestItem=ds.length;
+      if(ds.length) anyData=true;
+    });
+    // Initials are built from the whole roster once, so the same boy carries the
+    // same label on the screen grid and on every printed page — and so the
+    // duplicate-initials disambiguation sees every student, not just the ones on
+    // one page.
+    var ctx={collected:collected, codeMaps:codeMaps, datesByItem:datesByItem,
+             initials:gbBuildInitials(studs)};
+
+    // Screen: the one combined grid. It scrolls, so width is not a problem here.
+    var built=gbBuildTable(items, studs, ctx);
+    while(built.firstChild) tbl.appendChild(built.firstChild);
+    gbBuildLegend(items, codeMaps, legend);
+
+    // Print: one page per item, each carrying its own heading and its own key,
+    // so a single sheet handed to a menahel explains itself without the others.
+    items.forEach(function(it){
+      var page=el("div","gb-page");
+      page.appendChild(el("div","gb-page-title",it.name||it.id));
+      page.appendChild(el("div","gb-page-sub",
+        (data.className||data.school||"")+"  ·  "+gbRangeLabel(r)));
+      page.appendChild(gbBuildTable([it], studs, ctx));
+      var key=el("div","gb-legend");
+      gbBuildLegend([it], codeMaps, key);
+      if(key.firstChild) page.appendChild(key);
+      pages.appendChild(page);
     });
 
     if(!anyData){
       note.textContent="Nothing recorded in this range yet. Tracked items are the new shared record and start filling once scanning writes into them; Attendance, Homework, Tracker and Passes are still the live record on their own tabs in the meantime.";
     }
-    var cols=0;
-    items.forEach(function(it){ var d=datesByItem[it.id]; cols+=Math.max(d.length,1)+(d.length>1?1:0); });
-    if(cols>25) warn.textContent=cols+" columns — more than a printed page holds. Narrow the dates or turn off a few items.";
+    // Each item now prints on its own page, so what can overflow a sheet is the
+    // WIDEST single item, not the total across all of them. Turning an item off
+    // no longer helps — it was only ever removing a page — so the advice is now
+    // just the date range, which is the only thing that still narrows a page.
+    var widest=widestItem+(widestItem>1?1:0);
+    if(widest>25){
+      warn.textContent=widest+" columns on the widest item's page — more than a printed page holds. "
+        +"Narrow the date range.";
+    }
   }
   function renderGradebook(){
     $("gbPeriod").value=data.gbPeriod;
