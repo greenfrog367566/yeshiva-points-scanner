@@ -149,16 +149,35 @@ console.log(bad?'FAIL':'JS OK — '+blocks.length+' script blocks parsed');
 Expect `JS OK — 3 script blocks parsed`.
 
 ```bash
-# 2. CSS brace-balance check (if you touched styles)
+# 2. CSS brace-balance AND comment-delimiter check (if you touched styles)
 node -e "
 const t=require('fs').readFileSync('app.html','utf8');
 const s=t.slice(t.indexOf('<style'),t.lastIndexOf('</style>'));
 const o=(s.match(/{/g)||[]).length,c=(s.match(/}/g)||[]).length;
 console.log('CSS braces: '+o+' open / '+c+' close (gap '+(o-c)+')');
+const co=(s.match(/\/\*/g)||[]).length,cc=(s.match(/\*\//g)||[]).length;
+console.log('CSS comments: '+co+' open / '+cc+' close — '+(co===cc?'balanced':'UNBALANCED'));
 "
 ```
 **Current baseline gap is `2`** (braces inside content strings, not real
 imbalance). A gap that stays 2 is fine; a *change* in the gap after your edit is not.
+
+**Comment delimiters must be exactly equal — there is no baseline offset.**
+A stray `*/` (or a `/*` that never closes) **silently kills every rule after it**:
+the browser swallows the rest of the stylesheet as an unterminated comment or as
+garbage, and the app renders with a chunk of its CSS simply absent. This has
+already shipped once as a wrapped, broken scan bar.
+
+It is worth its own check because **nothing else catches it.** Brace balance is
+blind to it — a stray `*/` adds no braces, so the gap stays at 2. `node -e` on
+the script blocks is blind to it — the CSS isn't JavaScript. Both checks pass,
+green, on a stylesheet that is half dead. The failure mode is *visual only*, so
+if the edit was CSS-heavy, look at the rendered page as well as the counts.
+
+This is the single most common way to break styles while editing the long
+explanatory comments this file is full of: paste a block near an existing `*/`
+and it is easy to end up with the prose outside the comment and the terminator
+orphaned after it.
 
 ```bash
 # 3. If you touched migrateData()/load2fix(), confirm test-migration.html matches.
