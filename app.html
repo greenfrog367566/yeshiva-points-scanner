@@ -838,23 +838,51 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      take the deeper shade; odd rows get a lighter mix of the same hue, so the
      pairs track the plain stripe above them.
 
-     "bad" is a NEUTRAL SLATE, not red, and deliberately does not come from the
-     palette's --bad-soft the way good and warn come from --good-soft and
-     --brass-soft (#118). Absent and no-credit are the values a rebbi is most
-     likely to have several of in a row, and this grid gets turned toward a
-     parent: a line of red cells reads as a verdict on the boy rather than a
-     record of the term. Slate says "recorded" without saying "guilty". The
-     three tints are also held at roughly EQUAL visual weight — each sits
-     11–16 grey levels below its own stripe — so no single state shouts. Do not
-     "fix" absent by darkening it; being the heaviest cell on the page is the
-     same mistake as being the only red one. */
+     "bad" is a NEUTRAL SLATE, not red (#118). Absent and no-credit are the
+     values a rebbi is most likely to have several of in a row, and this grid
+     gets turned toward a parent: a line of red cells reads as a verdict on the
+     boy rather than a record of the term. Slate says "recorded" without saying
+     "guilty".
+
+     ── THE THREE FILLS IN EACH ROW ARE LUMINANCE-MATCHED. DO NOT BREAK THIS. ──
+
+     Within a parity all three sit at the SAME Rec.601 luminance — 237.2 on even
+     rows, 245.4 on odd — within half a grey level. They differ ONLY in hue
+     (~146deg green / ~41deg amber / ~227deg slate), so they stay obviously
+     distinct in colour and go completely flat in mono.
+
+     This is the fix for a real defect found by an actual grayscale print, not a
+     theoretical nicety. The first attempt at this palette picked each fill for
+     how it looked on screen and let the lightness fall where it may: absent
+     landed at 232.2 against present's 237.2, so on paper ✗ sat on the darkest
+     cell on the page. That is the same "reads as an indictment" failure the red
+     fix was meant to remove, just moved into the mono channel — a boy's
+     absences drawing the eye first, in a grid a parent may be looking at.
+
+     Consequences for anyone retuning these:
+       - CHANGE ONE FILL'S LIGHTNESS AND YOU MUST RETUNE THE OTHER TWO. A fill
+         that is 3 levels lighter than its siblings is 3 levels of unearned
+         emphasis on paper, whatever it looks like on screen.
+       - Even-row "warn" can no longer be var(--brass-soft) and even-row "bad"
+         is not var(--bad-soft): the palette softs are not luminance-matched to
+         each other. Only --good-soft happens to sit on the target, so "good"
+         alone still comes from the palette. Warn is --brass-soft lightened to
+         the target at identical hue.
+       - Verify with Rec.601 (0.299R + 0.587G + 0.114B), which is what a mono
+         driver approximates. Matching in HSL "lightness" is NOT the same thing
+         and will not hold on paper.
+
+     Each fill also sits ~10-11 levels below its own stripe, so a recorded value
+     still reads as tinted against an untinted cell in mono. What is deliberately
+     gone is any way to tell WHICH value it is from the shade alone — in mono the
+     glyph carries that, and only the glyph. */
   .gb-tbl tbody tr{
     --gb-row:var(--card);--gb-row-alt:#f4f6fb;
-    --gb-good:#eff9f4;--gb-warn:#f9f3e7;--gb-bad:#f2f3f7;
+    --gb-good:#eff9f4;--gb-warn:#fbf5e9;--gb-bad:#f3f5fd;
   }
   .gb-tbl tbody tr:nth-child(even){
     --gb-row:#f7f8fc;--gb-row-alt:#eceff7;
-    --gb-good:var(--good-soft);--gb-warn:var(--brass-soft);--gb-bad:#e6e8ef;
+    --gb-good:var(--good-soft);--gb-warn:#f7edd8;--gb-bad:#ebedf4;
   }
   .gb-tbl tbody td{background:var(--gb-row)}
   /* Both pinned columns must take the stripe AND stay fully opaque — they are
@@ -1088,20 +1116,23 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
        backgrounds by default, and on a wide grid the stripe is what keeps a
        rebbi's eye on the right boy's row.
 
-       THIS IS FOR COLOUR PRINTERS. It buys nothing on a mono one, and the
-       comment that used to sit here claiming the tints "survive a mono printer
-       as three distinguishable greys" was simply false. Measured, they land
-       within 2.0 grey levels of each other on odd rows and 3.6 on even ones —
-       and stripe parity swamps value polarity, so an even row's "good" is
-       DARKER than an odd row's "bad". In mono the tints are near-uniform pale
-       and carry no information; the glyph in the cell carries the meaning, which
-       is the accepted design (#118), not a defect to be tuned away. Widening the
-       tints until they separate in grey would make them dark enough to fight the
-       text, which is worse than no colour at all.
+       THIS IS FOR COLOUR PRINTERS. In mono the value tints carry NO information
+       BY DESIGN: the three fills in each row are deliberately luminance-matched
+       (see the tint note in the main stylesheet), so they print as one flat pale
+       shade and the glyph in the cell is left to carry the meaning alone. That
+       is the accepted design (#118).
 
-       Kept anyway because a colour print is the case it actually serves, and
-       without it browsers drop the stripe and tints there too. Harmless in mono:
-       every tint stays far lighter than the text sitting on it. */
+       Do not read that flatness as slack to be taken up. It is load-bearing and
+       it is recent: an earlier palette let each fill's lightness fall where it
+       may, absent came out the darkest cell on the page, and a real grayscale
+       print showed ✗ sitting on the heaviest mark in the grid — the "reads as an
+       indictment" failure, reappearing in the mono channel. Retuning any one
+       fill's lightness without the other two brings it straight back.
+
+       Kept anyway because a colour print is the case this rule actually serves,
+       and without it browsers drop the stripe and the tints there too. Harmless
+       in mono: every fill sits ~10 levels below its stripe and far lighter than
+       the text on it, so nothing inverts. */
     body.print-gradebook .gb-tbl tbody td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     body.print-gradebook .gb-legend{margin-top:8px;font-size:7.5pt;color:#333}
     body.print-gradebook .gb-legend .gb-key{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -11938,18 +11969,20 @@ nameLine
   // carries the meaning, and the aria-label still carries the word. A rebbi who
   // cannot distinguish the tints loses nothing.
   //
-  // The tints are a SCREEN AFFORDANCE. On a mono printer they do NOT separate:
-  // measured, they land within 2.0 grey levels of each other on odd rows and 3.6
-  // on even ones, and stripe parity swamps value polarity, so an even row's
-  // "good" prints DARKER than an odd row's "bad". They go to paper as
-  // near-uniform pale and the glyph carries the meaning alone. That is the
-  // accepted outcome (#118), not something to fix by pushing the tints apart —
-  // tints dark enough to separate in grey would start fighting the text.
+  // The tints are a SCREEN AFFORDANCE and are BUILT not to survive mono. The
+  // three fills in a row are luminance-matched to within half a grey level and
+  // differ only in hue, so they print as one flat pale shade and the glyph
+  // carries the meaning alone. Flat is the goal, not a limitation: when the
+  // fills were merely "picked to look right" the absent tint came out darkest,
+  // and a grayscale print put ✗ on the heaviest cell on the page — the "reads as
+  // an indictment" failure (#118) reappearing in mono. The tuning that prevents
+  // that lives with the fills themselves; see the tint note in the stylesheet
+  // before changing any one of them.
   //
-  // "warn" reuses --brass-soft, which is already the Attendance tab's own "late"
-  // badge colour, so late means the same shade in both places. "bad" is a
-  // neutral slate rather than red, so a boy with six absences does not read as
-  // a page of accusations (#118) — see the CSS note by .gb-t-bad.
+  // "warn" is the Attendance tab's own "late" brass, lightened to the shared
+  // luminance target at the same hue, so late still reads as the same colour in
+  // both places. "bad" is a neutral slate rather than red, so a boy with six
+  // absences does not read as a page of accusations (#118).
   //
   // Only preselect values are tinted. A count of 3 or a pass at 1/1 has no
   // inherent good/bad polarity, and inventing one would be the app asserting
