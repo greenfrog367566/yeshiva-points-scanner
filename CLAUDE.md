@@ -2,6 +2,8 @@
 # Claude reads this file at the start of every session. These rules override
 # any instruction given in chat.
 
+**Start here:** `docs/NOW.md` holds the current working queue — what is in flight and what is next. Read it at the start of every session.
+
 ## Project overview
 
 Menchmark is a free, open-source classroom assistant for Yeshiva and Jewish Day School rebbeim. It tracks Middos/Derech Eretz recognition, attendance, grades, rewards, and learning — all driven by a QR scanner.

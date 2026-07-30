@@ -1,0 +1,67 @@
+# NOW
+
+The current working queue. Read this at the start of a session.
+
+**Keep it short.** This is what is happening now, not a history. When something ships, delete it from here — `CHANGELOG.md` is the record. When something is decided but not next, it belongs in an issue or a spec in `docs/`, not here.
+
+---
+
+## Doing now
+
+Nothing in flight. Next item is Lean mode.
+
+---
+
+## Next, in order
+
+**1. Lean mode (#121)**
+One toggle in Settings. Assignment and mechanism already decided:
+
+- LEAN: `scan`, `standings`, `raffle`, `printSeats`, `students`, `activities`, `attendance`, `homework`, `passes`, `backup`, `settings`
+- ADVANCED: everything else
+- **Derive, don't write.** `isTabVisible()` becomes `t==="settings" || t==="scan" || (!navHidden().tabs[t] && !leanHidesTab(t))`. Writing Lean's hides into `navHidden` would make the rebbi's own hides indistinguishable from the preset.
+- **Three-state via the `defaults` seam** (the pattern from #141): put the field in `defaults` so reaching the `load2fix` backfill line proves the save predates it. New installs Lean, existing saves unchanged.
+- Contest stays hidden in **both** modes until #133.
+- Homework and Passes are in LEAN because hiding them strands the pass-refusal message, whose only correction path is the Passes tab.
+- The Settings toggle must be self-explanatory to an **existing** rebbi who never asked for it. Existing rebbeim are the ones most likely to want Lean and will never get it as a default, so the toggle has to sell itself. Say plainly what it hides and that nothing is deleted.
+
+**2. Dashboard undo + date range**
+- Undo button on the dashboard, same path as History's. Do not write a second undo.
+- Recognize date range: Today · Custom · All time, with Custom offering week, month, or a calendar. Extend `standRange` rather than building a parallel mechanism. Remember the choice.
+
+**3. Offline resync** — read-only investigation first, then PROPOSE FIRST
+The snapshot recovers after being offline; logged scans do not unless "resync all scans" is pressed. Want it automatic on reconnect and periodically.
+**Retry safety differs per tab.** The Log dedups by ID so re-pushing is safe. The Attendance Log has no dedup, so a retry duplicates rows. Confirm per tab before proposing.
+
+**4. Freeze timer, raffle note, warning flash**
+Small standalone features for a live bunk. **Not the behavior ladder** — no marks store, no rung counting, no reset periods. Those stay in `docs/Behavior_Ladder_Spec.md`.
+- Freeze: corner countdown, default 3 min, stores remaining seconds plus running-since, never an end timestamp. Drops stale freezes in `load2fix()`. Hidden in `@media print`. **Does not gate earning** — it is a visible reminder, not enforcement.
+- Raffle removal note, and report how a removal could clear itself after the next draw rather than staying sticky.
+- Warning flash: reuses the minus flash, **records nothing**. A recorded warning implies a count, a count implies rungs, and rungs are the ladder.
+
+---
+
+## Not code, still owed
+
+- **Physical workflow write-up.** Where codes actually live in a room: Avery labels on index cards, one per boy, boys take them out at the start; rebbi holds a clipboard with the seating chart and activity codes; arm an activity then scan the boy; homework code on the folder. A beta rebbi asked and nothing in the app or docs answers it.
+- **Onboarding video A** (setup from scratch), then **C** (using it in a class). Beta tally across 8 replies: C four, A three, B two. A first because two rebbeim are stuck before they can start.
+- **Announce Lean mode to existing rebbeim** when it ships, alongside the print fix and the Apps Script redeploy instruction.
+
+---
+
+## Standing rules that keep coming up
+
+- **Browser-verify before merging anything that touches data.** A Node stub run is not a browser pass. Serve over http or the harness drift check goes amber.
+- **Additive fields only** where possible: `load2fix()` backfill, no `DATA_VERSION` bump.
+- **PROPOSE FIRST** for anything that reshapes a store holding real records.
+- **Never nest new fields into a parked store** — it breaks 2a's byte-identity guarantee (lesson from #124).
+- **Ask what happens when the data is gone or wrong** before shipping. Contest's model was sound and it still lost data, because totals were only derivable from a wipeable 500-entry log.
+- Every branch that edits `CHANGELOG.md` will conflict with every other one. Keep both sets of entries; it is never a real conflict.
+
+---
+
+## Phase 2 status
+
+2a, 2b, 2c shipped. **2d** (armed-item scan mechanic) is the last slice and is not started. It also pins down the count value shape, which is still undefined — the 2b gradebook carries a guess that should collapse when 2d lands.
+
+Instances for worksheets and quizzes are #120, deliberately separate from 2c so two migrations stay small.
