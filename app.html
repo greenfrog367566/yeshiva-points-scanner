@@ -794,6 +794,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      cell pins to the CONTENT edge while overflow clips at the PADDING edge, so
      any side padding here reopens the leak this class exists to close. Vertical
      padding is safe and keeps the sticky column clear of the card's edge. */
+  /* The name in an attendance row is a button (tap = cycle) but must still
+     read as a plain left-aligned name, not a control. */
+  .att-name-cycle{background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+  .att-name-cycle:hover{text-decoration:underline}
   .gb-scroll{overflow-x:auto;overflow-y:hidden}
   .gb-tbl{width:100%;border-collapse:collapse;font-size:.85rem}
   .gb-tbl th,.gb-tbl td{border:1px solid var(--line);padding:5px 7px;text-align:center;white-space:nowrap}
@@ -2454,6 +2458,36 @@ function trimSnapshots(sh, deviceId) {
   }
 }
 
+// Returns a log sheet, creating it and writing its header EXACTLY ONCE.
+//
+// The header used to be written with a bare check-then-act:
+//   if (sh.getLastRow() === 0) sh.appendRow(header);
+// One "Send Attendance" fires one request per student — twenty-odd at once —
+// and Apps Script runs those concurrently. Two executions that both arrive
+// before either has appended BOTH see an empty sheet, so both write a header.
+// That is the doubled header. It is the ONLY thing this race produced: the
+// data rows are one per request either way, which is why the header was the
+// one symptom that survived a clean-sheet test.
+//
+// The lock closes the window. flush() is not optional — it forces the header
+// to be visible to the next execution before the lock is released; without it
+// the append can still be pending and the next execution reads 0 again.
+function logSheet_(ss, name, header) {
+  var lock = LockService.getScriptLock();
+  var held = false;
+  try { held = lock.tryLock(30000); } catch (err) {}
+  try {
+    var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+    if (sh.getLastRow() === 0) {
+      sh.appendRow(header);
+      SpreadsheetApp.flush();
+    }
+    return sh;
+  } finally {
+    if (held) { try { lock.releaseLock(); } catch (err) {} }
+  }
+}
+
 function doPost(e) {
   if (!e || !e.postData) {
     return ContentService.createTextOutput(
@@ -2474,10 +2508,7 @@ function doPost(e) {
   }
 
   if (body.type === "scan" || body.type === "correction") {
-    var log = ss.getSheetByName("Log") || ss.insertSheet("Log");
-    if (log.getLastRow() === 0) {
-      log.appendRow(["Time", "Student", "Class/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
-    }
+    var log = logSheet_(ss, "Log", ["Time", "Student", "Class/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
     if (!logHasId(log, body.id)) {
       log.appendRow([new Date(body.ts), body.name, body.group, body.label, body.delta, body.total, body.id || "", body.undoOf || "", body.note || ""]);
       rebuildLeaderBoard();
@@ -2512,10 +2543,7 @@ function doPost(e) {
   }
 
   if (body.type === "pasuk") {
-    var pl = ss.getSheetByName("Pesukim Log") || ss.insertSheet("Pesukim Log");
-    if (pl.getLastRow() === 0) {
-      pl.appendRow(["Time", "Student", "Class/Group", "Pasuk"]);
-    }
+    var pl = logSheet_(ss, "Pesukim Log", ["Time", "Student", "Class/Group", "Pasuk"]);
     pl.appendRow([new Date(body.ts), body.name, body.group, body.ref + ":" + body.pasuk]);
   }
 
@@ -2539,26 +2567,17 @@ function doPost(e) {
   }
 
   if (body.type === "attendance") {
-    var att = ss.getSheetByName("Attendance Log") || ss.insertSheet("Attendance Log");
-    if (att.getLastRow() === 0) {
-      att.appendRow(["Time", "Date", "Student", "Class/Group", "Status"]);
-    }
+    var att = logSheet_(ss, "Attendance Log", ["Time", "Date", "Student", "Class/Group", "Status"]);
     att.appendRow([new Date(body.ts), body.date, body.name, body.group, body.status]);
   }
 
   if (body.type === "tracker") {
-    var trk = ss.getSheetByName("Tracker Log") || ss.insertSheet("Tracker Log");
-    if (trk.getLastRow() === 0) {
-      trk.appendRow(["Time", "Student", "Class/Group", "Activity"]);
-    }
+    var trk = logSheet_(ss, "Tracker Log", ["Time", "Student", "Class/Group", "Activity"]);
     trk.appendRow([new Date(body.ts), body.name, body.group, body.activity]);
   }
 
   if (body.type === "hw") {
-    var hwl = ss.getSheetByName("Homework Log") || ss.insertSheet("Homework Log");
-    if (hwl.getLastRow() === 0) {
-      hwl.appendRow(["Time", "Date", "Student", "Class/Group", "Checked"]);
-    }
+    var hwl = logSheet_(ss, "Homework Log", ["Time", "Date", "Student", "Class/Group", "Checked"]);
     hwl.appendRow([new Date(body.ts), body.date, body.name, body.group, body.checked ? "Yes" : "No"]);
   }
 
@@ -3180,6 +3199,10 @@ function setupRoster() {
   // renaming the seeded activity without updating this would quietly turn the
   // pass tile back into a plain 0-point activity.
   var PASS_ACT_NAME = "Bathroom Pass";
+  // Same deal as PASS_ACT_NAME: the seeded Attendance activity is matched BY
+  // NAME, so renaming it without updating this turns it back into a plain
+  // 0-point activity that awards nothing instead of cycling attendance.
+  var ATT_ACT_NAME = "Attendance";
 
   /* ---------- Tracked Items (Phase 2a — data shell only) ----------------
    * One engine for the "student + timestamp + value" pattern that Attendance,
@@ -4163,24 +4186,79 @@ function setupRoster() {
   // and pushed to the Sheet immediately on its own, without needing another
   // manual send.
   function attDaySent(dateKey){ return !!(data.attendance[dateKey] && data.attendance[dateKey]._sentAt); }
-  function setAttendance(sid, status){
-    var day=attDayRecord(attDate);
+  /* The cycle a scan (or a tap) walks a student through.
+   *
+   *   present (the unmarked default) -> absent -> late -> present
+   *
+   * It WRAPS, and that is the point: a mis-scan self-corrects by scanning the
+   * same boy again, without going to the tab to fix it.
+   *
+   * "present" is first because an unmarked student already counts as present —
+   * renderAttendance auto-fills it — so the cycle starts from where everyone
+   * already is, and one scan means "this boy is an exception".
+   */
+  var ATT_CYCLE = ["present","absent","late"];
+  function attStatusOn(dateKey, sid){
+    var day=data.attendance[dateKey];
+    var rec=day && day[sid];
+    return (rec && typeof rec.status==="string") ? rec.status : "present";
+  }
+  function attNextStatus(cur){
+    var i=ATT_CYCLE.indexOf(cur);
+    // An unrecognised status (hand-edited, or from a newer version) lands on the
+    // first step rather than being left stuck outside the cycle.
+    return ATT_CYCLE[(i<0 ? 0 : i+1) % ATT_CYCLE.length];
+  }
+  /* Writes one student's status for one day.
+   *
+   * TIMESTAMPS. A CHANGE gets a fresh ts — that is a new observation, and it is
+   * exactly what makes the send diff (rec.ts > day._sentAt) push the correction.
+   * A NO-OP writes nothing at all: same status in, function returns, ts
+   * untouched, nothing pushed. Without that guard, tapping the state a boy is
+   * already on re-stamps his ts and — on a day already sent — appends another
+   * row to the Attendance Log, which has no dedup. One tap, one duplicate.
+   *
+   * _sentAt is never written here. Only sendAttendance() sets it.
+   */
+  function setAttendance(sid, status, dateKey){
+    var dk=dateKey||attDate;
+    var day=attDayRecord(dk);
+    var prev=day[sid];
+    // Unchanged: leave the record — and its timestamp — completely alone.
+    if(prev && prev.status===status && typeof prev.ts==="number") return false;
     day[sid]={status:status, ts:Date.now()};
     save();
-    if(attDaySent(attDate)){
+    if(attDaySent(dk)){
       // Day was already sent — recognize this as a correction and auto-sync
       // just this one student, rather than requiring a full resend.
       var s=studentById(sid);
-      if(data.autoSheet && s){ pushToSheet({type:"attendance", ts:Date.now(), date:attDate, name:s.name, group:s.group||"", status:status}); }
+      if(data.autoSheet && s){ pushToSheet({type:"attendance", ts:day[sid].ts, date:dk, name:s.name, group:s.group||"", status:status}); }
     }
+    return true;
+  }
+  // One step round the cycle for one student on one day. Returns the new status
+  // so the caller can say what happened.
+  function attCycle(sid, dateKey){
+    var dk=dateKey||attDate;
+    var next=attNextStatus(attStatusOn(dk, sid));
+    setAttendance(sid, next, dk);
+    return next;
+  }
+  var ATT_LABEL={present:"Present",late:"Late",absent:"Absent"};
+  function attCycleFlash(s, next){
+    flash(next!=="absent", s.name, ATT_LABEL[next]||next,
+      next==="present" ? "Back to present — scan again for absent"
+        : "Scan again for "+(ATT_LABEL[attNextStatus(next)]||"").toLowerCase());
+    beep(next!=="absent");
   }
   function attendanceScan(code){
     var s=studentById(code);
     if(!s){ flash(false,"Unknown code","","\u201C"+code+"\u201D isn't a student"); beep(false); return; }
     if(!studentInCurrentClass(s)){ flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student"); beep(false); return; }
-    setAttendance(s.id, "present");
-    flash(true, s.name, "Present", "Attendance marked");
-    beep(true);
+    // Cycles the day the TAB is showing, so scanning while looking at Tuesday
+    // fixes Tuesday. The armed path (award()) deliberately differs — it always
+    // marks real today, since a scan from the Record tab has no "day on screen".
+    attCycleFlash(s, attCycle(s.id, attDate));
     if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
   }
   // Sends every active student's current status for the given day in one
@@ -4282,7 +4360,13 @@ function setupRoster() {
     studs.forEach(function(s){
       var rec=day[s.id]||{status:"present",ts:null};
       var row=el("div","erow");
-      var name=el("span","grow"); name.appendChild(document.createTextNode(s.name+"  ")); if(s.group) name.appendChild(el("span","grp-tag",s.group));
+      // Tapping the NAME walks the same cycle a scan does, so the screen and the
+      // scanner can never disagree about what one input means. The three buttons
+      // stay for setting a state directly — this adds a way in, it removes none.
+      var name=el("button","grow att-name-cycle");
+      name.appendChild(document.createTextNode(s.name+"  ")); if(s.group) name.appendChild(el("span","grp-tag",s.group));
+      name.title="Tap to cycle: present → absent → late";
+      name.addEventListener("click", function(){ attCycle(s.id, attDate); renderAttendance(); });
       row.appendChild(name);
       if(rec.ts){
         var tEl=el("span",null, fmtClockTime(rec.ts));
@@ -4338,11 +4422,12 @@ function setupRoster() {
   // personal-QR path use — kept in one place now that four callers need it.
   function homeworkActivity(a){ return !!a && a.tracked && a.name==="Homework Checked"; }
   function passActivity(a){ return !!a && a.tracked && a.name===PASS_ACT_NAME; }
+  function attendanceActivity(a){ return !!a && a.tracked && a.name===ATT_ACT_NAME; }
   // Tracked activities that award() REROUTES to their own store instead of the
   // points path, and are therefore safe to arm anywhere. Tracker activities are
   // not on this list — they have no reroute, so arming one would write points.
   // Anything added here must have a matching branch in award().
-  function reroutedActivity(a){ return homeworkActivity(a) || passActivity(a); }
+  function reroutedActivity(a){ return homeworkActivity(a) || passActivity(a) || attendanceActivity(a); }
   // Activities offerable as an armable choice: point activities, plus the
   // rerouted ones. Shared by the Scan tab's buttons, the seating-chart dropdown
   // and the printed Activity Menu so the three can't drift apart.
@@ -4350,8 +4435,8 @@ function setupRoster() {
   // Wording for the rerouted activities on printed cards, where a point value
   // would be wrong. Kept next to the predicates so a future rerouted activity
   // gets its wording here rather than in three separate print call sites.
-  function personalActionSub(a){ return homeworkActivity(a) ? "marks homework checked" : "uses their weekly pass"; }
-  function personalActionVerb(a){ return homeworkActivity(a) ? "mark homework checked" : "use the weekly bathroom pass"; }
+  function personalActionSub(a){ return homeworkActivity(a) ? "marks homework checked" : attendanceActivity(a) ? "cycles their attendance" : "uses their weekly pass"; }
+  function personalActionVerb(a){ return homeworkActivity(a) ? "mark homework checked" : attendanceActivity(a) ? "cycle their attendance" : "use the weekly bathroom pass"; }
   function renderTrackerActSel(){
     var sel=$("trackerActSel");
     var prev=sel.value||data.trackerActId;
@@ -5775,6 +5860,18 @@ function setupRoster() {
         beep(true);
       }
       if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
+      return true;
+    }
+    // Attendance, same idea again: it lives in data.attendance, not in points.
+    // ALWAYS marks real today, never the date the Attendance TAB happens to be
+    // showing — a scan from the Record tab has no "day on screen", and silently
+    // writing to whatever day was last viewed there is the exact trap the
+    // homework reroute already documents.
+    if(armedAct && attendanceActivity(armedAct)){
+      attCycleFlash(s, attCycle(s.id, todayKey()));
+      if($("view-attendance") && $("view-attendance").classList.contains("active")){
+        if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
+      }
       return true;
     }
     var tag=contestTagForScan();
@@ -7257,7 +7354,7 @@ function setupRoster() {
     if($("view-shorashim").classList.contains("active") && pendingSave) return "Save board";
     if($("view-shorashim").classList.contains("active") && gameScanArmed) return "Game Show";
     if($("view-pesukim").classList.contains("active") && pesukMode==="chart"){ var as2=activeSet(); return (as2&&as2.kind==="mishna")?"Mishnayos (mark tested)":"Pesukim (mark tested)"; }
-    if($("view-attendance").classList.contains("active")) return "Attendance (mark present)";
+    if($("view-attendance").classList.contains("active")) return "Attendance (cycle)";
     if($("view-tracker").classList.contains("active")){ var ta=actById($("trackerActSel")&&$("trackerActSel").value); return "Tracker"+(ta?(" ("+ta.name+")"):""); }
     if($("view-homework").classList.contains("active")) return "Homework (mark checked)";
     return "Points";
@@ -7391,6 +7488,8 @@ function setupRoster() {
     setArmed(a.name, a.pts);
     if(homeworkActivity(a)){
       flash(true, "Now marking", a.name, "Scan students to mark homework checked");
+    } else if(attendanceActivity(a)){
+      flash(true, "Now marking", a.name, "Scan a boy to cycle present → absent → late");
     } else if(passActivity(a)){
       flash(true, "Now marking", a.name, "Scan students to use their weekly pass");
     } else {
@@ -12909,8 +13008,9 @@ nameLine
       // No "+0" for the rerouted activities — they earn nothing, so the sub-line
       // says what the code actually does instead of quoting a point value.
       return {qrText:"ACT:"+a.id, name:a.name,
-              sub: homeworkActivity(a) ? "marks homework checked"
-                 : passActivity(a)     ? "marks a bathroom pass used"
+              sub: homeworkActivity(a)   ? "marks homework checked"
+                 : attendanceActivity(a) ? "cycles attendance"
+                 : passActivity(a)       ? "marks a bathroom pass used"
                  : fmtDelta(a.pts)};
     });
     items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount"});
@@ -13989,6 +14089,17 @@ nameLine
       data.activities.push({id:nextActId(), name:PASS_ACT_NAME, pts:0, tracked:true, groups:[]});
       data.passActivitySeeded=true;
     }
+    // Attendance as a tracked 0-point activity, so it can be ARMED like any
+    // other — a button on the Record tab and an ACT: code on the printed sheet.
+    // Same shape and same one-shot flag as the two above, so a rebbi who deletes
+    // the button does not get it back on the next load. Attendance records
+    // themselves still live in data.attendance; this activity is a handle, not a
+    // second store, and it is NOT the Phase 2a "ti-attendance" tracked item,
+    // which is a different thing entirely and untouched here.
+    if(!data.attActivitySeeded){
+      data.activities.push({id:nextActId(), name:ATT_ACT_NAME, pts:0, tracked:true, groups:[]});
+      data.attActivitySeeded=true;
+    }
     // "Prize Received" used to be a standalone tracked activity here, but that
     // had no real link to an actual Store purchase. Superseded by a per-purchase
     // "received" checkbox on the Store's own purchase log (see storeReceived
@@ -14030,7 +14141,12 @@ nameLine
       // each also get a second, wrong-shaped count item.
       data.activities.forEach(function(a){
         if(!a || a.tracked!==true) return;
-        if(a.name==="Homework Checked" || a.name===PASS_ACT_NAME) return;
+        // Attendance joins this skip list for the same reason the other two are
+        // on it: it is a tracked activity that ALREADY has its own preset above
+        // (ti-attendance, a preselect). Without the skip it would also get a
+        // second, wrong-shaped count item — exactly the duplication this guard
+        // exists to prevent.
+        if(a.name==="Homework Checked" || a.name===PASS_ACT_NAME || a.name===ATT_ACT_NAME) return;
         seedItems.push({ id:"ti-act-"+a.id, name:a.name, method:"count", config:{ step:1 } });
       });
       seedItems.push({ id:"ti-pass", name:PASS_ACT_NAME, method:"limited", config:{ cap:1 } });
