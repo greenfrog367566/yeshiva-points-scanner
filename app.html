@@ -1081,8 +1081,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-print-preview .seat-print-activities-footer{margin-top:16px;border-top:2px solid var(--line);padding-top:10px}
   .seat-print-preview .seat-print-activities-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;margin-bottom:6px}
   .seat-print-preview .seat-print-activities-grid{display:flex;flex-wrap:wrap;gap:6px}
-  .seat-print-preview .seat-print-act-card{border:1px solid var(--line);border-radius:6px;padding:4px 6px;text-align:center;width:70px;font-size:.62rem;line-height:1.2}
-  .seat-print-preview .seat-print-act-label{font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seat-print-preview .seat-print-act-card{border:1px solid var(--line);border-radius:6px;padding:4px 6px;text-align:center;width:76px;font-size:.62rem;line-height:1.2}
+  /* The label WRAPS rather than being clipped. It used to be nowrap + ellipsis
+     in a fixed-width card, which turned the codes into "Davening…", "Homewor…",
+     "Undo Last…" — and reading the label at a glance while scanning is the
+     entire job of this footer, so an ellipsis defeats the point of printing it.
+     Cards are flex items in a wrapping row, so they simply grow to the tallest
+     in their line and stay aligned. */
+  .seat-print-preview .seat-print-act-label{font-weight:700;margin-top:2px;white-space:normal;overflow-wrap:break-word}
   .seat-print-preview .seat-print-act-sub{color:var(--muted)}
 </style>
 </head>
@@ -6568,13 +6574,31 @@ function setupRoster() {
     // students who have since been deleted or moved class).
     var unplaced=seatPruneAndFillUnplaced(lay, studs);
     if(!unplaced.length) return 0;
-    var free=0; lay.seats.forEach(function(sid){ if(!sid) free++; });
-    if(free<unplaced.length){
-      // Grow rows only, never shrink: seatResize truncates, and a smaller grid
-      // would drop already-placed students off the end.
-      var need=(lay.seats.length-free)+unplaced.length;
-      var rows=Math.max(lay.rows, Math.ceil(need/lay.cols));
-      seatResize(lay, rows, lay.cols);
+    // Has this rebbi ever arranged anything? Checked AFTER pruning, so a seat
+    // holding a student who has since been deleted does not count as arranging.
+    var anyPlaced=lay.seats.some(function(sid){ return !!sid; });
+    if(!anyPlaced){
+      // Never touched. seatLayout() invents a 4x6 whether the class has four
+      // boys or thirty, so a 4-student roster printed as 4 students and 20
+      // boxes reading "Empty seat" — most of the page wasted (#116). Size it to
+      // the roster instead: roughly square, which is as close to a real room as
+      // anything can be guessed without being told. Four students get 2x2.
+      var n=studs.length;
+      var cols=Math.max(1, Math.ceil(Math.sqrt(n)));
+      seatResize(lay, Math.max(1, Math.ceil(n/cols)), cols);
+    } else {
+      // ARRANGED. The grid is left exactly as the rebbi built it, empty slots
+      // included — a gap in a row is usually deliberate (an absent boy's seat,
+      // an aisle, the shape of the room), and resizing would destroy the
+      // spatial map that is the whole reason to print a seating chart.
+      // Rows grow only if the roster genuinely no longer fits, and never
+      // shrink: seatResize truncates, so a smaller grid would drop
+      // already-placed students off the end.
+      var free=0; lay.seats.forEach(function(sid){ if(!sid) free++; });
+      if(free<unplaced.length){
+        var need=(lay.seats.length-free)+unplaced.length;
+        seatResize(lay, Math.max(lay.rows, Math.ceil(need/lay.cols)), lay.cols);
+      }
     }
     var n=0;
     for(var i=0;i<lay.seats.length && n<unplaced.length;i++){
