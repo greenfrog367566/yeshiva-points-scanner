@@ -47,6 +47,20 @@
 <button id="busySampleBtn">Download busy sample backup</button>
 <button id="busySampleLoad" style="margin-left:8px">Load it into the box above</button>
 
+<h2 style="margin-top:30px;font-size:1.1rem">Open the app in a known state</h2>
+<p style="font-size:.9rem;color:#6a7187">Writes a sample straight into <code>localStorage</code> and opens <code>app.html</code> on it — no download, no restore, no clicking through Backup &amp; Restore. For checking layouts that only misbehave in one data state.<br><br>
+<b>Your own data is protected.</b> Before the first seed, whatever is really in <code>localStorage</code> is copied aside, and <b>Put my real data back</b> returns it. Seeded saves are tagged, so seeding twice never overwrites that copy with sample data.<br><br>
+<b>Must be served over http</b> (e.g. <code>http://localhost:3000/test-migration.html</code>). Opened as a <code>file://</code> page these do nothing useful — the harness and the app do not share a <code>localStorage</code>, so the app would open on whatever it already had.</p>
+<div id="seedUnavailable" style="display:none;background:#fdf3f2;border:1px solid #e3bdb5;border-radius:8px;padding:10px 12px;font-size:.88rem;margin-bottom:10px"></div>
+<div id="seedBox">
+  <button data-seed="busy">Busy log</button>
+  <button data-seed="nolog" style="margin-left:8px">Roster, nothing scanned</button>
+  <button data-seed="gradebook" style="margin-left:8px">Gradebook history</button>
+  <button data-seed="fresh" style="margin-left:8px">Fresh install (wipe)</button>
+  <button id="seedRestore" style="margin-left:18px">Put my real data back</button>
+  <div id="seedStatus" style="font-size:.88rem;color:#6a7187;margin-top:8px"></div>
+</div>
+
 <div id="results"></div>
 <div id="summary"></div>
 
@@ -1696,6 +1710,109 @@ document.getElementById("busySampleBtn").addEventListener("click", function(){
 document.getElementById("busySampleLoad").addEventListener("click", function(){
   document.getElementById("pasteBox").value=JSON.stringify(buildBusySample(),null,2);
 });
+
+// ===== Open the app in a known state =====
+// Seeds localStorage and opens app.html on it. Driving the app into a given
+// state has come up once per layout bug — busy log, arranged seating, populated
+// gradebook — and was rebuilt from scratch each time. This is that, kept.
+//
+// SAME ORIGIN IS THE WHOLE MECHANISM. localStorage is per-origin, so this only
+// works when the harness and app.html are served from the same http origin.
+// Over file:// they are separate opaque origins and the seed lands somewhere the
+// app will never read, so the app opens on whatever it already had — silently
+// testing the wrong state. The buttons disable themselves there rather than
+// appearing to work.
+//
+// PROTECTING REAL DATA. This writes to the SAME key a rebbi's roster lives in.
+// Before the first seed the existing save is copied to SEED_BACKUP and can be
+// put back. Seeded saves carry __seeded:true so a second seed does NOT overwrite
+// that copy with sample data — without that flag, seeding twice would destroy
+// the backup and the real roster with it. __seeded is inert in the app: it is
+// not in `defaults`, nothing reads it, and load2fix ignores unknown fields.
+var SEED_KEY = "qrPointsData_v1";          // must match KEY in app.html
+var SEED_BACKUP = "qrPointsData_v1__preseed_backup";
+
+function seedStatus(msg){ document.getElementById("seedStatus").textContent = msg; }
+
+function seedAvailable(){
+  if (location.protocol === "file:") return "Opened as a file:// page — the harness and app.html do not share a localStorage here. Serve the repo over http and reload.";
+  try { localStorage.setItem("__seedprobe","1"); localStorage.removeItem("__seedprobe"); }
+  catch(e){ return "localStorage is blocked in this browser/context, so the app cannot be seeded."; }
+  return null;
+}
+
+function seedBuild(which){
+  if (which === "busy") return buildBusySample();
+  if (which === "gradebook") return buildGradebookSample();
+  if (which === "nolog") {
+    // Roster in, nothing scanned — day one after setup. Distinct from a fresh
+    // install, which has no students either and lands on the welcome screen.
+    var d = buildBusySample();
+    d.log = [];
+    Object.keys(d.scores).forEach(function(k){ d.scores[k] = 0; });
+    return d;
+  }
+  return null; // "fresh" — no data at all
+}
+
+function seedApply(which){
+  var why = seedAvailable();
+  if (why) { seedStatus(why); return; }
+
+  var existing = localStorage.getItem(SEED_KEY);
+  var isSeeded = false;
+  if (existing) {
+    try { isSeeded = !!JSON.parse(existing).__seeded; } catch(e){ isSeeded = false; }
+  }
+  // Only ever back up REAL data, never a previous seed.
+  if (existing && !isSeeded && !localStorage.getItem(SEED_BACKUP)) {
+    localStorage.setItem(SEED_BACKUP, existing);
+  }
+  if (existing && !isSeeded && !window.confirm(
+      "This will replace the data currently in this browser with sample data.\n\n" +
+      "A copy of what is there now has been kept, and \"Put my real data back\" restores it. " +
+      "Continue?")) {
+    seedStatus("Cancelled — nothing was changed.");
+    return;
+  }
+
+  var data = seedBuild(which);
+  if (data === null) {
+    localStorage.removeItem(SEED_KEY);
+    seedStatus("Wiped. Opening app.html as a first-run install…");
+  } else {
+    data.__seeded = true;
+    localStorage.setItem(SEED_KEY, JSON.stringify(data));
+    seedStatus("Seeded \"" + which + "\". Opening app.html…");
+  }
+  window.open("app.html", "_blank");
+}
+
+Array.prototype.forEach.call(document.querySelectorAll("#seedBox [data-seed]"), function(b){
+  b.addEventListener("click", function(){ seedApply(b.getAttribute("data-seed")); });
+});
+
+document.getElementById("seedRestore").addEventListener("click", function(){
+  var why = seedAvailable();
+  if (why) { seedStatus(why); return; }
+  var backup = localStorage.getItem(SEED_BACKUP);
+  if (!backup) { seedStatus("Nothing to restore — no real data was ever seeded over in this browser."); return; }
+  localStorage.setItem(SEED_KEY, backup);
+  localStorage.removeItem(SEED_BACKUP);
+  seedStatus("Restored. Your own data is back — reload app.html to see it.");
+});
+
+(function(){
+  var why = seedAvailable();
+  if (why) {
+    var box = document.getElementById("seedUnavailable");
+    box.style.display = "block";
+    box.textContent = why;
+    Array.prototype.forEach.call(document.querySelectorAll("#seedBox button"), function(b){ b.disabled = true; });
+  } else if (localStorage.getItem(SEED_BACKUP)) {
+    seedStatus("A copy of your real data is being held — \"Put my real data back\" will restore it.");
+  }
+})();
 
 function runCustomTest() {
   var raw = document.getElementById("pasteBox").value.trim();
