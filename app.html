@@ -296,16 +296,17 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      history dropdown is position:absolute so opening it overlays on top of
      the chart instead of pushing it down the page. */
   .seats-scanbar{position:relative; z-index:30; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 10px}
-  /* The input GROWS into whatever the recent-scan strip isn't using. It used to
-     be flex:0 1 200px — grow factor ZERO — so it was pinned at 200px however
-     wide the bar got, while .scan-strip took flex:1 and claimed every spare
-     pixel. On an established class nobody noticed: the strip is full of recent
-     scans, so the space looked used. On a BRAND-NEW install the strip is built
-     from data.log, which is empty, so the bar showed a stubby 200px box that
-     cut its own placeholder off mid-word ("Scan a QR code here (or ty") beside
-     a wide blank gap. Nothing was hiding to hold this open — the strip was
-     always claiming the room, just invisibly when it had nothing in it. */
-  .seats-scanbar #seatsScanInput{flex:1 1 240px; min-width:140px; font-size:.94rem; padding:5px 10px; border:1px dashed var(--line); border-radius:8px; background:#fbfbfd}
+  /* GROW ZERO, AND THAT IS THE INTENDED BEHAVIOUR — the input stays 200px
+     however wide the bar gets, and .scan-strip below takes every spare pixel so
+     the row holds as much scan history as possible.
+     The cost is known and accepted: on a fresh install, before there is any
+     history to fill the strip, the placeholder reads "Scan a QR code here (or
+     ty…" — it is cut off, beside empty space. That is deliberate. Widening the
+     input to fit its own placeholder costs the strip a history entry on every
+     established class, permanently, to tidy a screen a rebbi sees once.
+     This was changed in #150 and reverted; don't re-fix it without reading
+     that thread. */
+  .seats-scanbar #seatsScanInput{flex:0 1 200px; min-width:70px; font-size:.94rem; padding:5px 10px; border:1px dashed var(--line); border-radius:8px; background:#fbfbfd}
   .seats-pill{font-size:.79rem; font-weight:700; background:var(--brass-soft); color:#6b4d18; border-radius:999px; padding:3px 11px; white-space:nowrap; cursor:default}
   .seats-pill.clickable{cursor:pointer}
   .seats-pill.clickable:hover{background:var(--brass)}
@@ -317,12 +318,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* Scan + activity-change history strip.
      Entries fill available width; oldest fade out. Most recent is boldest.
      Activity-change events show as a pill instead of a name+delta row. */
-  /* Takes the width its entries actually need (basis auto) instead of flex:1,
-     which claimed all the free space even when it was empty and starved the
-     input next to it. Still shrinks and clips first when the bar is crowded —
-     entries are flex-shrink:0 and this clips them — so a long scan history
-     never squeezes the input below its min-width. */
-  .scan-strip{flex:0 1 auto; display:flex; align-items:center; gap:0; min-width:0; overflow:hidden}
+  /* flex:1 — basis ZERO, so the strip is sized by the space left over and never
+     by its contents. renderScanStrip() depends on that: it appends entries
+     until `strip.scrollWidth > strip.offsetWidth`, which only has an answer
+     while offsetWidth is a fixed target. Give this a content-based basis
+     (flex:0 1 auto) and the box grows to fit whatever is put in it, the fit
+     loop never trips, and the strip widens until the whole bar wraps. */
+  .scan-strip{flex:1; display:flex; align-items:center; gap:0; min-width:0; overflow:hidden}
   .scan-strip-entry{display:flex; align-items:center; gap:4px; white-space:nowrap; overflow:hidden; padding:0 10px; border-right:1px solid var(--line); flex-shrink:0; min-width:0; transition:opacity .15s}
   .scan-strip-entry:last-child{border-right:none}
   /* All text tokens — sized at primary level; opacity carries the fade */
