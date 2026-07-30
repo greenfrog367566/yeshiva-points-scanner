@@ -317,12 +317,41 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* Scan + activity-change history strip.
      Entries fill available width; oldest fade out. Most recent is boldest.
      Activity-change events show as a pill instead of a name+delta row. */
-  /* Takes the width its entries actually need (basis auto) instead of flex:1,
-     which claimed all the free space even when it was empty and starved the
-     input next to it. Still shrinks and clips first when the bar is crowded —
-     entries are flex-shrink:0 and this clips them — so a long scan history
-     never squeezes the input below its min-width. */
-  .scan-strip{flex:0 1 auto; display:flex; align-items:center; gap:0; min-width:0; overflow:hidden}
+  /* THE STRIP MUST BE SIZED BY THE SPACE LEFT OVER, NEVER BY ITS CONTENTS.
+     flex:1 1 0 — basis ZERO, so its width never depends on how many entries
+     are in it.
+
+     This is load-bearing for the JS that fills it. renderScanStrip() appends
+     entries one at a time and stops when `strip.scrollWidth > strip.offsetWidth`,
+     i.e. it asks the box "am I full yet?". That question only has an answer if
+     offsetWidth is a fixed target the content is measured against. It was
+     briefly flex:0 1 auto — basis AUTO — so the box grew to fit whatever was
+     put in it, scrollWidth never exceeded offsetWidth, the fit loop never
+     tripped, and the strip simply widened past the row until .seats-scanbar
+     (flex-wrap:wrap) wrapped it, taking the History button onto a second line.
+     min-width:0 does not prevent that: wrapping is decided from each item's
+     hypothetical size BEFORE any shrinking, so a basis of auto wraps the line
+     no matter how far the item could shrink afterwards.
+
+     The basis-auto attempt was fixing a real bug — the input was flex:0 1 200px
+     (grow ZERO) and stayed stubby beside a blank gap on a fresh install. That
+     is now fixed on the INPUT (flex:1 1 240px) where it belonged, not by
+     letting the strip size itself.
+
+     GROW FACTOR 3, not 1. Both this and the input grow, so the ratio decides how
+     many recent scans stay readable. At 1:1 the input took 701px of a 1400px
+     window and the strip got 461px — enough for exactly ONE entry once a name
+     is as long as "Menachem Mendel Rosenblatt". The input does not need that
+     room while there are scans to show: it only has to fit its placeholder
+     (~330px), and the case where it genuinely wants the whole bar is the empty
+     one, which :empty below hands it outright. */
+  .scan-strip{flex:3 1 0; display:flex; align-items:center; gap:0; min-width:0; overflow:hidden}
+  /* With no scans yet the strip still claims its grow share, leaving the input
+     next to a dead gap — the exact complaint the basis-auto change was chasing.
+     renderScanStrip() does innerHTML="" and appends nothing when data.log is
+     empty, so :empty is an exact test for "nothing recorded yet" and the input
+     gets the whole bar. */
+  .scan-strip:empty{display:none}
   .scan-strip-entry{display:flex; align-items:center; gap:4px; white-space:nowrap; overflow:hidden; padding:0 10px; border-right:1px solid var(--line); flex-shrink:0; min-width:0; transition:opacity .15s}
   .scan-strip-entry:last-child{border-right:none}
   /* All text tokens — sized at primary level; opacity carries the fade */

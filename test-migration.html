@@ -41,6 +41,12 @@
 <button id="gbSampleBtn">Download sample backup</button>
 <button id="gbSampleLoad" style="margin-left:8px">Load it into the box above</button>
 
+<h2 style="margin-top:30px;font-size:1.1rem">Busy-state sample (layout testing)</h2>
+<p style="font-size:.9rem;color:#6a7187">A shiur that has been <b>running a while</b>: 15 students, 40+ log entries, mixed activities and point values, and several deliberately long names so the recent-scans strip is as wide as it realistically gets. Restore this into the app to test any layout that behaves differently once there is real history in it.<br><br>
+<b>Why this exists.</b> Several layout bugs have now been fine in one data state and broken in the other — the scan strip (stubby input when empty / wrapped row when busy), the seating chart (arranged vs never-arranged), and the class sheet (one class vs a full roster). A fresh install is the easy state to test and it only ever shows you half the bugs. <b>Sample data lives here, never in app.html.</b></p>
+<button id="busySampleBtn">Download busy sample backup</button>
+<button id="busySampleLoad" style="margin-left:8px">Load it into the box above</button>
+
 <div id="results"></div>
 <div id="summary"></div>
 
@@ -1625,6 +1631,70 @@ document.getElementById("gbSampleBtn").addEventListener("click", function(){
 });
 document.getElementById("gbSampleLoad").addEventListener("click", function(){
   document.getElementById("pasteBox").value=JSON.stringify(buildGradebookSample(),null,2);
+});
+
+// ===== Busy-state sample =====
+// A class with real history in it. Built for LAYOUT testing, not migration:
+// the recent-scans strip, the History dropdown, Leader Board ordering and the
+// class sheet all behave differently once data.log is not empty, and a fresh
+// install cannot exercise any of it.
+//
+// Deliberate choices:
+//  - Long names. The strip sizes itself off the newest entries, so
+//    "Menachem Mendel Rosenblatt" is the realistic worst case, not padding.
+//  - Mixed deltas including negatives, so the +/- colouring is covered.
+//  - One undone entry, so the "(undone)" branch renders.
+//  - Newest first: data.log is unshift-ordered, and the strip reads log[0] as
+//    the primary entry. Building it oldest-first would test nothing.
+function buildBusySample(){
+  var names=[
+    "Menachem Mendel Rosenblatt","Yisroel Meir Friedman","Shneur Zalman Horowitz",
+    "Dovid Berkowitz","Moshe Klein","Yaakov Stern","Shimon Adler","Eliyahu Rosen",
+    "Nachum Weiss","Avrohom Yitzchok Landau","Chaim Baruch Silberstein","Levi Katz",
+    "Shmuel Brodsky","Tzvi Hirsch Neuman","Refoel Zalmanovitch"
+  ];
+  var students=names.map(function(n,i){ return {id:"S"+(201+i), name:n, group:(i%2===0?"Shiur Aleph":"Shiur Beis")}; });
+  var acts=[
+    {id:"a1",name:"On time",pts:1},
+    {id:"a2",name:"Davening nicely",pts:1},
+    {id:"a3",name:"Learning nicely",pts:2},
+    {id:"a4",name:"Helped a friend",pts:3},
+    {id:"a5",name:"Chazoro",pts:5},
+    {id:"a6",name:"Talking in shiur",pts:-2}
+  ];
+  var scores={}, log=[], now=Date.now();
+  students.forEach(function(s){ scores[s.id]=0; });
+  // 44 entries, newest first. i=0 is the most recent.
+  for(var i=0;i<44;i++){
+    var s=students[i%students.length];
+    var a=acts[(i*3)%acts.length];
+    log.push({
+      id:"busy-"+i.toString(36)+"-"+(1000+i),
+      ts: now - (i*7*60*1000),          // ~7 min apart, newest first
+      sid: s.id,
+      label: a.name,
+      delta: a.pts,
+      undone: (i===5)                    // one undone entry for that branch
+    });
+    if(i!==5) scores[s.id]=(scores[s.id]||0)+a.pts;
+  }
+  return {
+    version:4, school:"Sample Yeshiva", className:"Sample Shiur",
+    students:students, activities:acts, scores:scores, log:log,
+    currentClass:"", sheetUrl:"", autoSheet:false,
+    raffle:{mode:"auto",entries:{},winners:[]}
+  };
+}
+document.getElementById("busySampleBtn").addEventListener("click", function(){
+  var blob=new Blob([JSON.stringify(buildBusySample(),null,2)],{type:"application/json"});
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="busy-state-sample-backup.json";
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); },1000);
+});
+document.getElementById("busySampleLoad").addEventListener("click", function(){
+  document.getElementById("pasteBox").value=JSON.stringify(buildBusySample(),null,2);
 });
 
 function runCustomTest() {
