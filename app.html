@@ -1024,18 +1024,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
        row edge. Same rule the rest of the print CSS already uses on .label,
        .personal-qr-card, .point-card and .lb-row-compact. */
     body.print-seating .seat{min-height:1.5in;border:1px solid #999;break-inside:avoid;page-break-inside:avoid}
-    /* The codes block stays whole. Half a key on each page is worse than none. */
+    /* The codes block stays whole. Half a key on each page is worse than none.
+       It ALWAYS sits at the bottom, in every case — see the note in
+       renderSeatChartPrint() before reordering it. */
     body.print-seating .seat-print-activities-footer{break-inside:avoid;page-break-inside:avoid}
-    /* Overflow only: when the chart needs more than one page the codes are
-       hoisted above it, so page 1 always carries the thing the rebbi scans
-       from. Ordering, not restructuring — the DOM is unchanged, and when the
-       sheet fits (the common case) the class is absent and the order is exactly
-       as before. Requires the flex context below, which applies in print only. */
-    body.print-seating.seat-print-overflow #seatChartGrid{display:flex!important;flex-direction:column}
-    body.print-seating.seat-print-overflow .seat-print-title{order:0}
-    body.print-seating.seat-print-overflow .seat-print-activities-footer{order:1;margin-bottom:0.2in}
-    body.print-seating.seat-print-overflow .seat-front{order:2}
-    body.print-seating.seat-print-overflow .print-seat-grid{order:3}
     .seat-print-qr{width:55%;max-width:110px;margin:0 auto 6px}
     .seat-print-qr img,.seat-print-qr canvas{width:100%;height:auto;display:block}
     .seat-print-photo{display:flex;justify-content:center;margin:0 auto 6px}
@@ -13397,9 +13389,27 @@ nameLine
     var usableInches = seatPrintOrient==="landscape" ? 7.5 : 10;
     var fits = printInches <= usableInches;
     if(warnEl) warnEl.style.display = fits ? "none" : "block";
-    // Drives the overflow-only reordering in the print CSS. Set on <body> rather
-    // than the wrapper because the print rules are scoped to body.print-seating.
-    document.body.classList.toggle("seat-print-overflow", !fits);
+
+    /* THE ACTIVITY CODES GO AT THE BOTTOM, ALWAYS. Do not reorder them based on
+     * whether the chart fits.
+     *
+     * Moving them to the top when the chart overflows was tried and removed
+     * after seeing a real print. Two reasons, and the second is the one that is
+     * easy to miss:
+     *
+     *   1. The sheet's identity is "seating chart, codes underneath". Codes on
+     *      top reads as a different document, and a layout that rearranges
+     *      itself depending on roster size is less predictable than one that
+     *      never moves — a rebbi holding two pages simply knows the codes are
+     *      at the end.
+     *   2. It is SELF-DEFEATING. The codes block occupies about an inch and a
+     *      tenth at the top of page 1, which is space a seat row would have
+     *      used — so hoisting can push a row onto page 2 that would otherwise
+     *      have fitted, making the overflow it is reacting to worse.
+     *
+     * The accepted trade-off: when the chart overflows, page 1 carries seats
+     * only and the codes land on the last page. That is deliberate.
+     */
   }
   // @page can't be scoped by a body class, so landscape mode is applied by
   // briefly injecting its own <style> tag around the print action, removed
