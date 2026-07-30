@@ -2055,6 +2055,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <h2 class="view-title">Print my class sheet</h2>
     <p class="view-note no-print"><b>This is the one page you need to start scanning.</b> Every student's code sitting in his own seat, with the codes for your activities underneath. Print it, keep it on your desk or clipboard, and scan an activity code then a student — that's a whole scoring action in two scans.</p>
     <div class="pill-note no-print" id="seatAutoPlaceNote" style="display:none;margin-bottom:10px"></div>
+    <!-- The REAL seating editor, not a copy of it. renderTapPanelInto() already
+         renders into any container and is already called for the Scan tab and
+         the Dashboard precisely so the two cannot drift; this is a third
+         container, so there is still exactly one seating editor in the app. -->
+    <div class="card pad no-print" id="seatEditCard" style="margin-bottom:12px">
+      <div class="board-head"><h3>Seating — drag to rearrange</h3></div>
+      <div id="classSheetTapPanelBody"></div>
+    </div>
     <div class="toolbar no-print">
       <span class="seg" id="seatPrintOrient">
         <button data-orient="portrait" class="active">Portrait (vertical)</button>
@@ -3823,6 +3831,18 @@ function setupRoster() {
     }
   }
   function activateTab(tab){
+    // Leaving the class sheet DISARMS arranging. Every other bit of seating
+    // state is deliberately shared between the three panels, but this one is
+    // different in kind: left armed, drag-and-drop stays live on the Dashboard
+    // during a lesson, where one stray touch on a smartboard moves a boy's seat
+    // — a silent data change caused by something the rebbi did on a different
+    // page ten minutes earlier. Arranging is a thing you are doing right now,
+    // so it ends when you leave the page you were doing it on.
+    if(activeTabName==="printSeats" && tab!=="printSeats" && data.seatArranging){
+      data.seatArranging=false;
+      save();
+      renderTapPanel();
+    }
     var group=groupOfTab(tab);
     activeGroupName=group; activeTabName=tab;
     lastTabInGroup[group]=tab;
@@ -3904,7 +3924,12 @@ function setupRoster() {
       document.querySelectorAll("#seatPrintOrient button").forEach(function(b){
         b.classList.toggle("active", b.dataset.orient===seatPrintOrient);
       });
-      renderSeatChartPrint();
+      // renderTapPanel(), not renderSeatChartPrint(), and it must come AFTER the
+      // auto-place above: it redraws the embedded seating editor with the layout
+      // auto-place just built, and then redraws the preview itself (see the tail
+      // of renderTapPanel). Calling renderSeatChartPrint() here as well would
+      // regenerate a QR code per student for nothing.
+      renderTapPanel();
     }
     if(tab==="printPoints") renderPointsPrint();
     if(tab==="settings") renderSettings();
@@ -6623,9 +6648,23 @@ function setupRoster() {
   // called once for each place it lives (the Seats tab, and Dashboard's
   // "Class list" panel), so both stay in sync automatically: they read the
   // exact same data.tapViewMode/data.seatArranging/etc., just drawn twice.
-  function renderTapPanelInto(bodyId, toggleId){
+  /* `opts` lets one instance be a DEDICATED seating editor rather than the
+   * general tap panel:
+   *   forceSeating — always draw the chart, whatever data.tapViewMode says, and
+   *                  drop the List/Seating buttons. Without it, a rebbi whose
+   *                  Dashboard is set to "List" would open the class sheet and
+   *                  find a list where the seating editor should be. It also
+   *                  ignores data.tapPanelOpen: a collapsed Dashboard panel must
+   *                  not silently hide the editor on a page opened to use it.
+   *   hidePrint    — drop the "Print seating chart" shortcut, which is noise on
+   *                  a page that is itself the print page.
+   * Everything else stays shared, deliberately: one rebbi, one classroom, one
+   * set of settings, and the same consistency the two existing copies have.
+   */
+  function renderTapPanelInto(bodyId, toggleId, opts){
+    opts=opts||{};
     var bodyEl=$(bodyId); if(!bodyEl) return;
-    var open = data.tapPanelOpen!==false;
+    var open = opts.forceSeating ? true : (data.tapPanelOpen!==false);
     bodyEl.style.display = open ? "block" : "none";
     var toggleEl=$(toggleId); if(toggleEl) toggleEl.textContent = open ? "Hide" : "Show";
     if(!open) return;
@@ -6634,14 +6673,16 @@ function setupRoster() {
     var toolbar=el("div","seat-toolbar");
     // Seating chart not shown in Teach / Shorashim context
     var allowSeating=true; // teachTapPanelBody/shorTapPanelBody no longer exist; all remaining tap panels allow seating view
-    var effViewMode=(allowSeating ? data.tapViewMode : "list");
-    var listBtn=el("button","seat-modebtn"+(effViewMode!=="seating"?" active":""),"List");
-    listBtn.addEventListener("click", function(){ data.tapViewMode="list"; save(); renderTapPanel(); });
-    toolbar.appendChild(listBtn);
-    if(allowSeating){
-      var seatBtn=el("button","seat-modebtn"+(effViewMode==="seating"?" active":""),"Seating chart");
-      seatBtn.addEventListener("click", function(){ data.tapViewMode="seating"; save(); renderTapPanel(); });
-      toolbar.appendChild(seatBtn);
+    var effViewMode=opts.forceSeating ? "seating" : (allowSeating ? data.tapViewMode : "list");
+    if(!opts.forceSeating){
+      var listBtn=el("button","seat-modebtn"+(effViewMode!=="seating"?" active":""),"List");
+      listBtn.addEventListener("click", function(){ data.tapViewMode="list"; save(); renderTapPanel(); });
+      toolbar.appendChild(listBtn);
+      if(allowSeating){
+        var seatBtn=el("button","seat-modebtn"+(effViewMode==="seating"?" active":""),"Seating chart");
+        seatBtn.addEventListener("click", function(){ data.tapViewMode="seating"; save(); renderTapPanel(); });
+        toolbar.appendChild(seatBtn);
+      }
     }
 
     if(effViewMode==="seating"){
@@ -6698,7 +6739,8 @@ function setupRoster() {
         printOpts.style.display=isOpen?"none":"inline-flex";
       });
       printWrap.appendChild(printBtn); printWrap.appendChild(printOpts);
-      setupRow.appendChild(printWrap);
+      // Offered everywhere except the print page itself.
+      if(!opts.hidePrint) setupRow.appendChild(printWrap);
 
       var arrangeBtn=el("button","btn btn-sm seat-arrange-toggle", data.seatArranging?"Done arranging":"Arrange seats");
       arrangeBtn.addEventListener("click", function(){
@@ -6767,8 +6809,15 @@ function setupRoster() {
   function renderTapPanel(){
     renderTapPanelInto("tapPanelBody", null);
     renderTapPanelInto("dashTapPanelBody", null);
+    // The class sheet's own copy — a dedicated editor, so it always shows the
+    // chart and never offers to print the page it is already on.
+    renderTapPanelInto("classSheetTapPanelBody", null, {forceSeating:true, hidePrint:true});
     // teachTapPanelBody removed — no tap panel on Pesukim/Mishnayos pages
     // shorTapPanelBody removed — no tap panel on Shorashim page
+    // Moving a boy in the editor has to redraw the sheet above it, or the rebbi
+    // rearranges seats and the preview he is checking them against stays stale.
+    var pv=$("view-printSeats");
+    if(pv && pv.classList.contains("active")) renderSeatChartPrint();
   }
 
   function renderSeatGrid(body, studs){
