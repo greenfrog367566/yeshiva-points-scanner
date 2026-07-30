@@ -186,399 +186,438 @@ function migrateSets(){
 
 // The full load2fix — must match app.html exactly
 function load2fix(){
-  ["students","activities","log"].forEach(function(k){ if(!Array.isArray(data[k])) data[k]=[]; });
-  data.log.forEach(function(e){ if(e && !e.id) e.id=newId(); });
-  if(!data.scores) data.scores = {};
-  if(!data.school) data.school = "Sample School";
-  if(!data.className) data.className = "Sample Class 1";
-  if(typeof data.sheetUrl!=="string") data.sheetUrl="";
-  if(typeof data.autoSheet!=="boolean") data.autoSheet=true;
-  if(!data.raffle||typeof data.raffle!=="object"||Array.isArray(data.raffle)) data.raffle={mode:"auto",entries:{},winners:[]};
-  if(!data.raffle.entries||typeof data.raffle.entries!=="object"||Array.isArray(data.raffle.entries)) data.raffle.entries={};
-  if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[];
-  if(data.raffle.mode!=="manual") data.raffle.mode="auto";
-  if(!data.raffle.adjust||typeof data.raffle.adjust!=="object") data.raffle.adjust={};
-  if(!data.raffle.removed||typeof data.raffle.removed!=="object") data.raffle.removed={};
-  if(typeof data.raffle.spreadTickets!=="boolean") data.raffle.spreadTickets=false;
-  if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1};
-  if(!data.pesukimDone) data.pesukimDone={};
-  if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1};
-  if(!data.pasukGameBest) data.pasukGameBest={};
-  if(!data.pasukPhrases) data.pasukPhrases={};
-  if(!data.pasukPointed) data.pasukPointed={};
-  if(!Array.isArray(data.textSets)) data.textSets=[];
-  migrateSets();
-  if(!Array.isArray(data.shorashim)) data.shorashim=[];
-  if(!data.game||typeof data.game!=="object") data.game={points:{}};
-  if(!data.game.points) data.game.points={};
-  if(!data.shorMatchBest) data.shorMatchBest={};
-  if(!data.gameBoards) data.gameBoards={};
-  if(!data.auctions||typeof data.auctions!=="object") data.auctions={};
-  if(data.auction && typeof data.auction==="object" && !data.auctionsMigrated){
-    data.auctions[""]=data.auction; data.auctionsMigrated=true;
-  }
-  delete data.auction;
-  if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]};
-  if(!Array.isArray(data.store.items)) data.store.items=[];
-  if(!Array.isArray(data.store.log)) data.store.log=[];
-  if(typeof data.store.autoReceived!=="boolean") data.store.autoReceived=false;
-  data.store.log.forEach(function(p){ if(typeof p.received!=="boolean") p.received=true; });
-  if(!data.earned) data.earned={};
-  if(!data.weekly) data.weekly={};
-  if(typeof data.standingsActivity!=="string") data.standingsActivity="";
-  if(typeof data.raffleActivity!=="string") data.raffleActivity="";
-  if(["all","activity","contest"].indexOf(data.raffleSourceMode)<0) data.raffleSourceMode="all";
-  if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={groupMode:"all", groupKeys:[], format:"tiles"};
-  if(typeof data.pointsPrint.format!=="string" || data.pointsPrint.format==="grid") data.pointsPrint.format="tiles";
-  if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[];
-  if(data.pointsPrint.groupMode!=="custom") data.pointsPrint.groupMode="all";
-  if(!data.earnedSeeded){
-    (data.log||[]).slice().reverse().forEach(function(e){
-      if(e && e.delta>0 && e.kind!=="refund") recordEarn(e.sid, e.label, e.delta, e.ts);
-    });
-    data.earnedSeeded=true;
-  }
-  if(typeof data.quizDelay!=="number") data.quizDelay=1;
-  if(typeof data.gameAuto!=="boolean") data.gameAuto=false;
-  if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5;
-  if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()};
-  if(!data.passes.used||typeof data.passes.used!=="object") data.passes.used={};
-  // Settable passes-per-student, and the per-student use count.
-  //
-  // These live at the TOP LEVEL, deliberately NOT inside data.passes. Phase 2a
-  // promises that data.attendance / data.hw / data.trackerLog / data.passes
-  // come through a load byte-identical, and the harness asserts it — adding
-  // keys inside data.passes would break that guarantee for the sake of tidier
-  // nesting. It also keeps a clean boundary for 2c, which converts data.passes
-  // into a tracked item and should not have to tell old records apart from
-  // new sidecar fields inside the same object.
-  //
-  // Both purely additive with safe defaults: cap 1 is exactly how every save
-  // behaved before this existed, so no DATA_VERSION bump and nothing to convert.
-  if(typeof data.passCap!=="number" || !isFinite(data.passCap) || data.passCap<1) data.passCap=1;
-  if(!data.passCount||typeof data.passCount!=="object"||Array.isArray(data.passCount)) data.passCount={};
-  // Anyone holding a used-record from before the cap existed backfills to
-  // exactly 1 use, so their state is unchanged. data.passes is READ here and
-  // never written.
-  Object.keys(data.passes.used).forEach(function(sid){
-    var n=data.passCount[sid];
-    if(typeof n!=="number" || !isFinite(n) || n<1) data.passCount[sid]=1;
-  });
-  if(typeof data.fpCompact!=="boolean") data.fpCompact=false;
-  if(typeof data.currentClass!=="string") data.currentClass="";
-  if(typeof data.labelFormat!=="string") data.labelFormat="avery5160";
-  if(typeof data.promptStyle!=="string") data.promptStyle="";
-  if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
-  if(!data.seating||typeof data.seating!=="object") data.seating={};
-  if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
-  if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
-  if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
-  if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
-  if(typeof data.fullWidth!=="boolean") data.fullWidth=false;
-  if(typeof data.sixSeven!=="boolean") data.sixSeven=false;
-  // Instant (no-spin) toggles — one per random-selection tool. Additive
-  // booleans: absent on every existing save, so they backfill to false and
-  // old data keeps the current animated behavior untouched.
-  if(typeof data.pickerInstant!=="boolean") data.pickerInstant=false;
-  if(typeof data.spinnerInstant!=="boolean") data.spinnerInstant=false;
-  if(typeof data.raffleInstant!=="boolean") data.raffleInstant=false;
-  // Shared Picker skip preference (wheel + seating chart). Defaults ON — see
-  // the v2->v3 migration note. Belt-and-braces alongside that migration, so a
-  // save that somehow arrives already stamped v3 without the field still gets it.
-  if(typeof data.pickerSkip!=="boolean") data.pickerSkip=true;
-  if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOpts={avatarMode:"qr", showPoints:false};
-  if(typeof data.seatPrintOpts.avatarMode!=="string"){
-    data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
-  }
-  if(["qr","photo","none"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
-  delete data.seatPrintOpts.showQR;
-  if(typeof data.seatPrintOpts.showPoints!=="boolean") data.seatPrintOpts.showPoints=false;
-  if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
-  if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
-  if(!Array.isArray(data.pastContests)) data.pastContests=[];
-  // Saved contests used to store metadata only, and their numbers were
-  // recomputed from data.log on every render — so they decayed to nothing as
-  // the 500-entry log cap rolled past them. Back-fill a results snapshot for
-  // any saved contest that has none, recomputing from whatever of its entries
-  // are STILL in the log. This is a rescue: it recovers exactly what has not
-  // yet been lost, and every load that happens before this ships recovers
-  // less. Purely additive — two new fields on each saved-contest record, no
-  // DATA_VERSION bump, and nothing existing is read destructively, renamed or
-  // removed.
-  //
-  // A contest whose entries are already gone gets an empty snapshot rather
-  // than none: `{}` records "we looked, and there was nothing left to save",
-  // which stops every later load from re-walking the log for it and lets the
-  // card tell the rebbi the truth instead of implying no points were scored.
-  data.pastContests.forEach(function(pc){
-    if(!pc || typeof pc!=="object") return;
-    if(pc.totals && typeof pc.totals==="object" && !Array.isArray(pc.totals)) return;
-    var totals={}, n=0;
-    data.log.forEach(function(e){
-      if(e.contestId!==pc.id || e.undone || e.kind==="correction") return;
-      totals[e.sid]=(totals[e.sid]||0)+(e.delta||0);
-      n++;
-    });
-    pc.totals=totals;
-    if(typeof pc.entryCount!=="number" || !isFinite(pc.entryCount)) pc.entryCount=n;
-  });
-  if(data.contest!==null && (typeof data.contest!=="object" || !data.contest.startTs)) data.contest=null;
-  if(data.contest){
-    if(typeof data.contest.id!=="string") data.contest.id=newId();
-    if(data.contest.mode!=="contestOnly") data.contest.mode="both";
-    if(typeof data.contest.counting!=="boolean") data.contest.counting=true;
-    if(typeof data.contest.ended!=="boolean") data.contest.ended=false;
-    if(typeof data.contest.merged!=="boolean") data.contest.merged=false;
-  }
-  if(typeof data.standCustomFrom!=="string") data.standCustomFrom="";
-  if(typeof data.standCustomTo!=="string") data.standCustomTo="";
-  if(typeof data.studCustomFrom!=="string") data.studCustomFrom="";
-  if(typeof data.studCustomTo!=="string") data.studCustomTo="";
-  // Gradebook view state (Phase 2b). Purely additive — five preference
-  // fields, no DATA_VERSION bump, nothing existing read or converted.
-  // gbExcluded stores the items HIDDEN rather than the ones shown, so a
-  // tracked item added later appears as a column on its own. That is the
-  // whole point of the 2a shell and an "included" list would quietly break it.
-  if(!data.gbExcluded || typeof data.gbExcluded!=="object" || Array.isArray(data.gbExcluded)) data.gbExcluded={};
-  if(["today","7d","30d","custom"].indexOf(data.gbPeriod)<0) data.gbPeriod="7d";
-  if(typeof data.gbFrom!=="string") data.gbFrom="";
-  if(typeof data.gbTo!=="string") data.gbTo="";
-  if(typeof data.gbItemsOpen!=="boolean") data.gbItemsOpen=false;
-  ensureScanLayout();
-  if(typeof data.teachRepeatMode!=="boolean") data.teachRepeatMode=true;
-  if(typeof data.teachFlipKeys!=="boolean") data.teachFlipKeys=false;
-  if(typeof data.teachFlipCols!=="boolean") data.teachFlipCols=false;
-  if(typeof data.menuLabelFormat!=="string") data.menuLabelFormat="tiles";
-  if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages";
-  if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
-  if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
-  if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
-  if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
-  if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
-  if(typeof data.grade!=="string") data.grade="";
-  if(!data.features||typeof data.features!=="object") data.features={};
-  if(typeof data.features.shulchani!=="boolean") data.features.shulchani=true;
-  if(typeof data.features.chavrusa!=="boolean") data.features.chavrusa=false;
-  if(typeof data.features.learningType!=="string") data.features.learningType="";
-  if(typeof data.wizardLearning==="undefined") data.wizardLearning=null;
-  if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}};
-  if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={};
-  if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={};
-  // Phase 1: remap old group names. "tools"/"setup" merged into "manage";
-  // "print" dissolved (tabs accessed via buttons). Clean up stale keys.
-  delete data.navHidden.groups.tools;
-  delete data.navHidden.groups.setup;
-  delete data.navHidden.groups.print;
-  // Seats tab no longer exists — remove any saved hidden state for it
-  delete data.navHidden.tabs.seats;
-  // Hide Contest pending the lifecycle rework (#133). ONE-SHOT, exactly like
-  // hwActivitySeeded / passActivitySeeded: it hides the tab once, then never
-  // touches the setting again — so a rebbi who deliberately switches Contest
-  // back on in Settings keeps it on through every future load. Sits here,
-  // after the nav guards above, so data.navHidden.tabs is known to be a real
-  // object by this point.
-  //
-  // HIDDEN, NOT REMOVED. No contest code is deleted: contests still tag
-  // scans, saved contests keep their totals, and the merge path is untouched.
-  // Only the surfaces are gated, all from this one setting.
-  if(!data.contestHiddenSeeded){
-    data.navHidden.tabs.contest=true;
-    data.contestHiddenSeeded=true;
-  }
-  if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
-  if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
-  if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
-  if(typeof data.shulchaniMode!=="boolean") data.shulchaniMode=false;
-  if(typeof data.showPrutot!=="boolean") data.showPrutot=false;
-  if(typeof data.snackSeconds!=="number" || data.snackSeconds<=0) data.snackSeconds=420;
-  if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerExcluded={};
-  if(!Array.isArray(data.spinnerSavedLists)) data.spinnerSavedLists=[];
-  if(!data.attendance||typeof data.attendance!=="object") data.attendance={};
-  if(!data.hw||typeof data.hw!=="object") data.hw={};
-  if(!Array.isArray(data.trackerLog)) data.trackerLog=[];
-  if(typeof data.trackerActId!=="string") data.trackerActId="";
-  data.activities.forEach(function(a){ if(typeof a.tracked!=="boolean") a.tracked=false; });
-  if(!data.hwActivitySeeded){
-    data.activities.push({id:nextActId(), name:"Homework Checked", pts:0, tracked:true, groups:[]});
-    data.hwActivitySeeded=true;
-  }
-  // Bathroom Pass as a tracked 0-point activity, purely so it has an id to
-  // build its Record-tab button and its ACT:/PA: QR codes from. Same shape and
-  // same one-shot flag as Homework Checked above, so a teacher who deletes the
-  // button doesn't get it back on the next load. Pass usage itself still lives
-  // in data.passes — this activity is a handle, not a second store.
-  if(!data.passActivitySeeded){
-    data.activities.push({id:nextActId(), name:PASS_ACT_NAME, pts:0, tracked:true, groups:[]});
-    data.passActivitySeeded=true;
-  }
-  // "Prize Received" used to be a standalone tracked activity here, but that
-  // had no real link to an actual Store purchase. Superseded by a per-purchase
-  // "received" checkbox on the Store's own purchase log (see storeReceived
-  // backfill below). Any already-seeded copy from that earlier version is
-  // left alone if present — harmless, just no longer created for new data.
-
-  /* ----- Tracked Items shell (Phase 2a). Purely additive. -------------
-   * The presets below seed EMPTY. Nothing here reads or converts an old
-   * store; the conversion is a separate, later block.
-   *
-   * data.hw, data.trackerLog and data.passes are still untouched by every
-   * line in this function — 2c converts Attendance only, and those three
-   * stay parked exactly as 2a left them, still driving their own tabs.
-   *
-   * data.attendance is now READ, once, by the Phase 2c block at the end of
-   * this function. Read, never written: it is still byte-identical coming
-   * out of a load, and the Attendance tab still owns it.
-   */
-  if(!Array.isArray(data.trackedItems)) data.trackedItems=[];
-  if(!data.trackedData || typeof data.trackedData!=="object" || Array.isArray(data.trackedData)) data.trackedData={};
-
-  // One-shot seeding of the four presets, mirroring hwActivitySeeded /
-  // passActivitySeeded above: a rebbi who deletes a preset keeps it deleted,
-  // and an item they have since renamed or reconfigured is never reset.
-  if(!data.trackedItemsSeeded){
-    var seedItems=[];
-    seedItems.push({ id:"ti-attendance", name:"Attendance", method:"preselect",
-      config:{ options:["present","late","absent"], "default":"present" } });
-    // Homework is a FOUR-state cycle now, not the old boolean. "unchecked"
-    // (not collected) and "no credit" (handed in, below standard) are
-    // genuinely different facts and are not synonyms. Order matters: this
-    // is the cycle order, and it wraps from "no credit" to "unchecked".
-    seedItems.push({ id:"ti-homework", name:"Homework", method:"preselect",
-      config:{ options:["unchecked","full credit","partial credit","no credit"], "default":"unchecked" } });
-    // One count item per existing tracked activity, carrying its name.
-    // "Homework Checked" and the Bathroom Pass activity are skipped on
-    // purpose: both are tracked:true activities, but each already has its
-    // own preset here with the right shape. Without this skip they would
-    // each also get a second, wrong-shaped count item.
-    data.activities.forEach(function(a){
-      if(!a || a.tracked!==true) return;
-      if(a.name==="Homework Checked" || a.name===PASS_ACT_NAME) return;
-      seedItems.push({ id:"ti-act-"+a.id, name:a.name, method:"count", config:{ step:1 } });
-    });
-    seedItems.push({ id:"ti-pass", name:PASS_ACT_NAME, method:"limited", config:{ cap:1 } });
-    // Defensive: the one-shot flag should make a collision impossible, but a
-    // restored backup could arrive carrying these ids already.
-    var haveTi={}; data.trackedItems.forEach(function(it){ if(it && it.id) haveTi[it.id]=1; });
-    seedItems.forEach(function(it){ if(!haveTi[it.id]) data.trackedItems.push(it); });
-    data.trackedItemsSeeded=true;
-  }
-
-  // Shape guards. An item whose method we do not recognise is left strictly
-  // alone — it may come from a newer version, and silently "fixing" it would
-  // be the data loss this whole file exists to prevent.
-  data.trackedItems.forEach(function(it){
-    if(!it || typeof it!=="object") return;
-    if(typeof it.name!=="string") it.name="";
-    if(!it.config || typeof it.config!=="object" || Array.isArray(it.config)) it.config={};
-    var spec=TRACKED_METHODS[it.method];
-    if(spec) spec.fill(it.config);
-  });
-  Object.keys(data.trackedData).forEach(function(itemId){
-    var per=data.trackedData[itemId];
-    if(!per || typeof per!=="object" || Array.isArray(per)){ data.trackedData[itemId]={}; return; }
-    Object.keys(per).forEach(function(sid){ if(!Array.isArray(per[sid])) per[sid]=[]; });
-  });
-
-  /* ----- Attendance conversion (Phase 2c). Additive, one-shot. ---------
-   * Reads data.attendance and writes the same records into the tracked
-   * item "ti-attendance", so a rebbi's real attendance history shows up in
-   * the Gradebook instead of the empty column 2a left there.
-   *
-   * data.attendance IS NOT MODIFIED. Not one byte — no status rewritten, no
-   * timestamp stamped, no day object created. It stays parked exactly as 2a
-   * left it and keeps driving the Attendance tab, which is unchanged. This
-   * is a READ, and Test 10 in test-migration.html asserts it stays one.
-   *
-   * WHY NO DATA_VERSION BUMP: nothing existing is converted in place. This
-   * derives a second, new store from an old one and leaves the old one
-   * alone — exactly the shape of the earnedSeeded backfill above, which
-   * walks data.log to build data.earned without a version bump either.
-   *
-   * TIMESTAMPS ARE COPIED, NEVER MINTED. rec.ts goes across verbatim. The
-   * Sheet's send diff is `rec.ts > day._sentAt` and the Attendance Log has
-   * no dedup, so touching a stored ts would re-push a rebbi's history into
-   * their Sheet as duplicate rows. Nothing here writes a ts at all.
-   *
-   * WHAT IS DELIBERATELY DROPPED: any record with no real numeric ts.
-   * renderAttendance() auto-writes {status:"present", ts:null} for every
-   * unmarked student the moment the tab is merely LOOKED AT. Those are
-   * assumptions, not observations, and must not enter the gradebook as
-   * attendance history. Only records someone actually marked come across.
-   * (Known gap: on a day that was SENT, sendAttendance() stamped a real ts
-   * onto those auto-filled records, making them indistinguishable from
-   * explicit marks. Those do convert. There is no way to tell them apart
-   * after the fact.)
-   *
-   * ALL THREE STATES SURVIVE. present / late / absent are three recorded
-   * facts with three Sheet statuses; none is collapsed into another. An
-   * unrecognised status is copied across verbatim rather than dropped or
-   * "repaired" — same open-enum rule the tracked methods follow.
-   *
-   * The `date` field carries the school day the record is ABOUT, which is
-   * not always the day it was typed: a rebbi who pages back to Monday on
-   * Wednesday to fix a record produces dateKey Monday with a Wednesday ts.
-   * Without this the Gradebook, which derives its column from e.ts, would
-   * file that mark on the wrong day. Additive on the entry, and readers
-   * that don't know the field simply fall back to ts.
-   *
-   * IDEMPOTENT BY CONSTRUCTION, not just by the flag. Every entry is keyed
-   * date@ts against what is already in the item, so a second run — a
-   * restored backup, a corrupted receipt — cannot duplicate a record.
-   *
-   * The receipt in data.attConversion is the "way back": it records what
-   * came across and what did not, so the numbers can be checked against the
-   * Attendance tab rather than taken on trust.
-   */
-  if(!data.attConversion || typeof data.attConversion!=="object" || Array.isArray(data.attConversion)){
-    // Materialized lazily, on the first record that actually converts. A
-    // brand-new save has no attendance, and creating an empty container for
-    // it would break 2a's "trackedData starts empty" contract for a rebbi
-    // who has nothing to convert. (Any corrupt value here was already
-    // repaired to {} by the shape guard above, so this is either absent or
-    // a real object.)
-    var attOut=data.trackedData["ti-attendance"];
-    if(attOut && (typeof attOut!=="object" || Array.isArray(attOut))) attOut=null;
-    var attKey=function(e){ return (e && typeof e.date==="string" ? e.date : "")+"@"+(e?e.ts:""); };
-    var attSeen={};
-    if(attOut) Object.keys(attOut).forEach(function(sid){
-      if(!Array.isArray(attOut[sid])) return;
-      var m=attSeen[sid]={};
-      attOut[sid].forEach(function(e){ if(e) m[attKey(e)]=1; });
-    });
-    var attStats={ ts:Date.now(), days:0, converted:0, droppedNoTs:0, skippedShape:0, alreadyPresent:0 };
-    var attTouched={};
-    Object.keys(data.attendance).sort().forEach(function(dk){
-      var day=data.attendance[dk];
-      if(!day || typeof day!=="object" || Array.isArray(day)) return;
-      attStats.days++;
-      Object.keys(day).forEach(function(sid){
-        // _sentAt and _lastSendCount sit alongside student ids in this very
-        // object. They are day metadata, not students.
-        if(sid.charAt(0)==="_") return;
-        var rec=day[sid];
-        if(!rec || typeof rec!=="object" || Array.isArray(rec) || typeof rec.status!=="string"){ attStats.skippedShape++; return; }
-        if(typeof rec.ts!=="number" || !isFinite(rec.ts)){ attStats.droppedNoTs++; return; }
-        var entry={ value:rec.status, ts:rec.ts, date:dk };
-        var seen=attSeen[sid] || (attSeen[sid]={});
-        if(seen[attKey(entry)]){ attStats.alreadyPresent++; return; }
-        seen[attKey(entry)]=1;
-        // If the rebbi deleted the Attendance preset, the records still land
-        // under its id. Unread is recoverable; unwritten is not.
-        if(!attOut) attOut=data.trackedData["ti-attendance"]={};
-        if(!Array.isArray(attOut[sid])) attOut[sid]=[];
-        attOut[sid].push(entry);
-        attTouched[sid]=1;
-        attStats.converted++;
-      });
-    });
-    // trackedData keeps an ORDERED list per student — last entry is current.
-    // Days arrive sorted, but a merge into an existing list needs the sort.
-    Object.keys(attTouched).forEach(function(sid){
-      attOut[sid].sort(function(a,b){ return (a.ts||0)-(b.ts||0); });
-    });
-    data.attConversion=attStats;
-  }
+["students","activities","log"].forEach(function(k){ if(!Array.isArray(data[k])) data[k]=[]; });
+// Backfill a stable id onto any legacy log entry that predates ids —
+// the Sheet's duplicate-scan protection ("Resync all scans") keys on
+// this id, so id-less entries were re-appended on every single resync.
+data.log.forEach(function(e){ if(e && !e.id) e.id=newId(); });
+if(!data.scores) data.scores = {};
+if(!data.school) data.school = "Sample School";
+if(!data.className) data.className = "Sample Class 1";
+if(typeof data.sheetUrl!=="string") data.sheetUrl="";
+if(typeof data.autoSheet!=="boolean") data.autoSheet=true;
+if(!data.raffle||typeof data.raffle!=="object"||Array.isArray(data.raffle)) data.raffle={mode:"auto",entries:{},winners:[]};
+if(!data.raffle.entries||typeof data.raffle.entries!=="object"||Array.isArray(data.raffle.entries)) data.raffle.entries={};
+if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[];
+if(data.raffle.mode!=="manual") data.raffle.mode="auto";
+if(!data.raffle.adjust||typeof data.raffle.adjust!=="object") data.raffle.adjust={};
+if(!data.raffle.removed||typeof data.raffle.removed!=="object") data.raffle.removed={};
+if(typeof data.raffle.spreadTickets!=="boolean") data.raffle.spreadTickets=false;
+if(!data.pasukSet) data.pasukSet={label:"",ref:"",from:1,to:1};
+if(!data.pesukimDone) data.pesukimDone={};
+if(!data.pesukAward||typeof data.pesukAward!=="object") data.pesukAward={on:false,pts:1};
+if(!data.pasukGameBest) data.pasukGameBest={};
+if(!data.pasukPhrases) data.pasukPhrases={};
+if(!data.pasukPointed) data.pasukPointed={};
+if(!Array.isArray(data.textSets)) data.textSets=[];
+migrateSets();
+if(!Array.isArray(data.shorashim)) data.shorashim=[];
+if(!data.game||typeof data.game!=="object") data.game={points:{}};
+if(!data.game.points) data.game.points={};
+if(!data.shorMatchBest) data.shorMatchBest={};
+if(!data.gameBoards) data.gameBoards={};
+if(!data.auctions||typeof data.auctions!=="object") data.auctions={};
+if(data.auction && typeof data.auction==="object" && !data.auctionsMigrated){
+  data.auctions[""]=data.auction; data.auctionsMigrated=true;
 }
+delete data.auction;
+if(!data.store||typeof data.store!=="object") data.store={items:[],log:[]};
+if(!Array.isArray(data.store.items)) data.store.items=[];
+if(!Array.isArray(data.store.log)) data.store.log=[];
+// "Received" fulfillment tracking on Store purchases. Auto-checked on new
+// purchases only if the teacher has turned that setting on (default off,
+// since the whole point is usually to track prizes still owed). Any
+// purchase logged before this feature existed is assumed already handed
+// over — defaulting those to received:true avoids retroactively flagging
+// old, already-resolved purchases as newly "pending."
+if(typeof data.store.autoReceived!=="boolean") data.store.autoReceived=false;
+data.store.log.forEach(function(p){ if(typeof p.received!=="boolean") p.received=true; });
+if(!data.earned) data.earned={};
+if(!data.weekly) data.weekly={};
+if(typeof data.standingsActivity!=="string") data.standingsActivity="";
+if(typeof data.raffleActivity!=="string") data.raffleActivity="";
+if(["all","activity","contest"].indexOf(data.raffleSourceMode)<0) data.raffleSourceMode="all";
+if(!data.pointsPrint||typeof data.pointsPrint!=="object") data.pointsPrint={groupMode:"all", groupKeys:[], format:"tiles"};
+if(typeof data.pointsPrint.format!=="string" || data.pointsPrint.format==="grid") data.pointsPrint.format="tiles";
+if(!Array.isArray(data.pointsPrint.groupKeys)) data.pointsPrint.groupKeys=[];
+if(data.pointsPrint.groupMode!=="custom") data.pointsPrint.groupMode="all";
+if(!data.earnedSeeded){
+  (data.log||[]).slice().reverse().forEach(function(e){
+    if(e && e.delta>0 && e.kind!=="refund") recordEarn(e.sid, e.label, e.delta, e.ts);
+  });
+  data.earnedSeeded=true;
+}
+if(typeof data.quizDelay!=="number") data.quizDelay=1;
+if(typeof data.gameAuto!=="boolean") data.gameAuto=false;
+if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5;
+if(!data.passes||typeof data.passes!=="object") data.passes={used:{},reset:Date.now()};
+if(!data.passes.used||typeof data.passes.used!=="object") data.passes.used={};
+// Settable passes-per-student, and the per-student use count.
+//
+// These live at the TOP LEVEL, deliberately NOT inside data.passes. Phase 2a
+// promises that data.attendance / data.hw / data.trackerLog / data.passes
+// come through a load byte-identical, and the harness asserts it — adding
+// keys inside data.passes would break that guarantee for the sake of tidier
+// nesting. It also keeps a clean boundary for 2c, which converts data.passes
+// into a tracked item and should not have to tell old records apart from
+// new sidecar fields inside the same object.
+//
+// Both purely additive with safe defaults: cap 1 is exactly how every save
+// behaved before this existed, so no DATA_VERSION bump and nothing to convert.
+if(typeof data.passCap!=="number" || !isFinite(data.passCap) || data.passCap<1) data.passCap=1;
+if(!data.passCount||typeof data.passCount!=="object"||Array.isArray(data.passCount)) data.passCount={};
+// Anyone holding a used-record from before the cap existed backfills to
+// exactly 1 use, so their state is unchanged. data.passes is READ here and
+// never written.
+Object.keys(data.passes.used).forEach(function(sid){
+  var n=data.passCount[sid];
+  if(typeof n!=="number" || !isFinite(n) || n<1) data.passCount[sid]=1;
+});
+if(typeof data.fpCompact!=="boolean") data.fpCompact=false;
+if(typeof data.currentClass!=="string") data.currentClass="";
+if(typeof data.labelFormat!=="string") data.labelFormat="avery5160";
+if(typeof data.promptStyle!=="string") data.promptStyle="";
+if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
+if(!data.seating||typeof data.seating!=="object") data.seating={};
+if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
+if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
+if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
+if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
+if(typeof data.fullWidth!=="boolean") data.fullWidth=false;
+if(typeof data.sixSeven!=="boolean") data.sixSeven=false;
+// Instant (no-spin) toggles — one per random-selection tool. Additive
+// booleans: absent on every existing save, so they backfill to false and
+// old data keeps the current animated behavior untouched.
+if(typeof data.pickerInstant!=="boolean") data.pickerInstant=false;
+if(typeof data.spinnerInstant!=="boolean") data.spinnerInstant=false;
+if(typeof data.raffleInstant!=="boolean") data.raffleInstant=false;
+// Shared Picker skip preference (wheel + seating chart). Defaults ON — see
+// the v2->v3 migration note. Belt-and-braces alongside that migration, so a
+// save that somehow arrives already stamped v3 without the field still gets it.
+if(typeof data.pickerSkip!=="boolean") data.pickerSkip=true;
+if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOpts={avatarMode:"qr", showPoints:false};
+if(typeof data.seatPrintOpts.avatarMode!=="string"){
+  data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
+}
+if(["qr","photo","none"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
+delete data.seatPrintOpts.showQR;
+if(typeof data.seatPrintOpts.showPoints!=="boolean") data.seatPrintOpts.showPoints=false;
+if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
+// NEW installs get the activities footer on, via `defaults` above. Reaching
+// this line means the field is absent from a save that already existed, so
+// the install predates the field — and per CLAUDE.md's data-safety rule and
+// #121's, an existing rebbi keeps the behaviour he has. He prints the same
+// sheet every Monday; it must not quietly become a different sheet on a
+// Monday he didn't ask for. A save that already carries the field, either
+// way, is left exactly as the rebbi set it.
+if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
+// Page orientation for the class sheet. It was a module-level variable, so
+// it reset to portrait on every reload and a rebbi whose chart only fits
+// landscape had to re-pick it every single time.
+if(data.seatPrintOrient!=="landscape" && data.seatPrintOrient!=="portrait") data.seatPrintOrient="portrait";
+// Which printed codes to leave OFF the sheet (#117). Stores what is
+// EXCLUDED, not what is shown, so an activity added later appears on the
+// sheet by itself — an "included" list would silently drop it with nothing
+// on screen to say why. Keyed by qrText ("ACT:a1", "CTRL:UNDO"), which is
+// already unique and stable for both activities and control codes.
+if(!data.printExcluded || typeof data.printExcluded!=="object" || Array.isArray(data.printExcluded)) data.printExcluded={};
+// One-shot default. Pure exclusion semantics cannot express "off to begin
+// with": excluding these on every load would silently re-untick a rebbi who
+// deliberately ticked one. So seed once, stamp the flag, never again.
+//
+// Ticked by default: the three point activities, Homework Checked,
+// Bathroom Pass, +Custom and Undo — seven codes a rebbi uses in week one.
+// Left off: both Teach-mode phrase codes, and −Custom, which is a
+// correction tool rather than something scanned at a boy.
+if(!data.printExcludedSeeded){
+  ["CTRL:PASUKPREV","CTRL:PASUKNEXT","CTRL:CUSTOM-"].forEach(function(k){ data.printExcluded[k]=true; });
+  data.printExcludedSeeded=true;
+}
+if(!Array.isArray(data.pastContests)) data.pastContests=[];
+// Saved contests used to store metadata only, and their numbers were
+// recomputed from data.log on every render — so they decayed to nothing as
+// the 500-entry log cap rolled past them. Back-fill a results snapshot for
+// any saved contest that has none, recomputing from whatever of its entries
+// are STILL in the log. This is a rescue: it recovers exactly what has not
+// yet been lost, and every load that happens before this ships recovers
+// less. Purely additive — two new fields on each saved-contest record, no
+// DATA_VERSION bump, and nothing existing is read destructively, renamed or
+// removed.
+//
+// A contest whose entries are already gone gets an empty snapshot rather
+// than none: `{}` records "we looked, and there was nothing left to save",
+// which stops every later load from re-walking the log for it and lets the
+// card tell the rebbi the truth instead of implying no points were scored.
+data.pastContests.forEach(function(pc){
+  if(!pc || typeof pc!=="object") return;
+  if(pc.totals && typeof pc.totals==="object" && !Array.isArray(pc.totals)) return;
+  var totals={}, n=0;
+  data.log.forEach(function(e){
+    if(e.contestId!==pc.id || e.undone || e.kind==="correction") return;
+    totals[e.sid]=(totals[e.sid]||0)+(e.delta||0);
+    n++;
+  });
+  pc.totals=totals;
+  if(typeof pc.entryCount!=="number" || !isFinite(pc.entryCount)) pc.entryCount=n;
+});
+if(data.contest!==null && (typeof data.contest!=="object" || !data.contest.startTs)) data.contest=null;
+if(data.contest){
+  if(typeof data.contest.id!=="string") data.contest.id=newId();
+  if(data.contest.mode!=="contestOnly") data.contest.mode="both";
+  if(typeof data.contest.counting!=="boolean") data.contest.counting=true;
+  if(typeof data.contest.ended!=="boolean") data.contest.ended=false;
+  if(typeof data.contest.merged!=="boolean") data.contest.merged=false;
+}
+if(typeof data.standCustomFrom!=="string") data.standCustomFrom="";
+if(typeof data.standCustomTo!=="string") data.standCustomTo="";
+if(typeof data.studCustomFrom!=="string") data.studCustomFrom="";
+if(typeof data.studCustomTo!=="string") data.studCustomTo="";
+// Gradebook view state (Phase 2b). Purely additive — five preference
+// fields, no DATA_VERSION bump, nothing existing read or converted.
+// gbExcluded stores the items HIDDEN rather than the ones shown, so a
+// tracked item added later appears as a column on its own. That is the
+// whole point of the 2a shell and an "included" list would quietly break it.
+if(!data.gbExcluded || typeof data.gbExcluded!=="object" || Array.isArray(data.gbExcluded)) data.gbExcluded={};
+if(["today","7d","30d","custom"].indexOf(data.gbPeriod)<0) data.gbPeriod="7d";
+if(typeof data.gbFrom!=="string") data.gbFrom="";
+if(typeof data.gbTo!=="string") data.gbTo="";
+if(typeof data.gbItemsOpen!=="boolean") data.gbItemsOpen=false;
+ensureScanLayout();
+if(typeof data.teachRepeatMode!=="boolean") data.teachRepeatMode=true;
+if(typeof data.teachFlipKeys!=="boolean") data.teachFlipKeys=false;
+if(typeof data.teachFlipCols!=="boolean") data.teachFlipCols=false;
+if(typeof data.menuLabelFormat!=="string") data.menuLabelFormat="tiles";
+if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages";
+if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
+if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
+if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
+if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
+if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
+if(typeof data.grade!=="string") data.grade="";
+if(!data.features||typeof data.features!=="object") data.features={};
+if(typeof data.features.shulchani!=="boolean") data.features.shulchani=true;
+if(typeof data.features.chavrusa!=="boolean") data.features.chavrusa=false;
+if(typeof data.features.learningType!=="string") data.features.learningType="";
+if(typeof data.wizardLearning==="undefined") data.wizardLearning=null;
+if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}};
+if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={};
+if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={};
+// Phase 1: remap old group names. "tools"/"setup" merged into "manage";
+// "print" dissolved (tabs accessed via buttons). Clean up stale keys.
+delete data.navHidden.groups.tools;
+delete data.navHidden.groups.setup;
+delete data.navHidden.groups.print;
+// Seats tab no longer exists — remove any saved hidden state for it
+delete data.navHidden.tabs.seats;
+// Hide Contest pending the lifecycle rework (#133). ONE-SHOT, exactly like
+// hwActivitySeeded / passActivitySeeded: it hides the tab once, then never
+// touches the setting again — so a rebbi who deliberately switches Contest
+// back on in Settings keeps it on through every future load. Sits here,
+// after the nav guards above, so data.navHidden.tabs is known to be a real
+// object by this point.
+//
+// HIDDEN, NOT REMOVED. No contest code is deleted: contests still tag
+// scans, saved contests keep their totals, and the merge path is untouched.
+// Only the surfaces are gated, all from this one setting.
+if(!data.contestHiddenSeeded){
+  data.navHidden.tabs.contest=true;
+  data.contestHiddenSeeded=true;
+}
+if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
+if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
+if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
+if(typeof data.shulchaniMode!=="boolean") data.shulchaniMode=false;
+if(typeof data.showPrutot!=="boolean") data.showPrutot=false;
+if(typeof data.snackSeconds!=="number" || data.snackSeconds<=0) data.snackSeconds=420;
+if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerExcluded={};
+if(!Array.isArray(data.spinnerSavedLists)) data.spinnerSavedLists=[];
+// Attendance / Tracker / Homework tools
+if(!data.attendance||typeof data.attendance!=="object") data.attendance={};
+if(!data.hw||typeof data.hw!=="object") data.hw={};
+if(!Array.isArray(data.trackerLog)) data.trackerLog=[];
+if(typeof data.trackerActId!=="string") data.trackerActId="";
+data.activities.forEach(function(a){ if(typeof a.tracked!=="boolean") a.tracked=false; });
+if(!data.hwActivitySeeded){
+  data.activities.push({id:nextActId(), name:"Homework Checked", pts:0, tracked:true, groups:[]});
+  data.hwActivitySeeded=true;
+}
+// Bathroom Pass as a tracked 0-point activity, purely so it has an id to
+// build its Record-tab button and its ACT:/PA: QR codes from. Same shape and
+// same one-shot flag as Homework Checked above, so a teacher who deletes the
+// button doesn't get it back on the next load. Pass usage itself still lives
+// in data.passes — this activity is a handle, not a second store.
+if(!data.passActivitySeeded){
+  data.activities.push({id:nextActId(), name:PASS_ACT_NAME, pts:0, tracked:true, groups:[]});
+  data.passActivitySeeded=true;
+}
+// "Prize Received" used to be a standalone tracked activity here, but that
+// had no real link to an actual Store purchase. Superseded by a per-purchase
+// "received" checkbox on the Store's own purchase log (see storeReceived
+// backfill below). Any already-seeded copy from that earlier version is
+// left alone if present — harmless, just no longer created for new data.
+
+/* ----- Tracked Items shell (Phase 2a). Purely additive. -------------
+ * The presets below seed EMPTY. Nothing here reads or converts an old
+ * store; the conversion is a separate, later block.
+ *
+ * data.hw, data.trackerLog and data.passes are still untouched by every
+ * line in this function — 2c converts Attendance only, and those three
+ * stay parked exactly as 2a left them, still driving their own tabs.
+ *
+ * data.attendance is now READ, once, by the Phase 2c block at the end of
+ * this function. Read, never written: it is still byte-identical coming
+ * out of a load, and the Attendance tab still owns it.
+ */
+if(!Array.isArray(data.trackedItems)) data.trackedItems=[];
+if(!data.trackedData || typeof data.trackedData!=="object" || Array.isArray(data.trackedData)) data.trackedData={};
+
+// One-shot seeding of the four presets, mirroring hwActivitySeeded /
+// passActivitySeeded above: a rebbi who deletes a preset keeps it deleted,
+// and an item they have since renamed or reconfigured is never reset.
+if(!data.trackedItemsSeeded){
+  var seedItems=[];
+  seedItems.push({ id:"ti-attendance", name:"Attendance", method:"preselect",
+    config:{ options:["present","late","absent"], "default":"present" } });
+  // Homework is a FOUR-state cycle now, not the old boolean. "unchecked"
+  // (not collected) and "no credit" (handed in, below standard) are
+  // genuinely different facts and are not synonyms. Order matters: this
+  // is the cycle order, and it wraps from "no credit" to "unchecked".
+  seedItems.push({ id:"ti-homework", name:"Homework", method:"preselect",
+    config:{ options:["unchecked","full credit","partial credit","no credit"], "default":"unchecked" } });
+  // One count item per existing tracked activity, carrying its name.
+  // "Homework Checked" and the Bathroom Pass activity are skipped on
+  // purpose: both are tracked:true activities, but each already has its
+  // own preset here with the right shape. Without this skip they would
+  // each also get a second, wrong-shaped count item.
+  data.activities.forEach(function(a){
+    if(!a || a.tracked!==true) return;
+    if(a.name==="Homework Checked" || a.name===PASS_ACT_NAME) return;
+    seedItems.push({ id:"ti-act-"+a.id, name:a.name, method:"count", config:{ step:1 } });
+  });
+  seedItems.push({ id:"ti-pass", name:PASS_ACT_NAME, method:"limited", config:{ cap:1 } });
+  // Defensive: the one-shot flag should make a collision impossible, but a
+  // restored backup could arrive carrying these ids already.
+  var haveTi={}; data.trackedItems.forEach(function(it){ if(it && it.id) haveTi[it.id]=1; });
+  seedItems.forEach(function(it){ if(!haveTi[it.id]) data.trackedItems.push(it); });
+  data.trackedItemsSeeded=true;
+}
+
+// Shape guards. An item whose method we do not recognise is left strictly
+// alone — it may come from a newer version, and silently "fixing" it would
+// be the data loss this whole file exists to prevent.
+data.trackedItems.forEach(function(it){
+  if(!it || typeof it!=="object") return;
+  if(typeof it.name!=="string") it.name="";
+  if(!it.config || typeof it.config!=="object" || Array.isArray(it.config)) it.config={};
+  var spec=TRACKED_METHODS[it.method];
+  if(spec) spec.fill(it.config);
+});
+Object.keys(data.trackedData).forEach(function(itemId){
+  var per=data.trackedData[itemId];
+  if(!per || typeof per!=="object" || Array.isArray(per)){ data.trackedData[itemId]={}; return; }
+  Object.keys(per).forEach(function(sid){ if(!Array.isArray(per[sid])) per[sid]=[]; });
+});
+
+/* ----- Attendance conversion (Phase 2c). Additive, one-shot. ---------
+ * Reads data.attendance and writes the same records into the tracked
+ * item "ti-attendance", so a rebbi's real attendance history shows up in
+ * the Gradebook instead of the empty column 2a left there.
+ *
+ * data.attendance IS NOT MODIFIED. Not one byte — no status rewritten, no
+ * timestamp stamped, no day object created. It stays parked exactly as 2a
+ * left it and keeps driving the Attendance tab, which is unchanged. This
+ * is a READ, and Test 10 in test-migration.html asserts it stays one.
+ *
+ * WHY NO DATA_VERSION BUMP: nothing existing is converted in place. This
+ * derives a second, new store from an old one and leaves the old one
+ * alone — exactly the shape of the earnedSeeded backfill above, which
+ * walks data.log to build data.earned without a version bump either.
+ *
+ * TIMESTAMPS ARE COPIED, NEVER MINTED. rec.ts goes across verbatim. The
+ * Sheet's send diff is `rec.ts > day._sentAt` and the Attendance Log has
+ * no dedup, so touching a stored ts would re-push a rebbi's history into
+ * their Sheet as duplicate rows. Nothing here writes a ts at all.
+ *
+ * WHAT IS DELIBERATELY DROPPED: any record with no real numeric ts.
+ * renderAttendance() auto-writes {status:"present", ts:null} for every
+ * unmarked student the moment the tab is merely LOOKED AT. Those are
+ * assumptions, not observations, and must not enter the gradebook as
+ * attendance history. Only records someone actually marked come across.
+ * (Known gap: on a day that was SENT, sendAttendance() stamped a real ts
+ * onto those auto-filled records, making them indistinguishable from
+ * explicit marks. Those do convert. There is no way to tell them apart
+ * after the fact.)
+ *
+ * ALL THREE STATES SURVIVE. present / late / absent are three recorded
+ * facts with three Sheet statuses; none is collapsed into another. An
+ * unrecognised status is copied across verbatim rather than dropped or
+ * "repaired" — same open-enum rule the tracked methods follow.
+ *
+ * The `date` field carries the school day the record is ABOUT, which is
+ * not always the day it was typed: a rebbi who pages back to Monday on
+ * Wednesday to fix a record produces dateKey Monday with a Wednesday ts.
+ * Without this the Gradebook, which derives its column from e.ts, would
+ * file that mark on the wrong day. Additive on the entry, and readers
+ * that don't know the field simply fall back to ts.
+ *
+ * IDEMPOTENT BY CONSTRUCTION, not just by the flag. Every entry is keyed
+ * date@ts against what is already in the item, so a second run — a
+ * restored backup, a corrupted receipt — cannot duplicate a record.
+ *
+ * The receipt in data.attConversion is the "way back": it records what
+ * came across and what did not, so the numbers can be checked against the
+ * Attendance tab rather than taken on trust.
+ */
+if(!data.attConversion || typeof data.attConversion!=="object" || Array.isArray(data.attConversion)){
+  // Materialized lazily, on the first record that actually converts. A
+  // brand-new save has no attendance, and creating an empty container for
+  // it would break 2a's "trackedData starts empty" contract for a rebbi
+  // who has nothing to convert. (Any corrupt value here was already
+  // repaired to {} by the shape guard above, so this is either absent or
+  // a real object.)
+  var attOut=data.trackedData["ti-attendance"];
+  if(attOut && (typeof attOut!=="object" || Array.isArray(attOut))) attOut=null;
+  var attKey=function(e){ return (e && typeof e.date==="string" ? e.date : "")+"@"+(e?e.ts:""); };
+  var attSeen={};
+  if(attOut) Object.keys(attOut).forEach(function(sid){
+    if(!Array.isArray(attOut[sid])) return;
+    var m=attSeen[sid]={};
+    attOut[sid].forEach(function(e){ if(e) m[attKey(e)]=1; });
+  });
+  var attStats={ ts:Date.now(), days:0, converted:0, droppedNoTs:0, skippedShape:0, alreadyPresent:0 };
+  var attTouched={};
+  Object.keys(data.attendance).sort().forEach(function(dk){
+    var day=data.attendance[dk];
+    if(!day || typeof day!=="object" || Array.isArray(day)) return;
+    attStats.days++;
+    Object.keys(day).forEach(function(sid){
+      // _sentAt and _lastSendCount sit alongside student ids in this very
+      // object. They are day metadata, not students.
+      if(sid.charAt(0)==="_") return;
+      var rec=day[sid];
+      if(!rec || typeof rec!=="object" || Array.isArray(rec) || typeof rec.status!=="string"){ attStats.skippedShape++; return; }
+      if(typeof rec.ts!=="number" || !isFinite(rec.ts)){ attStats.droppedNoTs++; return; }
+      var entry={ value:rec.status, ts:rec.ts, date:dk };
+      var seen=attSeen[sid] || (attSeen[sid]={});
+      if(seen[attKey(entry)]){ attStats.alreadyPresent++; return; }
+      seen[attKey(entry)]=1;
+      // If the rebbi deleted the Attendance preset, the records still land
+      // under its id. Unread is recoverable; unwritten is not.
+      if(!attOut) attOut=data.trackedData["ti-attendance"]={};
+      if(!Array.isArray(attOut[sid])) attOut[sid]=[];
+      attOut[sid].push(entry);
+      attTouched[sid]=1;
+      attStats.converted++;
+    });
+  });
+  // trackedData keeps an ORDERED list per student — last entry is current.
+  // Days arrive sorted, but a merge into an existing list needs the sort.
+  Object.keys(attTouched).forEach(function(sid){
+    attOut[sid].sort(function(a,b){ return (a.ts||0)-(b.ts||0); });
+  });
+  data.attConversion=attStats;
+}
+  }
 
 // ===== Drift check =====
 // This file hand-copies migrateData() and load2fix() out of app.html. Nothing
@@ -1431,6 +1470,72 @@ function runBuiltInTests() {
   assert("2c→data.attendance still an object the Attendance tab can write to",
     !!t10.attendance && typeof t10.attendance==="object" && !Array.isArray(t10.attendance)
     && Object.keys(t10.attendance).length===2);
+
+  // --- Test 16: class sheet — activities footer must not change under anyone ---
+  // NEW installs get showActivities:true from app.html's `defaults`. Everything
+  // that reaches load2fix() is by definition a save that already existed, so the
+  // one thing that must hold here is that load2fix NEVER turns it on. A rebbi
+  // who prints the same sheet every Monday must not get a different one on a
+  // Monday he didn't ask for.
+  //
+  // `defaults` is not reachable from this harness (runMigration always starts
+  // from a supplied blob), so these cover the three save-shaped states.
+  var t16a = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:false} });
+  assert("sheet→an existing OFF stays off (the silent-change guard)",
+    t16a.seatPrintOpts.showActivities===false, "got "+t16a.seatPrintOpts.showActivities);
+  var t16b = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true} });
+  assert("sheet→an existing ON stays on", t16b.seatPrintOpts.showActivities===true);
+  // Predates the field: has the options object, but not this key.
+  var t16c = runMigration({ version:4, seatPrintOpts:{avatarMode:"photo", showPoints:true} });
+  assert("sheet→a save predating the field keeps its old behaviour (off)",
+    t16c.seatPrintOpts.showActivities===false, "got "+t16c.seatPrintOpts.showActivities);
+  assert("sheet→predating save keeps its other print choices",
+    t16c.seatPrintOpts.avatarMode==="photo" && t16c.seatPrintOpts.showPoints===true,
+    "got "+JSON.stringify(t16c.seatPrintOpts));
+  // Predates the whole options object.
+  var t16d = runMigration({ version:4 });
+  assert("sheet→a save with no print options at all defaults off",
+    t16d.seatPrintOpts.showActivities===false, "got "+t16d.seatPrintOpts.showActivities);
+  // The blanket statement: no path through load2fix may switch it on.
+  assert("sheet→load2fix NEVER turns the footer on by itself",
+    t16a.seatPrintOpts.showActivities===false
+    && t16c.seatPrintOpts.showActivities===false
+    && t16d.seatPrintOpts.showActivities===false,
+    "if this fails, existing rebbeim just had their printed sheet changed for them");
+  // Orientation is now remembered rather than resetting to portrait each load.
+  assert("sheet→orientation defaults to portrait", t16d.seatPrintOrient==="portrait");
+  var t16e = runMigration({ version:4, seatPrintOrient:"landscape" });
+  assert("sheet→a saved landscape survives a reload", t16e.seatPrintOrient==="landscape");
+  var t16f = runMigration({ version:4, seatPrintOrient:"sideways" });
+  assert("sheet→a garbage orientation repairs to portrait", t16f.seatPrintOrient==="portrait");
+
+  // --- Test 17: #117 printed-code selection ---
+  assert("codes→printExcluded backfills to an object",
+    !!d1.printExcluded && typeof d1.printExcluded==="object" && !Array.isArray(d1.printExcluded));
+  // Seeded ONCE, so a rebbi who deliberately ticks one keeps it ticked.
+  assert("codes→the three default-off codes are seeded",
+    d1.printExcluded["CTRL:PASUKPREV"]===true && d1.printExcluded["CTRL:PASUKNEXT"]===true
+    && d1.printExcluded["CTRL:CUSTOM-"]===true, "got "+JSON.stringify(d1.printExcluded));
+  assert("codes→nothing else is excluded by default",
+    Object.keys(d1.printExcluded).length===3, "got "+JSON.stringify(d1.printExcluded));
+  assert("codes→one-shot flag stamped", d1.printExcludedSeeded===true);
+  var t17 = runMigration({ version:4, printExcludedSeeded:true, printExcluded:{} });
+  assert("codes→a deliberate re-tick is NOT undone on the next load",
+    Object.keys(t17.printExcluded).length===0, "got "+JSON.stringify(t17.printExcluded));
+  var t17b = runMigration({ version:4, printExcludedSeeded:true, printExcluded:{"ACT:a9":true} });
+  assert("codes→an activity turned off stays off", t17b.printExcluded["ACT:a9"]===true);
+  assert("codes→an activity never mentioned is NOT excluded (new ones appear by themselves)",
+    t17b.printExcluded["ACT:a1"]===undefined);
+  var t17c = runMigration({ version:4, printExcluded:["not","an","object"] });
+  assert("codes→corrupt printExcluded repaired to an object",
+    !Array.isArray(t17c.printExcluded) && typeof t17c.printExcluded==="object");
+  assert("codes→DATA_VERSION still NOT bumped", t17.version===4 && DATA_VERSION===4);
+  // And none of this disturbed the Phase 2a promise.
+  assert("codes→old stores STILL byte-identical",
+    JSON.stringify(t10.attendance)===snapBefore.attendance
+    && JSON.stringify(t10.hw)===snapBefore.hw
+    && JSON.stringify(t10.trackerLog)===snapBefore.trackerLog
+    && JSON.stringify(t10.passes)===snapBefore.passes);
 
   // Runs last so its card sits at the bottom, but it gates the render: nothing
   // is shown until we know whether this harness is testing current code.
