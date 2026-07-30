@@ -2458,6 +2458,36 @@ function trimSnapshots(sh, deviceId) {
   }
 }
 
+// Returns a log sheet, creating it and writing its header EXACTLY ONCE.
+//
+// The header used to be written with a bare check-then-act:
+//   if (sh.getLastRow() === 0) sh.appendRow(header);
+// One "Send Attendance" fires one request per student — twenty-odd at once —
+// and Apps Script runs those concurrently. Two executions that both arrive
+// before either has appended BOTH see an empty sheet, so both write a header.
+// That is the doubled header. It is the ONLY thing this race produced: the
+// data rows are one per request either way, which is why the header was the
+// one symptom that survived a clean-sheet test.
+//
+// The lock closes the window. flush() is not optional — it forces the header
+// to be visible to the next execution before the lock is released; without it
+// the append can still be pending and the next execution reads 0 again.
+function logSheet_(ss, name, header) {
+  var lock = LockService.getScriptLock();
+  var held = false;
+  try { held = lock.tryLock(30000); } catch (err) {}
+  try {
+    var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+    if (sh.getLastRow() === 0) {
+      sh.appendRow(header);
+      SpreadsheetApp.flush();
+    }
+    return sh;
+  } finally {
+    if (held) { try { lock.releaseLock(); } catch (err) {} }
+  }
+}
+
 function doPost(e) {
   if (!e || !e.postData) {
     return ContentService.createTextOutput(
@@ -2478,10 +2508,7 @@ function doPost(e) {
   }
 
   if (body.type === "scan" || body.type === "correction") {
-    var log = ss.getSheetByName("Log") || ss.insertSheet("Log");
-    if (log.getLastRow() === 0) {
-      log.appendRow(["Time", "Student", "Class/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
-    }
+    var log = logSheet_(ss, "Log", ["Time", "Student", "Class/Group", "Activity", "Points", "New total", "ID", "Undo Of", "Note"]);
     if (!logHasId(log, body.id)) {
       log.appendRow([new Date(body.ts), body.name, body.group, body.label, body.delta, body.total, body.id || "", body.undoOf || "", body.note || ""]);
       rebuildLeaderBoard();
@@ -2516,10 +2543,7 @@ function doPost(e) {
   }
 
   if (body.type === "pasuk") {
-    var pl = ss.getSheetByName("Pesukim Log") || ss.insertSheet("Pesukim Log");
-    if (pl.getLastRow() === 0) {
-      pl.appendRow(["Time", "Student", "Class/Group", "Pasuk"]);
-    }
+    var pl = logSheet_(ss, "Pesukim Log", ["Time", "Student", "Class/Group", "Pasuk"]);
     pl.appendRow([new Date(body.ts), body.name, body.group, body.ref + ":" + body.pasuk]);
   }
 
@@ -2543,26 +2567,17 @@ function doPost(e) {
   }
 
   if (body.type === "attendance") {
-    var att = ss.getSheetByName("Attendance Log") || ss.insertSheet("Attendance Log");
-    if (att.getLastRow() === 0) {
-      att.appendRow(["Time", "Date", "Student", "Class/Group", "Status"]);
-    }
+    var att = logSheet_(ss, "Attendance Log", ["Time", "Date", "Student", "Class/Group", "Status"]);
     att.appendRow([new Date(body.ts), body.date, body.name, body.group, body.status]);
   }
 
   if (body.type === "tracker") {
-    var trk = ss.getSheetByName("Tracker Log") || ss.insertSheet("Tracker Log");
-    if (trk.getLastRow() === 0) {
-      trk.appendRow(["Time", "Student", "Class/Group", "Activity"]);
-    }
+    var trk = logSheet_(ss, "Tracker Log", ["Time", "Student", "Class/Group", "Activity"]);
     trk.appendRow([new Date(body.ts), body.name, body.group, body.activity]);
   }
 
   if (body.type === "hw") {
-    var hwl = ss.getSheetByName("Homework Log") || ss.insertSheet("Homework Log");
-    if (hwl.getLastRow() === 0) {
-      hwl.appendRow(["Time", "Date", "Student", "Class/Group", "Checked"]);
-    }
+    var hwl = logSheet_(ss, "Homework Log", ["Time", "Date", "Student", "Class/Group", "Checked"]);
     hwl.appendRow([new Date(body.ts), body.date, body.name, body.group, body.checked ? "Yes" : "No"]);
   }
 
