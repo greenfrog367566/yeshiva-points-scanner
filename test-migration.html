@@ -51,6 +51,7 @@
 
 var DATA_VERSION = 4;
 var PASS_ACT_NAME = "Bathroom Pass";
+var ATT_ACT_NAME = "Attendance";
 
 function newId(){ return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
 
@@ -450,6 +451,17 @@ if(!data.passActivitySeeded){
   data.activities.push({id:nextActId(), name:PASS_ACT_NAME, pts:0, tracked:true, groups:[]});
   data.passActivitySeeded=true;
 }
+// Attendance as a tracked 0-point activity, so it can be ARMED like any
+// other — a button on the Record tab and an ACT: code on the printed sheet.
+// Same shape and same one-shot flag as the two above, so a rebbi who deletes
+// the button does not get it back on the next load. Attendance records
+// themselves still live in data.attendance; this activity is a handle, not a
+// second store, and it is NOT the Phase 2a "ti-attendance" tracked item,
+// which is a different thing entirely and untouched here.
+if(!data.attActivitySeeded){
+  data.activities.push({id:nextActId(), name:ATT_ACT_NAME, pts:0, tracked:true, groups:[]});
+  data.attActivitySeeded=true;
+}
 // "Prize Received" used to be a standalone tracked activity here, but that
 // had no real link to an actual Store purchase. Superseded by a per-purchase
 // "received" checkbox on the Store's own purchase log (see storeReceived
@@ -491,7 +503,12 @@ if(!data.trackedItemsSeeded){
   // each also get a second, wrong-shaped count item.
   data.activities.forEach(function(a){
     if(!a || a.tracked!==true) return;
-    if(a.name==="Homework Checked" || a.name===PASS_ACT_NAME) return;
+    // Attendance joins this skip list for the same reason the other two are
+    // on it: it is a tracked activity that ALREADY has its own preset above
+    // (ti-attendance, a preselect). Without the skip it would also get a
+    // second, wrong-shaped count item — exactly the duplication this guard
+    // exists to prevent.
+    if(a.name==="Homework Checked" || a.name===PASS_ACT_NAME || a.name===ATT_ACT_NAME) return;
     seedItems.push({ id:"ti-act-"+a.id, name:a.name, method:"count", config:{ step:1 } });
   });
   seedItems.push({ id:"ti-pass", name:PASS_ACT_NAME, method:"limited", config:{ cap:1 } });
