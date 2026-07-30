@@ -296,7 +296,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      history dropdown is position:absolute so opening it overlays on top of
      the chart instead of pushing it down the page. */
   .seats-scanbar{position:relative; z-index:30; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 10px}
-  .seats-scanbar #seatsScanInput{flex:0 1 200px; min-width:70px; font-size:.94rem; padding:5px 10px; border:1px dashed var(--line); border-radius:8px; background:#fbfbfd}
+  /* The input GROWS into whatever the recent-scan strip isn't using. It used to
+     be flex:0 1 200px — grow factor ZERO — so it was pinned at 200px however
+     wide the bar got, while .scan-strip took flex:1 and claimed every spare
+     pixel. On an established class nobody noticed: the strip is full of recent
+     scans, so the space looked used. On a BRAND-NEW install the strip is built
+     from data.log, which is empty, so the bar showed a stubby 200px box that
+     cut its own placeholder off mid-word ("Scan a QR code here (or ty") beside
+     a wide blank gap. Nothing was hiding to hold this open — the strip was
+     always claiming the room, just invisibly when it had nothing in it. */
+  .seats-scanbar #seatsScanInput{flex:1 1 240px; min-width:140px; font-size:.94rem; padding:5px 10px; border:1px dashed var(--line); border-radius:8px; background:#fbfbfd}
   .seats-pill{font-size:.79rem; font-weight:700; background:var(--brass-soft); color:#6b4d18; border-radius:999px; padding:3px 11px; white-space:nowrap; cursor:default}
   .seats-pill.clickable{cursor:pointer}
   .seats-pill.clickable:hover{background:var(--brass)}
@@ -308,7 +317,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* Scan + activity-change history strip.
      Entries fill available width; oldest fade out. Most recent is boldest.
      Activity-change events show as a pill instead of a name+delta row. */
-  .scan-strip{flex:1; display:flex; align-items:center; gap:0; min-width:0; overflow:hidden}
+  /* Takes the width its entries actually need (basis auto) instead of flex:1,
+     which claimed all the free space even when it was empty and starved the
+     input next to it. Still shrinks and clips first when the bar is crowded —
+     entries are flex-shrink:0 and this clips them — so a long scan history
+     never squeezes the input below its min-width. */
+  .scan-strip{flex:0 1 auto; display:flex; align-items:center; gap:0; min-width:0; overflow:hidden}
   .scan-strip-entry{display:flex; align-items:center; gap:4px; white-space:nowrap; overflow:hidden; padding:0 10px; border-right:1px solid var(--line); flex-shrink:0; min-width:0; transition:opacity .15s}
   .scan-strip-entry:last-child{border-right:none}
   /* All text tokens — sized at primary level; opacity carries the fade */
@@ -516,6 +530,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .nav-vis-subs{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0 0 24px}
   .nav-vis-sub{display:flex;align-items:center;gap:6px;font-size:.88rem;color:var(--muted);cursor:pointer;font-weight:500}
   .nav-vis-sub input:disabled,.nav-vis-head input:disabled{opacity:.5}
+  /* Lean mode toggle (#121). Sits above the per-tab list it overrides. */
+  .lean-row{display:flex;align-items:flex-start;gap:8px;font-size:.95rem;font-weight:600;margin:0 0 8px;cursor:pointer}
+  .lean-row input{margin-top:3px;flex:0 0 auto}
+  /* A tab Lean is hiding: the rebbi's own checkbox still shows HIS setting, so
+     it is greyed rather than unticked — his choice is intact underneath. */
+  .nav-vis-sub.lean-off{opacity:.55}
+  .nav-vis-lean{font-size:.76rem;font-weight:600;color:var(--muted);font-style:italic}
   .erow:last-child{border-bottom:none}
   .erow:hover{background:#f6f7fc;border-radius:10px;padding-left:10px;padding-right:10px}
   .erow .grow{min-width:120px;font-weight:500}
@@ -3174,6 +3195,9 @@ function setupRoster() {
 
     <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">Tabs shown</h3>
+      <label class="lean-row"><input type="checkbox" id="setLeanMode"><span><b>Simple mode</b> — show only the tabs most rebbeim use every day</span></label>
+      <p class="view-note" style="margin:0 0 10px">Leaves you with <b>Dashboard, History, Leader Board, Raffle, Store, Print class sheet, Students, Activities, Attendance, Homework, Passes, Backup &amp; Restore</b> and <b>Settings</b>. Everything else — Trends, Auction, Brachos, Spinner, Tracker, Gradebook and the whole Review section — is tucked away until you turn this off.</p>
+      <p class="view-note" style="margin:0 0 10px"><b>Nothing is deleted and nothing stops working.</b> Every tab this tucks away keeps all of its records exactly as they are, and they all come straight back the moment you switch this off. Your own choices below are kept separately, so they survive too.</p>
       <p class="view-note" style="margin:0 0 10px">Hide sections you don't use to keep the top of the app simpler. Setup and Settings always stay reachable so you can turn things back on.</p>
       <div id="navVisibilityBox"></div>
     </div>
@@ -3394,6 +3418,22 @@ function setupRoster() {
     muted: false,
     shulchaniMode: false,
     showPrutot: false,
+    // Lean mode (#121) — the app opens showing only what a rebbi needs in week
+    // one, with the rest one toggle away in Settings.
+    //
+    // THIS `true` IS THE WHOLE THREE-STATE MECHANISM (the #141 `defaults` seam).
+    // load() only clones `defaults` when there is NO saved data, and otherwise
+    // takes the save as-is — so:
+    //   new install  -> leanMode arrives from here as true  -> load2fix's
+    //                   typeof check passes, leaves it -> opens LEAN.
+    //   existing save-> no leanMode on the object at all   -> load2fix's
+    //                   backfill fires -> false -> opens exactly as before.
+    // Reaching that backfill line IS the proof that the save predates this
+    // field, which is why the default cannot also be applied by merging
+    // `defaults` over a save. Don't "simplify" load() into an Object.assign:
+    // that would flip every existing rebbi into Lean overnight and hide tabs
+    // they use daily.
+    leanMode: true,
     // "Instant" (no-spin) preference, remembered SEPARATELY per random-selection
     // tool — a rebbi who wants the Picker instant for fast repeated turn-taking
     // usually still wants the Raffle's wheel to spin for the class. Default false
@@ -3850,7 +3890,31 @@ function setupRoster() {
     if(!data.navHidden.tabs) data.navHidden.tabs={};
     return data.navHidden;
   }
-  function isTabVisible(t){ return t==="settings" || t==="scan" || !navHidden().tabs[t]; }
+  // Lean mode's allow-list (#121): what a rebbi actually needs in week one.
+  // Everything not named here is ADVANCED and is hidden while Lean is on.
+  //
+  // Several of these look like extras and are here on purpose. Don't prune them
+  // back without reading why:
+  //   history  — undo lives here, and a rebbi WILL mis-scan on day one. Hiding
+  //              it leaves him with a wrong score and no way to correct it.
+  //   store    — where points get spent. A Reward section holding only a raffle
+  //              undersells the whole mechanic.
+  //   passes   — refusing a bathroom pass shows a message whose ONLY correction
+  //              path is the Passes tab, so hiding it strands the rebbi
+  //              mid-refusal with no way to put it right.
+  //   homework — owns the record its own scan writes.
+  var LEAN_TABS = {
+    scan:1, history:1, standings:1, raffle:1, store:1, printSeats:1, students:1,
+    activities:1, attendance:1, homework:1, passes:1, backup:1, settings:1
+  };
+  // DERIVE, DON'T WRITE. Lean is computed at read time and never written into
+  // navHidden. If it were written, the rebbi's own hides and the preset's would
+  // be the same bits, so turning Lean off could not tell "I hid Trends myself"
+  // from "Lean hid Trends for me" — and would either strand his choices or
+  // silently undo them. Kept apart, switching Lean off restores exactly the nav
+  // he had, and his own hides survive being in Lean.
+  function leanHidesTab(t){ return !!data.leanMode && !LEAN_TABS[t]; }
+  function isTabVisible(t){ return t==="settings" || t==="scan" || (!navHidden().tabs[t] && !leanHidesTab(t)); }
   // Contest is hidden pending the lifecycle rework (#133). It is HIDDEN, not
   // removed: every line of contest code is still here and still runs, because
   // it is woven through the scan log, the raffle's ticket sources and the merge
@@ -3869,7 +3933,14 @@ function setupRoster() {
   }
   function firstVisibleTab(g){
     var vis=groupVisibleTabs(g);
-    return vis.length ? vis[0] : (g==="manage" ? "settings" : (TAB_GROUPS[g] ? TAB_GROUPS[g].tabs[0] : "scan"));
+    if(vis.length) return vis[0];
+    // No visible tab in this group. The old fallback handed back the group's
+    // FIRST tab, which was safe only while every group was guaranteed at least
+    // one visible tab. Lean mode (#121) breaks that guarantee — it empties the
+    // Review group outright — and returning a hidden tab lands the rebbi on a
+    // view whose group tab is no longer in the nav, with no way back to it.
+    // "scan" and "settings" are the two tabs that can never be hidden.
+    return g==="manage" ? "settings" : "scan";
   }
   function renderGroupTabs(activeGroup){
     var box=$("groupTabs"); box.innerHTML="";
@@ -5302,6 +5373,7 @@ function setupRoster() {
     $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setFullWidth").checked = !!data.fullWidth;
     $("setSixSeven").checked = !!data.sixSeven;
+    $("setLeanMode").checked = !!data.leanMode;
     // Phase 1: Teach flip / quiz delay / game auto inits moved to renderTeach,
     // renderQuiz, renderGame — those controls now live on their feature panels.
     renderSerialUI();
@@ -5325,19 +5397,32 @@ function setupRoster() {
       });
       head.appendChild(gchk);
       head.appendChild(document.createTextNode(" "+TAB_GROUPS[g].label+(locked?" (always shown)":"")));
+      // A group whose every tab Lean hides disappears from the nav on its own,
+      // via isGroupVisible's "no visible tabs" arm — say so, rather than leaving
+      // a ticked box next to a section that isn't there. Review is the one this
+      // happens to; nothing in it is in the Lean list.
+      if(!locked && TAB_GROUPS[g].tabs.every(leanHidesTab)){
+        head.appendChild(el("span","nav-vis-lean"," — whole section off in Simple mode"));
+      }
       card.appendChild(head);
       var subBox=el("div","nav-vis-subs");
       TAB_GROUPS[g].tabs.forEach(function(t){
         var lockedTab=(t==="settings");
-        var row=el("label","nav-vis-sub");
+        // Lean is DERIVED, so the checkbox keeps showing the rebbi's OWN setting
+        // and is only disabled while Lean overrides it. Unticking it here would
+        // write Lean's preset into navHidden and lose the distinction the whole
+        // derive-don't-write rule exists to protect.
+        var byLean=leanHidesTab(t);
+        var row=el("label","nav-vis-sub"+(byLean?" lean-off":""));
         var chk=el("input"); chk.type="checkbox";
         chk.checked = lockedTab ? true : !nh.tabs[t];
-        chk.disabled = lockedTab;
+        chk.disabled = lockedTab || byLean;
         chk.addEventListener("change", function(){
           nh.tabs[t]=!chk.checked; save(); renderNavVisibilitySettings(); syncNavAfterVisibilityChange();
         });
         row.appendChild(chk);
         row.appendChild(document.createTextNode(" "+TAB_LABELS[t]+(lockedTab?" (always shown)":"")));
+        if(byLean){ var tag=el("span","nav-vis-lean"," — off in Simple mode"); row.appendChild(tag); }
         subBox.appendChild(row);
       });
       card.appendChild(subBox);
@@ -5353,6 +5438,16 @@ function setupRoster() {
   $("setHebrewDate").addEventListener("change", function(){ data.showHebrewDate=this.checked; save(); showDate(); });
   $("setFullWidth").addEventListener("change", function(){ data.fullWidth=this.checked; save(); applyFullWidth(); });
   $("setSixSeven").addEventListener("change", function(){ data.sixSeven=this.checked; save(); });
+  // Toggling Lean can pull the tab you are standing on out of the nav — switch
+  // it on from Settings and Settings itself stays put, but switch it on while a
+  // Review tab is remembered and that group empties entirely. Re-rendering the
+  // per-tab list first keeps the greyed rows in step with the new state, then
+  // syncNav moves off any tab that just became hidden (firstVisibleTab now
+  // returns a tab that is genuinely visible, never a hidden one).
+  $("setLeanMode").addEventListener("change", function(){
+    data.leanMode=this.checked; save();
+    renderNavVisibilitySettings(); syncNavAfterVisibilityChange();
+  });
   function escHtml(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
   $("teachWordBtn").addEventListener("click", function(){
@@ -14157,6 +14252,12 @@ nameLine
     if(typeof data.features.chavrusa!=="boolean") data.features.chavrusa=false;
     if(typeof data.features.learningType!=="string") data.features.learningType="";
     if(typeof data.wizardLearning==="undefined") data.wizardLearning=null;
+    // Lean mode (#121). REACHING THIS LINE MEANS THE SAVE PREDATES LEAN — a new
+    // install gets leanMode:true from `defaults` and never falls in here. So an
+    // existing rebbi keeps the full nav he already knows and opts in from
+    // Settings, and only brand-new installs open Lean. See the note in
+    // `defaults`; the two halves only work as a pair.
+    if(typeof data.leanMode!=="boolean") data.leanMode=false;
     if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}};
     if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={};
     if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={};

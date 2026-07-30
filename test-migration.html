@@ -400,6 +400,12 @@ if(typeof data.features.shulchani!=="boolean") data.features.shulchani=true;
 if(typeof data.features.chavrusa!=="boolean") data.features.chavrusa=false;
 if(typeof data.features.learningType!=="string") data.features.learningType="";
 if(typeof data.wizardLearning==="undefined") data.wizardLearning=null;
+// Lean mode (#121). REACHING THIS LINE MEANS THE SAVE PREDATES LEAN — a new
+// install gets leanMode:true from `defaults` and never falls in here. So an
+// existing rebbi keeps the full nav he already knows and opts in from
+// Settings, and only brand-new installs open Lean. See the note in
+// `defaults`; the two halves only work as a pair.
+if(typeof data.leanMode!=="boolean") data.leanMode=false;
 if(!data.navHidden||typeof data.navHidden!=="object") data.navHidden={groups:{},tabs:{}};
 if(!data.navHidden.groups||typeof data.navHidden.groups!=="object") data.navHidden.groups={};
 if(!data.navHidden.tabs||typeof data.navHidden.tabs!=="object") data.navHidden.tabs={};
@@ -793,6 +799,13 @@ function runBuiltInTests() {
   // --- Test 1: Empty object (brand new, never-saved) ---
   var d1 = runMigration({});
   assert("Empty→version", d1.version === DATA_VERSION, "got v"+d1.version);
+  // Lean mode's three-state seam (#121). Anything reaching load2fix came from a
+  // SAVE, so it must land on false — Lean's true only ever arrives via
+  // `defaults`, which is the no-saved-data path and never passes through here.
+  // If this ever reports true, the defaults/load2fix pair has been collapsed and
+  // every existing rebbi is about to be switched into Lean without asking.
+  assert("Lean→a pre-Lean save opens ADVANCED, not Lean",
+    d1.leanMode === false, "got: "+JSON.stringify(d1.leanMode));
   assertField(d1, "students", "array");
   assertField(d1, "activities", "array");
   assertField(d1, "log", "array");
