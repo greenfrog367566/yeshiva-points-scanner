@@ -1017,7 +1017,17 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     .seat-print-title{text-align:center;font-family:var(--serif);font-size:1.3rem;font-weight:700;margin-bottom:4px}
     body.print-seating .seat-front{margin:0 0 0.15in;font-size:1rem}
     body.print-seating .print-seat-grid{padding:0;gap:0.15in}
-    body.print-seating .seat{min-height:1.5in;border:1px solid #999}
+    /* A seat is never split by a page break. This is also what stops a seat ROW
+       being split: .seat-grid is display:grid, so rows exist only as grid line
+       positions and there is no row element to put a break rule on — making
+       every item unbreakable is what pushes the fragmentation boundary out to a
+       row edge. Same rule the rest of the print CSS already uses on .label,
+       .personal-qr-card, .point-card and .lb-row-compact. */
+    body.print-seating .seat{min-height:1.5in;border:1px solid #999;break-inside:avoid;page-break-inside:avoid}
+    /* The codes block stays whole. Half a key on each page is worse than none.
+       It ALWAYS sits at the bottom, in every case — see the note in
+       renderSeatChartPrint() before reordering it. */
+    body.print-seating .seat-print-activities-footer{break-inside:avoid;page-break-inside:avoid}
     .seat-print-qr{width:55%;max-width:110px;margin:0 auto 6px}
     .seat-print-qr img,.seat-print-qr canvas{width:100%;height:auto;display:block}
     .seat-print-photo{display:flex;justify-content:center;margin:0 auto 6px}
@@ -13351,18 +13361,55 @@ nameLine
     if(data.seatPrintOpts.showActivities){
       renderSeatPrintActivitiesFooter(wrap);
     }
-    // Heuristic, non-blocking fit check — printed page dimensions don't map
-    // exactly to on-screen pixels, so this is an estimate to give the
-    // teacher a heads-up, not a guarantee. Letter portrait usable height
-    // after margins is roughly 10in; landscape roughly 7.5in. Using 96px/in
-    // as a rough screen-to-print approximation.
+    /* Non-blocking fit check.
+     *
+     * MEASURE THE THING YOU ARE COMPARING AGAINST. This used to read
+     * wrap.scrollHeight — the height of the ON-SCREEN PREVIEW — and compare it
+     * to the printed page's usable height. Those are different documents: on
+     * screen a .seat has no minimum height and renders about 98px, while under
+     * body.print-seating it is min-height:1.5in (144px). A real 6x5 chart
+     * measured 9.88in in the preview and 12.95in in print, so the check
+     * reported FITS on a sheet that overflowed by roughly three inches and the
+     * warning never appeared (#142).
+     *
+     * So the height is computed from the PRINT geometry instead of read from
+     * the preview: rows x (card + gap), plus the fixed furniture. It is still
+     * an estimate — real page dimensions never map exactly to CSS inches — but
+     * it is an estimate of the right document. Anything that "simplifies" this
+     * back to reading a rendered height reintroduces the bug.
+     */
     var warnEl=$("seatPrintFitWarning");
-    if(warnEl){
-      var usableInches = seatPrintOrient==="landscape" ? 7.5 : 10;
-      var usablePx = usableInches * 96;
-      var fits = wrap.scrollHeight <= usablePx;
-      warnEl.style.display = fits ? "none" : "block";
-    }
+    var rowsUsed=Math.max(1, lay.rows);
+    // Matches the @media print rules above: .seat min-height 1.5in,
+    // .print-seat-grid gap 0.15in, .seat-front margin 0.15in, title ~0.45in,
+    // and #seatChartGrid padding 0.3in top and bottom.
+    var printInches = 0.6 + 0.45 + 0.15
+      + (rowsUsed * 1.5) + (Math.max(0, rowsUsed-1) * 0.15)
+      + (data.seatPrintOpts.showActivities ? 1.1 : 0);
+    var usableInches = seatPrintOrient==="landscape" ? 7.5 : 10;
+    var fits = printInches <= usableInches;
+    if(warnEl) warnEl.style.display = fits ? "none" : "block";
+
+    /* THE ACTIVITY CODES GO AT THE BOTTOM, ALWAYS. Do not reorder them based on
+     * whether the chart fits.
+     *
+     * Moving them to the top when the chart overflows was tried and removed
+     * after seeing a real print. Two reasons, and the second is the one that is
+     * easy to miss:
+     *
+     *   1. The sheet's identity is "seating chart, codes underneath". Codes on
+     *      top reads as a different document, and a layout that rearranges
+     *      itself depending on roster size is less predictable than one that
+     *      never moves — a rebbi holding two pages simply knows the codes are
+     *      at the end.
+     *   2. It is SELF-DEFEATING. The codes block occupies about an inch and a
+     *      tenth at the top of page 1, which is space a seat row would have
+     *      used — so hoisting can push a row onto page 2 that would otherwise
+     *      have fitted, making the overflow it is reacting to worse.
+     *
+     * The accepted trade-off: when the chart overflows, page 1 carries seats
+     * only and the codes land on the last page. That is deliberate.
+     */
   }
   // @page can't be scoped by a body class, so landscape mode is applied by
   // briefly injecting its own <style> tag around the print action, removed
