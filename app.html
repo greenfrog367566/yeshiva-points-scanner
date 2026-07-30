@@ -296,7 +296,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      history dropdown is position:absolute so opening it overlays on top of
      the chart instead of pushing it down the page. */
   .seats-scanbar{position:relative; z-index:30; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 10px}
-  .seats-scanbar #seatsScanInput{flex:0 1 200px; min-width:70px; font-size:.94rem; padding:5px 10px; border:1px dashed var(--line); border-radius:8px; background:#fbfbfd}
+  /* The input GROWS into whatever the recent-scan strip isn't using. It used to
+     be flex:0 1 200px — grow factor ZERO — so it was pinned at 200px however
+     wide the bar got, while .scan-strip took flex:1 and claimed every spare
+     pixel. On an established class nobody noticed: the strip is full of recent
+     scans, so the space looked used. On a BRAND-NEW install the strip is built
+     from data.log, which is empty, so the bar showed a stubby 200px box that
+     cut its own placeholder off mid-word ("Scan a QR code here (or ty") beside
+     a wide blank gap. Nothing was hiding to hold this open — the strip was
+     always claiming the room, just invisibly when it had nothing in it. */
+  .seats-scanbar #seatsScanInput{flex:1 1 240px; min-width:140px; font-size:.94rem; padding:5px 10px; border:1px dashed var(--line); border-radius:8px; background:#fbfbfd}
   .seats-pill{font-size:.79rem; font-weight:700; background:var(--brass-soft); color:#6b4d18; border-radius:999px; padding:3px 11px; white-space:nowrap; cursor:default}
   .seats-pill.clickable{cursor:pointer}
   .seats-pill.clickable:hover{background:var(--brass)}
@@ -308,7 +317,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* Scan + activity-change history strip.
      Entries fill available width; oldest fade out. Most recent is boldest.
      Activity-change events show as a pill instead of a name+delta row. */
-  .scan-strip{flex:1; display:flex; align-items:center; gap:0; min-width:0; overflow:hidden}
+  /* Takes the width its entries actually need (basis auto) instead of flex:1,
+     which claimed all the free space even when it was empty and starved the
+     input next to it. Still shrinks and clips first when the bar is crowded —
+     entries are flex-shrink:0 and this clips them — so a long scan history
+     never squeezes the input below its min-width. */
+  .scan-strip{flex:0 1 auto; display:flex; align-items:center; gap:0; min-width:0; overflow:hidden}
   .scan-strip-entry{display:flex; align-items:center; gap:4px; white-space:nowrap; overflow:hidden; padding:0 10px; border-right:1px solid var(--line); flex-shrink:0; min-width:0; transition:opacity .15s}
   .scan-strip-entry:last-child{border-right:none}
   /* All text tokens — sized at primary level; opacity carries the fade */
@@ -3182,7 +3196,7 @@ function setupRoster() {
     <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">Tabs shown</h3>
       <label class="lean-row"><input type="checkbox" id="setLeanMode"><span><b>Simple mode</b> — show only the tabs most rebbeim use every day</span></label>
-      <p class="view-note" style="margin:0 0 10px">Leaves you with <b>Dashboard, Leader Board, Raffle, Print class sheet, Students, Activities, Attendance, Homework, Passes, Backup &amp; Restore</b> and <b>Settings</b>. Everything else — History, Trends, Auction, Store, Brachos, Spinner, Tracker, Gradebook and the whole Review section — is tucked away until you turn this off.</p>
+      <p class="view-note" style="margin:0 0 10px">Leaves you with <b>Dashboard, History, Leader Board, Raffle, Store, Print class sheet, Students, Activities, Attendance, Homework, Passes, Backup &amp; Restore</b> and <b>Settings</b>. Everything else — Trends, Auction, Brachos, Spinner, Tracker, Gradebook and the whole Review section — is tucked away until you turn this off.</p>
       <p class="view-note" style="margin:0 0 10px"><b>Nothing is deleted and nothing stops working.</b> Every tab this tucks away keeps all of its records exactly as they are, and they all come straight back the moment you switch this off. Your own choices below are kept separately, so they survive too.</p>
       <p class="view-note" style="margin:0 0 10px">Hide sections you don't use to keep the top of the app simpler. Setup and Settings always stay reachable so you can turn things back on.</p>
       <div id="navVisibilityBox"></div>
@@ -3879,13 +3893,19 @@ function setupRoster() {
   // Lean mode's allow-list (#121): what a rebbi actually needs in week one.
   // Everything not named here is ADVANCED and is hidden while Lean is on.
   //
-  // Homework and Passes are in LEAN despite looking like extras. Refusing a
-  // bathroom pass shows a message whose ONLY correction path is the Passes tab,
-  // so hiding it strands the rebbi mid-refusal with no way to fix it. Homework
-  // rides along for the same reason — it owns the record its own scan writes.
+  // Several of these look like extras and are here on purpose. Don't prune them
+  // back without reading why:
+  //   history  — undo lives here, and a rebbi WILL mis-scan on day one. Hiding
+  //              it leaves him with a wrong score and no way to correct it.
+  //   store    — where points get spent. A Reward section holding only a raffle
+  //              undersells the whole mechanic.
+  //   passes   — refusing a bathroom pass shows a message whose ONLY correction
+  //              path is the Passes tab, so hiding it strands the rebbi
+  //              mid-refusal with no way to put it right.
+  //   homework — owns the record its own scan writes.
   var LEAN_TABS = {
-    scan:1, standings:1, raffle:1, printSeats:1, students:1, activities:1,
-    attendance:1, homework:1, passes:1, backup:1, settings:1
+    scan:1, history:1, standings:1, raffle:1, store:1, printSeats:1, students:1,
+    activities:1, attendance:1, homework:1, passes:1, backup:1, settings:1
   };
   // DERIVE, DON'T WRITE. Lean is computed at read time and never written into
   // navHidden. If it were written, the rebbi's own hides and the preset's would
