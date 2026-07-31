@@ -818,6 +818,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .drop-row.sel{outline:3px solid var(--ink);background:var(--brass-soft)}
   .drop-row.shake{animation:shake .32s}
   @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+  /* Floating launcher buttons (Points, Timer, Picker) — fixed regardless of
+     scroll, draggable to anywhere on screen, position remembered per teacher
+     in data.fabPos. Stay below the panels they open (z-index 200/201) so an
+     open panel always sits on top of its own launcher. Default stack is
+     bottom-right; a saved position overrides it via inline left/top (see
+     makeFabDraggable). */
+  .fab-btn{position:fixed;right:16px;z-index:190;width:52px;height:52px;border-radius:50%;border:1px solid #41507f;background:var(--ink);color:#fff;font-size:1.3rem;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 8px 24px rgba(20,26,46,.32);cursor:grab;touch-action:none;user-select:none}
+  .fab-btn:active{cursor:grabbing}
+  .fab-btn:hover{background:#26315a}
+  #fsBtn.fab-btn{bottom:16px}
+  #timerBtn.fab-btn{bottom:80px}
+  #pickerBtn.fab-btn{bottom:144px}
   .float-timer{position:fixed;top:12px;right:12px;z-index:200;width:208px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(20,26,46,.28);overflow:hidden;user-select:none;touch-action:none}
   .ft-grip{display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--ink);color:#fff;cursor:grab}
   .ft-grip:active{cursor:grabbing}
@@ -1135,7 +1147,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* print */
   @media print{
     @page{size:letter;margin:0}
-    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.view-note,.toolbar,.no-print,#saveWarn,.pill-note,#globalScanBar{display:none!important}
+    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.fab-btn,.view-note,.toolbar,.no-print,#saveWarn,.pill-note,#globalScanBar{display:none!important}
     body{background:#fff}
     main{max-width:none;padding:0}
     .view{display:none!important}
@@ -1265,6 +1277,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </head>
 <body>
 
+<button class="fab-btn" id="fsBtn" title="Floating points scanner (with activity buttons and a tap-to-score name list) — drag to move">↗</button>
+<button class="fab-btn" id="timerBtn" title="Floating timer — drag to move">⏱</button>
+<button class="fab-btn" id="pickerBtn" title="Floating picker wheel — drag to move">🎡</button>
+
 <div id="floatTimer" class="float-timer" style="display:none">
   <div class="ft-grip" id="ftGrip">
     <span class="ft-title" id="ftTitle">⏱ Timer</span>
@@ -1379,9 +1395,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 <div class="subtabs-row">
   <nav class="subtabs" id="subTabs"></nav>
   <div class="subtabs-icons">
-    <button class="icon-btn" id="fsBtn" title="Floating points scanner (with activity buttons and a tap-to-score name list)">↗</button>
-    <button class="icon-btn" id="timerBtn" title="Floating timer">⏱</button>
-    <button class="icon-btn" id="pickerBtn" title="Floating picker wheel">🎡</button>
     <button class="mute-btn" id="muteBtn" title="Toggle sound">🔊 Sound on</button>
     <a class="mute-btn" id="quickStartBtn" href="quick-start.html" target="_blank" rel="noopener" title="Quick Start guide — zero to your first scan">🚀<span class="qs-label">Quick Start</span></a>
     <button class="icon-btn" id="helpBtn" title="Help &amp; Documentation">❓</button>
@@ -3384,8 +3397,8 @@ function setupRoster() {
 
     <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Header Shortcuts</h3>
-      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHeaderShortcuts"> Show the Points / Timer / Picker shortcut buttons in the top-right corner</label>
-      <p class="view-note" style="margin:8px 0 0">On by default. Turn this off to keep the header simpler if you don't use the floating points scanner, timer, or picker wheel — the class dropdown and sound button stay either way, and you can always turn this back on here.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHeaderShortcuts"> Show the Points / Timer / Picker floating buttons</label>
+      <p class="view-note" style="margin:8px 0 0">On by default. These three float on top of the screen wherever you scroll, and can be dragged anywhere — drop one wherever it's out of your way. Turn this off to hide all three if you don't use the floating points scanner, timer, or picker wheel — the class dropdown and sound button stay either way, and you can always turn this back on here.</p>
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
@@ -3575,6 +3588,10 @@ function setupRoster() {
     // modes (wheel + seating chart). Defaults ON so the seating chart keeps
     // the skip-until-everyone-has-had-a-turn rotation it has always had.
     pickerSkip: true,
+    // Per-teacher dropped position for each floating launcher FAB (Points/
+    // Timer/Picker), keyed "scan"/"timer"/"picker". Empty means "use the
+    // CSS-stacked bottom-right default" — see applyFabPositions().
+    fabPos: {},
     // Class-sheet print options. Present HERE, in defaults, purely so a
     // brand-new install can be told apart from an existing save — which is the
     // only way to give new rebbeim the activities footer without silently
@@ -5196,7 +5213,7 @@ function setupRoster() {
     });
     $("ftMin").addEventListener("click", function(){ ft.classList.toggle("min"); render(); });
     $("ftClose").addEventListener("click", function(){ ft.style.display="none"; });
-    $("timerBtn").addEventListener("click", function(){
+    makeFabDraggable($("timerBtn"), "timer", function(){
       var show=(ft.style.display==="none"||!ft.style.display);
       ft.style.display=show?"block":"none"; if(show){ ft.classList.remove("min"); render(); }
     });
@@ -5221,6 +5238,62 @@ function setupRoster() {
     function mv(e){ if(!d) return; var x=e.clientX-d.dx, y=e.clientY-d.dy, w=panel.offsetWidth, h=panel.offsetHeight; x=Math.max(2,Math.min(window.innerWidth-w-2,x)); y=Math.max(2,Math.min(window.innerHeight-h-2,y)); panel.style.left=x+"px"; panel.style.top=y+"px"; panel.style.right="auto"; }
     function up(){ d=null; document.removeEventListener("pointermove",mv,true); document.removeEventListener("pointerup",up,true); document.removeEventListener("pointercancel",up,true); }
     grip.addEventListener("pointerdown", function(e){ if(e.target.closest(".ft-btn")) return; var r=panel.getBoundingClientRect(); d={dx:e.clientX-r.left, dy:e.clientY-r.top}; panel.style.right="auto"; panel.style.left=r.left+"px"; panel.style.top=r.top+"px"; document.addEventListener("pointermove",mv,true); document.addEventListener("pointerup",up,true); document.addEventListener("pointercancel",up,true); e.preventDefault(); });
+  }
+  // Floating launcher buttons (Points/Timer/Picker FABs). Unlike makeDraggable
+  // above, the button itself is BOTH the grip and the tap target — there's no
+  // separate handle — so a drag and a tap have to be told apart by movement,
+  // not by which element was pressed. A pointerdown starts tracking; if the
+  // pointer moves past a small threshold before release, it's a drag (reposition
+  // and save, no tap fires); if it never moves, it's a tap (onTap fires, no
+  // position change).
+  // Deliberately does NOT read data.fabPos here to restore position — this
+  // runs at page-script-eval time, before load() (called much later, see
+  // applyFabPositions()) has populated data from localStorage, so data isn't
+  // ready yet. Restoring position is applyFabPositions()'s job, run after load().
+  function makeFabDraggable(btn, posKey, onTap){
+    var d=null, dragged=false;
+    function mv(e){
+      if(!d) return;
+      if(!dragged && (Math.abs(e.clientX-d.sx)>4 || Math.abs(e.clientY-d.sy)>4)) dragged=true;
+      if(!dragged) return;
+      var x=e.clientX-d.dx, y=e.clientY-d.dy, w=btn.offsetWidth, h=btn.offsetHeight;
+      x=Math.max(2,Math.min(window.innerWidth-w-2,x)); y=Math.max(2,Math.min(window.innerHeight-h-2,y));
+      btn.style.left=x+"px"; btn.style.top=y+"px"; btn.style.right="auto"; btn.style.bottom="auto";
+    }
+    function up(){
+      document.removeEventListener("pointermove",mv,true);
+      document.removeEventListener("pointerup",up,true);
+      document.removeEventListener("pointercancel",up,true);
+      d=null;
+      if(dragged){
+        var r=btn.getBoundingClientRect();
+        data.fabPos[posKey]={left:r.left, top:r.top};
+        save();
+      } else {
+        onTap();
+      }
+    }
+    btn.addEventListener("pointerdown", function(e){
+      var r=btn.getBoundingClientRect();
+      d={dx:e.clientX-r.left, dy:e.clientY-r.top, sx:e.clientX, sy:e.clientY};
+      dragged=false;
+      document.addEventListener("pointermove",mv,true);
+      document.addEventListener("pointerup",up,true);
+      document.addEventListener("pointercancel",up,true);
+      e.preventDefault();
+    });
+  }
+  // Restores each FAB's saved drop spot (data.fabPos) over the CSS default
+  // bottom-right stack. Must run AFTER load() — see makeFabDraggable's note —
+  // so it's called from the same post-load init spots as
+  // applyHeaderShortcutsVisibility()/applyFullWidth(), which have the same requirement.
+  function applyFabPositions(){
+    [["fsBtn","scan"],["timerBtn","timer"],["pickerBtn","picker"]].forEach(function(pair){
+      var btn=$(pair[0]), saved=data.fabPos[pair[1]];
+      if(saved && typeof saved.left==="number" && typeof saved.top==="number"){
+        btn.style.left=saved.left+"px"; btn.style.top=saved.top+"px"; btn.style.right="auto"; btn.style.bottom="auto";
+      }
+    });
   }
   var fpOpen=false, fpActId=null, fpLastLogId=null, fpCustomAct=null;
   function fpFlash(ok,msg){ var f=$("fsFlash"); f.className="fs-flash "+(ok?"good":"bad"); f.textContent=msg; clearTimeout(f._t); f._t=setTimeout(function(){ f.textContent=""; f.className="fs-flash"; },1600); }
@@ -5354,7 +5427,7 @@ function setupRoster() {
     else { fpSetQrMode(false); }
     renderHeaderScanContext();
   }
-  $("fsBtn").addEventListener("click", function(){ fpToggle(); });
+  makeFabDraggable($("fsBtn"), "scan", function(){ fpToggle(); });
   $("fsClose").addEventListener("click", function(){ if(pipWin){ pipWin.close(); } else { fpToggle(false); } });
   $("fsMin").addEventListener("click", function(){ $("floatScan").classList.toggle("min"); });
   $("fsCompact").addEventListener("click", function(){ data.fpCompact=!data.fpCompact; save(); this.classList.toggle("on", data.fpCompact); fpRenderNames(); });
@@ -5470,7 +5543,7 @@ function setupRoster() {
     $("floatPicker").style.display = pickerOpen?"block":"none";
     if(pickerOpen){ $("floatPicker").classList.remove("min"); renderPicker(); }
   }
-  $("pickerBtn").addEventListener("click", function(){ pickerToggle(); });
+  makeFabDraggable($("pickerBtn"), "picker", function(){ pickerToggle(); });
   $("pkClose").addEventListener("click", function(){ pickerToggle(false); });
   $("pkMin").addEventListener("click", function(){ $("floatPicker").classList.toggle("min"); });
   makeDraggable($("floatPicker"), $("pkGrip"));
@@ -8045,6 +8118,22 @@ function setupRoster() {
         beep(true);
       } else {
         flash(false,"Not in Teach mode","","Open Pesukim → Teach to use this code"); beep(false);
+      }
+      return;
+    }
+    // CTRL:PICK — a one-scan Picker: closed → opens the picker (whichever mode,
+    // wheel or seating chart, was last used) and spins immediately; scanned
+    // again while already open → spins again. Repeatable for however many
+    // picks a rebbi wants (typically 2-3, not the whole class) — there's no
+    // exhaustion-based auto-close, since a normal-size roster rarely runs out.
+    // Closing stays manual (the Picker FAB, or the panel's own ✕) — this code
+    // never closes it, so it can't be scanned "one too many times" by mistake.
+    if(c==="CTRL:PICK"){
+      if(!pickerOpen) pickerToggle(true);
+      if(pickViewMode==="seat"){
+        if(!(seatPickerCtl && seatPickerCtl.isSpinning())){ renderSeatPicker(); if(seatPickerCtl) seatPickerCtl.spin(); }
+      } else {
+        pickSpin();
       }
       return;
     }
@@ -13924,6 +14013,7 @@ nameLine
     items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", defaultSection:"nav"});
     items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", defaultSection:"nav"});
     items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan", defaultSection:"nav"});
+    items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only", defaultSection:"nav"});
     // #117: drop the codes this rebbi has turned off. Filtered HERE, once,
@@ -14686,7 +14776,7 @@ nameLine
         $("autoSheet").checked = (data.autoSheet !== false);
         renderActButtons(); renderRecent(); renderStudents(); renderActivities();
         renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-        showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
+        showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
         if (statusEl) statusEl.textContent = "";
         alert("Restored from Google Sheet.");
       })
@@ -14850,7 +14940,7 @@ nameLine
           $("autoSheet").checked=(data.autoSheet!==false);
           renderActButtons(); renderRecent(); renderStudents(); renderActivities();
           renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-          showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
+          showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
           renderShulchaniStatus();
           alert("Backup restored.");
         });
@@ -15037,6 +15127,9 @@ nameLine
     if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
     if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
     if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
+    // Dropped position per floating launcher FAB. Additive/empty-safe — an
+    // existing save without it just keeps every FAB at its default corner spot.
+    if(!data.fabPos || typeof data.fabPos!=="object" || Array.isArray(data.fabPos)) data.fabPos={};
     if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
     if(typeof data.fullWidth!=="boolean") data.fullWidth=false;
     if(typeof data.sixSeven!=="boolean") data.sixSeven=false;
@@ -15683,6 +15776,7 @@ nameLine
   showDate();
   applyHeaderShortcutsVisibility();
   applyFullWidth();
+  applyFabPositions();
   renderHeaderScanContext();
   renderActButtons();
   syncCustomButtons();
