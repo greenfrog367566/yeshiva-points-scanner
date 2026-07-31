@@ -221,10 +221,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   }
 
   /* Seating chart pop-out (Phase 1: Seats folded into Dashboard). A fixed
-     overlay that fills the viewport BELOW the top bar (header + subtab row +
-     scan bar), so it cleanly replaces whatever tab you popped out from while
-     the top bar stays usable. The top offset (--seats-fs-top) is measured in
-     JS since bar height varies with screen width / Hebrew-date toggle.
+     overlay that fills the viewport BELOW the top bar (header + scan bar) —
+     the Dashboard/History subtabs row is hidden for the duration (below),
+     since it isn't a useful destination while the overlay covers <main> and
+     every px of chrome is a px the chart loses. The top offset
+     (--seats-fs-top) is measured in JS since bar height varies with screen
+     width / Hebrew-date toggle.
      The expand/collapse animation is JS-driven (FLIP): the overlay literally
      grows out of the Dashboard's Class list card and shrinks back into it. */
   #view-seats.seats-fullscreen,
@@ -256,6 +258,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      the overlay (z 120) — its activity-pill and History dropdowns hang down
      into the overlay's area and would otherwise paint behind the chart. */
   body.seats-fs-open #globalScanBar{ z-index:130 }
+  /* The Dashboard/History subtabs row is dead weight while the popout covers
+     <main> — hide it so the chart reclaims that space, matching the top
+     offset syncSeatsFsTop() measures once this class is applied (see JS). */
+  body.seats-fs-open .subtabs-row{ display:none }
   .seats-fs-close{
     background:var(--ink); color:#fff; border:none; border-radius:8px;
     padding:6px 14px; font-size:.95rem; font-weight:600; cursor:pointer;
@@ -6802,12 +6808,12 @@ function setupRoster() {
     return "translate("+(c.left-o.left)+"px,"+(c.top-o.top)+"px) scale("+(c.width/o.width)+","+(c.height/o.height)+")";
   }
   $("seatsPopOut").addEventListener("click", function(){
-    syncSeatsFsTop();
     var vs=$("view-seats");
     vs.classList.add("seats-fullscreen");
     $("seatsCloseBtn").style.display="";
     document.body.style.overflow="hidden"; // no background scroll behind the overlay
-    document.body.classList.add("seats-fs-open"); // lifts the scan bar (and its dropdowns) above the overlay
+    document.body.classList.add("seats-fs-open"); // lifts the scan bar (and its dropdowns) above the overlay, and hides the now-unreachable Dashboard/History subtabs row so the chart reclaims that space
+    syncSeatsFsTop(); // measured after seats-fs-open hides the subtabs row, so the offset reflects the shorter chrome stack
     renderTapPanel();
     renderSeatsScanBar();
     if(!seatsPopReduced){
