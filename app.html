@@ -428,6 +428,31 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-print-opts{display:inline-flex;gap:6px}
   .seat-front{text-align:center;font-size:.78rem;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;margin:12px 14px 2px;padding-bottom:8px;border-bottom:2px solid var(--line)}
   .seat-grid{display:grid;gap:10px;padding:14px}
+  /* Scannable chart. The QR is sized in JS (SEAT_QR_PX) because the constraint
+     is the seat's inner HEIGHT, which is measured, not a CSS guess. */
+  .seat-qr{line-height:0}
+  .seat-qr img,.seat-qr canvas{display:block;width:100%;height:100%;image-rendering:pixelated}
+  .seat.scan-seat{padding:5px 4px;gap:2px;justify-content:flex-start}
+  .seat.scan-seat .seat-name{font-size:.66rem;line-height:1.1;overflow:hidden;
+    display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;word-break:break-word}
+  /* Activity codes under the chart — the same set the printed sheet carries. */
+  .seat-scan-codes{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
+    padding:10px 14px 14px;border-top:2px solid var(--line);margin-top:6px}
+  .seat-code-card{display:flex;flex-direction:column;align-items:center;gap:3px;
+    border:1px solid var(--line);border-radius:8px;background:#fff;padding:5px 6px;
+    width:74px;cursor:pointer;font:inherit}
+  .seat-code-card:hover{border-color:var(--ink);background:var(--gb-row,#f7f8fc)}
+  .seat-code-card img,.seat-code-card canvas{display:block}
+  .seat-code-name{font-size:.6rem;font-weight:700;line-height:1.15;text-align:center;
+    color:var(--ink);overflow-wrap:break-word}
+  .seat-undo-row{display:flex;justify-content:center;padding:8px 14px 12px}
+  /* #69 raffle roster. Collapsed by default — the tab is class-facing. */
+  .raffle-who{margin:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--card);padding:8px 12px}
+  .raffle-who>summary{cursor:pointer;font-weight:700;font-size:.9rem}
+  .raffle-who-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:4px 14px}
+  .raffle-who-row{display:flex;align-items:center;gap:7px;font-size:.88rem;cursor:pointer;padding:2px 0;margin:0;font-weight:500}
+  .raffle-who-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .raffle-who-tix{font-size:.76rem;color:var(--muted);font-weight:700;white-space:nowrap}
   .seat{position:relative;border:1px solid var(--line);background:#fff;border-radius:10px;padding:11px 8px;min-height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden}
   .seat.empty{background:#f7f8fa;border-style:dashed;color:#b7bcca;font-size:.78rem}
   .seat .seat-name{font-weight:600;font-size:.9rem}
@@ -1361,6 +1386,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <button data-cols="2">2 columns</button>
         <button data-cols="3">3 columns</button>
       </span>
+      <!-- Same action as the Recent scans panel's undo, wired to the same
+           undoMostRecentScan(). It lives HERE, in the page's own toolbar,
+           rather than in the "Tap a name" card header — renderTapPanel()
+           rebuilds that header on every render and displaces anything static
+           put in it. This row is never rebuilt, so the button cannot go
+           missing, and it stays visible whatever a rebbi has done to the
+           panel layout. -->
+      <button class="btn btn-sm" id="undoLastDash" title="Reverse the most recent scan">↩ Undo last scan</button>
       <button class="btn btn-sm" id="scanCustomizeBtn" title="Rearrange the sections on this page">⚙ Customize layout</button>
       <button class="btn btn-sm btn-bad" id="scanLayoutReset" style="display:none">↺ Reset layout</button>
     </div>
@@ -1557,6 +1590,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <span id="raffleAdjustNote" style="font-size:.85rem;color:var(--muted)"></span>
       <button class="btn btn-sm" id="raffleAdjustReset">↺ Un-remove everyone</button>
     </div>
+
+    <!-- #69. COLLAPSED BY DEFAULT and it must stay that way: the raffle tab is
+         class-facing, and a list of every boy's name with tick-boxes beside it,
+         on a smartboard, in front of the class, is not something to open by
+         accident. Writes to data.raffle.removed — the SAME map the after-a-win
+         "remove that student" option already uses — so there is one removal
+         mechanism, one un-remove control, and one thing to reason about. -->
+    <details id="raffleWhoBox" class="raffle-who">
+      <summary>Who's in this draw</summary>
+      <p class="view-note" style="margin:8px 0">Untick a boy to keep him out of the next draw. Nothing is deducted and no points change — he simply isn't on the wheel. <b>↺ Un-remove everyone</b> above puts them all back.</p>
+      <div id="raffleWhoList" class="raffle-who-list"></div>
+    </details>
 
     <div id="autoNote" class="pill-note">Each student's current points are their tickets. Points are <b>not</b> spent — this is just a draw, so the wheel always reflects the live standings.</div>
     <div id="raffleSourceRow" class="toolbar">
@@ -3954,7 +3999,14 @@ function setupRoster() {
   }
   function firstVisibleTab(g){
     var vis=groupVisibleTabs(g);
-    return vis.length ? vis[0] : (g==="manage" ? "settings" : (TAB_GROUPS[g] ? TAB_GROUPS[g].tabs[0] : "scan"));
+    if(vis.length) return vis[0];
+    // No visible tab in this group. The old fallback handed back the group's
+    // FIRST tab, which is safe only while every group is guaranteed at least one
+    // visible tab — and it is not: a rebbi who unticks every tab in a group under
+    // Settings -> Tabs shown empties it, and the fallback then lands him on a
+    // HIDDEN view whose group tab is no longer in the nav, with no way back.
+    // "scan" and "settings" are the two tabs that can never be hidden.
+    return g==="manage" ? "settings" : "scan";
   }
   function renderGroupTabs(activeGroup){
     var box=$("groupTabs"); box.innerHTML="";
@@ -4036,6 +4088,13 @@ function setupRoster() {
       vseats.style.transition=""; vseats.style.transform=""; vseats.style.opacity="";
       document.body.style.overflow="";
       document.body.classList.remove("seats-fs-open");
+      // NOTE: scannable mode is deliberately NOT reset here. Switching tabs in
+      // this app is showing and hiding sections in JS — no page load happens —
+      // so resetting on tab switch made "Show codes" fall off simply for
+      // visiting Activities and coming back. It is reset once at boot instead;
+      // see the init block. (It also only ever fired when the chart happened to
+      // be FULL-SCREEN, since this branch is the pop-out cleanup, which made it
+      // inconsistent as well as unwanted.)
     }
     var sClose=$("seatsCloseBtn"); if(sClose) sClose.style.display="none";
     applyGlobalScanBarVisibility(tab);
@@ -6663,6 +6722,10 @@ function setupRoster() {
     return false;
   }
   $("undoLast").addEventListener("click", function(){ undoMostRecentScan(); });
+  // The dashboard and seating-chart undos are the SAME action, not a second
+  // implementation — all three call undoMostRecentScan(), so undo behaves
+  // identically (and stays correct) wherever it is pressed from.
+  $("undoLastDash").addEventListener("click", function(){ undoMostRecentScan(); });
 
   /* ---------- History tab: the full scan log, searchable ---------- */
   var historyViewMode = "row"; // "row" (recent, existing sorts) or "ranked" (grouped totals)
@@ -7021,6 +7084,24 @@ function setupRoster() {
         toolbar.appendChild(seatBtn);
       }
     }
+    // Scannable mode lives in the ALWAYS-VISIBLE toolbar, beside List / Seating
+    // chart — not in the ⚙ Setup panel, where it started. Setup is collapsed by
+    // default, so putting it there meant opening a panel every time to use the
+    // feature the chart exists for. Shown only in seating mode, since there are
+    // no seats to put codes in otherwise.
+    //
+    // Arranging and scannable are mutually exclusive: dragging seats around
+    // while every cell shows a QR is a way to mis-seat a boy you cannot read.
+    if(effViewMode==="seating"){
+      var scanBtn=el("button","seat-modebtn"+(data.seatScanMode?" active":""), data.seatScanMode?"Hide codes":"⛶ Show codes");
+      scanBtn.title="Show each student's QR code in his seat, so the class can be scanned straight off the screen";
+      scanBtn.addEventListener("click", function(){
+        data.seatScanMode=!data.seatScanMode;
+        if(data.seatScanMode) data.seatArranging=false;
+        save(); renderTapPanel();
+      });
+      toolbar.appendChild(scanBtn);
+    }
 
     if(effViewMode==="seating"){
       var lay=seatLayout();
@@ -7157,11 +7238,20 @@ function setupRoster() {
     if(pv && pv.classList.contains("active")) renderSeatChartPrint();
   }
 
+  // Measured, not guessed. At 25 students (5x5) full-screen the seat cell is
+  // 233x95px at 1280 and 268x95px at 1440 — WIDE AND SHORT, and the height does
+  // not grow with the window, so the square a QR can occupy is set by the row
+  // height alone: 73px of inner height. 68px leaves a hairline plus room for the
+  // name under it. That is ~0.71in against the printed sheet's ~1.1in, which is
+  // fine for the scanner in use but is the reason the name stays visible — if a
+  // code will not read, the rebbi still has something to tap.
+  var SEAT_QR_PX = 68;
   function renderSeatGrid(body, studs){
     var lay=seatLayout();
     var unplaced=seatPruneAndFillUnplaced(lay, studs);
     var byId={}; studs.forEach(function(s){ byId[s.id]=s; });
     var arranging=!!data.seatArranging;
+    var scanMode=!!data.seatScanMode && !arranging;
 
     // "Front of room" sits above the grid in normal view; in Rebbi's view the
     // seats are reversed (Rebbi faces the class), so the front is at the
@@ -7187,13 +7277,24 @@ function setupRoster() {
     displayOrder.forEach(function(item){
       var sid=item.sid, trueIdx=item.trueIdx;
       var s = sid ? byId[sid] : null;
-      var seat=el("div","seat"+(s?"":" empty"));
+      var seat=el("div","seat"+(s?"":" empty")+(scanMode&&s?" scan-seat":""));
       seat.dataset.idx=trueIdx;
       if(s){
         seat.dataset.sid=s.id;
+        if(scanMode){
+          // Same payload the PRINTED sheet encodes — s.id, nothing else — so a
+          // code scanned off the screen is indistinguishable from one scanned
+          // off paper. There is deliberately no second code path here.
+          var qh=el("div","seat-qr");
+          try{ new QRCode(qh,{text:s.id,width:SEAT_QR_PX,height:SEAT_QR_PX,correctLevel:QRCode.CorrectLevel.M}); }
+          catch(e){ qh.textContent="QR?"; }
+          seat.appendChild(qh);
+          seat.appendChild(el("span","seat-name",s.name));
+        } else {
         seat.appendChild(avatarEl(s, 26));
         seat.appendChild(el("span","seat-name",s.name));
         seat.appendChild(coinScoreEl(s.id,"ts"));
+        }
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
@@ -7244,6 +7345,42 @@ function setupRoster() {
     });
     body.appendChild(grid);
     if(data.seatLiveRebbiView) body.appendChild(el("div","seat-front","Front of room"));
+
+    // Activity codes along the bottom, so the chart is the whole scanning
+    // surface and nothing needs to have been printed first. Codes come from
+    // menuLabelItems() — the SAME source the printed sheet and the Avery labels
+    // use, including the #117 "codes I use" filter — so the screen and the paper
+    // can never offer a different set. Each chip is tappable as well as
+    // scannable: tapping arms exactly what scanning it would arm.
+    if(scanMode){
+      var footer=el("div","seat-scan-codes no-print");
+      menuLabelItems().forEach(function(it){
+        var card=el("button","seat-code-card");
+        card.type="button";
+        var qh=el("div");
+        try{ new QRCode(qh,{text:it.qrText,width:44,height:44,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ qh.textContent="QR?"; }
+        card.appendChild(qh);
+        card.appendChild(el("span","seat-code-name",it.name));
+        // handleScannedCode(), not processScan() — it is the same entry point the
+        // scanner's keyboard input lands on, so a tap and a scan are literally
+        // the same call with the same string.
+        card.addEventListener("click", function(){ handleScannedCode(it.qrText); });
+        footer.appendChild(card);
+      });
+      body.appendChild(footer);
+    }
+
+    // Undo at the bottom of the chart. Third call site, same one function — a
+    // rebbi scanning off the full-screen chart has the Recent scans panel and
+    // the dashboard header both hidden behind the overlay, so without this the
+    // only way to fix a mis-scan is to leave the view he is working in.
+    var undoRow=el("div","seat-undo-row no-print");
+    var undoBtn=el("button","btn btn-sm","↩ Undo last scan");
+    undoBtn.title="Reverse the most recent scan";
+    undoBtn.addEventListener("click", function(){ undoMostRecentScan(); });
+    undoRow.appendChild(undoBtn);
+    body.appendChild(undoRow);
 
     if(arranging){
       var trayWrap=el("div","seat-unplaced");
@@ -7747,6 +7884,15 @@ function setupRoster() {
   // exclusion here in addition to the general button check.
   document.getElementById("view-scan").addEventListener("click", function(e){
     if(e.target.closest(".act-btn")||e.target.closest("button")||e.target.closest("#tapPanelBody")) return;
+    // NEVER steal focus from a field the rebbi has deliberately clicked into
+    // (#33). This handler kept the scan input focused by refocusing it on any
+    // click in the view that wasn't a button — and #customAmt is an <input>,
+    // not a button, so clicking into Custom Amount to type a number handed
+    // focus straight back to the scan box. The number then went into the scan
+    // buffer instead of the field. It applies to any form control here, not
+    // just that one, which is why this tests the element type rather than
+    // naming #customAmt.
+    if(e.target.closest("input, textarea, select, [contenteditable=true]")) return;
     $("scanInput").focus();
   });
 
@@ -8812,6 +8958,8 @@ function setupRoster() {
     $("raffleSpread").checked = !!data.raffle.spreadTickets;
     $("raffleInstant").checked = !!data.raffleInstant;
     renderRaffleAdjustNote();
+    // Rendered in BOTH modes — auto mode had no student list at all before this.
+    renderRaffleWho();
     if(mode==="manual") renderPool();
     renderWheel();
     renderWinners();
@@ -8827,8 +8975,47 @@ function setupRoster() {
   $("raffleInstant").addEventListener("change", function(){ data.raffleInstant=this.checked; save(); });
   $("raffleAdjustReset").addEventListener("click", function(){
     if(!confirm("Clear all after-win removals from this raffle? Everyone becomes eligible again with their full ticket count.")) return;
-    data.raffle.adjust={}; data.raffle.removed={}; save(); renderWheel(); renderRaffleAdjustNote();
+    data.raffle.adjust={}; data.raffle.removed={}; save(); renderWheel(); renderRaffleAdjustNote(); renderRaffleWho();
   });
+  // #69. Every student in the current class, ticked = in the draw. Built from
+  // activeStudents() rather than from raffleEntries(), deliberately: a boy on
+  // zero tickets is still someone the rebbi may want to see and reason about,
+  // and building it from the entry list would make him vanish from his own
+  // roster. Ticket count is shown so "in the draw but with 0 tickets" is
+  // visible rather than mysterious.
+  //
+  // WORKS IN BOTH MODES because it writes to data.raffle.removed, which
+  // raffleEntries() applies after tickets are computed — auto mode recomputes
+  // tickets from live points every draw and manual mode reads stored entries,
+  // but the removal filter is the last step in both. Auto mode previously had
+  // no list at all.
+  function renderRaffleWho(){
+    var box=$("raffleWhoList"); if(!box) return;
+    box.innerHTML="";
+    if(!data.raffle.removed||typeof data.raffle.removed!=="object") data.raffle.removed={};
+    var entries=raffleEntries(), tick={};
+    entries.forEach(function(e){ tick[e.sid]=e.tickets; });
+    var studs=activeStudents();
+    if(!studs.length){ box.appendChild(el("div","view-note","No students in this class yet.")); return; }
+    studs.forEach(function(s){
+      var row=el("label","raffle-who-row");
+      var cb=el("input"); cb.type="checkbox";
+      cb.checked=!data.raffle.removed[s.id];
+      cb.addEventListener("change", function(){
+        // Only ever touches `removed`. Ticket counts stay where they are, so
+        // un-ticking and re-ticking a boy restores exactly what he had.
+        if(cb.checked) delete data.raffle.removed[s.id];
+        else data.raffle.removed[s.id]=true;
+        save(); renderWheel(); renderRaffleAdjustNote(); renderRaffleWho();
+      });
+      row.appendChild(cb);
+      row.appendChild(el("span","raffle-who-name",s.name));
+      var n=tick[s.id];
+      row.appendChild(el("span","raffle-who-tix", data.raffle.removed[s.id] ? "out"
+        : (typeof n==="number" ? n+" ticket"+(n===1?"":"s") : "0 tickets")));
+      box.appendChild(row);
+    });
+  }
   function renderRaffleAdjustNote(){
     var removedCount=Object.keys(data.raffle.removed||{}).length;
     var adjustedCount=Object.keys(data.raffle.adjust||{}).filter(function(k){return data.raffle.adjust[k];}).length;
@@ -8974,7 +9161,7 @@ function setupRoster() {
       if(sel.value==="removeTicket") raffleAdjustTicket(win.sid, -1);
       else if(sel.value==="removeStudent") raffleRemoveStudent(win.sid);
       appliedAction=sel.value;
-      save(); renderWheel(); renderRaffleAdjustNote();
+      save(); renderWheel(); renderRaffleAdjustNote(); renderRaffleWho();
     }
     sel.value = data.raffleAfterWinDefault || "keep";
     sel.addEventListener("change", applyAfterWinChoice);
@@ -14423,6 +14610,12 @@ nameLine
     if(typeof data.menuLabelFormat!=="string") data.menuLabelFormat="tiles";
     if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages";
     if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
+    // Scannable seating chart (#scannable-screen). Stored so a rebbi who turns
+    // it on keeps it for the lesson, but DISARMED on leaving the full-screen
+    // chart — same contract as seatArranging, and for the same reason: a chart
+    // left showing QR codes instead of names is not the view anyone wants to
+    // come back to on a smartboard.
+    if(typeof data.seatScanMode!=="boolean") data.seatScanMode=false;
     if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
     if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
@@ -14883,6 +15076,24 @@ nameLine
 
   /* ---------- init ---------- */
   load();
+  // Scannable seating mode is ARMED STATE, not a saved preference: it resets
+  // exactly once, here, on a genuine boot — a real page load, which is what a
+  // hard reload or closing and reopening the app produces.
+  //
+  // It is done at boot rather than on navigation because in this app moving
+  // between Scan, Activities and the seating chart is showing and hiding
+  // sections in JS, with no page load at all. Resetting on tab switch (which is
+  // what this used to do) meant "Show codes" fell off for the ordinary act of
+  // looking something up and coming back.
+  //
+  // Forced false regardless of what was saved, so a rebbi never reopens the app
+  // to a chart of QR codes where he expects names. The field still has to live
+  // in `data` — the seating chart re-renders constantly, and it must survive
+  // every one of those renders, just not a restart.
+  // save() as well as setting it, so the stored value can never disagree with
+  // how the app is actually behaving — a backup that says true while the chart
+  // shows names is a value that lies to whoever reads it next.
+  if(data.seatScanMode){ data.seatScanMode = false; save(); }
   // --- Device ID for snapshot scoping (Phase 1) ---
   // Each browser gets a stable random ID so snapshots on a shared Sheet
   // stay separated per device. Generated once, persists in localStorage.
