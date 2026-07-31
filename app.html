@@ -488,6 +488,33 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-codes-grid{display:grid;gap:6px}
   .seat-codes-grid .seat-code-card{width:auto}
   .seat-codes-grid .act-btn{min-width:0;width:100%}
+  /* ⚙ Customize — the grid wizard. Dashed brass is the app's established
+     "you are rearranging this" signal (the Scan-tab layout customizer and
+     Arrange seats both use it), so the mode reads the same way everywhere. */
+  .seat-codes-groups.customizing .seat-codes-group{outline:1.5px dashed var(--brass);outline-offset:2px}
+  .seat-codes-groups.customizing .seat-code-card,
+  .seat-codes-groups.customizing .act-btn{cursor:grab}
+  .seat-codes-groups.customizing .seat-code-card:active,
+  .seat-codes-groups.customizing .act-btn:active{cursor:grabbing}
+  .seat-codes-group.drag-over{background:var(--brass-soft);outline-color:var(--ink)}
+  .seat-code-card.dragging,.act-btn.dragging{opacity:.4}
+  .seat-code-card.drag-over,.act-btn.drag-over{border-color:var(--brass);background:var(--brass-soft)}
+  .seat-codes-cols{display:flex;gap:2px}
+  .seat-codes-colbtn{border:1px solid var(--line);background:#fff;color:var(--muted);
+    font-size:.62rem;font-weight:700;width:17px;height:17px;border-radius:4px;
+    line-height:1;padding:0;cursor:pointer}
+  .seat-codes-colbtn.active{background:var(--ink);border-color:var(--ink);color:#fff}
+  .seat-codes-empty{grid-column:1/-1;font-size:.75rem;color:var(--muted);font-style:italic;
+    padding:10px 4px;text-align:center}
+  .seat-codes-bin{display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+    margin:0 14px 12px;padding:8px 10px;border:1.5px dashed var(--line);
+    border-radius:12px;background:var(--gb-row,#f7f8fc)}
+  .seat-codes-bin.drag-over{border-color:var(--brass);background:var(--brass-soft)}
+  .seat-codes-bin-lbl{font-size:.68rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:.4px;color:var(--muted);white-space:nowrap}
+  .seat-codes-bin-empty{font-size:.78rem;color:var(--muted);font-style:italic}
+  .seat-codes-bin .seat-code-card.removed,.seat-codes-bin .act-btn.removed{opacity:.65}
+  .seat-codes-bin .seat-code-card.removed:hover,.seat-codes-bin .act-btn.removed:hover{opacity:1}
   .seat-undo-row{display:flex;justify-content:center;padding:8px 14px 12px}
   /* #69 raffle roster. Collapsed by default — the tab is class-facing. */
   .raffle-who{margin:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--card);padding:8px 12px}
@@ -7484,12 +7511,25 @@ function setupRoster() {
       // it means nothing to a single flat row.
       if(data.actFooterGrouped){
         var colBtn=el("button","seat-modebtn", actFooterCols()+" wide");
-        colBtn.title="How many codes sit across each section. Click to cycle 1 → 2 → 3.";
+        colBtn.title="How many codes sit across every section. Click to cycle 1 → 2 → 3. Customize lets you set a section on its own.";
         colBtn.addEventListener("click", function(){
           data.actFooterCols = actFooterCols()>=3 ? 1 : actFooterCols()+1;
-          save(); renderTapPanel();
+          // A new overall width replaces the per-section overrides rather than
+          // sitting under them invisibly — otherwise this button appears to do
+          // nothing on any section a rebbi has already set by hand.
+          data.actFooterSectionCols={};
+          save(); renderTapPanel(); renderSeatChartPrint();
         });
         toolbar.appendChild(colBtn);
+
+        var editBtn=el("button","seat-modebtn"+(data.actFooterCustomizing?" active":""),
+                       data.actFooterCustomizing?"✓ Done":"⚙ Customize");
+        editBtn.title="Rearrange the codes: set each section's width, drag codes between sections, or drag one into the bin.";
+        editBtn.addEventListener("click", function(){
+          data.actFooterCustomizing=!data.actFooterCustomizing;
+          save(); renderTapPanel();
+        });
+        toolbar.appendChild(editBtn);
       }
     }
 
@@ -7721,25 +7761,124 @@ function setupRoster() {
     // rebbi's hand is the one outcome worth designing out.
     var groups=el("div","seat-codes-groups no-print");
     var ordered=orderedPrintCodeItems(items);
-    var cols=actFooterCols();
+    // ⚙ Customize — the grid wizard, on the chart itself. Off, this is a plain
+    // scanning surface; on, each section grows its own 1/2/3 width buttons,
+    // every card becomes draggable between sections, and a bin appears. It is
+    // a MODE rather than a separate screen because the thing being arranged is
+    // the thing you are looking at — arranging it somewhere else is how the
+    // screen and the sheet drifted apart in the first place.
+    var editing=!!data.actFooterCustomizing;
+    if(editing) groups.classList.add("customizing");
     var drawn=0;
     PRINT_CODE_SECTIONS.forEach(function(sec){
       var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
-      if(!secItems.length) return;   // no bare headings over an empty section
+      // While customizing, an empty section still draws — it is the only way to
+      // drag the last code back into one you have emptied.
+      if(!secItems.length && !editing) return;
       drawn++;
       var g=el("div","seat-codes-group");
       var head=el("div","seat-codes-group-head");
       head.appendChild(el("span","seat-codes-group-name", codeSectionLabel(sec)));
       head.appendChild(el("span","seat-codes-group-count", String(secItems.length)));
+      if(editing){
+        var cw=el("span","seat-codes-cols");
+        [1,2,3].forEach(function(n){
+          var cb=el("button","seat-codes-colbtn"+(actFooterSectionCols(sec.key)===n?" active":""), String(n));
+          cb.type="button";
+          cb.title=n+" across in "+codeSectionLabel(sec);
+          cb.addEventListener("click", function(ev){
+            ev.stopPropagation();
+            if(!data.actFooterSectionCols || typeof data.actFooterSectionCols!=="object") data.actFooterSectionCols={};
+            data.actFooterSectionCols[sec.key]=n;
+            save(); renderTapPanel(); renderSeatChartPrint();
+          });
+          cw.appendChild(cb);
+        });
+        head.appendChild(cw);
+      }
       g.appendChild(head);
       var grid=el("div","seat-codes-grid");
-      grid.style.gridTemplateColumns="repeat("+cols+", minmax(0, 1fr))";
-      secItems.forEach(function(it){ grid.appendChild(scanCodeCard(it, withQr)); });
+      grid.style.gridTemplateColumns="repeat("+actFooterSectionCols(sec.key)+", minmax(0, 1fr))";
+      secItems.forEach(function(it){
+        var card=scanCodeCard(it, withQr);
+        if(editing) wireFooterCardDrag(card, it, sec);
+        grid.appendChild(card);
+      });
+      if(editing && !secItems.length) grid.appendChild(el("div","seat-codes-empty","Drop a code here"));
       g.appendChild(grid);
+      if(editing) wireFooterDropTarget(g, sec);
       groups.appendChild(g);
     });
     if(!drawn) return;   // every code turned off — draw nothing, not an empty frame
     body.appendChild(groups);
+    if(editing) renderFooterBin(body, withQr);
+  }
+  // Dragging a code between sections on the chart writes through the SAME
+  // movePrintCode() the "Choose codes" picker uses, so there is one stored
+  // arrangement, not a chart one and a print one.
+  function wireFooterCardDrag(card, it, sec){
+    card.draggable=true;
+    card.addEventListener("dragstart", function(ev){
+      ev.stopPropagation();
+      card.classList.add("dragging");
+      ev.dataTransfer.setData("text/plain", JSON.stringify({qrText:it.qrText}));
+      ev.dataTransfer.effectAllowed="move";
+    });
+    card.addEventListener("dragend", function(){ card.classList.remove("dragging"); });
+    // A card is also a drop target, so a code can be positioned BEFORE this one
+    // rather than only appended to the end of a section.
+    card.addEventListener("dragover", function(ev){ ev.preventDefault(); ev.stopPropagation(); card.classList.add("drag-over"); });
+    card.addEventListener("dragleave", function(){ card.classList.remove("drag-over"); });
+    card.addEventListener("drop", function(ev){
+      ev.preventDefault(); ev.stopPropagation(); card.classList.remove("drag-over");
+      var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+      var p; try{ p=JSON.parse(raw); }catch(e){ return; }
+      if(!p.qrText || p.qrText===it.qrText) return;
+      delete data.printExcluded[p.qrText];   // dragging out of the bin restores as well as places
+      movePrintCode(p.qrText, sec.key, it.qrText);
+    });
+    // Tapping a card while customizing would arm the activity, which is not
+    // what a rebbi rearranging a grid means by a tap.
+    card.addEventListener("click", function(ev){ ev.preventDefault(); ev.stopPropagation(); }, true);
+  }
+  function wireFooterDropTarget(g, sec){
+    g.addEventListener("dragover", function(ev){ ev.preventDefault(); g.classList.add("drag-over"); });
+    g.addEventListener("dragleave", function(ev){ if(ev.target===g) g.classList.remove("drag-over"); });
+    g.addEventListener("drop", function(ev){
+      ev.preventDefault(); g.classList.remove("drag-over");
+      var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+      var p; try{ p=JSON.parse(raw); }catch(e){ return; }
+      if(!p.qrText) return;
+      delete data.printExcluded[p.qrText];
+      movePrintCode(p.qrText, sec.key, null);
+    });
+  }
+  // The bin, on the chart. Same data.printExcluded the picker's bin writes, so
+  // a code removed here is off the sheet too — the two surfaces have always
+  // carried the same set and this does not change that.
+  function renderFooterBin(body, withQr){
+    var all=orderedPrintCodeItems(menuLabelItemsAll());
+    var removed=all.filter(function(it){ return !!data.printExcluded[it.qrText]; });
+    var bin=el("div","seat-codes-bin no-print");
+    bin.appendChild(el("span","seat-codes-bin-lbl","🗑 Removed"));
+    if(!removed.length) bin.appendChild(el("span","seat-codes-bin-empty","drag a code here to take it off the chart and the sheet"));
+    removed.forEach(function(it){
+      var card=scanCodeCard(it, withQr);
+      card.classList.add("removed");
+      wireFooterCardDrag(card, it, null);
+      bin.appendChild(card);
+    });
+    bin.addEventListener("dragover", function(ev){ ev.preventDefault(); bin.classList.add("drag-over"); });
+    bin.addEventListener("dragleave", function(ev){ if(ev.target===bin) bin.classList.remove("drag-over"); });
+    bin.addEventListener("drop", function(ev){
+      ev.preventDefault(); bin.classList.remove("drag-over");
+      var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+      var p; try{ p=JSON.parse(raw); }catch(e){ return; }
+      if(!p.qrText) return;
+      data.printExcluded[p.qrText]=true;
+      save(); renderTapPanel(); renderSeatChartPrint(); renderSeatPrintCodes();
+    });
+    body.appendChild(bin);
   }
   function renderScanUndoRow(body){
     var undoRow=el("div","seat-undo-row no-print");
@@ -14220,6 +14359,15 @@ nameLine
     if(!(c>=1 && c<=3)) c=2;
     return c;
   }
+  // Columns for ONE section. Sparse override on top of the global width, so a
+  // rebbi who wants Points three-across and Navigation one-across can have it
+  // without every section having to carry a stored number. Same clamp as the
+  // global setting — this also lands in grid-template-columns.
+  function actFooterSectionCols(key){
+    var c=parseInt((data.actFooterSectionCols||{})[key],10);
+    if(!(c>=1 && c<=3)) return actFooterCols();
+    return c;
+  }
   // A code's section is its defaultSection (set in menuLabelItems()) unless a
   // rebbi has dragged it elsewhere, in which case data.printCodeSections holds
   // the override. Sparse by design, same spirit as data.printExcluded — a code
@@ -14708,7 +14856,7 @@ nameLine
       var g=el("div","seat-print-codes-group");
       g.appendChild(el("div","seat-print-act-section-label", codeSectionLabel(sec)));
       var grid=el("div","seat-print-codes-grid");
-      grid.style.gridTemplateColumns="repeat("+cols+", minmax(0, 1fr))";
+      grid.style.gridTemplateColumns="repeat("+actFooterSectionCols(sec.key)+", minmax(0, 1fr))";
       secItems.forEach(function(it){ grid.appendChild(seatPrintCodeCard(it, hasQR)); });
       g.appendChild(grid);
       groups.appendChild(g);
@@ -14733,13 +14881,15 @@ nameLine
       var rows=Math.ceil(items.length/perRow);
       return TITLE + rows*CARD + (rows-1)*GAP;
     }
-    var cols=actFooterCols();
     var ordered=orderedPrintCodeItems(items);
     var tallest=0;
     PRINT_CODE_SECTIONS.forEach(function(sec){
       var n=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; }).length;
       if(!n) return;
-      var rows=Math.ceil(n/cols);
+      // Per-section width, not the global one — a section set to 1-across is
+      // three times as tall as the same codes at 3-across, and the tallest
+      // section is what decides the block's height.
+      var rows=Math.ceil(n/actFooterSectionCols(sec.key));
       tallest=Math.max(tallest, rows*CARD + (rows-1)*GAP);
     });
     return TITLE + 0.2 + tallest;
@@ -15537,6 +15687,13 @@ nameLine
     // Guarded with the same clamp actFooterCols() applies, so a hand-edited or
     // corrupted value can never reach grid-template-columns.
     if(!(parseInt(data.actFooterCols,10)>=1 && parseInt(data.actFooterCols,10)<=3)) data.actFooterCols=2;
+    // Per-section width overrides, sparse. A section with no entry falls back
+    // to data.actFooterCols, so an existing save lays out exactly as before.
+    if(!data.actFooterSectionCols || typeof data.actFooterSectionCols!=="object" || Array.isArray(data.actFooterSectionCols)) data.actFooterSectionCols={};
+    // Customize is a MODE, not a preference — same contract as seatArranging
+    // and seatScanMode. It is reset on load below so a chart left mid-rearrange
+    // can't come back up on a smartboard with every code draggable.
+    if(typeof data.actFooterCustomizing!=="boolean") data.actFooterCustomizing=false;
     if(!Array.isArray(data.pastContests)) data.pastContests=[];
     // Saved contests used to store metadata only, and their numbers were
     // recomputed from data.log on every render — so they decayed to nothing as
@@ -16098,6 +16255,11 @@ nameLine
   if(data.seatScanMode){ data.seatScanMode = false; save(); }
   // Same contract, same reason — independent toggle, see seatActivitiesMode above.
   if(data.seatActivitiesMode){ data.seatActivitiesMode = false; save(); }
+  // Customize is a mode too: a chart left mid-rearrange must not come back up
+  // with every code draggable, where a stray touch on the smartboard would
+  // move one. The ARRANGEMENT it produced is saved and permanent — only the
+  // editing state resets.
+  if(data.actFooterCustomizing){ data.actFooterCustomizing = false; save(); }
   // --- Device ID for snapshot scoping (Phase 1) ---
   // Each browser gets a stable random ID so snapshots on a shared Sheet
   // stay separated per device. Generated once, persists in localStorage.
