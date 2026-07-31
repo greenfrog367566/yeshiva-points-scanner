@@ -7247,7 +7247,7 @@ function setupRoster() {
     });
     body.appendChild(grid);
     var listActivitiesMode=!!data.seatActivitiesMode;
-    if(listActivitiesMode) renderScanCodesFooter(body);
+    if(listActivitiesMode) renderScanCodesFooter(body, listScanMode);
     if(listScanMode || listActivitiesMode) renderScanUndoRow(body);
   }
   function renderTapPanel(){
@@ -7273,22 +7273,34 @@ function setupRoster() {
   // code will not read, the rebbi still has something to tap.
   var SEAT_QR_PX = 68;
 
-  // Activity codes to arm, rendered below the QR grid in scan mode — same
-  // source as the printed sheet and Avery labels (menuLabelItems(), including
-  // the #117 "codes I use" filter), so the screen and the paper never offer a
-  // different set. Each card is tappable as well as scannable: tapping arms
-  // exactly what scanning it would arm. Shared by the Seating chart and List
-  // scan views so both offer the same scanning surface.
-  function renderScanCodesFooter(body){
+  // Activity codes to arm, rendered below the grid whenever Show activities is
+  // on — same source as the printed sheet and Avery labels (menuLabelItems(),
+  // including the #117 "codes I use" filter), so the screen and the paper
+  // never offer a different set. Each card is tappable as well as scannable:
+  // tapping arms exactly what scanning it would arm. Shared by the Seating
+  // chart and List scan views so both offer the same scanning surface.
+  //
+  // withQr is only true alongside Show codes (student QR) being on too — a QR
+  // per activity is for scanning it off the screen, which only matters when
+  // the screen is already being used that way. Otherwise these are plain
+  // tappable pills, the same `.act-btn` look the Dashboard's own activity
+  // buttons use, so a rebbi not scanning off the chart isn't shown a grid of
+  // codes that mean nothing to him.
+  function renderScanCodesFooter(body, withQr){
     var footer=el("div","seat-scan-codes no-print");
     menuLabelItems().forEach(function(it){
-      var card=el("button","seat-code-card");
+      var card=el("button", withQr ? "seat-code-card" : "act-btn");
       card.type="button";
-      var qh=el("div");
-      try{ new QRCode(qh,{text:it.qrText,width:44,height:44,correctLevel:QRCode.CorrectLevel.M}); }
-      catch(e){ qh.textContent="QR?"; }
-      card.appendChild(qh);
-      card.appendChild(el("span","seat-code-name",it.name));
+      if(withQr){
+        var qh=el("div");
+        try{ new QRCode(qh,{text:it.qrText,width:44,height:44,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ qh.textContent="QR?"; }
+        card.appendChild(qh);
+        card.appendChild(el("span","seat-code-name",it.name));
+      } else {
+        card.appendChild(el("span","an",it.name));
+        if(it.sub) card.appendChild(el("span","av",it.sub));
+      }
       // handleScannedCode(), not processScan() — it is the same entry point the
       // scanner's keyboard input lands on, so a tap and a scan are literally
       // the same call with the same string.
@@ -7408,9 +7420,10 @@ function setupRoster() {
 
     // Activity codes along the bottom, so the chart is the whole scanning
     // surface and nothing needs to have been printed first. Independent of
-    // scanMode — works underneath the regular avatar cards too. Shared with
-    // List mode's scan view — see renderScanCodesFooter below.
-    if(activitiesMode) renderScanCodesFooter(body);
+    // scanMode — works underneath the regular avatar cards too, as plain
+    // pills rather than QR cards when scanMode is off. Shared with List
+    // mode's scan view — see renderScanCodesFooter below.
+    if(activitiesMode) renderScanCodesFooter(body, scanMode);
 
     // Undo at the bottom of the chart. Third call site, same one function — a
     // rebbi scanning off the full-screen chart has the Recent scans panel and
