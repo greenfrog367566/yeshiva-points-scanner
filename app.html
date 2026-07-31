@@ -9259,6 +9259,7 @@ function setupRoster() {
     if(typeof au.flatBudget!=="number") au.flatBudget=10;
     if(typeof au.remainderMode!=="string") au.remainderMode="leave";
     if(!au.winners) au.winners={};
+    if(!au.divideExcluded || typeof au.divideExcluded!=="object") au.divideExcluded={};
     return au;
   }
   function auPrize(pid){ var ps=curAu().prizes; for(var i=0;i<ps.length;i++){ if(ps[i].id===pid) return ps[i]; } return null; }
@@ -9330,7 +9331,7 @@ function setupRoster() {
     return {wrap:wrap, input:inp};
   }
   function auDivideEvenly(sid){
-    var prizes=curAu().prizes.filter(function(p){ return !auPrizeLocked(p.id); });
+    var prizes=curAu().prizes.filter(function(p){ return !auPrizeLocked(p.id) && !curAu().divideExcluded[p.id]; });
     if(!prizes.length) return;
     prizes.forEach(function(p){ auSetTk(sid,p.id,0); });          // refund current (non-locked) allocations
     if(auPointsMode()){
@@ -9546,6 +9547,15 @@ function setupRoster() {
     curAu().prizes.forEach(function(p){
       var locked=auPrizeLocked(p.id);
       var row=el("div","erow");
+      var cb=document.createElement("input"); cb.type="checkbox";
+      cb.checked=!curAu().divideExcluded[p.id];
+      cb.title="Include this prize when dividing tickets evenly";
+      if(locked) cb.disabled=true;
+      cb.addEventListener("change", function(){
+        if(this.checked) delete curAu().divideExcluded[p.id];
+        else curAu().divideExcluded[p.id]=true;
+        save();
+      });
       var name=el("span","grow"); name.textContent=auPrizeLabel(p);
       var totTag=el("span","grp-tag", auPrizeTotal(p.id)+" tk"+(locked?" 🔒":""));
       var st=makeStepper(function(){ return auTk(sid,p.id); }, function(n,wrap,inp){
@@ -9554,7 +9564,7 @@ function setupRoster() {
         if(after>before) ticketFly(wrap, after-before);
       });
       if(locked){ st.input.disabled=true; Array.prototype.forEach.call(st.wrap.querySelectorAll("button"),function(b){b.disabled=true;}); }
-      row.appendChild(name); row.appendChild(totTag); row.appendChild(st.wrap);
+      row.appendChild(cb); row.appendChild(name); row.appendChild(totTag); row.appendChild(st.wrap);
       list.appendChild(row);
     });
   }
