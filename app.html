@@ -1229,6 +1229,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
        It ALWAYS sits at the bottom, in every case — see the note in
        renderSeatChartPrint() before reordering it. */
     body.print-seating .seat-print-activities-footer{break-inside:avoid;page-break-inside:avoid}
+    /* Each section column stays whole too. The footer as a whole is already
+       unbreakable, but a rebbi who has grown his code list can make the block
+       taller than the space left on the page — at which point the browser
+       fragments INSIDE it, and "Tracked" split down the middle is exactly the
+       half-a-key outcome the rule above exists to prevent. */
+    body.print-seating .seat-print-codes-group,
+    body.print-seating .seat-print-act-card{break-inside:avoid;page-break-inside:avoid}
     .seat-print-qr{width:55%;max-width:110px;margin:0 auto 6px}
     .seat-print-qr img,.seat-print-qr canvas{width:100%;height:auto;display:block}
     .seat-print-photo{display:flex;justify-content:center;margin:0 auto 6px}
@@ -1326,6 +1333,21 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      in their line and stay aligned. */
   .seat-print-preview .seat-print-act-label{font-weight:700;margin-top:2px;white-space:normal;overflow-wrap:break-word}
   .seat-print-preview .seat-print-act-sub{color:var(--muted)}
+  /* Value tone on the printed card, matching the on-screen footer. Additive to
+     text that already says "+2 pts" — never the only carrier of the meaning —
+     so a mono printer degrades these to distinguishable greys and loses nothing. */
+  .seat-print-preview .seat-print-act-sub.pos{color:var(--good)}
+  .seat-print-preview .seat-print-act-sub.neg{color:var(--bad)}
+  .seat-print-preview .seat-print-act-sub.trk{color:var(--muted)}
+  /* Grouped codes block: sections side by side, each an N-column grid, mirroring
+     .seat-codes-groups on the live chart. Sections share the width evenly so the
+     block reads as one band across the foot of the sheet. */
+  .seat-print-preview .seat-print-codes-groups{display:flex;gap:14px;align-items:flex-start}
+  .seat-print-preview .seat-print-codes-group{flex:1 1 0;min-width:0}
+  .seat-print-preview .seat-print-codes-grid{display:grid;gap:6px}
+  /* Inside a column grid the card must fill its track rather than keep the
+     fixed 76px width the flat wrapping row gives it. */
+  .seat-print-preview .seat-print-codes-grid .seat-print-act-card{width:auto}
 </style>
 </head>
 <body>
@@ -2340,10 +2362,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Flips the chart 180° — front of room at the bottom, left/right mirrored — matching what you actually see facing the class. Names stay right-side-up and readable."><input type="checkbox" id="seatPrintRebbiView"> Rebbi's view</label>
       <label id="seatPrintShowActivitiesRow" style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Adds a compact row of activity QR codes at the bottom of the page, for a one-page classroom reference."><input type="checkbox" id="seatPrintShowActivities"> Activities footer</label>
       <button class="btn btn-sm" id="seatPrintCodesToggle">Choose codes</button>
+      <button class="btn btn-sm" id="seatPrintFooterGrouped" title="Group the codes into sections, or print them as one plain row. This is the same setting the seating chart on the Dashboard uses — change it here or there, both follow."></button>
+      <button class="btn btn-sm" id="seatPrintFooterCols" title="How many codes sit across each section, on the sheet and on the chart alike. Click to cycle 1 → 2 → 3."></button>
       <button class="btn btn-primary" id="printSeatChart">🖨 Print my class sheet</button>
     </div>
     <div class="card pad no-print" id="seatPrintCodesCard" style="margin-bottom:12px;display:none">
-      <p class="view-note" style="margin-top:0">Which codes go on the sheet, grouped into Points, Tracked, and Navigation. Untick one to leave it off; drag a code to reorder it within a group, or drag it into a different group — both are remembered. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
+      <p class="view-note" style="margin-top:0">Which codes go on the sheet and on the seating chart — the two always show the same set. Rename a section by typing over its heading. Drag a code to reorder it, or into another section; press ✕ (or drag it to <b>Removed</b>) to take it off, and ↩ to put it back where it was. Everything here is remembered, and a code you remove is still fully usable by tapping it on the Dashboard.</p>
       <div class="toolbar" style="margin-bottom:8px;gap:6px">
         <button class="btn btn-sm" id="seatPrintCodesAll">All</button>
         <button class="btn btn-sm" id="seatPrintCodesNone">None</button>
@@ -4249,6 +4273,7 @@ function setupRoster() {
       $("seatPrintRebbiView").checked = data.seatPrintOpts.rebbiView;
       $("seatPrintShowActivities").checked = data.seatPrintOpts.showActivities;
       seatPrintSyncActivityRow();
+      seatPrintSyncFooterLayout();
       // A rebbi who has only imported a roster has no seat layout, and this page
       // used to hand him 24 boxes reading "Empty seat" with no student codes at
       // all — a sheet that looks real and is useless. Seat whoever has no seat
@@ -14578,11 +14603,37 @@ nameLine
     var ex={}; menuLabelItemsAll().forEach(function(it){ ex[it.qrText]=true; });
     data.printExcluded=ex; save(); renderSeatPrintCodes(); renderSeatChartPrint();
   });
-  $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); seatPrintSyncActivityRow(); renderSeatChartPrint(); });
+  $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); seatPrintSyncActivityRow(); seatPrintSyncFooterLayout(); renderSeatChartPrint(); });
   $("seatPrintActivityPicker").addEventListener("change", function(){ data.seatPrintOpts.activityId=this.value; save(); renderSeatChartPrint(); });
   $("seatPrintShowPoints").addEventListener("change", function(){ data.seatPrintOpts.showPoints=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); renderSeatChartPrint(); });
-  $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); renderSeatChartPrint(); });
+  $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); seatPrintSyncFooterLayout(); renderSeatChartPrint(); });
+  // The two footer-layout buttons on this page write the SAME fields the
+  // chart's own toolbar buttons write — there is one grouped/one-row choice and
+  // one column count in the app, not a screen pair and a print pair. So each
+  // handler also re-renders the chart, and the chart's handlers already
+  // re-render this preview through renderTapPanel() → renderSeatChartPrint().
+  //
+  // They are hidden entirely when the footer is off, for the same reason the
+  // chart hides them: a layout control for something that is not being printed
+  // is one more button between a rebbi and the print button.
+  function seatPrintSyncFooterLayout(){
+    var gb=$("seatPrintFooterGrouped"), cb=$("seatPrintFooterCols");
+    if(!gb||!cb) return;
+    var on = !!data.seatPrintOpts.showActivities && data.seatPrintOpts.avatarMode!=="activity";
+    gb.style.display = on ? "" : "none";
+    cb.style.display = (on && data.actFooterGrouped) ? "" : "none";
+    gb.textContent = data.actFooterGrouped ? "▦ Grouped" : "▤ One row";
+    cb.textContent = actFooterCols()+" wide";
+  }
+  $("seatPrintFooterGrouped").addEventListener("click", function(){
+    data.actFooterGrouped=!data.actFooterGrouped;
+    save(); seatPrintSyncFooterLayout(); renderSeatChartPrint(); renderTapPanel();
+  });
+  $("seatPrintFooterCols").addEventListener("click", function(){
+    data.actFooterCols = actFooterCols()>=3 ? 1 : actFooterCols()+1;
+    save(); seatPrintSyncFooterLayout(); renderSeatChartPrint(); renderTapPanel();
+  });
   // Shows the activity picker (and hides the now-redundant Activities-footer
   // checkbox, since a merged PA: code already carries the activity — no
   // separate arming code needed) only in Activity mode, and keeps the
@@ -14605,37 +14656,93 @@ nameLine
   // menuLabelItems() for the underlying data ({qrText, name, sub} per
   // activity — confirmed against the actual function, not assumed) but
   // renders at a much smaller, denser size.
+  // One printed code card. Deliberately built from the same `it` fields the
+  // on-screen card uses, including it.tone, so a code cannot say one thing on
+  // the smartboard and another on the paper in a rebbi's hand.
+  function seatPrintCodeCard(it, hasQR){
+    var card=el("div","seat-print-act-card");
+    if(hasQR){
+      var holder=el("div"); card.appendChild(holder);
+      try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
+      catch(e){ card.appendChild(document.createTextNode("QR?")); }
+    }
+    card.appendChild(el("div","seat-print-act-label", it.name));
+    // The colour is ALWAYS on top of text that already carries the meaning —
+    // "+2 pts" reads as a gain with no colour at all — so a mono printer or a
+    // rebbi who can't separate the tints loses nothing. Same rule the Gradebook
+    // colour-coding follows.
+    card.appendChild(el("div","seat-print-act-sub "+(it.tone||"trk"), it.sub));
+    return card;
+  }
   function renderSeatPrintActivitiesFooter(wrap){
     var items = menuLabelItems();
     if(!items || !items.length) return;
     var hasQR=(typeof QRCode!=="undefined");
     var footer=el("div","seat-print-activities-footer");
     footer.appendChild(el("div","seat-print-activities-title","Activity Codes"));
-    // Same three groups and order as the picker (PRINT_CODE_SECTIONS), so
-    // moving a code's section in "Choose codes" changes where it prints, not
-    // just how it's organized on screen. Empty groups are skipped rather than
-    // printing a bare heading.
+
+    // THE SHEET IS THE SCREEN, PRINTED. Grouping, section names, order, column
+    // count and which codes are on at all are read from the same places the
+    // live chart's footer reads them (data.actFooterGrouped / actFooterCols /
+    // PRINT_CODE_SECTIONS / codeSectionLabel / orderedPrintCodeItems /
+    // printExcluded), so there is no second layout to keep in step. Change it
+    // on the chart or on this page — same setting, both surfaces follow.
+    if(!data.actFooterGrouped){
+      var flat=el("div","seat-print-activities-grid");
+      items.forEach(function(it){ flat.appendChild(seatPrintCodeCard(it, hasQR)); });
+      footer.appendChild(flat);
+      wrap.appendChild(footer);
+      return;
+    }
+    var cols=actFooterCols();
     var ordered=orderedPrintCodeItems(items);
+    // Sections sit side by side, as they do on screen, rather than stacked one
+    // under another. That is not only for the match: stacked, three labelled
+    // rows cost roughly an inch more of page than three columns do, and this
+    // block sits at the bottom of a sheet whose whole promise is fitting on one
+    // page. seatPrintFooterInches() below measures the version actually drawn.
+    var groups=el("div","seat-print-codes-groups");
     PRINT_CODE_SECTIONS.forEach(function(sec){
       var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
-      if(!secItems.length) return;
-      footer.appendChild(el("div","seat-print-act-section-label", codeSectionLabel(sec)));
-      var grid=el("div","seat-print-activities-grid");
-      secItems.forEach(function(it){
-        var card=el("div","seat-print-act-card");
-        if(hasQR){
-          var holder=el("div"); card.appendChild(holder);
-          try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
-          catch(e){ card.appendChild(document.createTextNode("QR?")); }
-        }
-        var label=el("div","seat-print-act-label", it.name);
-        var sub=el("div","seat-print-act-sub", it.sub);
-        card.appendChild(label); card.appendChild(sub);
-        grid.appendChild(card);
-      });
-      footer.appendChild(grid);
+      if(!secItems.length) return;   // no bare heading over an empty section
+      var g=el("div","seat-print-codes-group");
+      g.appendChild(el("div","seat-print-act-section-label", codeSectionLabel(sec)));
+      var grid=el("div","seat-print-codes-grid");
+      grid.style.gridTemplateColumns="repeat("+cols+", minmax(0, 1fr))";
+      secItems.forEach(function(it){ grid.appendChild(seatPrintCodeCard(it, hasQR)); });
+      g.appendChild(grid);
+      groups.appendChild(g);
     });
+    footer.appendChild(groups);
     wrap.appendChild(footer);
+  }
+  // Printed height of the codes block, in inches — used by the fit check.
+  // Computed from the layout that is actually drawn rather than a single fixed
+  // constant, because grouped-into-columns and one-flat-row are very different
+  // heights and the old flat 1.1 over-warned on one and under-warned on the
+  // other. Card is ~0.95in (44px QR + label + value + padding) plus a 0.08in
+  // gap; grouped adds a ~0.2in section label, and the tallest section decides
+  // the row height because the three sit side by side.
+  function seatPrintFooterInches(){
+    var items=menuLabelItems();
+    if(!items.length) return 0;
+    var CARD=0.95, GAP=0.08, TITLE=0.3;
+    if(!data.actFooterGrouped){
+      // One wrapped row: roughly six cards across a portrait page.
+      var perRow = seatPrintOrient==="landscape" ? 9 : 6;
+      var rows=Math.ceil(items.length/perRow);
+      return TITLE + rows*CARD + (rows-1)*GAP;
+    }
+    var cols=actFooterCols();
+    var ordered=orderedPrintCodeItems(items);
+    var tallest=0;
+    PRINT_CODE_SECTIONS.forEach(function(sec){
+      var n=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; }).length;
+      if(!n) return;
+      var rows=Math.ceil(n/cols);
+      tallest=Math.max(tallest, rows*CARD + (rows-1)*GAP);
+    });
+    return TITLE + 0.2 + tallest;
   }
   // What to head the sheet with. "All Classes" is only honest when there really
   // are several: a rebbi with one class who never touched the header selector
@@ -14762,7 +14869,7 @@ nameLine
     // and #seatChartGrid padding 0.3in top and bottom.
     var printInches = 0.6 + 0.45 + 0.15
       + (rowsUsed * 1.5) + (Math.max(0, rowsUsed-1) * 0.15)
-      + (data.seatPrintOpts.showActivities && avatarMode!=="activity" ? 1.1 : 0)
+      + (data.seatPrintOpts.showActivities && avatarMode!=="activity" ? seatPrintFooterInches() : 0)
       + (act ? 0.35 : 0);
     var usableInches = seatPrintOrient==="landscape" ? 7.5 : 10;
     var fits = printInches <= usableInches;
