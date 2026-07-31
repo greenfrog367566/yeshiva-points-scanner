@@ -7257,21 +7257,33 @@ function setupRoster() {
     // Scannable mode lives in the ALWAYS-VISIBLE toolbar, beside List / Seating
     // chart — not in the ⚙ Setup panel, where it started. Setup is collapsed by
     // default, so putting it there meant opening a panel every time to use the
-    // feature the chart exists for. Shown only in seating mode, since there are
-    // no seats to put codes in otherwise.
+    // feature the chart exists for. Available in both List and Seating chart —
+    // List mode has no seats to put codes in, so it shows each student's QR as
+    // a card in the grid instead (see the list-mode branch below).
     //
     // Arranging and scannable are mutually exclusive: dragging seats around
     // while every cell shows a QR is a way to mis-seat a boy you cannot read.
-    if(effViewMode==="seating"){
-      var scanBtn=el("button","seat-modebtn"+(data.seatScanMode?" active":""), data.seatScanMode?"Hide codes":"⛶ Show codes");
-      scanBtn.title="Show each student's QR code in his seat, so the class can be scanned straight off the screen";
-      scanBtn.addEventListener("click", function(){
-        data.seatScanMode=!data.seatScanMode;
-        if(data.seatScanMode) data.seatArranging=false;
-        save(); renderTapPanel();
-      });
-      toolbar.appendChild(scanBtn);
-    }
+    // (List mode has no arranging state, so this only ever bites in seating mode.)
+    var scanBtn=el("button","seat-modebtn"+(data.seatScanMode?" active":""), data.seatScanMode?"Hide codes":"⛶ Show codes");
+    scanBtn.title="Show each student's QR code, so the class can be scanned straight off the screen";
+    scanBtn.addEventListener("click", function(){
+      data.seatScanMode=!data.seatScanMode;
+      if(data.seatScanMode) data.seatArranging=false;
+      save(); renderTapPanel();
+    });
+    toolbar.appendChild(scanBtn);
+
+    // Independent of Show codes — a rebbi may want the activity codes footer
+    // (to arm an activity by tapping or scanning it) without also switching
+    // every student card over to a QR. Works with the regular avatar/name
+    // cards just as well as with the QR cards.
+    var actBtn=el("button","seat-modebtn"+(data.seatActivitiesMode?" active":""), data.seatActivitiesMode?"Hide activities":"Show activities");
+    actBtn.title="Show the activity codes underneath, so you can arm one by tapping or scanning it";
+    actBtn.addEventListener("click", function(){
+      data.seatActivitiesMode=!data.seatActivitiesMode;
+      save(); renderTapPanel();
+    });
+    toolbar.appendChild(actBtn);
 
     if(effViewMode==="seating"){
       var lay=seatLayout();
@@ -7383,6 +7395,7 @@ function setupRoster() {
 
     if(effViewMode==="seating"){ renderSeatGrid(body, studs); return; }
 
+    var listScanMode=!!data.seatScanMode;
     var grid=el("div","tap-grid");
     studs.forEach(function(s){
       var b=el("button","tap-btn"); b.dataset.sid=s.id;
@@ -7390,10 +7403,26 @@ function setupRoster() {
       b.appendChild(el("span",null,s.name));
       b.appendChild(coinScoreEl(s.id,"ts"));
       if(isFrozen(s.id)) b.appendChild(freezeBadgeEl(s.id));
+      if(listScanMode){
+        // Same payload as the seating chart's Show codes and the printed
+        // sheet — s.id, nothing else.
+        var qh=el("div","seat-qr"); qh.style.cssText="width:"+SEAT_QR_PX+"px;height:"+SEAT_QR_PX+"px;margin:0 auto 5px";
+        try{ new QRCode(qh,{text:s.id,width:SEAT_QR_PX,height:SEAT_QR_PX,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ qh.textContent="QR?"; }
+        b.appendChild(qh);
+        b.appendChild(el("span",null,s.name));
+      } else {
+        b.appendChild(avatarEl(s, 30));
+        b.appendChild(el("span",null,s.name));
+        b.appendChild(coinScoreEl(s.id,"ts"));
+      }
       b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
     body.appendChild(grid);
+    var listActivitiesMode=!!data.seatActivitiesMode;
+    if(listActivitiesMode) renderScanCodesFooter(body, listScanMode);
+    if(listScanMode || listActivitiesMode) renderScanUndoRow(body);
   }
   function renderTapPanel(){
     renderTapPanelInto("tapPanelBody", null);
@@ -7417,12 +7446,58 @@ function setupRoster() {
   // fine for the scanner in use but is the reason the name stays visible — if a
   // code will not read, the rebbi still has something to tap.
   var SEAT_QR_PX = 68;
+
+  // Activity codes to arm, rendered below the grid whenever Show activities is
+  // on — same source as the printed sheet and Avery labels (menuLabelItems(),
+  // including the #117 "codes I use" filter), so the screen and the paper
+  // never offer a different set. Each card is tappable as well as scannable:
+  // tapping arms exactly what scanning it would arm. Shared by the Seating
+  // chart and List scan views so both offer the same scanning surface.
+  //
+  // withQr is only true alongside Show codes (student QR) being on too — a QR
+  // per activity is for scanning it off the screen, which only matters when
+  // the screen is already being used that way. Otherwise these are plain
+  // tappable pills, the same `.act-btn` look the Dashboard's own activity
+  // buttons use, so a rebbi not scanning off the chart isn't shown a grid of
+  // codes that mean nothing to him.
+  function renderScanCodesFooter(body, withQr){
+    var footer=el("div","seat-scan-codes no-print");
+    menuLabelItems().forEach(function(it){
+      var card=el("button", withQr ? "seat-code-card" : "act-btn");
+      card.type="button";
+      if(withQr){
+        var qh=el("div");
+        try{ new QRCode(qh,{text:it.qrText,width:44,height:44,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ qh.textContent="QR?"; }
+        card.appendChild(qh);
+        card.appendChild(el("span","seat-code-name",it.name));
+      } else {
+        card.appendChild(el("span","an",it.name));
+        if(it.sub) card.appendChild(el("span","av",it.sub));
+      }
+      // handleScannedCode(), not processScan() — it is the same entry point the
+      // scanner's keyboard input lands on, so a tap and a scan are literally
+      // the same call with the same string.
+      card.addEventListener("click", function(){ handleScannedCode(it.qrText); });
+      footer.appendChild(card);
+    });
+    body.appendChild(footer);
+  }
+  function renderScanUndoRow(body){
+    var undoRow=el("div","seat-undo-row no-print");
+    var undoBtn=el("button","btn btn-sm","↩ Undo last scan");
+    undoBtn.title="Reverse the most recent scan";
+    undoBtn.addEventListener("click", function(){ undoMostRecentScan(); });
+    undoRow.appendChild(undoBtn);
+    body.appendChild(undoRow);
+  }
   function renderSeatGrid(body, studs){
     var lay=seatLayout();
     var unplaced=seatPruneAndFillUnplaced(lay, studs);
     var byId={}; studs.forEach(function(s){ byId[s.id]=s; });
     var arranging=!!data.seatArranging;
     var scanMode=!!data.seatScanMode && !arranging;
+    var activitiesMode=!!data.seatActivitiesMode;
 
     // "Front of room" sits above the grid in normal view; in Rebbi's view the
     // seats are reversed (Rebbi faces the class), so the front is at the
@@ -7519,40 +7594,17 @@ function setupRoster() {
     if(data.seatLiveRebbiView) body.appendChild(el("div","seat-front","Front of room"));
 
     // Activity codes along the bottom, so the chart is the whole scanning
-    // surface and nothing needs to have been printed first. Codes come from
-    // menuLabelItems() — the SAME source the printed sheet and the Avery labels
-    // use, including the #117 "codes I use" filter — so the screen and the paper
-    // can never offer a different set. Each chip is tappable as well as
-    // scannable: tapping arms exactly what scanning it would arm.
-    if(scanMode){
-      var footer=el("div","seat-scan-codes no-print");
-      menuLabelItems().forEach(function(it){
-        var card=el("button","seat-code-card");
-        card.type="button";
-        var qh=el("div");
-        try{ new QRCode(qh,{text:it.qrText,width:44,height:44,correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ qh.textContent="QR?"; }
-        card.appendChild(qh);
-        card.appendChild(el("span","seat-code-name",it.name));
-        // handleScannedCode(), not processScan() — it is the same entry point the
-        // scanner's keyboard input lands on, so a tap and a scan are literally
-        // the same call with the same string.
-        card.addEventListener("click", function(){ handleScannedCode(it.qrText); });
-        footer.appendChild(card);
-      });
-      body.appendChild(footer);
-    }
+    // surface and nothing needs to have been printed first. Independent of
+    // scanMode — works underneath the regular avatar cards too, as plain
+    // pills rather than QR cards when scanMode is off. Shared with List
+    // mode's scan view — see renderScanCodesFooter below.
+    if(activitiesMode) renderScanCodesFooter(body, scanMode);
 
     // Undo at the bottom of the chart. Third call site, same one function — a
     // rebbi scanning off the full-screen chart has the Recent scans panel and
     // the dashboard header both hidden behind the overlay, so without this the
     // only way to fix a mis-scan is to leave the view he is working in.
-    var undoRow=el("div","seat-undo-row no-print");
-    var undoBtn=el("button","btn btn-sm","↩ Undo last scan");
-    undoBtn.title="Reverse the most recent scan";
-    undoBtn.addEventListener("click", function(){ undoMostRecentScan(); });
-    undoRow.appendChild(undoBtn);
-    body.appendChild(undoRow);
+    renderScanUndoRow(body);
 
     if(arranging){
       var trayWrap=el("div","seat-unplaced");
@@ -14936,6 +14988,9 @@ nameLine
     // left showing QR codes instead of names is not the view anyone wants to
     // come back to on a smartboard.
     if(typeof data.seatScanMode!=="boolean") data.seatScanMode=false;
+    // Same armed-state contract as seatScanMode, independent flag: a rebbi can
+    // show the activity codes footer with or without student QR codes showing.
+    if(typeof data.seatActivitiesMode!=="boolean") data.seatActivitiesMode=false;
     if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
     if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
@@ -15427,6 +15482,8 @@ nameLine
   // how the app is actually behaving — a backup that says true while the chart
   // shows names is a value that lies to whoever reads it next.
   if(data.seatScanMode){ data.seatScanMode = false; save(); }
+  // Same contract, same reason — independent toggle, see seatActivitiesMode above.
+  if(data.seatActivitiesMode){ data.seatActivitiesMode = false; save(); }
   // --- Device ID for snapshot scoping (Phase 1) ---
   // Each browser gets a stable random ID so snapshots on a shared Sheet
   // stay separated per device. Generated once, persists in localStorage.
