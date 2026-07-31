@@ -4088,10 +4088,13 @@ function setupRoster() {
       vseats.style.transition=""; vseats.style.transform=""; vseats.style.opacity="";
       document.body.style.overflow="";
       document.body.classList.remove("seats-fs-open");
-      // Scannable mode is armed state, not a preference — disarm it on the way
-      // out exactly as arranging is, so the chart never reopens showing codes
-      // where a rebbi expects names.
-      data.seatScanMode=false; save();
+      // NOTE: scannable mode is deliberately NOT reset here. Switching tabs in
+      // this app is showing and hiding sections in JS — no page load happens —
+      // so resetting on tab switch made "Show codes" fall off simply for
+      // visiting Activities and coming back. It is reset once at boot instead;
+      // see the init block. (It also only ever fired when the chart happened to
+      // be FULL-SCREEN, since this branch is the pop-out cleanup, which made it
+      // inconsistent as well as unwanted.)
     }
     var sClose=$("seatsCloseBtn"); if(sClose) sClose.style.display="none";
     applyGlobalScanBarVisibility(tab);
@@ -7081,6 +7084,24 @@ function setupRoster() {
         toolbar.appendChild(seatBtn);
       }
     }
+    // Scannable mode lives in the ALWAYS-VISIBLE toolbar, beside List / Seating
+    // chart — not in the ⚙ Setup panel, where it started. Setup is collapsed by
+    // default, so putting it there meant opening a panel every time to use the
+    // feature the chart exists for. Shown only in seating mode, since there are
+    // no seats to put codes in otherwise.
+    //
+    // Arranging and scannable are mutually exclusive: dragging seats around
+    // while every cell shows a QR is a way to mis-seat a boy you cannot read.
+    if(effViewMode==="seating"){
+      var scanBtn=el("button","seat-modebtn"+(data.seatScanMode?" active":""), data.seatScanMode?"Hide codes":"⛶ Show codes");
+      scanBtn.title="Show each student's QR code in his seat, so the class can be scanned straight off the screen";
+      scanBtn.addEventListener("click", function(){
+        data.seatScanMode=!data.seatScanMode;
+        if(data.seatScanMode) data.seatArranging=false;
+        save(); renderTapPanel();
+      });
+      toolbar.appendChild(scanBtn);
+    }
 
     if(effViewMode==="seating"){
       var lay=seatLayout();
@@ -7138,19 +7159,6 @@ function setupRoster() {
       printWrap.appendChild(printBtn); printWrap.appendChild(printOpts);
       // Offered everywhere except the print page itself.
       if(!opts.hidePrint) setupRow.appendChild(printWrap);
-
-      // Scannable mode. Sits with the other chart-state toggles rather than in
-      // the fullscreen bar, so it is reachable from the embedded chart too.
-      // Arranging and scannable are mutually exclusive: dragging seats around
-      // while every cell shows a QR is a way to mis-seat a boy you can't read.
-      var scanBtn=el("button","btn btn-sm seat-scan-toggle", data.seatScanMode?"Hide codes":"⛶ Show codes");
-      scanBtn.title="Show each student's QR code in his seat, so the class can be scanned straight off the screen";
-      scanBtn.addEventListener("click", function(){
-        data.seatScanMode=!data.seatScanMode;
-        if(data.seatScanMode) data.seatArranging=false;
-        save(); renderTapPanel();
-      });
-      setupRow.appendChild(scanBtn);
 
       var arrangeBtn=el("button","btn btn-sm seat-arrange-toggle", data.seatArranging?"Done arranging":"Arrange seats");
       arrangeBtn.addEventListener("click", function(){
@@ -15068,6 +15076,24 @@ nameLine
 
   /* ---------- init ---------- */
   load();
+  // Scannable seating mode is ARMED STATE, not a saved preference: it resets
+  // exactly once, here, on a genuine boot — a real page load, which is what a
+  // hard reload or closing and reopening the app produces.
+  //
+  // It is done at boot rather than on navigation because in this app moving
+  // between Scan, Activities and the seating chart is showing and hiding
+  // sections in JS, with no page load at all. Resetting on tab switch (which is
+  // what this used to do) meant "Show codes" fell off for the ordinary act of
+  // looking something up and coming back.
+  //
+  // Forced false regardless of what was saved, so a rebbi never reopens the app
+  // to a chart of QR codes where he expects names. The field still has to live
+  // in `data` — the seating chart re-renders constantly, and it must survive
+  // every one of those renders, just not a restart.
+  // save() as well as setting it, so the stored value can never disagree with
+  // how the app is actually behaving — a backup that says true while the chart
+  // shows names is a value that lies to whoever reads it next.
+  if(data.seatScanMode){ data.seatScanMode = false; save(); }
   // --- Device ID for snapshot scoping (Phase 1) ---
   // Each browser gets a stable random ID so snapshots on a shared Sheet
   // stay separated per device. Generated once, persists in localStorage.
