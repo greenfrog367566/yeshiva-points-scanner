@@ -2653,9 +2653,46 @@ function doPost(e) {
     st.setFrozenRows(2);
   }
 
+  // Attendance. Takes a BATCH — {rows:[{ts,date,name,group,status}, ...]} — and
+  // writes the whole class in ONE locked operation.
+  //
+  // Why: the app used to send one request per student. Apps Script runs those
+  // concurrently, each execution called getLastRow() to decide where to append,
+  // and several read the same row number before any had written — so they
+  // appended over each other. A class of 20 landed 7 rows with wrong names.
+  // logSheet_'s lock only ever guarded the HEADER write; the appends were
+  // unprotected. Taking the lock around the whole append is the fix, and
+  // batching is what makes one lock enough.
+  //
+  // BOTH SHAPES ARE ACCEPTED, and this is not only for the transition. Any
+  // rebbi who has not redeployed is still sending one-at-a-time, and a script
+  // that understood only the new shape would silently drop his attendance
+  // entirely. The single-student auto-push that fires when a status changes on
+  // the Attendance tab also still uses the old shape by design — it is one row
+  // by nature. Do not remove this branch.
   if (body.type === "attendance") {
-    var att = logSheet_(ss, "Attendance Log", ["Time", "Date", "Student", "Class/Group", "Status"]);
-    att.appendRow([new Date(body.ts), body.date, body.name, body.group, body.status]);
+    var attRows = Array.isArray(body.rows)
+      ? body.rows
+      : [{ ts: body.ts, date: body.date, name: body.name, group: body.group, status: body.status }];
+    var attLock = LockService.getScriptLock();
+    var attHeld = false;
+    try { attHeld = attLock.tryLock(30000); } catch (err) {}
+    try {
+      var att = logSheet_(ss, "Attendance Log", ["Time", "Date", "Student", "Class/Group", "Status"]);
+      // setValues() in one call rather than appendRow() per row: one write, one
+      // getLastRow() read, and nothing else can interleave between them.
+      var attOut = [];
+      for (var ai = 0; ai < attRows.length; ai++) {
+        var ar = attRows[ai] || {};
+        attOut.push([new Date(ar.ts), ar.date, ar.name, ar.group, ar.status]);
+      }
+      if (attOut.length) {
+        att.getRange(att.getLastRow() + 1, 1, attOut.length, 5).setValues(attOut);
+        SpreadsheetApp.flush();
+      }
+    } finally {
+      if (attHeld) { try { attLock.releaseLock(); } catch (err) {} }
+    }
   }
 
   if (body.type === "tracker") {
@@ -4361,16 +4398,33 @@ function setupRoster() {
     // qualifies; after that, only actual changes (or anyone who was somehow
     // missed by the individual auto-sync) go out again.
     var prevSentAt = day._sentAt || 0;
-    var sentCount=0;
+    // ONE REQUEST FOR THE WHOLE CLASS. This used to fire one HTTP request per
+    // student, and it lost data in a real classroom: Apps Script runs those
+    // concurrently, each execution reads getLastRow() to decide where to
+    // append, and several read the SAME row number before any of them has
+    // written. They then append over each other — a class of 20 landed 7 rows,
+    // with wrong names, visibly shuffling as they arrived. The logSheet_ lock
+    // added earlier guards only the HEADER write; the appends were never
+    // protected.
+    //
+    // Sending sequentially instead would be twenty round trips AND would still
+    // race whenever a rebbi sends twice, so the rows are batched and the
+    // server appends them in one locked operation.
+    //
+    // THE SEND DIFF IS UNCHANGED: only students whose record is newer than the
+    // last successful send go into the array, so one student changed still
+    // means exactly one row.
+    var rows=[];
     studs.forEach(function(s){
       var rec=day[s.id]||{status:"present",ts:null};
       if(!rec.ts) rec.ts=Date.now();
       day[s.id]=rec;
       if(rec.ts>prevSentAt){
-        pushToSheet({type:"attendance", ts:rec.ts, date:attDate, name:s.name, group:s.group||"", status:rec.status});
-        sentCount++;
+        rows.push({ts:rec.ts, date:attDate, name:s.name, group:s.group||"", status:rec.status});
       }
     });
+    var sentCount=rows.length;
+    if(sentCount) pushToSheet({type:"attendance", rows:rows});
     day._sentAt=Date.now();
     day._lastSendCount=sentCount;
     save();
