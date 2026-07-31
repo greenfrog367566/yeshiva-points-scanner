@@ -283,6 +283,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .act-btn .av{display:block;font-size:.82rem;margin-top:2px;font-weight:700}
   .act-btn .av.pos{color:var(--good)}
   .act-btn .av.neg{color:var(--bad)}
+  /* Tracked/control codes score nothing, so their sub-line is a description
+     rather than a value — ice, the app's "neither good nor bad" tone, and
+     muted weight so it doesn't read as a point total. */
+  .act-btn .av.trk{color:var(--ice);font-weight:600}
 
   .custom-row{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:18px}
   .custom-row .field{width:90px}
@@ -462,6 +466,28 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-code-card img,.seat-code-card canvas{display:block}
   .seat-code-name{font-size:.6rem;font-weight:700;line-height:1.15;text-align:center;
     color:var(--ink);overflow-wrap:break-word}
+  /* The value line. A code card without it says WHAT you are arming but not
+     what it does to the boy's score, which is the one thing worth knowing
+     before you scan. Same pos/neg colours the Record-tab buttons use. */
+  .seat-code-val{font-size:.58rem;font-weight:700;line-height:1.1;text-align:center}
+  .seat-code-val.pos{color:var(--good)}
+  .seat-code-val.neg{color:var(--bad)}
+  .seat-code-val.trk{color:var(--ice)}
+  /* Grouped layout: the same Points / Tracked / Navigation sections the printed
+     sheet already prints, laid out as small grids side by side instead of one
+     long wrapped row. Sections stretch to share the width. */
+  .seat-codes-groups{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;
+    padding:10px 14px 14px;border-top:2px solid var(--line);margin-top:6px}
+  .seat-codes-group{background:var(--gb-row,#f7f8fc);border:1px solid var(--line);
+    border-radius:12px;padding:8px 9px;flex:1 1 170px;min-width:150px;max-width:300px}
+  .seat-codes-group-head{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+  .seat-codes-group-name{font-size:.68rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:.4px;color:var(--muted);flex:1;min-width:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .seat-codes-group-count{font-size:.64rem;color:var(--muted);font-variant-numeric:tabular-nums}
+  .seat-codes-grid{display:grid;gap:6px}
+  .seat-codes-grid .seat-code-card{width:auto}
+  .seat-codes-grid .act-btn{min-width:0;width:100%}
   .seat-undo-row{display:flex;justify-content:center;padding:8px 14px 12px}
   /* #69 raffle roster. Collapsed by default — the tab is class-facing. */
   .raffle-who{margin:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--card);padding:8px 12px}
@@ -504,6 +530,27 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .print-code-chip input[type=checkbox]{margin:0}
   .print-code-chip .pcq{width:22px;height:22px;flex:none;display:flex;align-items:center;justify-content:center}
   .print-code-chip .pcq img,.print-code-chip .pcq canvas{width:22px!important;height:22px!important}
+  .print-code-chip .pcn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* ✕ / ↩ on a chip. Kept quiet until hover so a wall of chips doesn't read
+     as a wall of delete buttons. */
+  .print-code-x{border:none;background:transparent;color:var(--muted);font-size:.8rem;
+    line-height:1;padding:2px 3px;border-radius:50%;cursor:pointer;flex:none}
+  .print-code-chip:hover .print-code-x{color:var(--ink)}
+  .print-code-x:hover{background:var(--bad-soft);color:var(--bad)}
+  .print-code-bin .print-code-x:hover{background:var(--good-soft);color:var(--good)}
+  /* Renameable section heading — styled to read as the heading it replaces,
+     not as a form field, until it is focused. */
+  .print-code-section-name{display:block;width:100%;margin:0 0 6px;padding:2px 4px;
+    font:inherit;font-size:.75rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:.04em;color:var(--muted);background:transparent;
+    border:1px solid transparent;border-radius:6px}
+  .print-code-section-name:hover{border-color:var(--line)}
+  .print-code-section-name:focus{outline:none;border-color:var(--ink);
+    background:var(--card);color:var(--ink)}
+  .print-code-bin{border-style:dashed;background:var(--gb-row,#f7f8fc)}
+  .print-code-bin.drag-over{border-color:var(--muted);background:var(--brass-soft)}
+  .print-code-bin .print-code-chip{opacity:.72}
+  .print-code-bin .print-code-chip:hover{opacity:1}
   @keyframes flyUp{0%{opacity:0;transform:translateY(7px)}25%{opacity:1}100%{opacity:0;transform:translateY(-16px)}}
   @media(prefers-reduced-motion:reduce){.tap-fly{animation:none}.tap-btn:active{transform:none}}
 
@@ -7393,6 +7440,34 @@ function setupRoster() {
     });
     toolbar.appendChild(actBtn);
 
+    // How that footer is laid out. Only offered while it is actually showing —
+    // a layout control for something not on screen is noise, and this toolbar
+    // is already carrying five buttons.
+    if(data.seatActivitiesMode){
+      var groupBtn=el("button","seat-modebtn"+(data.actFooterGrouped?" active":""),
+                      data.actFooterGrouped?"▦ Grouped":"▤ One row");
+      groupBtn.title=data.actFooterGrouped
+        ? "Codes are grouped into sections. Click for one plain row instead."
+        : "Codes are in one row. Click to group them into sections.";
+      groupBtn.addEventListener("click", function(){
+        data.actFooterGrouped=!data.actFooterGrouped;
+        save(); renderTapPanel();
+      });
+      toolbar.appendChild(groupBtn);
+
+      // Width, only while grouped — it sets the columns INSIDE a section, so
+      // it means nothing to a single flat row.
+      if(data.actFooterGrouped){
+        var colBtn=el("button","seat-modebtn", actFooterCols()+" wide");
+        colBtn.title="How many codes sit across each section. Click to cycle 1 → 2 → 3.";
+        colBtn.addEventListener("click", function(){
+          data.actFooterCols = actFooterCols()>=3 ? 1 : actFooterCols()+1;
+          save(); renderTapPanel();
+        });
+        toolbar.appendChild(colBtn);
+      }
+    }
+
     if(effViewMode==="seating"){
       var lay=seatLayout();
 
@@ -7568,28 +7643,78 @@ function setupRoster() {
   // tappable pills, the same `.act-btn` look the Dashboard's own activity
   // buttons use, so a rebbi not scanning off the chart isn't shown a grid of
   // codes that mean nothing to him.
+  // One tappable code card. withQr draws the scannable version (QR + name +
+  // value); without it, the same `.act-btn` pill the Record tab uses.
+  //
+  // The value line is shown in BOTH, and that is the point of it: the footer
+  // used to render a QR and a name only, so "Chesed" and "Disrespect" looked
+  // identical until after you had scanned one at a boy. `it.sub` is already
+  // exactly the right string — menuLabelItems() sets it to fmtDelta(a.pts) for
+  // a scoring activity and to a plain description ("cycles attendance") for
+  // the rerouted ones — so nothing new has to be computed here.
+  function scanCodeCard(it, withQr){
+    var card=el("button", withQr ? "seat-code-card" : "act-btn");
+    card.type="button";
+    // Colour the value the way the Record-tab buttons do: green for a gain,
+    // red for a deduction, ice for the tracked ones that score nothing at all.
+    // menuLabelItems() hands this down from the activity's real pts — see the
+    // note there about why reading it back off the formatted string is wrong.
+    var tone = it.tone || "trk";
+    if(withQr){
+      var qh=el("div");
+      try{ new QRCode(qh,{text:it.qrText,width:44,height:44,correctLevel:QRCode.CorrectLevel.M}); }
+      catch(e){ qh.textContent="QR?"; }
+      card.appendChild(qh);
+      card.appendChild(el("span","seat-code-name",it.name));
+      if(it.sub) card.appendChild(el("span","seat-code-val "+tone, it.sub));
+    } else {
+      card.appendChild(el("span","an",it.name));
+      if(it.sub) card.appendChild(el("span","av "+tone, it.sub));
+    }
+    // handleScannedCode(), not processScan() — it is the same entry point the
+    // scanner's keyboard input lands on, so a tap and a scan are literally
+    // the same call with the same string.
+    card.addEventListener("click", function(){ handleScannedCode(it.qrText); });
+    return card;
+  }
   function renderScanCodesFooter(body, withQr){
-    var footer=el("div","seat-scan-codes no-print");
-    menuLabelItems().forEach(function(it){
-      var card=el("button", withQr ? "seat-code-card" : "act-btn");
-      card.type="button";
-      if(withQr){
-        var qh=el("div");
-        try{ new QRCode(qh,{text:it.qrText,width:44,height:44,correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ qh.textContent="QR?"; }
-        card.appendChild(qh);
-        card.appendChild(el("span","seat-code-name",it.name));
-      } else {
-        card.appendChild(el("span","an",it.name));
-        if(it.sub) card.appendChild(el("span","av",it.sub));
-      }
-      // handleScannedCode(), not processScan() — it is the same entry point the
-      // scanner's keyboard input lands on, so a tap and a scan are literally
-      // the same call with the same string.
-      card.addEventListener("click", function(){ handleScannedCode(it.qrText); });
-      footer.appendChild(card);
+    var items=menuLabelItems();
+    // Flat is the original single wrapped row, kept as a real choice rather
+    // than only as the "before" — a rebbi with five codes gains nothing from
+    // three headed sections, and this is the layout he already knows.
+    if(!data.actFooterGrouped){
+      var footer=el("div","seat-scan-codes no-print");
+      items.forEach(function(it){ footer.appendChild(scanCodeCard(it, withQr)); });
+      body.appendChild(footer);
+      return;
+    }
+    // Grouped. Deliberately the SAME sections, order and names the printed
+    // class sheet already uses (PRINT_CODE_SECTIONS + printCodeSectionOf +
+    // orderedPrintCodeItems + codeSectionLabel) rather than a second grouping
+    // of its own, so moving a code in "Choose codes" moves it on screen and on
+    // paper together. A screen layout that disagreed with the sheet in the
+    // rebbi's hand is the one outcome worth designing out.
+    var groups=el("div","seat-codes-groups no-print");
+    var ordered=orderedPrintCodeItems(items);
+    var cols=actFooterCols();
+    var drawn=0;
+    PRINT_CODE_SECTIONS.forEach(function(sec){
+      var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
+      if(!secItems.length) return;   // no bare headings over an empty section
+      drawn++;
+      var g=el("div","seat-codes-group");
+      var head=el("div","seat-codes-group-head");
+      head.appendChild(el("span","seat-codes-group-name", codeSectionLabel(sec)));
+      head.appendChild(el("span","seat-codes-group-count", String(secItems.length)));
+      g.appendChild(head);
+      var grid=el("div","seat-codes-grid");
+      grid.style.gridTemplateColumns="repeat("+cols+", minmax(0, 1fr))";
+      secItems.forEach(function(it){ grid.appendChild(scanCodeCard(it, withQr)); });
+      g.appendChild(grid);
+      groups.appendChild(g);
     });
-    body.appendChild(footer);
+    if(!drawn) return;   // every code turned off — draw nothing, not an empty frame
+    body.appendChild(groups);
   }
   function renderScanUndoRow(body){
     var undoRow=el("div","seat-undo-row no-print");
@@ -14008,20 +14133,27 @@ nameLine
       // defaults to "tracked", every other activity to "points". Only codes a
       // rebbi drags elsewhere get an explicit data.printCodeSections override.
       var tracked = homeworkActivity(a) || attendanceActivity(a) || passActivity(a) || freezeActivity(a);
+      // `tone` says what this code DOES to a score — pos / neg / trk — for any
+      // surface that wants to colour it. Taken from a.pts directly and never
+      // re-derived by reading `sub`: that string is fmtDelta's, which spells
+      // its minus as an ASCII "-" in points mode but as U+2212 in Shulchani
+      // mode, so sniffing it for a leading "-" silently mis-colours every
+      // deduction for a Shulchani rebbi.
       return {qrText:"ACT:"+a.id, name:a.name,
               sub: homeworkActivity(a)   ? "marks homework checked"
                  : attendanceActivity(a) ? "cycles attendance"
                  : passActivity(a)       ? "marks a bathroom pass used"
                  : freezeActivity(a)     ? "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze"
                  : fmtDelta(a.pts),
+              tone: tracked ? "trk" : (a.pts<0 ? "neg" : (a.pts>0 ? "pos" : "trk")),
               defaultSection: tracked ? "tracked" : "points"};
     });
-    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", defaultSection:"nav"});
-    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", defaultSection:"nav"});
-    items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan", defaultSection:"nav"});
-    items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another", defaultSection:"nav"});
-    items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", defaultSection:"nav"});
-    items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only", defaultSection:"nav"});
+    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", tone:"pos", defaultSection:"nav"});
+    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", tone:"neg", defaultSection:"nav"});
+    items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan", tone:"trk", defaultSection:"nav"});
+    items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another", tone:"trk", defaultSection:"nav"});
+    items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
+    items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
     // #117: drop the codes this rebbi has turned off. Filtered HERE, once,
     // because this function is the single source for the tile view, the Avery
     // sheets and the class sheet's footer alike — filtering in each renderer is
@@ -14045,6 +14177,24 @@ nameLine
     {key:"tracked", label:"Tracked"},
     {key:"nav",     label:"Navigation"}
   ];
+  // What a section is CALLED. Falls back to the built-in label, so a rebbi who
+  // never renames anything stores nothing and sees exactly what he always saw.
+  // Sparse, same spirit as printCodeSections. The section KEYS never change —
+  // they are what data.printCodeSections stores — only the display name does.
+  // Shared by the on-screen footer, the "Choose codes" grid maker and the
+  // printed sheet, so renaming a section renames it in all three at once.
+  function codeSectionLabel(sec){
+    var n=data.codeSectionNames[sec.key];
+    return (typeof n==="string" && n.trim()) ? n.trim() : sec.label;
+  }
+  // Columns per section in the grouped footer. Clamped rather than trusted:
+  // this is rendered into grid-template-columns, and a stored 0 or a string
+  // would produce an invalid rule and collapse the whole footer.
+  function actFooterCols(){
+    var c=parseInt(data.actFooterCols,10);
+    if(!(c>=1 && c<=3)) c=2;
+    return c;
+  }
   // A code's section is its defaultSection (set in menuLabelItems()) unless a
   // rebbi has dragged it elsewhere, in which case data.printCodeSections holds
   // the override. Sparse by design, same spirit as data.printExcluded — a code
@@ -14087,7 +14237,10 @@ nameLine
     if(targetSection===moved.defaultSection) delete data.printCodeSections[qrText];
     else data.printCodeSections[qrText]=targetSection;
     data.printCodeOrder = PRINT_CODE_SECTIONS.reduce(function(acc,sec){ return acc.concat(buckets[sec.key]); }, []);
-    save(); renderSeatPrintCodes(); renderSeatChartPrint();
+    // renderTapPanel() too: the live chart's grouped footer reads this same
+    // section/order model now, so a code moved here has to move there in the
+    // same beat or the screen and the sheet disagree until the next redraw.
+    save(); renderSeatPrintCodes(); renderSeatChartPrint(); renderTapPanel();
   }
   function renderMenuLabels(hasQR){
     if(typeof hasQR==="undefined") hasQR=(typeof QRCode!=="undefined");
@@ -14283,10 +14436,35 @@ nameLine
     if(!all.length){ box.appendChild(el("div","recent-empty","No codes to print yet — add some activities first.")); return; }
     var hasQR=(typeof QRCode!=="undefined");
     var ordered=orderedPrintCodeItems(all);
+    // A removed code leaves its section and waits in the bin below, instead of
+    // sitting in place with its box unticked. Same stored flag either way
+    // (data.printExcluded) — this only changes where it is drawn, so nothing
+    // about what prints changes for a rebbi who already has codes turned off.
+    var removed=ordered.filter(function(it){ return !!data.printExcluded[it.qrText]; });
     PRINT_CODE_SECTIONS.forEach(function(sec){
-      var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
+      var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key && !data.printExcluded[it.qrText]; });
       var secBox=el("div","print-code-section");
-      secBox.appendChild(el("h4",null,sec.label));
+      // Renameable heading. A text input rather than a label + edit button:
+      // there are only three of them and they are always editable, so a mode
+      // to enter would be more chrome than the thing it guards. Committed on
+      // change/blur, not on every keystroke, so a half-typed name never lands
+      // in storage or on the printed sheet.
+      var nameIn=el("input","print-code-section-name");
+      nameIn.type="text";
+      nameIn.value=codeSectionLabel(sec);
+      nameIn.setAttribute("aria-label", sec.label+" section name");
+      nameIn.title="Rename this section — it renames on the printed sheet too";
+      nameIn.addEventListener("change", function(){
+        var v=nameIn.value.trim();
+        // Blank means "back to the built-in name", which is also how a rebbi
+        // undoes a rename without having to remember what it used to say.
+        if(!v || v===sec.label) delete data.codeSectionNames[sec.key];
+        else data.codeSectionNames[sec.key]=v;
+        save();
+        nameIn.value=codeSectionLabel(sec);
+        renderSeatChartPrint(); renderTapPanel();
+      });
+      secBox.appendChild(nameIn);
       var chips=el("div","print-code-chips");
       secBox.appendChild(chips);
       // Dropping on empty section space (not on a specific chip) appends to
@@ -14299,48 +14477,92 @@ nameLine
         var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
         var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
         if(!payload.qrText) return;
+        // Dragging back out of the bin restores the code as well as placing
+        // it; without this it would land in the section still excluded, and
+        // appear to have been put back while staying off the sheet.
+        delete data.printExcluded[payload.qrText];
         movePrintCode(payload.qrText, sec.key, null);
       });
       if(!secItems.length) chips.appendChild(el("div","print-code-empty","Drop codes here"));
-      secItems.forEach(function(it){
-        var chip=el("label","print-code-chip");
-        chip.draggable=true;
-        var cb=document.createElement("input");
-        cb.type="checkbox"; cb.checked=!data.printExcluded[it.qrText];
-        cb.addEventListener("change", function(){
-          if(this.checked) delete data.printExcluded[it.qrText];
-          else data.printExcluded[it.qrText]=true;
-          save(); renderSeatPrintCodes(); renderSeatChartPrint();
-        });
-        chip.appendChild(cb);
-        if(hasQR){
-          var qh=el("span","pcq");
-          try{ new QRCode(qh,{text:it.qrText,width:22,height:22,correctLevel:QRCode.CorrectLevel.M}); }
-          catch(e){}
-          chip.appendChild(qh);
-        }
-        chip.appendChild(document.createTextNode(it.name));
-        chip.addEventListener("dragstart", function(ev){
-          chip.classList.add("dragging");
-          ev.dataTransfer.setData("text/plain", JSON.stringify({qrText:it.qrText}));
-          ev.dataTransfer.effectAllowed="move";
-        });
-        chip.addEventListener("dragend", function(){ chip.classList.remove("dragging"); });
-        chip.addEventListener("dragover", function(ev){ ev.preventDefault(); ev.stopPropagation(); chip.classList.add("drag-over"); });
-        chip.addEventListener("dragleave", function(){ chip.classList.remove("drag-over"); });
-        chip.addEventListener("drop", function(ev){
-          ev.preventDefault(); ev.stopPropagation(); chip.classList.remove("drag-over");
-          var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
-          var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
-          if(!payload.qrText || payload.qrText===it.qrText) return;
-          movePrintCode(payload.qrText, sec.key, it.qrText);
-        });
-        chips.appendChild(chip);
-      });
+      secItems.forEach(function(it){ chips.appendChild(printCodeChip(it, hasQR, sec)); });
       box.appendChild(secBox);
     });
+
+    // The bin. Dropping a code here takes it off the sheet AND off the
+    // on-screen footer — the two have always shown the same set (that is what
+    // menuLabelItems() being the single source buys), so one tray governs
+    // both rather than a rebbi having to remove the same code twice.
+    var binBox=el("div","print-code-section print-code-bin");
+    binBox.appendChild(el("h4",null,"🗑 Removed — not on the sheet or the chart"));
+    var binChips=el("div","print-code-chips");
+    binBox.appendChild(binChips);
+    binBox.addEventListener("dragover", function(ev){ ev.preventDefault(); binBox.classList.add("drag-over"); });
+    binBox.addEventListener("dragleave", function(){ binBox.classList.remove("drag-over"); });
+    binBox.addEventListener("drop", function(ev){
+      ev.preventDefault(); binBox.classList.remove("drag-over");
+      var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+      var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
+      if(!payload.qrText) return;
+      data.printExcluded[payload.qrText]=true;
+      save(); renderSeatPrintCodes(); renderSeatChartPrint(); renderTapPanel();
+    });
+    if(!removed.length) binChips.appendChild(el("div","print-code-empty","Drag a code here to take it off"));
+    removed.forEach(function(it){ binChips.appendChild(printCodeChip(it, hasQR, null)); });
+    box.appendChild(binBox);
+
     var on=all.filter(function(it){ return !data.printExcluded[it.qrText]; }).length;
     $("seatPrintCodesCount").textContent=on+" of "+all.length+" on the sheet";
+  }
+  // One draggable code chip. `sec` is the section it currently sits in, or
+  // null when it is sitting in the bin — which is the only difference between
+  // the two: a chip in a section offers ✕ (remove), a chip in the bin offers ↩
+  // (put back where it belongs). Restoring deliberately does NOT pick a
+  // section: the code still carries whichever section it had before it was
+  // removed, so putting it back returns it to where the rebbi last had it.
+  function printCodeChip(it, hasQR, sec){
+    var chip=el("div","print-code-chip");
+    chip.draggable=true;
+    if(hasQR){
+      var qh=el("span","pcq");
+      try{ new QRCode(qh,{text:it.qrText,width:22,height:22,correctLevel:QRCode.CorrectLevel.M}); }
+      catch(e){}
+      chip.appendChild(qh);
+    }
+    chip.appendChild(el("span","pcn",it.name));
+    var act=el("button","print-code-x");
+    act.type="button";
+    act.textContent = sec ? "✕" : "↩";
+    act.title = sec ? "Take this code off the sheet and the chart" : "Put this code back";
+    act.addEventListener("click", function(ev){
+      ev.preventDefault(); ev.stopPropagation();
+      if(sec) data.printExcluded[it.qrText]=true;
+      else delete data.printExcluded[it.qrText];
+      save(); renderSeatPrintCodes(); renderSeatChartPrint(); renderTapPanel();
+    });
+    chip.appendChild(act);
+    chip.addEventListener("dragstart", function(ev){
+      chip.classList.add("dragging");
+      ev.dataTransfer.setData("text/plain", JSON.stringify({qrText:it.qrText}));
+      ev.dataTransfer.effectAllowed="move";
+    });
+    chip.addEventListener("dragend", function(){ chip.classList.remove("dragging"); });
+    if(sec){
+      chip.addEventListener("dragover", function(ev){ ev.preventDefault(); ev.stopPropagation(); chip.classList.add("drag-over"); });
+      chip.addEventListener("dragleave", function(){ chip.classList.remove("drag-over"); });
+      chip.addEventListener("drop", function(ev){
+        ev.preventDefault(); ev.stopPropagation(); chip.classList.remove("drag-over");
+        var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+        var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
+        if(!payload.qrText || payload.qrText===it.qrText) return;
+        // Dragging out of the bin and onto a chip both restores it and places
+        // it, in one gesture — movePrintCode alone would move a code that is
+        // still excluded and it would silently stay off the sheet.
+        delete data.printExcluded[payload.qrText];
+        movePrintCode(payload.qrText, sec.key, it.qrText);
+        renderTapPanel();
+      });
+    }
+    return chip;
   }
   $("seatPrintCodesToggle").addEventListener("click", function(){
     var c=$("seatPrintCodesCard");
@@ -14397,7 +14619,7 @@ nameLine
     PRINT_CODE_SECTIONS.forEach(function(sec){
       var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
       if(!secItems.length) return;
-      footer.appendChild(el("div","seat-print-act-section-label", sec.label));
+      footer.appendChild(el("div","seat-print-act-section-label", codeSectionLabel(sec)));
       var grid=el("div","seat-print-activities-grid");
       secItems.forEach(function(it){
         var card=el("div","seat-print-act-card");
@@ -15197,6 +15419,17 @@ nameLine
     // something.
     if(!data.printCodeSections || typeof data.printCodeSections!=="object" || Array.isArray(data.printCodeSections)) data.printCodeSections={};
     if(!Array.isArray(data.printCodeOrder)) data.printCodeOrder=[];
+    // Renamed section titles, keyed by the SAME fixed section keys
+    // printCodeSections uses. Sparse: a section nobody renamed stores nothing
+    // and shows its built-in label, so an existing save reads identically.
+    if(!data.codeSectionNames || typeof data.codeSectionNames!=="object" || Array.isArray(data.codeSectionNames)) data.codeSectionNames={};
+    // On-screen activity-codes footer layout. Grouped is the default because
+    // the sections are what make a long code list readable, and it is what the
+    // printed sheet has always done — the flat row stays available as "One row".
+    if(typeof data.actFooterGrouped!=="boolean") data.actFooterGrouped=true;
+    // Guarded with the same clamp actFooterCols() applies, so a hand-edited or
+    // corrupted value can never reach grid-template-columns.
+    if(!(parseInt(data.actFooterCols,10)>=1 && parseInt(data.actFooterCols,10)<=3)) data.actFooterCols=2;
     if(!Array.isArray(data.pastContests)) data.pastContests=[];
     // Saved contests used to store metadata only, and their numbers were
     // recomputed from data.log on every render — so they decayed to nothing as
