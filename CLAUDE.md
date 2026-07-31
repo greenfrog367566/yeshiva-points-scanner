@@ -254,6 +254,7 @@ These docs in `docs/` are the settled design. They answer most "should we..." qu
 - **Print_Wizard_Spec.md** — the Print Wizard, six print components, Shulchani coin cards, the Tera-barcode constraint.
 - **Offline_NoComputer_Secretary_Spec.md** — Offline Mode, Batch Import parser (spec'd against real scanner data), Secretary Mode.
 - **Positioning.md** — settled copy decisions: the canonical self-description, "classroom economy" rejected as positioning (with its one permitted exception), "rebbeim" not "teachers", no licensing/free-forever language in user-facing copy, no AI framing. **Check it before writing or editing any user-facing copy.**
+- **Firebase_Rebuild_Scope.md** — the settled scope for the upcoming Firebase/Firestore rebuild: real accounts, Firestore replacing localStorage-as-database, three tiers (rebbi/admin/superadmin), the incremental-write data model (not one JSON blob per class), the converter tool, what retires (file:// offline copy, Sheets-as-database, Apps Script), and the 8-step build order. **Not started — build order step 1 (data model design session) hasn't begun.** Read before touching anything auth/sync/data-model shaped, and before assuming the current localStorage-only architecture described elsewhere in this file is the long-term plan.
 
 If a spec and this CLAUDE.md ever conflict, **CLAUDE.md wins**; flag the conflict to the maintainer.
 
