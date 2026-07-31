@@ -135,6 +135,21 @@ git push origin <branch-name>
   it — other sessions merge through isolated worktrees that never update this
   folder; `git pull` before trusting what's on disk here
 
+### The shared checkout now self-syncs (but don't lean on it)
+
+`.claude/hooks/sync-main-checkout.sh` runs on `SessionStart` and `SessionEnd`
+for every session in this repo — worktrees included — and fast-forwards the
+shared checkout at `C:\Dev\yeshiva-points-scanner` to `origin/main`. That closes
+the drift window that once left it 31 commits stale while every merge looked
+healthy.
+
+It is deliberately timid, and **it refuses in exactly the cases where you most
+need it**: it only acts when the shared checkout is on `main` with nothing
+uncommitted. Parked on a branch, or holding uncommitted work, it fast-forwards
+nothing and only prints how far behind the folder has fallen. So the rules above
+still stand unchanged — the hook is a safety net for the folder you *aren't*
+looking at, not a substitute for pulling in the one you are.
+
 ## Critical rules — read before writing any code
 
 ### 1. Never break saved data
