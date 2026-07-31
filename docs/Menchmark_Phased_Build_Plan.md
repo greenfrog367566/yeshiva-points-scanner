@@ -117,7 +117,7 @@ Now that tabs are reorganized and the armed-item mechanic exists (2d), refine th
 ## Phase 6 — Learn cleanup + Library + Review Wizard *(Library underpins the Wizard)*
 
 - **Learn housekeeping:** Chart-mode folds into Gradebook (Phase 2 dependency), Shorashim trimmed to Words+Match, Brachos two-tab (Asher Yatzar), dead-code removal, AI→"automatic" language (partly done).
-- **6a. The Library** — static JSON on GitHub Pages, `index.json` catalog, the honest draft/partial/reviewed status flag, the in-app "browse & load" picker replacing the AI-import UI. (Vayelech already prepared as seed content.)
+- **6a. The Library** — static JSON served alongside the app (CLAUDE.md names the deploy path; nothing here depends on which host it is), `index.json` catalog, the honest draft/partial/reviewed status flag, the in-app "browse & load" picker replacing the AI-import UI. (Vayelech already prepared as seed content.)
 - **6b. The Review Wizard** — per-pasuk confirm/edit, "not reviewed" banner, resumable, reviewed-version callback. *Depends on 6a existing.* (Share-back deliberately deferred — its own future project.)
 
 **Ships:** clean Learn tab, a real text library, the review flow.

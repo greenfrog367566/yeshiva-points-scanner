@@ -29,9 +29,34 @@ Menchmark is a free, open-source classroom assistant for Yeshiva and Jewish Day 
 | `samples/`, `sample-backup.json` | Safe demo data — the only data allowed in this repo |
 
 **Local repo path:** `C:\Dev\yeshiva-points-scanner`
-**Live site:** `menchmark.app` (custom domain on GitHub Pages; `greenfrog367566.github.io/yeshiva-points-scanner` still resolves)
-**Deployment:** GitHub Pages — **anything merged to `main` is instantly live in classrooms.**
-`sw.js` serves HTML network-first, so a deploy reaches installed users immediately; bump `CACHE_VERSION` in `sw.js` on a release to purge the stale *offline* copy.
+**Live site:** `menchmark.app`, served by a **Cloudflare Pages project** built from
+`main` — *not* GitHub Pages. GitHub Pages is still enabled and also builds from
+`main`, so `greenfrog367566.github.io/yeshiva-points-scanner` resolves and serves
+the same content, but it is **not** what rebbeim use. GitHub Pages has no custom
+domain configured (`cname: null`, and there is no `CNAME` file in the repo); the
+domain resolves straight to Cloudflare.
+
+**Deployment:** merging to `main` reaches `menchmark.app` on its own — **treat
+anything merged as live in classrooms.** It is not instantaneous, though, and the
+lag has never been measured: a merge is live within the hour, which is all that
+has actually been verified. Don't promise a rebbi a fix has landed until you have
+loaded the page and seen it.
+
+**The deploy has failed silently before, and this is the thing to actually worry
+about.** The Cloudflare project was once disconnected from the repo and kept
+serving its last build for days — `main` was healthy, GitHub Pages was current,
+every check was green, and rebbeim were running a build from 13 merges earlier.
+Nothing in this repo reports that state. **After a merge that matters, verify
+against the live site rather than assuming**, e.g.:
+
+```bash
+# does the deployed app actually contain the thing you just merged?
+curl -s https://menchmark.app/app.html | grep -c 'someIdentifierFromYourChange'
+```
+
+`sw.js` serves HTML network-first, so once a deploy is out it reaches installed
+users immediately; bump `CACHE_VERSION` in `sw.js` on a release to purge the
+stale *offline* copy.
 
 ## 🔴 BRANCH RULES (CRITICAL — READ FIRST)
 
