@@ -320,7 +320,7 @@ if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOp
 if(typeof data.seatPrintOpts.avatarMode!=="string"){
   data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
 }
-if(["qr","photo","none"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
+if(["qr","photo","none","activity"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
 delete data.seatPrintOpts.showQR;
 if(typeof data.seatPrintOpts.showPoints!=="boolean") data.seatPrintOpts.showPoints=false;
 if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
@@ -332,6 +332,7 @@ if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView
 // Monday he didn't ask for. A save that already carries the field, either
 // way, is left exactly as the rebbi set it.
 if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
+if(typeof data.seatPrintOpts.activityId!=="string") data.seatPrintOpts.activityId="";
 // Page orientation for the class sheet. It was a module-level variable, so
 // it reset to portrait on every reload and a rebbi whose chart only fits
 // landscape had to re-pick it every single time.
@@ -1551,6 +1552,15 @@ function runBuiltInTests() {
   assert("sheet→a saved landscape survives a reload", t16e.seatPrintOrient==="landscape");
   var t16f = runMigration({ version:4, seatPrintOrient:"sideways" });
   assert("sheet→a garbage orientation repairs to portrait", t16f.seatPrintOrient==="portrait");
+  // Per-activity seating chart: a save predating the field gets "" (no
+  // activity picked yet), and an existing choice survives untouched.
+  assert("sheet→a save predating activityId backfills to empty",
+    t16d.seatPrintOpts.activityId==="", "got "+JSON.stringify(t16d.seatPrintOpts.activityId));
+  var t16g = runMigration({ version:4, seatPrintOpts:{avatarMode:"activity", activityId:"a3"} });
+  assert("sheet→a saved activity pick survives a reload", t16g.seatPrintOpts.activityId==="a3");
+  var t16h = runMigration({ version:4, seatPrintOpts:{avatarMode:"activity"} });
+  assert("sheet→a garbage/missing avatarMode value list still accepts 'activity'",
+    t16h.seatPrintOpts.avatarMode==="activity", "got "+t16h.seatPrintOpts.avatarMode);
 
   // --- Test 17: #117 printed-code selection ---
   assert("codes→printExcluded backfills to an object",
