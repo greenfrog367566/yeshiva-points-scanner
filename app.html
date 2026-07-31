@@ -1131,6 +1131,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     body.print-seating #seatChartGrid{display:block!important;width:8.5in;padding:0.3in;box-sizing:border-box}
     body.print-seating-landscape #seatChartGrid{width:11in}
     .seat-print-title{text-align:center;font-family:var(--serif);font-size:1.3rem;font-weight:700;margin-bottom:4px}
+    .seat-print-activity-badge-wrap{text-align:center;margin-bottom:0.12in}
+    .seat-print-activity-badge{display:inline-block;padding:3px 14px;border:2px solid currentColor;border-radius:999px;font-weight:700;font-size:1rem;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     body.print-seating .seat-front{margin:0 0 0.15in;font-size:1rem}
     body.print-seating .print-seat-grid{padding:0;gap:0.15in}
     /* A seat is never split by a page break. This is also what stops a seat ROW
@@ -1216,6 +1218,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      — a reasonably-sized, contained card so it fits the normal page layout. */
   .seat-print-preview{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;max-width:1100px;margin:0 auto;overflow:visible}
   .seat-print-preview .seat-print-title,#menuPrintTitle{text-align:center;font-family:var(--serif);font-size:1.25rem;font-weight:700;margin-bottom:6px}
+  .seat-print-preview .seat-print-activity-badge-wrap{text-align:center;margin-bottom:10px}
+  .seat-print-preview .seat-print-activity-badge{display:inline-block;padding:3px 14px;border:2px solid currentColor;border-radius:999px;font-weight:700;font-size:.9rem}
   .seat-print-preview .seat-front{margin:0 0 14px;text-align:center;font-size:.75rem;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;padding-bottom:8px;border-bottom:2px solid var(--line)}
   .seat-print-preview .print-seat-grid{display:grid;gap:10px}
   .seat-print-preview .seat{border:1px solid var(--line);border-radius:10px;padding:10px 6px;text-align:center;min-height:0;min-width:0}
@@ -2240,11 +2244,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <option value="qr">QR code</option>
           <option value="photo">Student photo</option>
           <option value="none">None</option>
+          <option value="activity">Activity code</option>
         </select>
+      </label>
+      <label id="seatPrintActivityRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Every seat's code becomes that one activity, pre-applied to that student — scan straight down the grid with no arming step. One sheet per activity.">Activity:
+        <select id="seatPrintActivityPicker" class="field" style="width:auto"></select>
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem"><input type="checkbox" id="seatPrintShowPoints"> Points</label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Flips the chart 180° — front of room at the bottom, left/right mirrored — matching what you actually see facing the class. Names stay right-side-up and readable."><input type="checkbox" id="seatPrintRebbiView"> Rebbi's view</label>
-      <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Adds a compact row of activity QR codes at the bottom of the page, for a one-page classroom reference."><input type="checkbox" id="seatPrintShowActivities"> Activities footer</label>
+      <label id="seatPrintShowActivitiesRow" style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Adds a compact row of activity QR codes at the bottom of the page, for a one-page classroom reference."><input type="checkbox" id="seatPrintShowActivities"> Activities footer</label>
       <button class="btn btn-sm" id="seatPrintCodesToggle">Choose codes</button>
       <button class="btn btn-primary" id="printSeatChart">🖨 Print my class sheet</button>
     </div>
@@ -3559,7 +3567,7 @@ function setupRoster() {
     //
     // Discoverability is fixed by putting the checkbox on a page rebbeim
     // actually reach, not by flipping a setting under them.
-    seatPrintOpts: { avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true }
+    seatPrintOpts: { avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"" }
   };
 
   var SHOR_BANK = [
@@ -4150,6 +4158,7 @@ function setupRoster() {
       $("seatPrintShowPoints").checked = data.seatPrintOpts.showPoints;
       $("seatPrintRebbiView").checked = data.seatPrintOpts.rebbiView;
       $("seatPrintShowActivities").checked = data.seatPrintOpts.showActivities;
+      seatPrintSyncActivityRow();
       // A rebbi who has only imported a roster has no seat layout, and this page
       // used to hand him 24 boxes reading "Empty seat" with no student codes at
       // all — a sheet that looks real and is useless. Seat whoever has no seat
@@ -4736,6 +4745,14 @@ function setupRoster() {
   // gets its wording here rather than in three separate print call sites.
   function personalActionSub(a){ return homeworkActivity(a) ? "marks homework checked" : attendanceActivity(a) ? "cycles their attendance" : freezeActivity(a) ? "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze" : "uses their weekly pass"; }
   function personalActionVerb(a){ return homeworkActivity(a) ? "mark homework checked" : attendanceActivity(a) ? "cycle their attendance" : freezeActivity(a) ? "start a "+fmtFreezeDuration(a.freezeSeconds)+" freeze" : "use the weekly bathroom pass"; }
+  // Deterministic id->hue so an activity's seating-chart sheet always prints
+  // the same color, letting a rebbi tell a stack of sheets apart at a glance
+  // without a stored color field on the activity itself.
+  function activityPrintColor(a){
+    var s=(a&&(a.id||a.name))||"";
+    var h=0; for(var i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))%360; }
+    return "hsl("+h+",65%,38%)";
+  }
   function renderTrackerActSel(){
     var sel=$("trackerActSel");
     var prev=sel.value||data.trackerActId;
@@ -6486,6 +6503,23 @@ function setupRoster() {
           beep(false); return;
         }
         applyFreeze(ps, pa.freezeSeconds);
+        return;
+      }
+      // Attendance, same idea: it lives in data.attendance, not in points.
+      // award()'s two-step arm-then-scan path already reroutes here
+      // (attCycleFlash/attCycle) — this personal-code path had been left
+      // behind, so scanning a student's own Attendance code silently logged
+      // a meaningless 0-point "Attendance" award instead of cycling
+      // present/absent/late.
+      if(attendanceActivity(pa)){
+        if(!studentInCurrentClass(ps)){
+          flash(false, ps.name, "Not in selected class", "Switch to “"+data.currentClass+"” or choose “All classes” to mark attendance");
+          beep(false); return;
+        }
+        attCycleFlash(ps, attCycle(ps.id, todayKey()));
+        if($("view-attendance") && $("view-attendance").classList.contains("active")){
+          if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
+        }
         return;
       }
       awardWith(ps, pa.name, pa.pts);
@@ -14021,10 +14055,27 @@ nameLine
     var ex={}; menuLabelItemsAll().forEach(function(it){ ex[it.qrText]=true; });
     data.printExcluded=ex; save(); renderSeatPrintCodes(); renderSeatChartPrint();
   });
-  $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); renderSeatChartPrint(); });
+  $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); seatPrintSyncActivityRow(); renderSeatChartPrint(); });
+  $("seatPrintActivityPicker").addEventListener("change", function(){ data.seatPrintOpts.activityId=this.value; save(); renderSeatChartPrint(); });
   $("seatPrintShowPoints").addEventListener("change", function(){ data.seatPrintOpts.showPoints=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); renderSeatChartPrint(); });
+  // Shows the activity picker (and hides the now-redundant Activities-footer
+  // checkbox, since a merged PA: code already carries the activity — no
+  // separate arming code needed) only in Activity mode, and keeps the
+  // picker's options in sync with the same armable/visible filter every
+  // other arming surface uses (armableActivities() + actVisibleInCurrentClass).
+  function seatPrintSyncActivityRow(){
+    var isActivity = $("seatPrintAvatarMode").value==="activity";
+    $("seatPrintActivityRow").style.display = isActivity ? "flex" : "none";
+    $("seatPrintShowActivitiesRow").style.display = isActivity ? "none" : "flex";
+    var sel=$("seatPrintActivityPicker"), cur=sel.value || data.seatPrintOpts.activityId;
+    var opts=armableActivities().filter(actVisibleInCurrentClass);
+    sel.innerHTML="";
+    opts.forEach(function(a){ var o=el("option",null,a.name); o.value=a.id; sel.appendChild(o); });
+    if(opts.some(function(a){return a.id===cur;})) sel.value=cur; else sel.value = opts.length ? opts[0].id : "";
+    data.seatPrintOpts.activityId = sel.value;
+  }
   // Compact activity-code footer for the seating-chart printout — distinct
   // from renderMenuLabels()'s full-size (104x104) cards, which are too
   // large to reliably fit alongside a seating chart on one page. Reuses
@@ -14075,6 +14126,15 @@ nameLine
     var avatarMode = $("seatPrintAvatarMode") ? $("seatPrintAvatarMode").value : "qr";
     var showPts = $("seatPrintShowPoints") ? $("seatPrintShowPoints").checked : false;
     var rebbiView = $("seatPrintRebbiView") ? $("seatPrintRebbiView").checked : false;
+    var act = (avatarMode==="activity") ? actById(data.seatPrintOpts.activityId) : null;
+    if(avatarMode==="activity" && !act){
+      wrap.appendChild(el("div","seat-print-title", seatPrintTitle()));
+      wrap.appendChild(el("div","empty-state", data.activities.length
+        ? "Pick an activity above to print its seating chart."
+        : "Add an activity first, on the Activities tab."));
+      if($("seatPrintFitWarning")) $("seatPrintFitWarning").style.display="none";
+      return;
+    }
     // Reuses the exact same .seat-front / .seat-grid / .seat card classes as the
     // live Scan-tab seating chart, so the printed page looks like that chart —
     // just with a scannable QR code (or the student's photo) standing in for
@@ -14083,6 +14143,19 @@ nameLine
     // would otherwise get absurdly tall cards) — cards stay a compact, fixed
     // size and the grid is only as tall as it needs to be, same as on screen.
     wrap.appendChild(el("div","seat-print-title", seatPrintTitle()));
+    // A colored badge so a stack of per-activity sheets can be told apart at a
+    // glance while bouncing between activities — the color is derived from the
+    // activity id/name (activityPrintColor()), not stored, since activities
+    // have no color field of their own.
+    if(act){
+      var badgeWrap=el("div","seat-print-activity-badge-wrap");
+      var badge=el("div","seat-print-activity-badge",
+        act.name+" · "+(reroutedActivity(act) ? personalActionSub(act) : fmtDelta(act.pts)));
+      var actColor=activityPrintColor(act);
+      badge.style.borderColor=actColor; badge.style.color=actColor;
+      badgeWrap.appendChild(badge);
+      wrap.appendChild(badgeWrap);
+    }
     // "Rebbi's view": standing at the front facing the class is the exact
     // opposite orientation of the normal chart (which reads like a map, front
     // at the top). Reversing the whole flat seat list gives a true 180°
@@ -14098,11 +14171,15 @@ nameLine
       var s = sid ? byId[sid] : null;
       var seat=el("div","seat"+(s?"":" empty"));
       if(s){
-        if(avatarMode==="qr"){
+        if(avatarMode==="qr" || avatarMode==="activity"){
           var qrw=el("div","seat-print-qr");
           if(hasQR){
             var holder=el("div"); qrw.appendChild(holder);
-            try{ new QRCode(holder,{text:s.id,width:95,height:95,correctLevel:QRCode.CorrectLevel.M}); }
+            // Same PA:<student>:<activity> merged code renderPersonalPages()
+            // prints per student, just laid out in the seat grid instead —
+            // one scan applies this exact activity to this exact seat.
+            var qrText = (avatarMode==="activity") ? ("PA:"+s.id+":"+act.id) : s.id;
+            try{ new QRCode(holder,{text:qrText,width:95,height:95,correctLevel:QRCode.CorrectLevel.M}); }
             catch(e){ qrw.appendChild(document.createTextNode("QR?")); }
           } else {
             qrw.appendChild(document.createTextNode("(offline)"));
@@ -14122,7 +14199,10 @@ nameLine
     });
     wrap.appendChild(grid);
     if(rebbiView) wrap.appendChild(el("div","seat-front","Front of room"));
-    if(data.seatPrintOpts.showActivities){
+    // The footer arms an activity code to scan-then-scan-student; a merged
+    // PA: code already carries the activity, so it would be redundant here
+    // (and the checkbox that controls it is hidden in Activity mode too).
+    if(data.seatPrintOpts.showActivities && avatarMode!=="activity"){
       renderSeatPrintActivitiesFooter(wrap);
     }
     /* Non-blocking fit check.
@@ -14149,7 +14229,8 @@ nameLine
     // and #seatChartGrid padding 0.3in top and bottom.
     var printInches = 0.6 + 0.45 + 0.15
       + (rowsUsed * 1.5) + (Math.max(0, rowsUsed-1) * 0.15)
-      + (data.seatPrintOpts.showActivities ? 1.1 : 0);
+      + (data.seatPrintOpts.showActivities && avatarMode!=="activity" ? 1.1 : 0)
+      + (act ? 0.35 : 0);
     var usableInches = seatPrintOrient==="landscape" ? 7.5 : 10;
     var fits = printInches <= usableInches;
     if(warnEl) warnEl.style.display = fits ? "none" : "block";
@@ -14758,7 +14839,7 @@ nameLine
     if(typeof data.seatPrintOpts.avatarMode!=="string"){
       data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
     }
-    if(["qr","photo","none"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
+    if(["qr","photo","none","activity"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
     delete data.seatPrintOpts.showQR;
     if(typeof data.seatPrintOpts.showPoints!=="boolean") data.seatPrintOpts.showPoints=false;
     if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
@@ -14770,6 +14851,7 @@ nameLine
     // Monday he didn't ask for. A save that already carries the field, either
     // way, is left exactly as the rebbi set it.
     if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
+    if(typeof data.seatPrintOpts.activityId!=="string") data.seatPrintOpts.activityId="";
     // Page orientation for the class sheet. It was a module-level variable, so
     // it reset to portrait on every reload and a rebbi whose chart only fits
     // landscape had to re-pick it every single time.
