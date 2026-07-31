@@ -28,6 +28,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     --good-soft:#e3f3ea;
     --bad:#b04432;        /* negative */
     --bad-soft:#f6e6e2;
+    --ice:#2b6ca3;        /* freeze — neither good nor bad, its own tone */
+    --ice-soft:#e2eef7;
     --shadow:0 1px 2px rgba(27,36,64,.06),0 8px 24px rgba(27,36,64,.07);
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -362,10 +364,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .flash.show{opacity:1;transform:translateY(0)}
   .flash.good{background:var(--good-soft);border-color:#b9e0cb}
   .flash.bad{background:var(--bad-soft);border-color:#e3bdb5}
+  .flash.ice{background:var(--ice-soft);border-color:#bcd6ea}
   .flash .who{font-family:var(--serif);font-size:1.5rem;font-weight:600}
   .flash .delta{font-size:2.1rem;font-weight:800;margin:2px 0}
   .flash.good .delta{color:var(--good)}
   .flash.bad .delta{color:var(--bad)}
+  .flash.ice .delta{color:var(--ice)}
   .flash .total{font-size:.95rem;color:var(--muted)}
   @media(prefers-reduced-motion:reduce){.flash{transition:none}}
 
@@ -412,8 +416,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .tap-btn .avatar,.seat .avatar{margin:0 auto 5px}
   .tap-btn.awarded{border-color:var(--good);background:var(--good-soft)}
   .tap-btn.awarded-bad{border-color:var(--bad);background:var(--bad-soft)}
+  .tap-btn.awarded-ice{border-color:var(--ice);background:var(--ice-soft)}
   .tap-fly{position:absolute;top:5px;right:8px;font-size:.85rem;font-weight:800;color:var(--good);animation:flyUp .7s ease-out forwards;pointer-events:none}
   .tap-fly.neg{color:var(--bad)}
+  .tap-fly.ice{color:var(--ice)}
+  /* Freeze corner badge — shown on any tile (list or seating chart) for a
+     student with an active data.freezes entry. .paused swaps the blue for
+     muted grey so a paused freeze reads as "on hold", not "still counting". */
+  .tile-freeze-badge{position:absolute;top:4px;right:4px;font-size:.68rem;font-weight:700;background:var(--ice);color:#fff;border-radius:999px;padding:1px 6px;line-height:1.5;white-space:nowrap;z-index:1}
+  .tile-freeze-badge.paused{background:var(--muted)}
 
   /* ---- Seating chart mode ---- */
   .seat-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 0}
@@ -459,6 +470,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat .ts{display:block;font-size:.74rem;color:var(--muted);font-weight:700;margin-top:2px}
   .seat.awarded{border-color:var(--good);background:var(--good-soft)}
   .seat.awarded-bad{border-color:var(--bad);background:var(--bad-soft)}
+  .seat.awarded-ice{border-color:var(--ice);background:var(--ice-soft)}
   .seat-grid.arranging .seat{cursor:grab;border-style:solid;box-shadow:0 1px 3px rgba(27,36,64,.08)}
   .seat-grid.arranging .seat.empty{cursor:default;box-shadow:none}
   .seat-grid.arranging .seat.drag-over{border-color:var(--brass);background:var(--brass-soft)}
@@ -4705,11 +4717,16 @@ function setupRoster() {
   function homeworkActivity(a){ return !!a && a.tracked && a.name==="Homework Checked"; }
   function passActivity(a){ return !!a && a.tracked && a.name===PASS_ACT_NAME; }
   function attendanceActivity(a){ return !!a && a.tracked && a.name===ATT_ACT_NAME; }
+  // Freeze activities aren't identified by name (there can be more than one —
+  // different durations), but by carrying a freezeSeconds field. award()
+  // reroutes them to applyFreeze() instead of the points path; see there and
+  // isFrozen()/data.freezes for the rest of the feature.
+  function freezeActivity(a){ return !!a && a.tracked && typeof a.freezeSeconds==="number" && a.freezeSeconds>0; }
   // Tracked activities that award() REROUTES to their own store instead of the
   // points path, and are therefore safe to arm anywhere. Tracker activities are
   // not on this list — they have no reroute, so arming one would write points.
   // Anything added here must have a matching branch in award().
-  function reroutedActivity(a){ return homeworkActivity(a) || passActivity(a) || attendanceActivity(a); }
+  function reroutedActivity(a){ return homeworkActivity(a) || passActivity(a) || attendanceActivity(a) || freezeActivity(a); }
   // Activities offerable as an armable choice: point activities, plus the
   // rerouted ones. Shared by the Scan tab's buttons, the seating-chart dropdown
   // and the printed Activity Menu so the three can't drift apart.
@@ -4717,8 +4734,8 @@ function setupRoster() {
   // Wording for the rerouted activities on printed cards, where a point value
   // would be wrong. Kept next to the predicates so a future rerouted activity
   // gets its wording here rather than in three separate print call sites.
-  function personalActionSub(a){ return homeworkActivity(a) ? "marks homework checked" : attendanceActivity(a) ? "cycles their attendance" : "uses their weekly pass"; }
-  function personalActionVerb(a){ return homeworkActivity(a) ? "mark homework checked" : attendanceActivity(a) ? "cycle their attendance" : "use the weekly bathroom pass"; }
+  function personalActionSub(a){ return homeworkActivity(a) ? "marks homework checked" : attendanceActivity(a) ? "cycles their attendance" : freezeActivity(a) ? "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze" : "uses their weekly pass"; }
+  function personalActionVerb(a){ return homeworkActivity(a) ? "mark homework checked" : attendanceActivity(a) ? "cycle their attendance" : freezeActivity(a) ? "start a "+fmtFreezeDuration(a.freezeSeconds)+" freeze" : "use the weekly bathroom pass"; }
   function renderTrackerActSel(){
     var sel=$("trackerActSel");
     var prev=sel.value||data.trackerActId;
@@ -6070,7 +6087,7 @@ function setupRoster() {
 
   function flash(ok, line1, line2, line3){
     var f=$("flash");
-    f.className="flash show "+(ok?"good":"bad");
+    f.className="flash show "+(ok==="ice"?"ice":(ok?"good":"bad"));
     f.innerHTML="";
     if(line1) f.appendChild(el("div","who",line1));
     if(line2) f.appendChild(el("div","delta",line2));
@@ -6156,6 +6173,21 @@ function setupRoster() {
       }
       return true;
     }
+    // Freeze doesn't award points at all — it starts/extends a countdown
+    // instead (data.freezes). Always applies, even if the student is already
+    // frozen (stacks), same as any other activity scanned twice adds twice.
+    if(armedAct && freezeActivity(armedAct)){
+      return applyFreeze(s, armedAct.freezeSeconds);
+    }
+    // A running (or paused) freeze blocks POSITIVE points only — a demerit/
+    // deduction still lands normally, and the freeze itself is untouched
+    // either way. Only reached once armed is known not to be the freeze
+    // activity itself (handled above), so this never blocks applyFreeze.
+    if(isFrozen(s.id) && armed.delta>0){
+      flash(false, s.name, "❄️ Frozen", fmtFreezeTime(freezeRemainingMs(s.id))+" left — can't give points");
+      beep(false);
+      return false;
+    }
     return applyScore(s, armed.label, armed.delta);
   }
   // THE ONE PATH EVERY POINT IN THE APP TRAVELS THROUGH. Extracted verbatim
@@ -6213,6 +6245,99 @@ function setupRoster() {
       if(fly.parentNode) fly.parentNode.removeChild(fly);
     }, 700);
   }
+
+  /* ---------- Freeze: a countdown that blocks positive points on a student,
+     independent of the point system (data.freezes, keyed by student id).
+     {endTs, remainingMs, paused} — endTs is used while running, remainingMs
+     while paused (endTs stays stale then, ignored until resumed). ---------- */
+  function isFrozen(sid){
+    var f=data.freezes[sid];
+    if(!f) return false;
+    return f.paused ? f.remainingMs>0 : f.endTs>Date.now();
+  }
+  function freezeRemainingMs(sid){
+    var f=data.freezes[sid];
+    if(!f) return 0;
+    return Math.max(0, f.paused ? f.remainingMs : f.endTs-Date.now());
+  }
+  function fmtFreezeTime(ms){
+    var s=Math.ceil(ms/1000); if(s<0) s=0;
+    var m=Math.floor(s/60), r=s%60;
+    return m+":"+(r<10?"0":"")+r;
+  }
+  function fmtFreezeDuration(seconds){
+    if(seconds<60) return seconds+" sec";
+    if(seconds%60===0) return (seconds/60)+" min";
+    return Math.floor(seconds/60)+"m "+(seconds%60)+"s";
+  }
+  // Builds (or refreshes) the corner badge for a tile — called both on a
+  // normal render and by refreshFreezeTile() for a live update, so its markup
+  // must stay self-contained (no listeners to rebind).
+  function freezeBadgeEl(sid){
+    var f=data.freezes[sid];
+    var span=el("span","tile-freeze-badge"+(f&&f.paused?" paused":""));
+    span.textContent="❄️ "+fmtFreezeTime(freezeRemainingMs(sid))+(f&&f.paused?" ⏸":"");
+    return span;
+  }
+  // Re-draws just the freeze badge on every tile showing this student (list +
+  // seating chart — same dual-surface, data-sid lookup flashTapTile already
+  // uses), without a full renderTapPanel(). showFlash also pulses the ice
+  // border/background, same visual for "freeze applied" and "freeze expired"
+  // per design — freeze is its own tone, not tied to good/bad.
+  function refreshFreezeTile(sid, showFlash){
+    if(data.tapPanelOpen===false) return;
+    document.querySelectorAll('.tap-btn[data-sid="'+sid+'"], .seat[data-sid="'+sid+'"]').forEach(function(tb){
+      var old=tb.querySelector(".tile-freeze-badge");
+      if(old && old.parentNode) old.parentNode.removeChild(old);
+      if(isFrozen(sid)) tb.appendChild(freezeBadgeEl(sid));
+      if(showFlash){
+        tb.classList.remove("awarded","awarded-bad","awarded-ice");
+        void tb.offsetWidth;
+        tb.classList.add("awarded-ice");
+        setTimeout(function(){ tb.classList.remove("awarded-ice"); }, 700);
+      }
+    });
+  }
+  // Starts a freeze, or — if the student is already frozen (running or
+  // paused) — stacks the extra seconds onto what's left, same as scanning any
+  // other activity twice adds twice rather than restarting. Never blocked by
+  // an existing freeze; that block only applies to real points (see award()).
+  function applyFreeze(s, seconds){
+    var addMs=seconds*1000;
+    var f=data.freezes[s.id];
+    if(f && (f.paused || f.endTs>Date.now())){
+      if(f.paused) f.remainingMs+=addMs; else f.endTs+=addMs;
+    } else {
+      data.freezes[s.id]={endTs:Date.now()+addMs, remainingMs:null, paused:false};
+    }
+    save();
+    flash("ice", s.name, "❄️ "+fmtFreezeDuration(seconds), "now "+fmtFreezeTime(freezeRemainingMs(s.id))+" frozen");
+    beep(true);
+    refreshFreezeTile(s.id, true);
+    return true;
+  }
+  // Walks every active freeze once a second, updating badges live and — on
+  // natural expiry only, never on a manual End — clearing the entry and
+  // firing the same ice flash applyFreeze() uses. A paused freeze never
+  // expires on its own; only Resume (or Adjust in the freeze modal) can.
+  function tickFreezes(){
+    var ids=Object.keys(data.freezes);
+    if(!ids.length) return;
+    var changed=false;
+    ids.forEach(function(sid){
+      var f=data.freezes[sid];
+      if(f.paused) return;
+      if(f.endTs<=Date.now()){
+        delete data.freezes[sid];
+        changed=true;
+        refreshFreezeTile(sid, true);
+      } else {
+        refreshFreezeTile(sid, false);
+      }
+    });
+    if(changed) save();
+  }
+  setInterval(tickFreezes, 1000);
 
   // Central "live data changed" hook. When a scan (or an undo) lands while the
   // rebbi is sitting on a tab that shows calculated/aggregated scan data, that
@@ -6350,6 +6475,17 @@ function setupRoster() {
           beep(true);
         }
         if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
+        return;
+      }
+      // A student's personal Freeze code — applies (or stacks) the freeze on
+      // this one student, no arming needed, same class check as Bathroom
+      // Pass above so the rejection flash reads right if the class changed.
+      if(freezeActivity(pa)){
+        if(!studentInCurrentClass(ps)){
+          flash(false, ps.name, "Not in selected class", "Switch to “"+data.currentClass+"” or choose “All classes” to freeze this student");
+          beep(false); return;
+        }
+        applyFreeze(ps, pa.freezeSeconds);
         return;
       }
       awardWith(ps, pa.name, pa.pts);
@@ -7219,6 +7355,7 @@ function setupRoster() {
       b.appendChild(avatarEl(s, 30));
       b.appendChild(el("span",null,s.name));
       b.appendChild(coinScoreEl(s.id,"ts"));
+      if(isFrozen(s.id)) b.appendChild(freezeBadgeEl(s.id));
       b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
@@ -7294,6 +7431,7 @@ function setupRoster() {
         seat.appendChild(avatarEl(s, 26));
         seat.appendChild(el("span","seat-name",s.name));
         seat.appendChild(coinScoreEl(s.id,"ts"));
+        if(isFrozen(s.id)) seat.appendChild(freezeBadgeEl(s.id));
         }
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
@@ -7413,6 +7551,12 @@ function setupRoster() {
   // points breakdown. Scanning a QR code always scores normally either way;
   // this only changes what tapping a tile in the Tap Panel does.
   function tapClick(s, btn){
+    // A frozen student always lands here on tap, regardless of what's armed —
+    // scanning a freeze code on a frozen student still just stacks time
+    // silently through award() (see applyFreeze()); tapping is the one
+    // deliberate control surface, so it's deliberately more friction than a
+    // scoring tap, not less.
+    if(isFrozen(s.id)){ showFreezeModal(s); return; }
     if(data.tapShowsBreakdown){ showBreakdownModal(s); return; }
     tapAward(s, btn);
   }
@@ -7435,6 +7579,82 @@ function setupRoster() {
     card.appendChild(body);
     function refresh(){ body.innerHTML=""; body.appendChild(renderActivityBreakdown(s.id, periodSel.value)); }
     periodSel.addEventListener("change", refresh);
+    refresh();
+
+    function close(){
+      if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+    }
+    function onKey(e){ if(e.key==="Escape") close(); }
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function(e){ if(e.target===overlay) close(); });
+    document.addEventListener("keydown", onKey);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
+  // The one interactive control surface for an active freeze — tapping a
+  // frozen student always lands here (see tapClick()). Deliberately more
+  // friction than a scoring tap: this is a consequence action, not a reward,
+  // so a stray double-tap shouldn't be able to silently extend a freeze.
+  function showFreezeModal(s){
+    var overlay=el("div","modal-overlay");
+    var card=el("div","modal-card"); card.style.maxWidth="360px";
+    var head=el("div","modal-head");
+    head.appendChild(el("div","modal-title","❄️ "+s.name));
+    var closeBtn=el("button","modal-close","✕"); closeBtn.type="button"; closeBtn.title="Close";
+    head.appendChild(closeBtn);
+    card.appendChild(head);
+
+    var body=el("div");
+    var status=el("p","view-note"); status.style.margin="0 0 14px";
+    body.appendChild(status);
+
+    var pauseBtn=el("button","btn btn-sm","⏸ Pause"); pauseBtn.type="button"; pauseBtn.style.marginRight="8px";
+    body.appendChild(pauseBtn);
+
+    var adjustRow=el("div"); adjustRow.style.cssText="display:flex;align-items:center;gap:6px;margin:14px 0;flex-wrap:wrap";
+    var adjustLbl=el("span",null,"Adjust:"); adjustLbl.style.cssText="font-size:.85rem;color:var(--muted);font-weight:600";
+    adjustRow.appendChild(adjustLbl);
+    [["−1 min",-60],["−30s",-30],["+30s",30],["+1 min",60]].forEach(function(pair){
+      var b=el("button","btn btn-sm",pair[0]); b.type="button";
+      b.addEventListener("click", function(){
+        var f=data.freezes[s.id]; if(!f) return;
+        var deltaMs=pair[1]*1000;
+        if(f.paused) f.remainingMs=Math.max(0, f.remainingMs+deltaMs);
+        else f.endTs=Math.max(Date.now(), f.endTs+deltaMs);
+        save(); refreshFreezeTile(s.id, false); refresh();
+      });
+      adjustRow.appendChild(b);
+    });
+    body.appendChild(adjustRow);
+
+    var endBtn=el("button","btn btn-bad","✕ End freeze"); endBtn.type="button"; endBtn.style.width="100%";
+    endBtn.addEventListener("click", function(){
+      delete data.freezes[s.id];
+      save();
+      refreshFreezeTile(s.id, false);
+      close();
+    });
+    body.appendChild(endBtn);
+    card.appendChild(body);
+
+    function refresh(){
+      var f=data.freezes[s.id];
+      if(!f){
+        status.textContent="Freeze ended.";
+        pauseBtn.disabled=true; adjustRow.style.display="none"; endBtn.style.display="none";
+        return;
+      }
+      status.textContent=(f.paused?"Paused — ":"")+fmtFreezeTime(freezeRemainingMs(s.id))+" left. Can't give points while frozen.";
+      pauseBtn.textContent = f.paused ? "▶ Resume" : "⏸ Pause";
+    }
+    pauseBtn.addEventListener("click", function(){
+      var f=data.freezes[s.id]; if(!f) return;
+      if(f.paused){ f.endTs=Date.now()+f.remainingMs; f.remainingMs=null; f.paused=false; }
+      else { f.remainingMs=freezeRemainingMs(s.id); f.paused=true; }
+      save(); refreshFreezeTile(s.id, false); refresh();
+    });
     refresh();
 
     function close(){
@@ -13329,7 +13549,7 @@ nameLine
       var name=el("input","field grow"); name.value=a.name; name.style.minWidth="120px";
       name.addEventListener("change", function(){ a.name=name.value.trim()||a.name; name.value=a.name; save(); renderActButtons(); refreshArmed(a); });
       if(a.tracked){
-        var trkBadge=el("span",null,"Tracked (non-point)");
+        var trkBadge=el("span",null, freezeActivity(a) ? ("❄️ Freeze — "+fmtFreezeDuration(a.freezeSeconds)) : "Tracked (non-point)");
         trkBadge.style.cssText="font-size:.72rem;font-weight:700;color:#6b4d18;background:var(--brass-soft);border-radius:999px;padding:2px 9px;white-space:nowrap";
         row.appendChild(name); row.appendChild(trkBadge);
         var delT=el("button","btn btn-sm btn-bad","Delete");
@@ -13557,6 +13777,7 @@ nameLine
               sub: homeworkActivity(a)   ? "marks homework checked"
                  : attendanceActivity(a) ? "cycles attendance"
                  : passActivity(a)       ? "marks a bathroom pass used"
+                 : freezeActivity(a)     ? "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze"
                  : fmtDelta(a.pts)};
     });
     items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount"});
@@ -14698,6 +14919,19 @@ nameLine
       data.activities.push({id:nextActId(), name:ATT_ACT_NAME, pts:0, tracked:true, groups:[]});
       data.attActivitySeeded=true;
     }
+    // Freeze — a tracked 0-point activity like the three above, but its
+    // reroute (freezeActivity()/award()) starts a countdown instead of
+    // writing a log entry: while it's running, scanning/tapping that student
+    // for POSITIVE points is refused. Negative/demerit activities are
+    // untouched — freeze only blocks awarding, never deducting. Same one-shot
+    // flag as the three above, so a rebbi who deletes it doesn't get it back.
+    // Countdown state lives in data.freezes (backfilled just below); this
+    // activity is a handle, not a second store.
+    if(!data.freezeActivitySeeded){
+      data.activities.push({id:nextActId(), name:"❄️ Freeze 1 min", pts:0, tracked:true, freezeSeconds:60, groups:[]});
+      data.freezeActivitySeeded=true;
+    }
+    if(!data.freezes || typeof data.freezes!=="object" || Array.isArray(data.freezes)) data.freezes={};
     // "Prize Received" used to be a standalone tracked activity here, but that
     // had no real link to an actual Store purchase. Superseded by a per-purchase
     // "received" checkbox on the Store's own purchase log (see storeReceived
