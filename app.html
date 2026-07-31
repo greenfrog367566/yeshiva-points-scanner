@@ -12787,8 +12787,24 @@ nameLine
       var val=el("input","sval"); val.type="text"; val.inputMode="numeric";
       val.value=score(s.id); val.title="Type a new total and press Enter";
       var plus=el("button",null,"+");
-      minus.addEventListener("click", function(){ data.scores[s.id]=score(s.id)-1; val.value=score(s.id); save(); });
-      plus.addEventListener("click", function(){ data.scores[s.id]=score(s.id)+1; val.value=score(s.id); save(); });
+      // Stepper clicks go through the SAME logged path as a scan. They used to
+      // write data.scores directly:
+      //     data.scores[s.id] = score(s.id) - 1; save();
+      // — no log entry, so the points were invisible to Undo, to History, to
+      // Trends and to the Sheet, and a boy's total stopped matching the record
+      // that is supposed to explain it. This is the control clicked most often
+      // in the app, so it was quietly the largest source of unlogged points.
+      //
+      // A stepper click is a LIVE AWARD, not a correction: the rebbi is giving
+      // or taking a point for something happening right now. So unlike the
+      // typed total it counts as earned (recordEarn runs) and it takes contest
+      // tagging exactly as a scan does — no skipEarn, no noContest.
+      //
+      // Label "Custom", the same bucket the Custom (add)/(subtract) buttons
+      // already use: a stepper click IS a custom award of 1, and giving it its
+      // own Trends category would split one idea across two labels.
+      minus.addEventListener("click", function(){ applyScore(s, "Custom", -1); val.value=score(s.id); });
+      plus.addEventListener("click", function(){ applyScore(s, "Custom", 1); val.value=score(s.id); });
       val.addEventListener("focus", function(){ this.select(); });
       val.addEventListener("keydown", function(e){
         if(e.key==="Enter"){ e.preventDefault(); this.blur(); }
