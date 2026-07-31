@@ -6015,15 +6015,32 @@ function setupRoster() {
       }
       return true;
     }
-    var tag=contestTagForScan();
-    if(tag.scoreToMain) data.scores[s.id]=score(s.id)+armed.delta;
-    if(armed.delta>0 && tag.scoreToMain) recordEarn(s.id, armed.label, armed.delta);
+    return applyScore(s, armed.label, armed.delta);
+  }
+  // THE ONE PATH EVERY POINT IN THE APP TRAVELS THROUGH. Extracted verbatim
+  // from award() so a second caller can score a student without setting and
+  // restoring the global `armed` — the scanner reads that same variable, so
+  // borrowing it would be a race waiting to happen.
+  //
+  // Takes the student, label and delta EXPLICITLY. Everything else — contest
+  // tagging, recordEarn, the log entry, the Sheet push, the flash, the tile
+  // refresh — is exactly what it was when this lived inline.
+  //
+  // opts (all optional, all default to award()'s existing behaviour):
+  //   skipEarn  — do not call recordEarn(). For corrections, which belong in
+  //               the number history but not the behaviour history.
+  //   noContest — score to main regardless of a running contest.
+  function applyScore(s, label, delta, opts){
+    opts = opts || {};
+    var tag = opts.noContest ? {scoreToMain:true, contestId:null, contestOnly:false} : contestTagForScan();
+    if(tag.scoreToMain) data.scores[s.id]=score(s.id)+delta;
+    if(delta>0 && tag.scoreToMain && !opts.skipEarn) recordEarn(s.id, label, delta);
     if(tag.scoreToMain) maybeSixSeven(s);
-    var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:armed.label, delta:armed.delta, contestId:tag.contestId, contestOnly:tag.contestOnly});
+    var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly});
     save();
-    if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:armed.label, delta:armed.delta, total:score(s.id), id:logEntry.id}); }
-    flash(armed.delta>=0, s.name, fmtDeltaBare(armed.delta), armed.label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
-    beep(armed.delta>=0);
+    if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
+    flash(delta>=0, s.name, fmtDeltaBare(delta), label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
+    beep(delta>=0);
     renderRecent();
     renderScanBoard();
     // Keep every tap-panel tile fresh for this student without a full
@@ -6034,7 +6051,7 @@ function setupRoster() {
     if(data.tapPanelOpen!==false){
       document.querySelectorAll('.tap-btn[data-sid="'+s.id+'"], .seat[data-sid="'+s.id+'"]').forEach(function(tb){
         var t=tb.querySelector(".ts"); if(t){ if(isShulchani()){ t.innerHTML=formatCoinsHtml(score(s.id),{abbr:true})+(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+score(s.id)+' pr)</span>':""); t.title=fmtScoreFull(s.id); } else { t.textContent=score(s.id)+" pts"; } }
-        flashTapTile(tb, armed.delta);
+        flashTapTile(tb, delta);
       });
     }
     refreshLiveViews();
