@@ -527,6 +527,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .act-groups-lbl{font-weight:700;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.4px;margin-right:2px}
   .act-group-all,.act-group-opt{display:flex;align-items:center;gap:5px;cursor:pointer;border:1px solid var(--line);border-radius:20px;padding:3px 10px;background:#fff;user-select:none}
   .act-group-opt input,.act-group-all input{cursor:pointer}
+  .act-vis-toggle{display:flex;align-items:center;gap:5px;cursor:pointer;font-size:.82rem;color:var(--muted);font-weight:600;white-space:nowrap;flex-shrink:0}
+  .act-vis-toggle input{cursor:pointer}
   .stud-breakdown{background:#f8f9fc;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:-4px 0 10px}
   .stud-breakdown-row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:.88rem;border-bottom:1px solid var(--line)}
   .stud-breakdown-row:last-child{border-bottom:none}
@@ -5238,7 +5240,7 @@ function setupRoster() {
       var as=el("div","fs-qr-section");
       as.appendChild(el("h4",null,"Activities — scan to arm"));
       var ag=el("div","fs-qr-grid");
-      data.activities.filter(actVisibleInCurrentClass).forEach(function(a){
+      data.activities.filter(actVisibleInCurrentClass).filter(actVisibleOnScreen).forEach(function(a){
         ag.appendChild(makeQrCard("ACT:"+a.id, a.name, fmtDelta(a.pts), true));
       });
       as.appendChild(ag); panel.appendChild(as);
@@ -5261,7 +5263,7 @@ function setupRoster() {
   $("fsQrMode").addEventListener("click", function(){ fpSetQrMode(!fpQrMode); });
   function fpRenderActs(){
     var wrap=$("fsActs"); wrap.innerHTML="";
-    var acts=data.activities.filter(function(a){ return !a.tracked; });
+    var acts=data.activities.filter(function(a){ return !a.tracked && actVisibleOnScreen(a); });
     if(!acts.length){ wrap.appendChild(el("div","scan-hint","Add an activity on the Activities tab.")); return; }
     if(!fpActId || !actById(fpActId)) fpActId=acts[0].id;
     acts.forEach(function(a){
@@ -6081,12 +6083,21 @@ function setupRoster() {
     }
     return false;
   }
+  // The universal "Show on screen" checklist (Activities tab). Hides an
+  // activity from every LIVE arming surface — Record-tab buttons, the global
+  // scan bar dropdown, the floating scan panel, the fullscreen QR panel — but
+  // deliberately does NOT touch what prints: menuLabelItems() (the Activity
+  // Menu / class-sheet footer / Avery codes) never filters on this, so a
+  // rebbi can always print the full set of codes even for activities hidden
+  // from the screen. The mirror image of printExcluded (#117), which hides a
+  // code from print only and leaves the screen alone.
+  function actVisibleOnScreen(a){ return !a.hidden; }
   function renderActButtons(){
     var wrap=$("actButtons"); wrap.innerHTML="";
     // Homework Checked gets a button here like any other activity — arming it and
     // scanning marks homework for real via award()'s reroute. Tracker activities
     // stay out: they still fall through to the points path with no backstop.
-    var visible=armableActivities().filter(actVisibleInCurrentClass);
+    var visible=armableActivities().filter(actVisibleInCurrentClass).filter(actVisibleOnScreen);
     if(!data.activities.length){ wrap.appendChild(el("span","recent-empty","No activities yet — add some on the Activities tab.")); return; }
     if(!visible.length){ wrap.appendChild(el("span","recent-empty","No activities are set up for this group — check the Activities tab.")); return; }
     visible.forEach(function(a){
@@ -7604,6 +7615,18 @@ function setupRoster() {
     // rebbi scanning off the full-screen chart has the Recent scans panel and
     // the dashboard header both hidden behind the overlay, so without this the
     // only way to fix a mis-scan is to leave the view he is working in.
+    // Skipped when the codes footer is showing (scanMode): menuLabelItems()
+    // already includes a CTRL:UNDO tile in that footer, so this button would
+    // sit directly beneath an identical "Undo Last Scan" code — same action,
+    // two controls touching each other.
+    if(!scanMode){
+      var undoRow=el("div","seat-undo-row no-print");
+      var undoBtn=el("button","btn btn-sm","↩ Undo last scan");
+      undoBtn.title="Reverse the most recent scan";
+      undoBtn.addEventListener("click", function(){ undoMostRecentScan(); });
+      undoRow.appendChild(undoBtn);
+      body.appendChild(undoRow);
+    }
     renderScanUndoRow(body);
 
     if(arranging){
@@ -8136,7 +8159,7 @@ function setupRoster() {
   // neither. Those sit next to the Homework tab in normal use; this one does not.
   function populateActivityDropdown(dd, focusInputId, closeFn){
     dd.innerHTML="";
-    var armable=armableActivities();
+    var armable=armableActivities().filter(actVisibleOnScreen);
     if(!armable.length){
       dd.appendChild(el("div","hd-empty", data.activities.length
         ? "No point activities yet — the Tracker has its own tab."
@@ -13639,6 +13662,19 @@ nameLine
     data.activities.forEach(function(a){
       if(!Array.isArray(a.groups)) a.groups=[];
       var row=el("div","erow act-erow");
+      // Universal "Show on screen" checklist — unchecking hides this activity
+      // from the Record-tab buttons, the global scan bar dropdown and the
+      // floating scan panel. It still prints on the Activity Menu; print is
+      // never limited by this, only by the separate #117 print-codes picker.
+      var visLbl=el("label","act-vis-toggle");
+      visLbl.title="Uncheck to hide this activity from the Scan screen, scan bar and floating panel. It still prints on the Activity Menu.";
+      var visChk=el("input"); visChk.type="checkbox"; visChk.checked=!a.hidden;
+      visChk.addEventListener("change", function(){
+        a.hidden=!visChk.checked; save(); renderActButtons();
+        if(typeof fpRenderActs==="function") fpRenderActs();
+      });
+      visLbl.appendChild(visChk); visLbl.appendChild(document.createTextNode(" Show"));
+      row.appendChild(visLbl);
       var name=el("input","field grow"); name.value=a.name; name.style.minWidth="120px";
       name.addEventListener("change", function(){ a.name=name.value.trim()||a.name; name.value=a.name; save(); renderActButtons(); refreshArmed(a); });
       if(a.tracked){
@@ -15039,6 +15075,9 @@ nameLine
     if(!Array.isArray(data.trackerLog)) data.trackerLog=[];
     if(typeof data.trackerActId!=="string") data.trackerActId="";
     data.activities.forEach(function(a){ if(typeof a.tracked!=="boolean") a.tracked=false; });
+    // #universal activity visibility: hides an activity from every on-screen
+    // arming surface without touching print, which always offers every code.
+    data.activities.forEach(function(a){ if(typeof a.hidden!=="boolean") a.hidden=false; });
     if(!data.hwActivitySeeded){
       data.activities.push({id:nextActId(), name:"Homework Checked", pts:0, tracked:true, groups:[]});
       data.hwActivitySeeded=true;
