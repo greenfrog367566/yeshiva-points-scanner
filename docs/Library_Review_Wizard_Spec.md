@@ -48,7 +48,14 @@ Two things that matter for this spec:
 
 ## Part 1 — Library data format & the `status` flag
 
-### Library files (static, on GitHub Pages)
+### Library files (static, served alongside the app)
+
+> These are plain files in the repo, served from the same origin as `app.html` —
+> whatever that origin happens to be. Today it is the Cloudflare Pages project
+> behind `menchmark.app`; see CLAUDE.md for the current deploy path, which is the
+> single place that should name a host. This spec said "on GitHub Pages" and went
+> stale when the deploy moved. Nothing here depends on the host: in a downloaded
+> `file://` copy the same files load from disk beside the app.
 
 ```
 library/
