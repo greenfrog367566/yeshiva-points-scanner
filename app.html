@@ -470,6 +470,22 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-tray{display:flex;flex-wrap:wrap;gap:8px}
   .seat-chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-size:.85rem;font-weight:600;cursor:grab}
   .seat-chip:hover{border-color:var(--ink)}
+  /* Print-code picker (Print > Seating chart > Choose codes) — drag-to-reorder
+     and drag-to-regroup, same interaction language as the seat tray above but
+     for the smaller activity/control codes rather than students. */
+  .print-code-sections{display:flex;flex-direction:column;gap:10px}
+  .print-code-section{border:1px dashed var(--line);border-radius:8px;padding:8px}
+  .print-code-section.drag-over{border-color:var(--brass);background:var(--brass-soft)}
+  .print-code-section h4{margin:0 0 6px;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .print-code-chips{display:flex;flex-wrap:wrap;gap:6px;min-height:30px}
+  .print-code-empty{font-size:.8rem;color:var(--muted)}
+  .print-code-chip{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 12px 4px 8px;font-size:.83rem;font-weight:600;cursor:grab;margin:0}
+  .print-code-chip:hover{border-color:var(--ink)}
+  .print-code-chip.dragging{opacity:.4}
+  .print-code-chip.drag-over{border-color:var(--brass);background:var(--brass-soft)}
+  .print-code-chip input[type=checkbox]{margin:0}
+  .print-code-chip .pcq{width:22px;height:22px;flex:none;display:flex;align-items:center;justify-content:center}
+  .print-code-chip .pcq img,.print-code-chip .pcq canvas{width:22px!important;height:22px!important}
   @keyframes flyUp{0%{opacity:0;transform:translateY(7px)}25%{opacity:1}100%{opacity:0;transform:translateY(-16px)}}
   @media(prefers-reduced-motion:reduce){.tap-fly{animation:none}.tap-btn:active{transform:none}}
 
@@ -1219,6 +1235,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-print-preview .seat-print-pts{font-size:.7rem;color:var(--muted);margin-top:2px;display:block}
   .seat-print-preview .seat-print-activities-footer{margin-top:16px;border-top:2px solid var(--line);padding-top:10px}
   .seat-print-preview .seat-print-activities-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;margin-bottom:6px}
+  .seat-print-preview .seat-print-act-section-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;margin:8px 0 4px}
+  .seat-print-preview .seat-print-act-section-label:first-of-type{margin-top:0}
   .seat-print-preview .seat-print-activities-grid{display:flex;flex-wrap:wrap;gap:6px}
   .seat-print-preview .seat-print-act-card{border:1px solid var(--line);border-radius:6px;padding:4px 6px;text-align:center;width:76px;font-size:.62rem;line-height:1.2}
   /* The label WRAPS rather than being clipped. It used to be nowrap + ellipsis
@@ -2245,13 +2263,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button class="btn btn-primary" id="printSeatChart">🖨 Print my class sheet</button>
     </div>
     <div class="card pad no-print" id="seatPrintCodesCard" style="margin-bottom:12px;display:none">
-      <p class="view-note" style="margin-top:0">Which codes go on the sheet. Unticking one leaves it off every printed code sheet, and it's remembered — so you don't re-pick this every time. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
+      <p class="view-note" style="margin-top:0">Which codes go on the sheet, grouped into Points, Tracked, and Navigation. Untick one to leave it off; drag a code to reorder it within a group, or drag it into a different group — both are remembered. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
       <div class="toolbar" style="margin-bottom:8px;gap:6px">
         <button class="btn btn-sm" id="seatPrintCodesAll">All</button>
         <button class="btn btn-sm" id="seatPrintCodesNone">None</button>
         <span id="seatPrintCodesCount" style="font-size:.82rem;color:var(--muted);font-weight:600"></span>
       </div>
-      <div id="seatPrintCodesList" class="gb-items"></div>
+      <div id="seatPrintCodesList" class="print-code-sections"></div>
     </div>
     <p class="view-note no-print" style="margin:4px 0 10px">Preview — this is what will print:</p>
     <div id="seatChartGrid" class="seat-print-preview"></div>
@@ -13587,17 +13605,23 @@ nameLine
     var items=armableActivities().filter(actVisibleInCurrentClass).map(function(a){
       // No "+0" for the rerouted activities — they earn nothing, so the sub-line
       // says what the code actually does instead of quoting a point value.
+      // defaultSection groups the printed/picker codes without needing a stored
+      // choice for every code — a rerouted activity (homework/attendance/pass)
+      // defaults to "tracked", every other activity to "points". Only codes a
+      // rebbi drags elsewhere get an explicit data.printCodeSections override.
+      var tracked = homeworkActivity(a) || attendanceActivity(a) || passActivity(a);
       return {qrText:"ACT:"+a.id, name:a.name,
               sub: homeworkActivity(a)   ? "marks homework checked"
                  : attendanceActivity(a) ? "cycles attendance"
                  : passActivity(a)       ? "marks a bathroom pass used"
-                 : fmtDelta(a.pts)};
+                 : fmtDelta(a.pts),
+              defaultSection: tracked ? "tracked" : "points"};
     });
-    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount"});
-    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount"});
-    items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan"});
-    items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only"});
-    items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only"});
+    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", defaultSection:"nav"});
+    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", defaultSection:"nav"});
+    items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan", defaultSection:"nav"});
+    items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", defaultSection:"nav"});
+    items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only", defaultSection:"nav"});
     // #117: drop the codes this rebbi has turned off. Filtered HERE, once,
     // because this function is the single source for the tile view, the Avery
     // sheets and the class sheet's footer alike — filtering in each renderer is
@@ -13611,6 +13635,59 @@ nameLine
     var keep=data.printExcluded;
     data.printExcluded={};
     try{ return menuLabelItems(); } finally { data.printExcluded=keep; }
+  }
+  // Fixed set of print groupings — matches the app's own real distinction
+  // (regular point activities vs. the rerouted Tracked ones vs. control codes),
+  // not an open-ended rebbi-named category system. Order here is also the
+  // order the groups print in.
+  var PRINT_CODE_SECTIONS=[
+    {key:"points",  label:"Points"},
+    {key:"tracked", label:"Tracked"},
+    {key:"nav",     label:"Navigation"}
+  ];
+  // A code's section is its defaultSection (set in menuLabelItems()) unless a
+  // rebbi has dragged it elsewhere, in which case data.printCodeSections holds
+  // the override. Sparse by design, same spirit as data.printExcluded — a code
+  // nobody has ever touched needs no stored entry at all.
+  function printCodeSectionOf(it){
+    var s=data.printCodeSections[it.qrText];
+    var known=PRINT_CODE_SECTIONS.some(function(x){ return x.key===s; });
+    return known ? s : (it.defaultSection||"points");
+  }
+  // Sorts by the rebbi's saved order (data.printCodeOrder, a flat array of
+  // qrText covering every section at once); codes not yet in it — new
+  // activities, mainly — fall back to their natural menuLabelItems() order and
+  // sort after anything already placed.
+  function orderedPrintCodeItems(items){
+    var idx={}; data.printCodeOrder.forEach(function(q,i){ idx[q]=i; });
+    return items.map(function(it,i){ return {it:it, i:i}; }).sort(function(a,b){
+      var ai=idx.hasOwnProperty(a.it.qrText) ? idx[a.it.qrText] : Infinity;
+      var bi=idx.hasOwnProperty(b.it.qrText) ? idx[b.it.qrText] : Infinity;
+      return (ai!==bi) ? (ai-bi) : (a.i-b.i);
+    }).map(function(x){ return x.it; });
+  }
+  // Moves one code into targetSection, positioned immediately before
+  // beforeQrText (end of section if null), and rebuilds data.printCodeOrder
+  // from the CURRENT full picker so every section's order stays consistent in
+  // one write rather than drifting between two separately-edited lists.
+  function movePrintCode(qrText, targetSection, beforeQrText){
+    var all=menuLabelItemsAll();
+    var byQr={}; all.forEach(function(it){ byQr[it.qrText]=it; });
+    var moved=byQr[qrText]; if(!moved) return;
+    var ordered=orderedPrintCodeItems(all);
+    var buckets={};
+    PRINT_CODE_SECTIONS.forEach(function(sec){ buckets[sec.key]=[]; });
+    ordered.forEach(function(it){
+      if(it.qrText===qrText) return;
+      buckets[printCodeSectionOf(it)].push(it.qrText);
+    });
+    var target=buckets[targetSection];
+    var insertAt = beforeQrText ? target.indexOf(beforeQrText) : -1;
+    if(insertAt<0) target.push(qrText); else target.splice(insertAt, 0, qrText);
+    if(targetSection===moved.defaultSection) delete data.printCodeSections[qrText];
+    else data.printCodeSections[qrText]=targetSection;
+    data.printCodeOrder = PRINT_CODE_SECTIONS.reduce(function(acc,sec){ return acc.concat(buckets[sec.key]); }, []);
+    save(); renderSeatPrintCodes(); renderSeatChartPrint();
   }
   function renderMenuLabels(hasQR){
     if(typeof hasQR==="undefined") hasQR=(typeof QRCode!=="undefined");
@@ -13794,21 +13871,73 @@ nameLine
   // #117's picker. Offers EVERY code (menuLabelItemsAll), ticked according to
   // what is not excluded — the list a rebbi is choosing from has to include the
   // ones he has already turned off, or he could never turn them back on.
+  // Grouped into PRINT_CODE_SECTIONS and drag-to-rearrange, same native
+  // dragstart/dragover/drop pattern as the live seating chart's "Arrange
+  // seats" mode — dragging a code onto another reorders it within a section;
+  // dragging it onto a different section's box (or its empty-space drop
+  // target) moves it there. Both are persisted by movePrintCode().
   function renderSeatPrintCodes(){
     var box=$("seatPrintCodesList"); if(!box) return;
     box.innerHTML="";
     var all=menuLabelItemsAll();
     if(!all.length){ box.appendChild(el("div","recent-empty","No codes to print yet — add some activities first.")); return; }
-    all.forEach(function(it){
-      var lab=el("label"), cb=document.createElement("input");
-      cb.type="checkbox"; cb.checked=!data.printExcluded[it.qrText];
-      cb.addEventListener("change", function(){
-        if(this.checked) delete data.printExcluded[it.qrText];
-        else data.printExcluded[it.qrText]=true;
-        save(); renderSeatPrintCodes(); renderSeatChartPrint();
+    var hasQR=(typeof QRCode!=="undefined");
+    var ordered=orderedPrintCodeItems(all);
+    PRINT_CODE_SECTIONS.forEach(function(sec){
+      var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
+      var secBox=el("div","print-code-section");
+      secBox.appendChild(el("h4",null,sec.label));
+      var chips=el("div","print-code-chips");
+      secBox.appendChild(chips);
+      // Dropping on empty section space (not on a specific chip) appends to
+      // the end of that section — the only way to move a code into a section
+      // that currently has nothing in it.
+      secBox.addEventListener("dragover", function(ev){ ev.preventDefault(); secBox.classList.add("drag-over"); });
+      secBox.addEventListener("dragleave", function(){ secBox.classList.remove("drag-over"); });
+      secBox.addEventListener("drop", function(ev){
+        ev.preventDefault(); secBox.classList.remove("drag-over");
+        var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+        var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
+        if(!payload.qrText) return;
+        movePrintCode(payload.qrText, sec.key, null);
       });
-      lab.appendChild(cb); lab.appendChild(document.createTextNode(it.name));
-      box.appendChild(lab);
+      if(!secItems.length) chips.appendChild(el("div","print-code-empty","Drop codes here"));
+      secItems.forEach(function(it){
+        var chip=el("label","print-code-chip");
+        chip.draggable=true;
+        var cb=document.createElement("input");
+        cb.type="checkbox"; cb.checked=!data.printExcluded[it.qrText];
+        cb.addEventListener("change", function(){
+          if(this.checked) delete data.printExcluded[it.qrText];
+          else data.printExcluded[it.qrText]=true;
+          save(); renderSeatPrintCodes(); renderSeatChartPrint();
+        });
+        chip.appendChild(cb);
+        if(hasQR){
+          var qh=el("span","pcq");
+          try{ new QRCode(qh,{text:it.qrText,width:22,height:22,correctLevel:QRCode.CorrectLevel.M}); }
+          catch(e){}
+          chip.appendChild(qh);
+        }
+        chip.appendChild(document.createTextNode(it.name));
+        chip.addEventListener("dragstart", function(ev){
+          chip.classList.add("dragging");
+          ev.dataTransfer.setData("text/plain", JSON.stringify({qrText:it.qrText}));
+          ev.dataTransfer.effectAllowed="move";
+        });
+        chip.addEventListener("dragend", function(){ chip.classList.remove("dragging"); });
+        chip.addEventListener("dragover", function(ev){ ev.preventDefault(); ev.stopPropagation(); chip.classList.add("drag-over"); });
+        chip.addEventListener("dragleave", function(){ chip.classList.remove("drag-over"); });
+        chip.addEventListener("drop", function(ev){
+          ev.preventDefault(); ev.stopPropagation(); chip.classList.remove("drag-over");
+          var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+          var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
+          if(!payload.qrText || payload.qrText===it.qrText) return;
+          movePrintCode(payload.qrText, sec.key, it.qrText);
+        });
+        chips.appendChild(chip);
+      });
+      box.appendChild(secBox);
     });
     var on=all.filter(function(it){ return !data.printExcluded[it.qrText]; }).length;
     $("seatPrintCodesCount").textContent=on+" of "+all.length+" on the sheet";
@@ -13860,20 +13989,30 @@ nameLine
     var hasQR=(typeof QRCode!=="undefined");
     var footer=el("div","seat-print-activities-footer");
     footer.appendChild(el("div","seat-print-activities-title","Activity Codes"));
-    var grid=el("div","seat-print-activities-grid");
-    items.forEach(function(it){
-      var card=el("div","seat-print-act-card");
-      if(hasQR){
-        var holder=el("div"); card.appendChild(holder);
-        try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ card.appendChild(document.createTextNode("QR?")); }
-      }
-      var label=el("div","seat-print-act-label", it.name);
-      var sub=el("div","seat-print-act-sub", it.sub);
-      card.appendChild(label); card.appendChild(sub);
-      grid.appendChild(card);
+    // Same three groups and order as the picker (PRINT_CODE_SECTIONS), so
+    // moving a code's section in "Choose codes" changes where it prints, not
+    // just how it's organized on screen. Empty groups are skipped rather than
+    // printing a bare heading.
+    var ordered=orderedPrintCodeItems(items);
+    PRINT_CODE_SECTIONS.forEach(function(sec){
+      var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
+      if(!secItems.length) return;
+      footer.appendChild(el("div","seat-print-act-section-label", sec.label));
+      var grid=el("div","seat-print-activities-grid");
+      secItems.forEach(function(it){
+        var card=el("div","seat-print-act-card");
+        if(hasQR){
+          var holder=el("div"); card.appendChild(holder);
+          try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
+          catch(e){ card.appendChild(document.createTextNode("QR?")); }
+        }
+        var label=el("div","seat-print-act-label", it.name);
+        var sub=el("div","seat-print-act-sub", it.sub);
+        card.appendChild(label); card.appendChild(sub);
+        grid.appendChild(card);
+      });
+      footer.appendChild(grid);
     });
-    footer.appendChild(grid);
     wrap.appendChild(footer);
   }
   // What to head the sheet with. "All Classes" is only honest when there really
@@ -14646,6 +14785,15 @@ nameLine
       ["CTRL:PASUKPREV","CTRL:PASUKNEXT","CTRL:CUSTOM-"].forEach(function(k){ data.printExcluded[k]=true; });
       data.printExcludedSeeded=true;
     }
+    // Print-code sections (Choose codes drag-and-drop): which of the fixed
+    // Points/Tracked/Navigation groups a code sits in, and the rebbi's chosen
+    // order. Both purely additive — a code with no entry here just uses its
+    // computed defaultSection and prints in menuLabelItems()'s natural order,
+    // identical to the pre-drag-and-drop sheet, so an existing save renders
+    // the exact same printout it always has until a rebbi actually drags
+    // something.
+    if(!data.printCodeSections || typeof data.printCodeSections!=="object" || Array.isArray(data.printCodeSections)) data.printCodeSections={};
+    if(!Array.isArray(data.printCodeOrder)) data.printCodeOrder=[];
     if(!Array.isArray(data.pastContests)) data.pastContests=[];
     // Saved contests used to store metadata only, and their numbers were
     // recomputed from data.log on every render — so they decayed to nothing as
