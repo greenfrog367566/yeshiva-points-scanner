@@ -2703,6 +2703,15 @@ function doPost(e) {
       var attOut = [];
       for (var ai = 0; ai < attRows.length; ai++) {
         var ar = attRows[ai] || {};
+        // SKIP EMPTY ROWS. A send with nothing to send used to POST anyway with
+        // no body.rows at all, so the single-row fallback above built
+        // [new Date(undefined), undefined, undefined, undefined, undefined] and
+        // wrote a garbage row dated 1969 (new Date(undefined) is Invalid Date,
+        // which lands at the epoch once the Sheet coerces it).
+        // The app no longer POSTs an empty diff, but the guard belongs here too:
+        // this script has to keep serving older app versions that still do, and
+        // an empty row is never something anyone meant to record.
+        if (!ar.name && !ar.status) continue;
         attOut.push([new Date(ar.ts), ar.date, ar.name, ar.group, ar.status]);
       }
       if (attOut.length) {
@@ -2988,6 +2997,10 @@ function setupRoster() {
 
       <div class="toolbar" style="margin-top:14px">
         <span class="grow" id="attSendStatus" style="color:var(--muted);font-size:.85rem"></span>
+        <!-- Recovery path for a day the Sheet never actually received. The
+             normal send skips anything already stamped as sent, which is
+             precisely what makes a silently-failed send unrecoverable. -->
+        <button class="btn btn-sm" id="attResendBtn" title="Send every record for the day shown, even ones already marked as sent">↻ Re-send this day…</button>
         <button class="btn btn-primary" id="attSendBtn">Send Attendance</button>
       </div>
     </div>
@@ -4449,6 +4462,55 @@ function setupRoster() {
     save();
     renderAttendance();
   }
+  // FORCE-RESEND ONE DAY, ignoring _sentAt.
+  //
+  // Why this has to exist: the normal send only pushes records newer than
+  // day._sentAt, and _sentAt was stamped on the OPTIMISTIC assumption that the
+  // send worked. When rows were dropped server-side (the concurrent-append race
+  // fixed in #156), the stamp still landed — so the app believes those records
+  // are safely in the Sheet and the normal path will never send them again.
+  // Two rebbeim are in exactly that state. Without this, their only route is
+  // editing the save file by hand.
+  //
+  // It APPENDS. The Attendance Log has no update-in-place and no dedup (unlike
+  // the Log tab, which keys on scan id), so re-sending a day that partially
+  // landed leaves the rows that did land plus a full fresh set. The rebbi is
+  // told that before anything is sent, because deleting the old rows first is
+  // a decision only he can make.
+  function resendAttendanceDay(){
+    var url=(data.sheetUrl||"").trim();
+    if(!url){ $("attSendStatus").textContent="No Google Sheet connected — add one on Backup & Sheets first."; return; }
+    var day=attDayRecord(attDate);
+    var studs=activeStudents();
+    var rows=[];
+    studs.forEach(function(s){
+      var rec=day[s.id];
+      // Only records that actually exist. A boy with nothing recorded for this
+      // day is not silently defaulted to present here — the normal send does
+      // that deliberately when taking the roll, but a recovery re-send must
+      // reproduce what is stored, not invent it.
+      if(!rec || !rec.status) return;
+      rows.push({ts:rec.ts||Date.now(), date:attDate, name:s.name, group:s.group||"", status:rec.status});
+    });
+    if(!rows.length){ $("attSendStatus").textContent="Nothing recorded for "+attDate+" — nothing to re-send."; return; }
+    if(!confirm(
+      "Re-send all "+rows.length+" attendance record"+(rows.length===1?"":"s")+" for "+attDate+"?\n\n"+
+      "This sends every record for the day, including ones already marked as sent — that is the point, and it is how you recover a day the Sheet never received.\n\n"+
+      "IMPORTANT: your Attendance Log ADDS rows, it does not replace them. Any rows already there for "+attDate+" will still be there afterwards, so you will see duplicates unless you delete that day's rows in the Sheet first.")) return;
+    $("attSendStatus").textContent="Re-sending "+rows.length+" record"+(rows.length===1?"":"s")+" for "+attDate+"…";
+    pushToSheet({type:"attendance", rows:rows}).then(function(){
+      // Only stamp on success. Stamping optimistically is what made the
+      // original failure unrecoverable.
+      day._sentAt=Date.now();
+      day._lastSendCount=rows.length;
+      save();
+      $("attSendStatus").textContent="Re-sent "+rows.length+" record"+(rows.length===1?"":"s")+" for "+attDate+" ("+new Date().toLocaleTimeString()+"). Check the Attendance Log and delete any duplicate rows.";
+      renderAttendance();
+    }).catch(function(){
+      // _sentAt is deliberately NOT touched here.
+      $("attSendStatus").textContent="Couldn't reach your sheet — nothing was re-sent. Check your connection and try again.";
+    });
+  }
   function applyAttViewMode(){
     document.querySelectorAll("#attViewMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.avm===attViewMode); });
     $("attByDate").style.display = attViewMode==="date" ? "block" : "none";
@@ -4561,6 +4623,7 @@ function setupRoster() {
     renderAttendance();
   });
   $("attSendBtn").addEventListener("click", sendAttendance);
+  $("attResendBtn").addEventListener("click", resendAttendanceDay);
 
   /* ==================== TRACKER (non-point tracked activities) ==================== */
   var trackerViewMode = "activity"; // "activity" or "student"
@@ -13735,12 +13798,21 @@ nameLine
   });
 
   /* ---------- GOOGLE SHEET SYNC ---------- */
+  // Returns the fetch promise so a caller that needs to know whether the send
+  // got out can wait on it. Fire-and-forget callers can keep ignoring it.
+  //
+  // "Confirmed" is as strong as it gets here and no stronger: mode:"no-cors"
+  // makes the response opaque, so a resolved promise means the request left the
+  // browser, NOT that Apps Script accepted it. That is the same standard
+  // pushSnapshot() already uses, and it is exactly the weakness that let a
+  // failed send stamp _sentAt in the first place — worth knowing before relying
+  // on it for anything stricter.
   function pushToSheet(payload){
     var url=(data.sheetUrl||"").trim();
-    if(!url) return;
+    if(!url) return Promise.reject(new Error("no sheet url"));
     try{
-      fetch(url, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)});
-    }catch(e){}
+      return fetch(url, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)});
+    }catch(e){ return Promise.reject(e); }
   }
   function standingsRows(){
     return data.students.slice().map(function(s){ return {s:s, sc:score(s.id)}; })
