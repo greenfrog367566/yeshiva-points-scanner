@@ -28,6 +28,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     --good-soft:#e3f3ea;
     --bad:#b04432;        /* negative */
     --bad-soft:#f6e6e2;
+    --ice:#2b6ca3;        /* freeze — neither good nor bad, its own tone */
+    --ice-soft:#e2eef7;
     --shadow:0 1px 2px rgba(27,36,64,.06),0 8px 24px rgba(27,36,64,.07);
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -362,10 +364,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .flash.show{opacity:1;transform:translateY(0)}
   .flash.good{background:var(--good-soft);border-color:#b9e0cb}
   .flash.bad{background:var(--bad-soft);border-color:#e3bdb5}
+  .flash.ice{background:var(--ice-soft);border-color:#bcd6ea}
   .flash .who{font-family:var(--serif);font-size:1.5rem;font-weight:600}
   .flash .delta{font-size:2.1rem;font-weight:800;margin:2px 0}
   .flash.good .delta{color:var(--good)}
   .flash.bad .delta{color:var(--bad)}
+  .flash.ice .delta{color:var(--ice)}
   .flash .total{font-size:.95rem;color:var(--muted)}
   @media(prefers-reduced-motion:reduce){.flash{transition:none}}
 
@@ -412,8 +416,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .tap-btn .avatar,.seat .avatar{margin:0 auto 5px}
   .tap-btn.awarded{border-color:var(--good);background:var(--good-soft)}
   .tap-btn.awarded-bad{border-color:var(--bad);background:var(--bad-soft)}
+  .tap-btn.awarded-ice{border-color:var(--ice);background:var(--ice-soft)}
   .tap-fly{position:absolute;top:5px;right:8px;font-size:.85rem;font-weight:800;color:var(--good);animation:flyUp .7s ease-out forwards;pointer-events:none}
   .tap-fly.neg{color:var(--bad)}
+  .tap-fly.ice{color:var(--ice)}
+  /* Freeze corner badge — shown on any tile (list or seating chart) for a
+     student with an active data.freezes entry. .paused swaps the blue for
+     muted grey so a paused freeze reads as "on hold", not "still counting". */
+  .tile-freeze-badge{position:absolute;top:4px;right:4px;font-size:.68rem;font-weight:700;background:var(--ice);color:#fff;border-radius:999px;padding:1px 6px;line-height:1.5;white-space:nowrap;z-index:1}
+  .tile-freeze-badge.paused{background:var(--muted)}
 
   /* ---- Seating chart mode ---- */
   .seat-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 0}
@@ -459,6 +470,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat .ts{display:block;font-size:.74rem;color:var(--muted);font-weight:700;margin-top:2px}
   .seat.awarded{border-color:var(--good);background:var(--good-soft)}
   .seat.awarded-bad{border-color:var(--bad);background:var(--bad-soft)}
+  .seat.awarded-ice{border-color:var(--ice);background:var(--ice-soft)}
   .seat-grid.arranging .seat{cursor:grab;border-style:solid;box-shadow:0 1px 3px rgba(27,36,64,.08)}
   .seat-grid.arranging .seat.empty{cursor:default;box-shadow:none}
   .seat-grid.arranging .seat.drag-over{border-color:var(--brass);background:var(--brass-soft)}
@@ -470,6 +482,22 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-tray{display:flex;flex-wrap:wrap;gap:8px}
   .seat-chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-size:.85rem;font-weight:600;cursor:grab}
   .seat-chip:hover{border-color:var(--ink)}
+  /* Print-code picker (Print > Seating chart > Choose codes) — drag-to-reorder
+     and drag-to-regroup, same interaction language as the seat tray above but
+     for the smaller activity/control codes rather than students. */
+  .print-code-sections{display:flex;flex-direction:column;gap:10px}
+  .print-code-section{border:1px dashed var(--line);border-radius:8px;padding:8px}
+  .print-code-section.drag-over{border-color:var(--brass);background:var(--brass-soft)}
+  .print-code-section h4{margin:0 0 6px;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .print-code-chips{display:flex;flex-wrap:wrap;gap:6px;min-height:30px}
+  .print-code-empty{font-size:.8rem;color:var(--muted)}
+  .print-code-chip{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 12px 4px 8px;font-size:.83rem;font-weight:600;cursor:grab;margin:0}
+  .print-code-chip:hover{border-color:var(--ink)}
+  .print-code-chip.dragging{opacity:.4}
+  .print-code-chip.drag-over{border-color:var(--brass);background:var(--brass-soft)}
+  .print-code-chip input[type=checkbox]{margin:0}
+  .print-code-chip .pcq{width:22px;height:22px;flex:none;display:flex;align-items:center;justify-content:center}
+  .print-code-chip .pcq img,.print-code-chip .pcq canvas{width:22px!important;height:22px!important}
   @keyframes flyUp{0%{opacity:0;transform:translateY(7px)}25%{opacity:1}100%{opacity:0;transform:translateY(-16px)}}
   @media(prefers-reduced-motion:reduce){.tap-fly{animation:none}.tap-btn:active{transform:none}}
 
@@ -515,6 +543,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .act-groups-lbl{font-weight:700;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.4px;margin-right:2px}
   .act-group-all,.act-group-opt{display:flex;align-items:center;gap:5px;cursor:pointer;border:1px solid var(--line);border-radius:20px;padding:3px 10px;background:#fff;user-select:none}
   .act-group-opt input,.act-group-all input{cursor:pointer}
+  .act-vis-toggle{display:flex;align-items:center;gap:5px;cursor:pointer;font-size:.82rem;color:var(--muted);font-weight:600;white-space:nowrap;flex-shrink:0}
+  .act-vis-toggle input{cursor:pointer}
   .stud-breakdown{background:#f8f9fc;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:-4px 0 10px}
   .stud-breakdown-row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:.88rem;border-bottom:1px solid var(--line)}
   .stud-breakdown-row:last-child{border-bottom:none}
@@ -1231,6 +1261,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-print-preview .seat-print-pts{font-size:.7rem;color:var(--muted);margin-top:2px;display:block}
   .seat-print-preview .seat-print-activities-footer{margin-top:16px;border-top:2px solid var(--line);padding-top:10px}
   .seat-print-preview .seat-print-activities-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;margin-bottom:6px}
+  .seat-print-preview .seat-print-act-section-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;margin:8px 0 4px}
+  .seat-print-preview .seat-print-act-section-label:first-of-type{margin-top:0}
   .seat-print-preview .seat-print-activities-grid{display:flex;flex-wrap:wrap;gap:6px}
   .seat-print-preview .seat-print-act-card{border:1px solid var(--line);border-radius:6px;padding:4px 6px;text-align:center;width:76px;font-size:.62rem;line-height:1.2}
   /* The label WRAPS rather than being clipped. It used to be nowrap + ellipsis
@@ -2258,13 +2290,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button class="btn btn-primary" id="printSeatChart">🖨 Print my class sheet</button>
     </div>
     <div class="card pad no-print" id="seatPrintCodesCard" style="margin-bottom:12px;display:none">
-      <p class="view-note" style="margin-top:0">Which codes go on the sheet. Unticking one leaves it off every printed code sheet, and it's remembered — so you don't re-pick this every time. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
+      <p class="view-note" style="margin-top:0">Which codes go on the sheet, grouped into Points, Tracked, and Navigation. Untick one to leave it off; drag a code to reorder it within a group, or drag it into a different group — both are remembered. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
       <div class="toolbar" style="margin-bottom:8px;gap:6px">
         <button class="btn btn-sm" id="seatPrintCodesAll">All</button>
         <button class="btn btn-sm" id="seatPrintCodesNone">None</button>
         <span id="seatPrintCodesCount" style="font-size:.82rem;color:var(--muted);font-weight:600"></span>
       </div>
-      <div id="seatPrintCodesList" class="gb-items"></div>
+      <div id="seatPrintCodesList" class="print-code-sections"></div>
     </div>
     <p class="view-note no-print" style="margin:4px 0 10px">Preview — this is what will print:</p>
     <div id="seatChartGrid" class="seat-print-preview"></div>
@@ -4731,11 +4763,16 @@ function setupRoster() {
   function homeworkActivity(a){ return !!a && a.tracked && a.name==="Homework Checked"; }
   function passActivity(a){ return !!a && a.tracked && a.name===PASS_ACT_NAME; }
   function attendanceActivity(a){ return !!a && a.tracked && a.name===ATT_ACT_NAME; }
+  // Freeze activities aren't identified by name (there can be more than one —
+  // different durations), but by carrying a freezeSeconds field. award()
+  // reroutes them to applyFreeze() instead of the points path; see there and
+  // isFrozen()/data.freezes for the rest of the feature.
+  function freezeActivity(a){ return !!a && a.tracked && typeof a.freezeSeconds==="number" && a.freezeSeconds>0; }
   // Tracked activities that award() REROUTES to their own store instead of the
   // points path, and are therefore safe to arm anywhere. Tracker activities are
   // not on this list — they have no reroute, so arming one would write points.
   // Anything added here must have a matching branch in award().
-  function reroutedActivity(a){ return homeworkActivity(a) || passActivity(a) || attendanceActivity(a); }
+  function reroutedActivity(a){ return homeworkActivity(a) || passActivity(a) || attendanceActivity(a) || freezeActivity(a); }
   // Activities offerable as an armable choice: point activities, plus the
   // rerouted ones. Shared by the Scan tab's buttons, the seating-chart dropdown
   // and the printed Activity Menu so the three can't drift apart.
@@ -4743,8 +4780,8 @@ function setupRoster() {
   // Wording for the rerouted activities on printed cards, where a point value
   // would be wrong. Kept next to the predicates so a future rerouted activity
   // gets its wording here rather than in three separate print call sites.
-  function personalActionSub(a){ return homeworkActivity(a) ? "marks homework checked" : attendanceActivity(a) ? "cycles their attendance" : "uses their weekly pass"; }
-  function personalActionVerb(a){ return homeworkActivity(a) ? "mark homework checked" : attendanceActivity(a) ? "cycle their attendance" : "use the weekly bathroom pass"; }
+  function personalActionSub(a){ return homeworkActivity(a) ? "marks homework checked" : attendanceActivity(a) ? "cycles their attendance" : freezeActivity(a) ? "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze" : "uses their weekly pass"; }
+  function personalActionVerb(a){ return homeworkActivity(a) ? "mark homework checked" : attendanceActivity(a) ? "cycle their attendance" : freezeActivity(a) ? "start a "+fmtFreezeDuration(a.freezeSeconds)+" freeze" : "use the weekly bathroom pass"; }
   // Deterministic id->hue so an activity's seating-chart sheet always prints
   // the same color, letting a rebbi tell a stack of sheets apart at a glance
   // without a stored color field on the activity itself.
@@ -5294,7 +5331,7 @@ function setupRoster() {
       var as=el("div","fs-qr-section");
       as.appendChild(el("h4",null,"Activities — scan to arm"));
       var ag=el("div","fs-qr-grid");
-      data.activities.filter(actVisibleInCurrentClass).forEach(function(a){
+      data.activities.filter(actVisibleInCurrentClass).filter(actVisibleOnScreen).forEach(function(a){
         ag.appendChild(makeQrCard("ACT:"+a.id, a.name, fmtDelta(a.pts), true));
       });
       as.appendChild(ag); panel.appendChild(as);
@@ -5317,7 +5354,7 @@ function setupRoster() {
   $("fsQrMode").addEventListener("click", function(){ fpSetQrMode(!fpQrMode); });
   function fpRenderActs(){
     var wrap=$("fsActs"); wrap.innerHTML="";
-    var acts=data.activities.filter(function(a){ return !a.tracked; });
+    var acts=data.activities.filter(function(a){ return !a.tracked && actVisibleOnScreen(a); });
     if(!acts.length){ wrap.appendChild(el("div","scan-hint","Add an activity on the Activities tab.")); return; }
     if(!fpActId || !actById(fpActId)) fpActId=acts[0].id;
     acts.forEach(function(a){
@@ -6137,12 +6174,21 @@ function setupRoster() {
     }
     return false;
   }
+  // The universal "Show on screen" checklist (Activities tab). Hides an
+  // activity from every LIVE arming surface — Record-tab buttons, the global
+  // scan bar dropdown, the floating scan panel, the fullscreen QR panel — but
+  // deliberately does NOT touch what prints: menuLabelItems() (the Activity
+  // Menu / class-sheet footer / Avery codes) never filters on this, so a
+  // rebbi can always print the full set of codes even for activities hidden
+  // from the screen. The mirror image of printExcluded (#117), which hides a
+  // code from print only and leaves the screen alone.
+  function actVisibleOnScreen(a){ return !a.hidden; }
   function renderActButtons(){
     var wrap=$("actButtons"); wrap.innerHTML="";
     // Homework Checked gets a button here like any other activity — arming it and
     // scanning marks homework for real via award()'s reroute. Tracker activities
     // stay out: they still fall through to the points path with no backstop.
-    var visible=armableActivities().filter(actVisibleInCurrentClass);
+    var visible=armableActivities().filter(actVisibleInCurrentClass).filter(actVisibleOnScreen);
     if(!data.activities.length){ wrap.appendChild(el("span","recent-empty","No activities yet — add some on the Activities tab.")); return; }
     if(!visible.length){ wrap.appendChild(el("span","recent-empty","No activities are set up for this group — check the Activities tab.")); return; }
     visible.forEach(function(a){
@@ -6160,7 +6206,7 @@ function setupRoster() {
 
   function flash(ok, line1, line2, line3){
     var f=$("flash");
-    f.className="flash show "+(ok?"good":"bad");
+    f.className="flash show "+(ok==="ice"?"ice":(ok?"good":"bad"));
     f.innerHTML="";
     if(line1) f.appendChild(el("div","who",line1));
     if(line2) f.appendChild(el("div","delta",line2));
@@ -6246,6 +6292,21 @@ function setupRoster() {
       }
       return true;
     }
+    // Freeze doesn't award points at all — it starts/extends a countdown
+    // instead (data.freezes). Always applies, even if the student is already
+    // frozen (stacks), same as any other activity scanned twice adds twice.
+    if(armedAct && freezeActivity(armedAct)){
+      return applyFreeze(s, armedAct.freezeSeconds);
+    }
+    // A running (or paused) freeze blocks POSITIVE points only — a demerit/
+    // deduction still lands normally, and the freeze itself is untouched
+    // either way. Only reached once armed is known not to be the freeze
+    // activity itself (handled above), so this never blocks applyFreeze.
+    if(isFrozen(s.id) && armed.delta>0){
+      flash(false, s.name, "❄️ Frozen", fmtFreezeTime(freezeRemainingMs(s.id))+" left — can't give points");
+      beep(false);
+      return false;
+    }
     return applyScore(s, armed.label, armed.delta);
   }
   // THE ONE PATH EVERY POINT IN THE APP TRAVELS THROUGH. Extracted verbatim
@@ -6303,6 +6364,99 @@ function setupRoster() {
       if(fly.parentNode) fly.parentNode.removeChild(fly);
     }, 700);
   }
+
+  /* ---------- Freeze: a countdown that blocks positive points on a student,
+     independent of the point system (data.freezes, keyed by student id).
+     {endTs, remainingMs, paused} — endTs is used while running, remainingMs
+     while paused (endTs stays stale then, ignored until resumed). ---------- */
+  function isFrozen(sid){
+    var f=data.freezes[sid];
+    if(!f) return false;
+    return f.paused ? f.remainingMs>0 : f.endTs>Date.now();
+  }
+  function freezeRemainingMs(sid){
+    var f=data.freezes[sid];
+    if(!f) return 0;
+    return Math.max(0, f.paused ? f.remainingMs : f.endTs-Date.now());
+  }
+  function fmtFreezeTime(ms){
+    var s=Math.ceil(ms/1000); if(s<0) s=0;
+    var m=Math.floor(s/60), r=s%60;
+    return m+":"+(r<10?"0":"")+r;
+  }
+  function fmtFreezeDuration(seconds){
+    if(seconds<60) return seconds+" sec";
+    if(seconds%60===0) return (seconds/60)+" min";
+    return Math.floor(seconds/60)+"m "+(seconds%60)+"s";
+  }
+  // Builds (or refreshes) the corner badge for a tile — called both on a
+  // normal render and by refreshFreezeTile() for a live update, so its markup
+  // must stay self-contained (no listeners to rebind).
+  function freezeBadgeEl(sid){
+    var f=data.freezes[sid];
+    var span=el("span","tile-freeze-badge"+(f&&f.paused?" paused":""));
+    span.textContent="❄️ "+fmtFreezeTime(freezeRemainingMs(sid))+(f&&f.paused?" ⏸":"");
+    return span;
+  }
+  // Re-draws just the freeze badge on every tile showing this student (list +
+  // seating chart — same dual-surface, data-sid lookup flashTapTile already
+  // uses), without a full renderTapPanel(). showFlash also pulses the ice
+  // border/background, same visual for "freeze applied" and "freeze expired"
+  // per design — freeze is its own tone, not tied to good/bad.
+  function refreshFreezeTile(sid, showFlash){
+    if(data.tapPanelOpen===false) return;
+    document.querySelectorAll('.tap-btn[data-sid="'+sid+'"], .seat[data-sid="'+sid+'"]').forEach(function(tb){
+      var old=tb.querySelector(".tile-freeze-badge");
+      if(old && old.parentNode) old.parentNode.removeChild(old);
+      if(isFrozen(sid)) tb.appendChild(freezeBadgeEl(sid));
+      if(showFlash){
+        tb.classList.remove("awarded","awarded-bad","awarded-ice");
+        void tb.offsetWidth;
+        tb.classList.add("awarded-ice");
+        setTimeout(function(){ tb.classList.remove("awarded-ice"); }, 700);
+      }
+    });
+  }
+  // Starts a freeze, or — if the student is already frozen (running or
+  // paused) — stacks the extra seconds onto what's left, same as scanning any
+  // other activity twice adds twice rather than restarting. Never blocked by
+  // an existing freeze; that block only applies to real points (see award()).
+  function applyFreeze(s, seconds){
+    var addMs=seconds*1000;
+    var f=data.freezes[s.id];
+    if(f && (f.paused || f.endTs>Date.now())){
+      if(f.paused) f.remainingMs+=addMs; else f.endTs+=addMs;
+    } else {
+      data.freezes[s.id]={endTs:Date.now()+addMs, remainingMs:null, paused:false};
+    }
+    save();
+    flash("ice", s.name, "❄️ "+fmtFreezeDuration(seconds), "now "+fmtFreezeTime(freezeRemainingMs(s.id))+" frozen");
+    beep(true);
+    refreshFreezeTile(s.id, true);
+    return true;
+  }
+  // Walks every active freeze once a second, updating badges live and — on
+  // natural expiry only, never on a manual End — clearing the entry and
+  // firing the same ice flash applyFreeze() uses. A paused freeze never
+  // expires on its own; only Resume (or Adjust in the freeze modal) can.
+  function tickFreezes(){
+    var ids=Object.keys(data.freezes);
+    if(!ids.length) return;
+    var changed=false;
+    ids.forEach(function(sid){
+      var f=data.freezes[sid];
+      if(f.paused) return;
+      if(f.endTs<=Date.now()){
+        delete data.freezes[sid];
+        changed=true;
+        refreshFreezeTile(sid, true);
+      } else {
+        refreshFreezeTile(sid, false);
+      }
+    });
+    if(changed) save();
+  }
+  setInterval(tickFreezes, 1000);
 
   // Central "live data changed" hook. When a scan (or an undo) lands while the
   // rebbi is sitting on a tab that shows calculated/aggregated scan data, that
@@ -6440,6 +6594,17 @@ function setupRoster() {
           beep(true);
         }
         if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
+        return;
+      }
+      // A student's personal Freeze code — applies (or stacks) the freeze on
+      // this one student, no arming needed, same class check as Bathroom
+      // Pass above so the rejection flash reads right if the class changed.
+      if(freezeActivity(pa)){
+        if(!studentInCurrentClass(ps)){
+          flash(false, ps.name, "Not in selected class", "Switch to “"+data.currentClass+"” or choose “All classes” to freeze this student");
+          beep(false); return;
+        }
+        applyFreeze(ps, pa.freezeSeconds);
         return;
       }
       // Attendance, same idea: it lives in data.attendance, not in points.
@@ -7194,21 +7359,33 @@ function setupRoster() {
     // Scannable mode lives in the ALWAYS-VISIBLE toolbar, beside List / Seating
     // chart — not in the ⚙ Setup panel, where it started. Setup is collapsed by
     // default, so putting it there meant opening a panel every time to use the
-    // feature the chart exists for. Shown only in seating mode, since there are
-    // no seats to put codes in otherwise.
+    // feature the chart exists for. Available in both List and Seating chart —
+    // List mode has no seats to put codes in, so it shows each student's QR as
+    // a card in the grid instead (see the list-mode branch below).
     //
     // Arranging and scannable are mutually exclusive: dragging seats around
     // while every cell shows a QR is a way to mis-seat a boy you cannot read.
-    if(effViewMode==="seating"){
-      var scanBtn=el("button","seat-modebtn"+(data.seatScanMode?" active":""), data.seatScanMode?"Hide codes":"⛶ Show codes");
-      scanBtn.title="Show each student's QR code in his seat, so the class can be scanned straight off the screen";
-      scanBtn.addEventListener("click", function(){
-        data.seatScanMode=!data.seatScanMode;
-        if(data.seatScanMode) data.seatArranging=false;
-        save(); renderTapPanel();
-      });
-      toolbar.appendChild(scanBtn);
-    }
+    // (List mode has no arranging state, so this only ever bites in seating mode.)
+    var scanBtn=el("button","seat-modebtn"+(data.seatScanMode?" active":""), data.seatScanMode?"Hide codes":"⛶ Show codes");
+    scanBtn.title="Show each student's QR code, so the class can be scanned straight off the screen";
+    scanBtn.addEventListener("click", function(){
+      data.seatScanMode=!data.seatScanMode;
+      if(data.seatScanMode) data.seatArranging=false;
+      save(); renderTapPanel();
+    });
+    toolbar.appendChild(scanBtn);
+
+    // Independent of Show codes — a rebbi may want the activity codes footer
+    // (to arm an activity by tapping or scanning it) without also switching
+    // every student card over to a QR. Works with the regular avatar/name
+    // cards just as well as with the QR cards.
+    var actBtn=el("button","seat-modebtn"+(data.seatActivitiesMode?" active":""), data.seatActivitiesMode?"Hide activities":"Show activities");
+    actBtn.title="Show the activity codes underneath, so you can arm one by tapping or scanning it";
+    actBtn.addEventListener("click", function(){
+      data.seatActivitiesMode=!data.seatActivitiesMode;
+      save(); renderTapPanel();
+    });
+    toolbar.appendChild(actBtn);
 
     if(effViewMode==="seating"){
       var lay=seatLayout();
@@ -7320,16 +7497,34 @@ function setupRoster() {
 
     if(effViewMode==="seating"){ renderSeatGrid(body, studs); return; }
 
+    var listScanMode=!!data.seatScanMode;
     var grid=el("div","tap-grid");
     studs.forEach(function(s){
       var b=el("button","tap-btn"); b.dataset.sid=s.id;
       b.appendChild(avatarEl(s, 30));
       b.appendChild(el("span",null,s.name));
       b.appendChild(coinScoreEl(s.id,"ts"));
+      if(isFrozen(s.id)) b.appendChild(freezeBadgeEl(s.id));
+      if(listScanMode){
+        // Same payload as the seating chart's Show codes and the printed
+        // sheet — s.id, nothing else.
+        var qh=el("div","seat-qr"); qh.style.cssText="width:"+SEAT_QR_PX+"px;height:"+SEAT_QR_PX+"px;margin:0 auto 5px";
+        try{ new QRCode(qh,{text:s.id,width:SEAT_QR_PX,height:SEAT_QR_PX,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ qh.textContent="QR?"; }
+        b.appendChild(qh);
+        b.appendChild(el("span",null,s.name));
+      } else {
+        b.appendChild(avatarEl(s, 30));
+        b.appendChild(el("span",null,s.name));
+        b.appendChild(coinScoreEl(s.id,"ts"));
+      }
       b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
     body.appendChild(grid);
+    var listActivitiesMode=!!data.seatActivitiesMode;
+    if(listActivitiesMode) renderScanCodesFooter(body, listScanMode);
+    if(listScanMode || listActivitiesMode) renderScanUndoRow(body);
   }
   function renderTapPanel(){
     renderTapPanelInto("tapPanelBody", null);
@@ -7353,12 +7548,58 @@ function setupRoster() {
   // fine for the scanner in use but is the reason the name stays visible — if a
   // code will not read, the rebbi still has something to tap.
   var SEAT_QR_PX = 68;
+
+  // Activity codes to arm, rendered below the grid whenever Show activities is
+  // on — same source as the printed sheet and Avery labels (menuLabelItems(),
+  // including the #117 "codes I use" filter), so the screen and the paper
+  // never offer a different set. Each card is tappable as well as scannable:
+  // tapping arms exactly what scanning it would arm. Shared by the Seating
+  // chart and List scan views so both offer the same scanning surface.
+  //
+  // withQr is only true alongside Show codes (student QR) being on too — a QR
+  // per activity is for scanning it off the screen, which only matters when
+  // the screen is already being used that way. Otherwise these are plain
+  // tappable pills, the same `.act-btn` look the Dashboard's own activity
+  // buttons use, so a rebbi not scanning off the chart isn't shown a grid of
+  // codes that mean nothing to him.
+  function renderScanCodesFooter(body, withQr){
+    var footer=el("div","seat-scan-codes no-print");
+    menuLabelItems().forEach(function(it){
+      var card=el("button", withQr ? "seat-code-card" : "act-btn");
+      card.type="button";
+      if(withQr){
+        var qh=el("div");
+        try{ new QRCode(qh,{text:it.qrText,width:44,height:44,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ qh.textContent="QR?"; }
+        card.appendChild(qh);
+        card.appendChild(el("span","seat-code-name",it.name));
+      } else {
+        card.appendChild(el("span","an",it.name));
+        if(it.sub) card.appendChild(el("span","av",it.sub));
+      }
+      // handleScannedCode(), not processScan() — it is the same entry point the
+      // scanner's keyboard input lands on, so a tap and a scan are literally
+      // the same call with the same string.
+      card.addEventListener("click", function(){ handleScannedCode(it.qrText); });
+      footer.appendChild(card);
+    });
+    body.appendChild(footer);
+  }
+  function renderScanUndoRow(body){
+    var undoRow=el("div","seat-undo-row no-print");
+    var undoBtn=el("button","btn btn-sm","↩ Undo last scan");
+    undoBtn.title="Reverse the most recent scan";
+    undoBtn.addEventListener("click", function(){ undoMostRecentScan(); });
+    undoRow.appendChild(undoBtn);
+    body.appendChild(undoRow);
+  }
   function renderSeatGrid(body, studs){
     var lay=seatLayout();
     var unplaced=seatPruneAndFillUnplaced(lay, studs);
     var byId={}; studs.forEach(function(s){ byId[s.id]=s; });
     var arranging=!!data.seatArranging;
     var scanMode=!!data.seatScanMode && !arranging;
+    var activitiesMode=!!data.seatActivitiesMode;
 
     // "Front of room" sits above the grid in normal view; in Rebbi's view the
     // seats are reversed (Rebbi faces the class), so the front is at the
@@ -7401,6 +7642,7 @@ function setupRoster() {
         seat.appendChild(avatarEl(s, 26));
         seat.appendChild(el("span","seat-name",s.name));
         seat.appendChild(coinScoreEl(s.id,"ts"));
+        if(isFrozen(s.id)) seat.appendChild(freezeBadgeEl(s.id));
         }
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
@@ -7454,40 +7696,17 @@ function setupRoster() {
     if(data.seatLiveRebbiView) body.appendChild(el("div","seat-front","Front of room"));
 
     // Activity codes along the bottom, so the chart is the whole scanning
-    // surface and nothing needs to have been printed first. Codes come from
-    // menuLabelItems() — the SAME source the printed sheet and the Avery labels
-    // use, including the #117 "codes I use" filter — so the screen and the paper
-    // can never offer a different set. Each chip is tappable as well as
-    // scannable: tapping arms exactly what scanning it would arm.
-    if(scanMode){
-      var footer=el("div","seat-scan-codes no-print");
-      menuLabelItems().forEach(function(it){
-        var card=el("button","seat-code-card");
-        card.type="button";
-        var qh=el("div");
-        try{ new QRCode(qh,{text:it.qrText,width:44,height:44,correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ qh.textContent="QR?"; }
-        card.appendChild(qh);
-        card.appendChild(el("span","seat-code-name",it.name));
-        // handleScannedCode(), not processScan() — it is the same entry point the
-        // scanner's keyboard input lands on, so a tap and a scan are literally
-        // the same call with the same string.
-        card.addEventListener("click", function(){ handleScannedCode(it.qrText); });
-        footer.appendChild(card);
-      });
-      body.appendChild(footer);
-    }
+    // surface and nothing needs to have been printed first. Independent of
+    // scanMode — works underneath the regular avatar cards too, as plain
+    // pills rather than QR cards when scanMode is off. Shared with List
+    // mode's scan view — see renderScanCodesFooter below.
+    if(activitiesMode) renderScanCodesFooter(body, scanMode);
 
     // Undo at the bottom of the chart. Third call site, same one function — a
     // rebbi scanning off the full-screen chart has the Recent scans panel and
     // the dashboard header both hidden behind the overlay, so without this the
     // only way to fix a mis-scan is to leave the view he is working in.
-    var undoRow=el("div","seat-undo-row no-print");
-    var undoBtn=el("button","btn btn-sm","↩ Undo last scan");
-    undoBtn.title="Reverse the most recent scan";
-    undoBtn.addEventListener("click", function(){ undoMostRecentScan(); });
-    undoRow.appendChild(undoBtn);
-    body.appendChild(undoRow);
+    renderScanUndoRow(body);
 
     if(arranging){
       var trayWrap=el("div","seat-unplaced");
@@ -7520,6 +7739,12 @@ function setupRoster() {
   // points breakdown. Scanning a QR code always scores normally either way;
   // this only changes what tapping a tile in the Tap Panel does.
   function tapClick(s, btn){
+    // A frozen student always lands here on tap, regardless of what's armed —
+    // scanning a freeze code on a frozen student still just stacks time
+    // silently through award() (see applyFreeze()); tapping is the one
+    // deliberate control surface, so it's deliberately more friction than a
+    // scoring tap, not less.
+    if(isFrozen(s.id)){ showFreezeModal(s); return; }
     if(data.tapShowsBreakdown){ showBreakdownModal(s); return; }
     tapAward(s, btn);
   }
@@ -7545,6 +7770,89 @@ function setupRoster() {
     refresh();
 
     function close(){
+      if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+    }
+    function onKey(e){ if(e.key==="Escape") close(); }
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function(e){ if(e.target===overlay) close(); });
+    document.addEventListener("keydown", onKey);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
+  // The one interactive control surface for an active freeze — tapping a
+  // frozen student always lands here (see tapClick()). Deliberately more
+  // friction than a scoring tap: this is a consequence action, not a reward,
+  // so a stray double-tap shouldn't be able to silently extend a freeze.
+  function showFreezeModal(s){
+    var overlay=el("div","modal-overlay");
+    var card=el("div","modal-card"); card.style.maxWidth="360px";
+    var head=el("div","modal-head");
+    head.appendChild(el("div","modal-title","❄️ "+s.name));
+    var closeBtn=el("button","modal-close","✕"); closeBtn.type="button"; closeBtn.title="Close";
+    head.appendChild(closeBtn);
+    card.appendChild(head);
+
+    var body=el("div");
+    var status=el("p","view-note"); status.style.margin="0 0 14px";
+    body.appendChild(status);
+
+    var pauseBtn=el("button","btn btn-sm","⏸ Pause"); pauseBtn.type="button"; pauseBtn.style.marginRight="8px";
+    body.appendChild(pauseBtn);
+
+    var adjustRow=el("div"); adjustRow.style.cssText="display:flex;align-items:center;gap:6px;margin:14px 0;flex-wrap:wrap";
+    var adjustLbl=el("span",null,"Adjust:"); adjustLbl.style.cssText="font-size:.85rem;color:var(--muted);font-weight:600";
+    adjustRow.appendChild(adjustLbl);
+    [["−1 min",-60],["−30s",-30],["+30s",30],["+1 min",60]].forEach(function(pair){
+      var b=el("button","btn btn-sm",pair[0]); b.type="button";
+      b.addEventListener("click", function(){
+        var f=data.freezes[s.id]; if(!f) return;
+        var deltaMs=pair[1]*1000;
+        if(f.paused) f.remainingMs=Math.max(0, f.remainingMs+deltaMs);
+        else f.endTs=Math.max(Date.now(), f.endTs+deltaMs);
+        save(); refreshFreezeTile(s.id, false); refresh();
+      });
+      adjustRow.appendChild(b);
+    });
+    body.appendChild(adjustRow);
+
+    var endBtn=el("button","btn btn-bad","✕ End freeze"); endBtn.type="button"; endBtn.style.width="100%";
+    endBtn.addEventListener("click", function(){
+      delete data.freezes[s.id];
+      save();
+      refreshFreezeTile(s.id, false);
+      close();
+    });
+    body.appendChild(endBtn);
+    card.appendChild(body);
+
+    function refresh(){
+      var f=data.freezes[s.id];
+      if(!f){
+        status.textContent="Freeze ended.";
+        pauseBtn.disabled=true; adjustRow.style.display="none"; endBtn.style.display="none";
+        return;
+      }
+      status.textContent=(f.paused?"Paused — ":"")+fmtFreezeTime(freezeRemainingMs(s.id))+" left. Can't give points while frozen.";
+      pauseBtn.textContent = f.paused ? "▶ Resume" : "⏸ Pause";
+    }
+    pauseBtn.addEventListener("click", function(){
+      var f=data.freezes[s.id]; if(!f) return;
+      if(f.paused){ f.endTs=Date.now()+f.remainingMs; f.remainingMs=null; f.paused=false; }
+      else { f.remainingMs=freezeRemainingMs(s.id); f.paused=true; }
+      save(); refreshFreezeTile(s.id, false); refresh();
+    });
+    refresh();
+    // The modal's own countdown, separate from tickFreezes() — this is a
+    // dialog someone is actively looking at, so it should count down live
+    // rather than sit frozen on whatever it read when the modal opened.
+    // Both timers read from the same data.freezes entry, so they can never
+    // disagree — this just re-renders the already-current number every second.
+    var modalTick=setInterval(refresh, 1000);
+
+    function close(){
+      clearInterval(modalTick);
       if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
       document.removeEventListener("keydown", onKey);
     }
@@ -7946,7 +8254,7 @@ function setupRoster() {
   // neither. Those sit next to the Homework tab in normal use; this one does not.
   function populateActivityDropdown(dd, focusInputId, closeFn){
     dd.innerHTML="";
-    var armable=armableActivities();
+    var armable=armableActivities().filter(actVisibleOnScreen);
     if(!armable.length){
       dd.appendChild(el("div","hd-empty", data.activities.length
         ? "No point activities yet — the Tracker has its own tab."
@@ -13449,10 +13757,23 @@ nameLine
     data.activities.forEach(function(a){
       if(!Array.isArray(a.groups)) a.groups=[];
       var row=el("div","erow act-erow");
+      // Universal "Show on screen" checklist — unchecking hides this activity
+      // from the Record-tab buttons, the global scan bar dropdown and the
+      // floating scan panel. It still prints on the Activity Menu; print is
+      // never limited by this, only by the separate #117 print-codes picker.
+      var visLbl=el("label","act-vis-toggle");
+      visLbl.title="Uncheck to hide this activity from the Scan screen, scan bar and floating panel. It still prints on the Activity Menu.";
+      var visChk=el("input"); visChk.type="checkbox"; visChk.checked=!a.hidden;
+      visChk.addEventListener("change", function(){
+        a.hidden=!visChk.checked; save(); renderActButtons();
+        if(typeof fpRenderActs==="function") fpRenderActs();
+      });
+      visLbl.appendChild(visChk); visLbl.appendChild(document.createTextNode(" Show"));
+      row.appendChild(visLbl);
       var name=el("input","field grow"); name.value=a.name; name.style.minWidth="120px";
       name.addEventListener("change", function(){ a.name=name.value.trim()||a.name; name.value=a.name; save(); renderActButtons(); refreshArmed(a); });
       if(a.tracked){
-        var trkBadge=el("span",null,"Tracked (non-point)");
+        var trkBadge=el("span",null, freezeActivity(a) ? ("❄️ Freeze — "+fmtFreezeDuration(a.freezeSeconds)) : "Tracked (non-point)");
         trkBadge.style.cssText="font-size:.72rem;font-weight:700;color:#6b4d18;background:var(--brass-soft);border-radius:999px;padding:2px 9px;white-space:nowrap";
         row.appendChild(name); row.appendChild(trkBadge);
         var delT=el("button","btn btn-sm btn-bad","Delete");
@@ -13676,18 +13997,25 @@ nameLine
     var items=armableActivities().filter(actVisibleInCurrentClass).map(function(a){
       // No "+0" for the rerouted activities — they earn nothing, so the sub-line
       // says what the code actually does instead of quoting a point value.
+      // defaultSection groups the printed/picker codes without needing a stored
+      // choice for every code — a rerouted activity (homework/attendance/pass)
+      // defaults to "tracked", every other activity to "points". Only codes a
+      // rebbi drags elsewhere get an explicit data.printCodeSections override.
+      var tracked = homeworkActivity(a) || attendanceActivity(a) || passActivity(a) || freezeActivity(a);
       return {qrText:"ACT:"+a.id, name:a.name,
               sub: homeworkActivity(a)   ? "marks homework checked"
                  : attendanceActivity(a) ? "cycles attendance"
                  : passActivity(a)       ? "marks a bathroom pass used"
-                 : fmtDelta(a.pts)};
+                 : freezeActivity(a)     ? "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze"
+                 : fmtDelta(a.pts),
+              defaultSection: tracked ? "tracked" : "points"};
     });
-    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount"});
-    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount"});
-    items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan"});
-    items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another"});
-    items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only"});
-    items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only"});
+    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", defaultSection:"nav"});
+    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", defaultSection:"nav"});
+    items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan", defaultSection:"nav"});
+    items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another", defaultSection:"nav"});
+    items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", defaultSection:"nav"});
+    items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only", defaultSection:"nav"});
     // #117: drop the codes this rebbi has turned off. Filtered HERE, once,
     // because this function is the single source for the tile view, the Avery
     // sheets and the class sheet's footer alike — filtering in each renderer is
@@ -13701,6 +14029,59 @@ nameLine
     var keep=data.printExcluded;
     data.printExcluded={};
     try{ return menuLabelItems(); } finally { data.printExcluded=keep; }
+  }
+  // Fixed set of print groupings — matches the app's own real distinction
+  // (regular point activities vs. the rerouted Tracked ones vs. control codes),
+  // not an open-ended rebbi-named category system. Order here is also the
+  // order the groups print in.
+  var PRINT_CODE_SECTIONS=[
+    {key:"points",  label:"Points"},
+    {key:"tracked", label:"Tracked"},
+    {key:"nav",     label:"Navigation"}
+  ];
+  // A code's section is its defaultSection (set in menuLabelItems()) unless a
+  // rebbi has dragged it elsewhere, in which case data.printCodeSections holds
+  // the override. Sparse by design, same spirit as data.printExcluded — a code
+  // nobody has ever touched needs no stored entry at all.
+  function printCodeSectionOf(it){
+    var s=data.printCodeSections[it.qrText];
+    var known=PRINT_CODE_SECTIONS.some(function(x){ return x.key===s; });
+    return known ? s : (it.defaultSection||"points");
+  }
+  // Sorts by the rebbi's saved order (data.printCodeOrder, a flat array of
+  // qrText covering every section at once); codes not yet in it — new
+  // activities, mainly — fall back to their natural menuLabelItems() order and
+  // sort after anything already placed.
+  function orderedPrintCodeItems(items){
+    var idx={}; data.printCodeOrder.forEach(function(q,i){ idx[q]=i; });
+    return items.map(function(it,i){ return {it:it, i:i}; }).sort(function(a,b){
+      var ai=idx.hasOwnProperty(a.it.qrText) ? idx[a.it.qrText] : Infinity;
+      var bi=idx.hasOwnProperty(b.it.qrText) ? idx[b.it.qrText] : Infinity;
+      return (ai!==bi) ? (ai-bi) : (a.i-b.i);
+    }).map(function(x){ return x.it; });
+  }
+  // Moves one code into targetSection, positioned immediately before
+  // beforeQrText (end of section if null), and rebuilds data.printCodeOrder
+  // from the CURRENT full picker so every section's order stays consistent in
+  // one write rather than drifting between two separately-edited lists.
+  function movePrintCode(qrText, targetSection, beforeQrText){
+    var all=menuLabelItemsAll();
+    var byQr={}; all.forEach(function(it){ byQr[it.qrText]=it; });
+    var moved=byQr[qrText]; if(!moved) return;
+    var ordered=orderedPrintCodeItems(all);
+    var buckets={};
+    PRINT_CODE_SECTIONS.forEach(function(sec){ buckets[sec.key]=[]; });
+    ordered.forEach(function(it){
+      if(it.qrText===qrText) return;
+      buckets[printCodeSectionOf(it)].push(it.qrText);
+    });
+    var target=buckets[targetSection];
+    var insertAt = beforeQrText ? target.indexOf(beforeQrText) : -1;
+    if(insertAt<0) target.push(qrText); else target.splice(insertAt, 0, qrText);
+    if(targetSection===moved.defaultSection) delete data.printCodeSections[qrText];
+    else data.printCodeSections[qrText]=targetSection;
+    data.printCodeOrder = PRINT_CODE_SECTIONS.reduce(function(acc,sec){ return acc.concat(buckets[sec.key]); }, []);
+    save(); renderSeatPrintCodes(); renderSeatChartPrint();
   }
   function renderMenuLabels(hasQR){
     if(typeof hasQR==="undefined") hasQR=(typeof QRCode!=="undefined");
@@ -13884,21 +14265,73 @@ nameLine
   // #117's picker. Offers EVERY code (menuLabelItemsAll), ticked according to
   // what is not excluded — the list a rebbi is choosing from has to include the
   // ones he has already turned off, or he could never turn them back on.
+  // Grouped into PRINT_CODE_SECTIONS and drag-to-rearrange, same native
+  // dragstart/dragover/drop pattern as the live seating chart's "Arrange
+  // seats" mode — dragging a code onto another reorders it within a section;
+  // dragging it onto a different section's box (or its empty-space drop
+  // target) moves it there. Both are persisted by movePrintCode().
   function renderSeatPrintCodes(){
     var box=$("seatPrintCodesList"); if(!box) return;
     box.innerHTML="";
     var all=menuLabelItemsAll();
     if(!all.length){ box.appendChild(el("div","recent-empty","No codes to print yet — add some activities first.")); return; }
-    all.forEach(function(it){
-      var lab=el("label"), cb=document.createElement("input");
-      cb.type="checkbox"; cb.checked=!data.printExcluded[it.qrText];
-      cb.addEventListener("change", function(){
-        if(this.checked) delete data.printExcluded[it.qrText];
-        else data.printExcluded[it.qrText]=true;
-        save(); renderSeatPrintCodes(); renderSeatChartPrint();
+    var hasQR=(typeof QRCode!=="undefined");
+    var ordered=orderedPrintCodeItems(all);
+    PRINT_CODE_SECTIONS.forEach(function(sec){
+      var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
+      var secBox=el("div","print-code-section");
+      secBox.appendChild(el("h4",null,sec.label));
+      var chips=el("div","print-code-chips");
+      secBox.appendChild(chips);
+      // Dropping on empty section space (not on a specific chip) appends to
+      // the end of that section — the only way to move a code into a section
+      // that currently has nothing in it.
+      secBox.addEventListener("dragover", function(ev){ ev.preventDefault(); secBox.classList.add("drag-over"); });
+      secBox.addEventListener("dragleave", function(){ secBox.classList.remove("drag-over"); });
+      secBox.addEventListener("drop", function(ev){
+        ev.preventDefault(); secBox.classList.remove("drag-over");
+        var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+        var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
+        if(!payload.qrText) return;
+        movePrintCode(payload.qrText, sec.key, null);
       });
-      lab.appendChild(cb); lab.appendChild(document.createTextNode(it.name));
-      box.appendChild(lab);
+      if(!secItems.length) chips.appendChild(el("div","print-code-empty","Drop codes here"));
+      secItems.forEach(function(it){
+        var chip=el("label","print-code-chip");
+        chip.draggable=true;
+        var cb=document.createElement("input");
+        cb.type="checkbox"; cb.checked=!data.printExcluded[it.qrText];
+        cb.addEventListener("change", function(){
+          if(this.checked) delete data.printExcluded[it.qrText];
+          else data.printExcluded[it.qrText]=true;
+          save(); renderSeatPrintCodes(); renderSeatChartPrint();
+        });
+        chip.appendChild(cb);
+        if(hasQR){
+          var qh=el("span","pcq");
+          try{ new QRCode(qh,{text:it.qrText,width:22,height:22,correctLevel:QRCode.CorrectLevel.M}); }
+          catch(e){}
+          chip.appendChild(qh);
+        }
+        chip.appendChild(document.createTextNode(it.name));
+        chip.addEventListener("dragstart", function(ev){
+          chip.classList.add("dragging");
+          ev.dataTransfer.setData("text/plain", JSON.stringify({qrText:it.qrText}));
+          ev.dataTransfer.effectAllowed="move";
+        });
+        chip.addEventListener("dragend", function(){ chip.classList.remove("dragging"); });
+        chip.addEventListener("dragover", function(ev){ ev.preventDefault(); ev.stopPropagation(); chip.classList.add("drag-over"); });
+        chip.addEventListener("dragleave", function(){ chip.classList.remove("drag-over"); });
+        chip.addEventListener("drop", function(ev){
+          ev.preventDefault(); ev.stopPropagation(); chip.classList.remove("drag-over");
+          var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+          var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
+          if(!payload.qrText || payload.qrText===it.qrText) return;
+          movePrintCode(payload.qrText, sec.key, it.qrText);
+        });
+        chips.appendChild(chip);
+      });
+      box.appendChild(secBox);
     });
     var on=all.filter(function(it){ return !data.printExcluded[it.qrText]; }).length;
     $("seatPrintCodesCount").textContent=on+" of "+all.length+" on the sheet";
@@ -13950,20 +14383,30 @@ nameLine
     var hasQR=(typeof QRCode!=="undefined");
     var footer=el("div","seat-print-activities-footer");
     footer.appendChild(el("div","seat-print-activities-title","Activity Codes"));
-    var grid=el("div","seat-print-activities-grid");
-    items.forEach(function(it){
-      var card=el("div","seat-print-act-card");
-      if(hasQR){
-        var holder=el("div"); card.appendChild(holder);
-        try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ card.appendChild(document.createTextNode("QR?")); }
-      }
-      var label=el("div","seat-print-act-label", it.name);
-      var sub=el("div","seat-print-act-sub", it.sub);
-      card.appendChild(label); card.appendChild(sub);
-      grid.appendChild(card);
+    // Same three groups and order as the picker (PRINT_CODE_SECTIONS), so
+    // moving a code's section in "Choose codes" changes where it prints, not
+    // just how it's organized on screen. Empty groups are skipped rather than
+    // printing a bare heading.
+    var ordered=orderedPrintCodeItems(items);
+    PRINT_CODE_SECTIONS.forEach(function(sec){
+      var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
+      if(!secItems.length) return;
+      footer.appendChild(el("div","seat-print-act-section-label", sec.label));
+      var grid=el("div","seat-print-activities-grid");
+      secItems.forEach(function(it){
+        var card=el("div","seat-print-act-card");
+        if(hasQR){
+          var holder=el("div"); card.appendChild(holder);
+          try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
+          catch(e){ card.appendChild(document.createTextNode("QR?")); }
+        }
+        var label=el("div","seat-print-act-label", it.name);
+        var sub=el("div","seat-print-act-sub", it.sub);
+        card.appendChild(label); card.appendChild(sub);
+        grid.appendChild(card);
+      });
+      footer.appendChild(grid);
     });
-    footer.appendChild(grid);
     wrap.appendChild(footer);
   }
   // What to head the sheet with. "All Classes" is only honest when there really
@@ -14739,6 +15182,15 @@ nameLine
       ["CTRL:PASUKPREV","CTRL:PASUKNEXT","CTRL:CUSTOM-"].forEach(function(k){ data.printExcluded[k]=true; });
       data.printExcludedSeeded=true;
     }
+    // Print-code sections (Choose codes drag-and-drop): which of the fixed
+    // Points/Tracked/Navigation groups a code sits in, and the rebbi's chosen
+    // order. Both purely additive — a code with no entry here just uses its
+    // computed defaultSection and prints in menuLabelItems()'s natural order,
+    // identical to the pre-drag-and-drop sheet, so an existing save renders
+    // the exact same printout it always has until a rebbi actually drags
+    // something.
+    if(!data.printCodeSections || typeof data.printCodeSections!=="object" || Array.isArray(data.printCodeSections)) data.printCodeSections={};
+    if(!Array.isArray(data.printCodeOrder)) data.printCodeOrder=[];
     if(!Array.isArray(data.pastContests)) data.pastContests=[];
     // Saved contests used to store metadata only, and their numbers were
     // recomputed from data.log on every render — so they decayed to nothing as
@@ -14801,6 +15253,9 @@ nameLine
     // left showing QR codes instead of names is not the view anyone wants to
     // come back to on a smartboard.
     if(typeof data.seatScanMode!=="boolean") data.seatScanMode=false;
+    // Same armed-state contract as seatScanMode, independent flag: a rebbi can
+    // show the activity codes footer with or without student QR codes showing.
+    if(typeof data.seatActivitiesMode!=="boolean") data.seatActivitiesMode=false;
     if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
     if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
@@ -14849,6 +15304,9 @@ nameLine
     if(!Array.isArray(data.trackerLog)) data.trackerLog=[];
     if(typeof data.trackerActId!=="string") data.trackerActId="";
     data.activities.forEach(function(a){ if(typeof a.tracked!=="boolean") a.tracked=false; });
+    // #universal activity visibility: hides an activity from every on-screen
+    // arming surface without touching print, which always offers every code.
+    data.activities.forEach(function(a){ if(typeof a.hidden!=="boolean") a.hidden=false; });
     if(!data.hwActivitySeeded){
       data.activities.push({id:nextActId(), name:"Homework Checked", pts:0, tracked:true, groups:[]});
       data.hwActivitySeeded=true;
@@ -14873,6 +15331,19 @@ nameLine
       data.activities.push({id:nextActId(), name:ATT_ACT_NAME, pts:0, tracked:true, groups:[]});
       data.attActivitySeeded=true;
     }
+    // Freeze — a tracked 0-point activity like the three above, but its
+    // reroute (freezeActivity()/award()) starts a countdown instead of
+    // writing a log entry: while it's running, scanning/tapping that student
+    // for POSITIVE points is refused. Negative/demerit activities are
+    // untouched — freeze only blocks awarding, never deducting. Same one-shot
+    // flag as the three above, so a rebbi who deletes it doesn't get it back.
+    // Countdown state lives in data.freezes (backfilled just below); this
+    // activity is a handle, not a second store.
+    if(!data.freezeActivitySeeded){
+      data.activities.push({id:nextActId(), name:"❄️ Freeze 1 min", pts:0, tracked:true, freezeSeconds:60, groups:[]});
+      data.freezeActivitySeeded=true;
+    }
+    if(!data.freezes || typeof data.freezes!=="object" || Array.isArray(data.freezes)) data.freezes={};
     // "Prize Received" used to be a standalone tracked activity here, but that
     // had no real link to an actual Store purchase. Superseded by a per-purchase
     // "received" checkbox on the Store's own purchase log (see storeReceived
@@ -15279,6 +15750,8 @@ nameLine
   // how the app is actually behaving — a backup that says true while the chart
   // shows names is a value that lies to whoever reads it next.
   if(data.seatScanMode){ data.seatScanMode = false; save(); }
+  // Same contract, same reason — independent toggle, see seatActivitiesMode above.
+  if(data.seatActivitiesMode){ data.seatActivitiesMode = false; save(); }
   // --- Device ID for snapshot scoping (Phase 1) ---
   // Each browser gets a stable random ID so snapshots on a shared Sheet
   // stay separated per device. Generated once, persists in localStorage.

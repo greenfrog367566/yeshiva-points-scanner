@@ -356,6 +356,15 @@ if(!data.printExcludedSeeded){
   ["CTRL:PASUKPREV","CTRL:PASUKNEXT","CTRL:CUSTOM-"].forEach(function(k){ data.printExcluded[k]=true; });
   data.printExcludedSeeded=true;
 }
+// Print-code sections (Choose codes drag-and-drop): which of the fixed
+// Points/Tracked/Navigation groups a code sits in, and the rebbi's chosen
+// order. Both purely additive — a code with no entry here just uses its
+// computed defaultSection and prints in menuLabelItems()'s natural order,
+// identical to the pre-drag-and-drop sheet, so an existing save renders
+// the exact same printout it always has until a rebbi actually drags
+// something.
+if(!data.printCodeSections || typeof data.printCodeSections!=="object" || Array.isArray(data.printCodeSections)) data.printCodeSections={};
+if(!Array.isArray(data.printCodeOrder)) data.printCodeOrder=[];
 if(!Array.isArray(data.pastContests)) data.pastContests=[];
 // Saved contests used to store metadata only, and their numbers were
 // recomputed from data.log on every render — so they decayed to nothing as
@@ -418,6 +427,9 @@ if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
 // left showing QR codes instead of names is not the view anyone wants to
 // come back to on a smartboard.
 if(typeof data.seatScanMode!=="boolean") data.seatScanMode=false;
+// Same armed-state contract as seatScanMode, independent flag: a rebbi can
+// show the activity codes footer with or without student QR codes showing.
+if(typeof data.seatActivitiesMode!=="boolean") data.seatActivitiesMode=false;
 if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
 if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
 if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
@@ -466,6 +478,7 @@ if(!data.hw||typeof data.hw!=="object") data.hw={};
 if(!Array.isArray(data.trackerLog)) data.trackerLog=[];
 if(typeof data.trackerActId!=="string") data.trackerActId="";
 data.activities.forEach(function(a){ if(typeof a.tracked!=="boolean") a.tracked=false; });
+data.activities.forEach(function(a){ if(typeof a.hidden!=="boolean") a.hidden=false; });
 if(!data.hwActivitySeeded){
   data.activities.push({id:nextActId(), name:"Homework Checked", pts:0, tracked:true, groups:[]});
   data.hwActivitySeeded=true;
@@ -490,6 +503,16 @@ if(!data.attActivitySeeded){
   data.activities.push({id:nextActId(), name:ATT_ACT_NAME, pts:0, tracked:true, groups:[]});
   data.attActivitySeeded=true;
 }
+// Freeze — a tracked 0-point activity like the three above, but its reroute
+// (freezeActivity()/award()) starts a countdown instead of writing a log
+// entry. Same one-shot flag as the three above. Countdown state lives in
+// data.freezes (backfilled just below); this activity is a handle, not a
+// second store.
+if(!data.freezeActivitySeeded){
+  data.activities.push({id:nextActId(), name:"❄️ Freeze 1 min", pts:0, tracked:true, freezeSeconds:60, groups:[]});
+  data.freezeActivitySeeded=true;
+}
+if(!data.freezes || typeof data.freezes!=="object" || Array.isArray(data.freezes)) data.freezes={};
 // "Prize Received" used to be a standalone tracked activity here, but that
 // had no real link to an actual Store purchase. Superseded by a per-purchase
 // "received" checkbox on the Store's own purchase log (see storeReceived

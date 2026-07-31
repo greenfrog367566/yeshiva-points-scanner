@@ -105,6 +105,18 @@ chore/cleanup-task
 git checkout main && git pull origin main
 git checkout -b feat/short-description     # or continue an existing branch
 ```
+**Run this first, unconditionally — even when resuming a branch that already
+existed.** This repo runs many parallel Claude Code sessions/worktrees, each
+merging its own branch via its own PR; none of them touch this shared checkout
+when they merge. That means the branch sitting here can already be merged, and
+`main` can already be several merges ahead, without anything in this folder
+showing it. Before resuming a branch that's more than a few minutes old, confirm
+it isn't already merged:
+```bash
+gh pr view <branch-name> --json state,mergedAt
+```
+If `state` is `MERGED`, don't keep editing that branch — switch to `main`, pull,
+and branch fresh instead.
 
 ### Every session must end with:
 ```bash
@@ -119,6 +131,9 @@ git push origin <branch-name>
 - Commit to `main`, push to `main`, or force-push to `main`
 - Merge a PR (that's the maintainer's explicit action)
 - Assume two Claude sessions are working from the same file — always verify
+- Assume this checkout reflects current `main` just because you haven't touched
+  it — other sessions merge through isolated worktrees that never update this
+  folder; `git pull` before trusting what's on disk here
 
 ## Critical rules — read before writing any code
 
