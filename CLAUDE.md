@@ -37,10 +37,11 @@ domain configured (`cname: null`, and there is no `CNAME` file in the repo); the
 domain resolves straight to Cloudflare.
 
 **Deployment:** merging to `main` reaches `menchmark.app` on its own — **treat
-anything merged as live in classrooms.** It is not instantaneous, though, and the
-lag has never been measured: a merge is live within the hour, which is all that
-has actually been verified. Don't promise a rebbi a fix has landed until you have
-loaded the page and seen it.
+anything merged as live in classrooms.** It takes **about a minute**: measured on
+the #155 merge, GitHub Pages rebuilt 38 seconds after the merge commit and
+`menchmark.app` was serving the new content inside two minutes. Fast, but *not*
+instant — don't promise a rebbi a fix has landed until you have loaded the page
+and seen it.
 
 **The deploy has failed silently before, and this is the thing to actually worry
 about.** The Cloudflare project was once disconnected from the repo and kept
@@ -51,8 +52,18 @@ against the live site rather than assuming**, e.g.:
 
 ```bash
 # does the deployed app actually contain the thing you just merged?
+# grep -c, never grep -o: -c prints a number either way, so a miss is a visible
+# 0. -o prints nothing at all on a miss, and silent failure reads as success.
 curl -s https://menchmark.app/app.html | grep -c 'someIdentifierFromYourChange'
 ```
+
+**WAIT A MINUTE FIRST, AND RE-RUN BEFORE CONCLUDING ANYTHING.** A `0` from that
+command is ambiguous three ways — *not deployed yet*, *deploy stalled*, and
+*you checked too fast* all look identical, and the last one is the common case.
+This has already caught someone: a check run about a minute after the #155 merge
+returned `0`, and the same command a minute later returned `10`. The result only
+means something read against the merge timestamp, so get that first
+(`gh pr view <n> --json mergedAt`) and give it a minute before believing a zero.
 
 `sw.js` serves HTML network-first, so once a deploy is out it reaches installed
 users immediately; bump `CACHE_VERSION` in `sw.js` on a release to purge the
