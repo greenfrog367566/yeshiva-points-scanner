@@ -7087,21 +7087,21 @@ function setupRoster() {
     // Scannable mode lives in the ALWAYS-VISIBLE toolbar, beside List / Seating
     // chart — not in the ⚙ Setup panel, where it started. Setup is collapsed by
     // default, so putting it there meant opening a panel every time to use the
-    // feature the chart exists for. Shown only in seating mode, since there are
-    // no seats to put codes in otherwise.
+    // feature the chart exists for. Available in both List and Seating chart —
+    // List mode has no seats to put codes in, so it shows each student's QR as
+    // a card in the grid instead (see the list-mode branch below).
     //
     // Arranging and scannable are mutually exclusive: dragging seats around
     // while every cell shows a QR is a way to mis-seat a boy you cannot read.
-    if(effViewMode==="seating"){
-      var scanBtn=el("button","seat-modebtn"+(data.seatScanMode?" active":""), data.seatScanMode?"Hide codes":"⛶ Show codes");
-      scanBtn.title="Show each student's QR code in his seat, so the class can be scanned straight off the screen";
-      scanBtn.addEventListener("click", function(){
-        data.seatScanMode=!data.seatScanMode;
-        if(data.seatScanMode) data.seatArranging=false;
-        save(); renderTapPanel();
-      });
-      toolbar.appendChild(scanBtn);
-    }
+    // (List mode has no arranging state, so this only ever bites in seating mode.)
+    var scanBtn=el("button","seat-modebtn"+(data.seatScanMode?" active":""), data.seatScanMode?"Hide codes":"⛶ Show codes");
+    scanBtn.title="Show each student's QR code, so the class can be scanned straight off the screen";
+    scanBtn.addEventListener("click", function(){
+      data.seatScanMode=!data.seatScanMode;
+      if(data.seatScanMode) data.seatArranging=false;
+      save(); renderTapPanel();
+    });
+    toolbar.appendChild(scanBtn);
 
     if(effViewMode==="seating"){
       var lay=seatLayout();
@@ -7213,16 +7213,28 @@ function setupRoster() {
 
     if(effViewMode==="seating"){ renderSeatGrid(body, studs); return; }
 
+    var listScanMode=!!data.seatScanMode;
     var grid=el("div","tap-grid");
     studs.forEach(function(s){
       var b=el("button","tap-btn"); b.dataset.sid=s.id;
-      b.appendChild(avatarEl(s, 30));
-      b.appendChild(el("span",null,s.name));
-      b.appendChild(coinScoreEl(s.id,"ts"));
+      if(listScanMode){
+        // Same payload as the seating chart's Show codes and the printed
+        // sheet — s.id, nothing else.
+        var qh=el("div","seat-qr"); qh.style.cssText="width:"+SEAT_QR_PX+"px;height:"+SEAT_QR_PX+"px;margin:0 auto 5px";
+        try{ new QRCode(qh,{text:s.id,width:SEAT_QR_PX,height:SEAT_QR_PX,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ qh.textContent="QR?"; }
+        b.appendChild(qh);
+        b.appendChild(el("span",null,s.name));
+      } else {
+        b.appendChild(avatarEl(s, 30));
+        b.appendChild(el("span",null,s.name));
+        b.appendChild(coinScoreEl(s.id,"ts"));
+      }
       b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
     body.appendChild(grid);
+    if(listScanMode){ renderScanCodesFooter(body); renderScanUndoRow(body); }
   }
   function renderTapPanel(){
     renderTapPanelInto("tapPanelBody", null);
@@ -7246,6 +7258,39 @@ function setupRoster() {
   // fine for the scanner in use but is the reason the name stays visible — if a
   // code will not read, the rebbi still has something to tap.
   var SEAT_QR_PX = 68;
+
+  // Activity codes to arm, rendered below the QR grid in scan mode — same
+  // source as the printed sheet and Avery labels (menuLabelItems(), including
+  // the #117 "codes I use" filter), so the screen and the paper never offer a
+  // different set. Each card is tappable as well as scannable: tapping arms
+  // exactly what scanning it would arm. Shared by the Seating chart and List
+  // scan views so both offer the same scanning surface.
+  function renderScanCodesFooter(body){
+    var footer=el("div","seat-scan-codes no-print");
+    menuLabelItems().forEach(function(it){
+      var card=el("button","seat-code-card");
+      card.type="button";
+      var qh=el("div");
+      try{ new QRCode(qh,{text:it.qrText,width:44,height:44,correctLevel:QRCode.CorrectLevel.M}); }
+      catch(e){ qh.textContent="QR?"; }
+      card.appendChild(qh);
+      card.appendChild(el("span","seat-code-name",it.name));
+      // handleScannedCode(), not processScan() — it is the same entry point the
+      // scanner's keyboard input lands on, so a tap and a scan are literally
+      // the same call with the same string.
+      card.addEventListener("click", function(){ handleScannedCode(it.qrText); });
+      footer.appendChild(card);
+    });
+    body.appendChild(footer);
+  }
+  function renderScanUndoRow(body){
+    var undoRow=el("div","seat-undo-row no-print");
+    var undoBtn=el("button","btn btn-sm","↩ Undo last scan");
+    undoBtn.title="Reverse the most recent scan";
+    undoBtn.addEventListener("click", function(){ undoMostRecentScan(); });
+    undoRow.appendChild(undoBtn);
+    body.appendChild(undoRow);
+  }
   function renderSeatGrid(body, studs){
     var lay=seatLayout();
     var unplaced=seatPruneAndFillUnplaced(lay, studs);
@@ -7347,40 +7392,15 @@ function setupRoster() {
     if(data.seatLiveRebbiView) body.appendChild(el("div","seat-front","Front of room"));
 
     // Activity codes along the bottom, so the chart is the whole scanning
-    // surface and nothing needs to have been printed first. Codes come from
-    // menuLabelItems() — the SAME source the printed sheet and the Avery labels
-    // use, including the #117 "codes I use" filter — so the screen and the paper
-    // can never offer a different set. Each chip is tappable as well as
-    // scannable: tapping arms exactly what scanning it would arm.
-    if(scanMode){
-      var footer=el("div","seat-scan-codes no-print");
-      menuLabelItems().forEach(function(it){
-        var card=el("button","seat-code-card");
-        card.type="button";
-        var qh=el("div");
-        try{ new QRCode(qh,{text:it.qrText,width:44,height:44,correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ qh.textContent="QR?"; }
-        card.appendChild(qh);
-        card.appendChild(el("span","seat-code-name",it.name));
-        // handleScannedCode(), not processScan() — it is the same entry point the
-        // scanner's keyboard input lands on, so a tap and a scan are literally
-        // the same call with the same string.
-        card.addEventListener("click", function(){ handleScannedCode(it.qrText); });
-        footer.appendChild(card);
-      });
-      body.appendChild(footer);
-    }
+    // surface and nothing needs to have been printed first. Shared with List
+    // mode's scan view — see renderScanCodesFooter below.
+    if(scanMode) renderScanCodesFooter(body);
 
     // Undo at the bottom of the chart. Third call site, same one function — a
     // rebbi scanning off the full-screen chart has the Recent scans panel and
     // the dashboard header both hidden behind the overlay, so without this the
     // only way to fix a mis-scan is to leave the view he is working in.
-    var undoRow=el("div","seat-undo-row no-print");
-    var undoBtn=el("button","btn btn-sm","↩ Undo last scan");
-    undoBtn.title="Reverse the most recent scan";
-    undoBtn.addEventListener("click", function(){ undoMostRecentScan(); });
-    undoRow.appendChild(undoBtn);
-    body.appendChild(undoRow);
+    renderScanUndoRow(body);
 
     if(arranging){
       var trayWrap=el("div","seat-unplaced");
