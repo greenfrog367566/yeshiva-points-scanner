@@ -538,7 +538,26 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .erow .code{font-family:ui-monospace,monospace;font-size:.8rem;color:var(--muted);background:#f3f4f8;padding:2px 7px;border-radius:6px}
   .stepper{display:inline-flex;align-items:center;gap:6px}
   .stepper button{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:#fff;font-weight:700;font-size:1rem;line-height:1}
-  .stepper .sval{min-width:42px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums}
+  /* The total is a typed field now, styled to still read as the plain number
+     it used to be until you click into it. */
+  .stepper .sval{min-width:42px;width:52px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums;
+    border:1px solid transparent;background:transparent;border-radius:6px;padding:2px 4px;font-size:inherit;
+    font-family:inherit;color:inherit}
+  .stepper .sval:hover{border-color:var(--line)}
+  .stepper .sval:focus{border-color:var(--ink);background:#fff;outline:none}
+  /* Typed-total confirmation. */
+  .tt-back{position:fixed;inset:0;background:rgba(20,25,45,.42);z-index:200;display:flex;
+    align-items:center;justify-content:center;padding:20px}
+  .tt-box{background:var(--card);border-radius:14px;padding:20px 22px;max-width:400px;width:100%;
+    box-shadow:0 20px 60px rgba(20,25,45,.3)}
+  .tt-box h3{font-family:var(--serif);font-size:1.1rem;margin:0 0 12px}
+  .tt-rows{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+  .tt-row{display:flex;justify-content:space-between;font-size:.92rem}
+  .tt-k{color:var(--muted)}
+  .tt-v{font-weight:800;font-variant-numeric:tabular-nums}
+  .tt-note{font-size:.82rem;color:var(--muted);line-height:1.5;margin:0 0 12px}
+  .tt-cb{display:flex;align-items:center;gap:7px;font-size:.88rem;font-weight:600;margin:0 0 12px;cursor:pointer}
+  .tt-btns{display:flex;justify-content:flex-end;gap:8px}
   .add-grid{display:grid;grid-template-columns:1fr auto auto;gap:9px;align-items:end;margin-bottom:8px}
   @media(max-width:620px){.add-grid{grid-template-columns:1fr}}
 
@@ -6015,15 +6034,32 @@ function setupRoster() {
       }
       return true;
     }
-    var tag=contestTagForScan();
-    if(tag.scoreToMain) data.scores[s.id]=score(s.id)+armed.delta;
-    if(armed.delta>0 && tag.scoreToMain) recordEarn(s.id, armed.label, armed.delta);
+    return applyScore(s, armed.label, armed.delta);
+  }
+  // THE ONE PATH EVERY POINT IN THE APP TRAVELS THROUGH. Extracted verbatim
+  // from award() so a second caller can score a student without setting and
+  // restoring the global `armed` — the scanner reads that same variable, so
+  // borrowing it would be a race waiting to happen.
+  //
+  // Takes the student, label and delta EXPLICITLY. Everything else — contest
+  // tagging, recordEarn, the log entry, the Sheet push, the flash, the tile
+  // refresh — is exactly what it was when this lived inline.
+  //
+  // opts (all optional, all default to award()'s existing behaviour):
+  //   skipEarn  — do not call recordEarn(). For corrections, which belong in
+  //               the number history but not the behaviour history.
+  //   noContest — score to main regardless of a running contest.
+  function applyScore(s, label, delta, opts){
+    opts = opts || {};
+    var tag = opts.noContest ? {scoreToMain:true, contestId:null, contestOnly:false} : contestTagForScan();
+    if(tag.scoreToMain) data.scores[s.id]=score(s.id)+delta;
+    if(delta>0 && tag.scoreToMain && !opts.skipEarn) recordEarn(s.id, label, delta);
     if(tag.scoreToMain) maybeSixSeven(s);
-    var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:armed.label, delta:armed.delta, contestId:tag.contestId, contestOnly:tag.contestOnly});
+    var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly});
     save();
-    if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:armed.label, delta:armed.delta, total:score(s.id), id:logEntry.id}); }
-    flash(armed.delta>=0, s.name, fmtDeltaBare(armed.delta), armed.label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
-    beep(armed.delta>=0);
+    if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
+    flash(delta>=0, s.name, fmtDeltaBare(delta), label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
+    beep(delta>=0);
     renderRecent();
     renderScanBoard();
     // Keep every tap-panel tile fresh for this student without a full
@@ -6034,7 +6070,7 @@ function setupRoster() {
     if(data.tapPanelOpen!==false){
       document.querySelectorAll('.tap-btn[data-sid="'+s.id+'"], .seat[data-sid="'+s.id+'"]').forEach(function(tb){
         var t=tb.querySelector(".ts"); if(t){ if(isShulchani()){ t.innerHTML=formatCoinsHtml(score(s.id),{abbr:true})+(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+score(s.id)+' pr)</span>':""); t.title=fmtScoreFull(s.id); } else { t.textContent=score(s.id)+" pts"; } }
-        flashTapTile(tb, armed.delta);
+        flashTapTile(tb, delta);
       });
     }
     refreshLiveViews();
@@ -12615,6 +12651,78 @@ nameLine
     }
     return wrap;
   }
+  // Typing a total writes a LOG ENTRY for the difference — it never sets a
+  // score behind the log's back. Every point in this app arrives through a
+  // logged award, and History, Undo, Trends and the contest merge all depend on
+  // that; a field that set a total silently would break the relationship
+  // between a number and the record explaining it.
+  //
+  // It is deliberately NOT recorded as earned (skipEarn). Trends answers "what
+  // did the boys do"; the log answers "what happened to the numbers". A manual
+  // correction is an event in the number history, not the behaviour history —
+  // crediting an activity nobody did would make per-activity breakdowns untrue.
+  //
+  // LATER: the entry reads "Manual adjustment +7" rather than "Set to 47, was
+  // 40". Storing the before/after would mean a new field on log entries, hence
+  // a load2fix() backfill and a DATA_VERSION bump — too much data-safety
+  // surface for a display nicety, and the before value is derivable from the
+  // ordered log anyway.
+  var MANUAL_LABEL="Manual adjustment";
+  function commitTypedTotal(s, input){
+    var raw=(input.value||"").trim();
+    var cur=score(s.id);
+    if(raw==="" || !/^-?\d+$/.test(raw)){
+      // Reject non-numeric. No limits beyond that: the existing score path has
+      // none — the stepper decrements past zero and data.scores is never
+      // clamped — so negatives and large values are accepted here too rather
+      // than inventing a rule this field alone would enforce.
+      input.value=cur; return;
+    }
+    var target=parseInt(raw,10), delta=target-cur;
+    // An operation with no effect must not write a record.
+    if(delta===0){ input.value=cur; return; }
+    askTypedTotal(s, cur, target, delta, function(countToward){
+      applyScore(s, MANUAL_LABEL, delta, {skipEarn:true, noContest:!countToward});
+      renderStudents();
+    }, function(){ input.value=cur; });
+  }
+  // Minimal confirmation. A plain confirm() cannot carry the contest checkbox,
+  // and that checkbox must default OFF — a confirm()'s OK button is the
+  // affirmative, so Enter would silently opt in.
+  function askTypedTotal(s, cur, target, delta, onOk, onCancel){
+    var c=data.contest;
+    var contestLive = !!(c && !c.ended && c.counting && Date.now()>=c.startTs && Date.now()<=c.endTs);
+    var back=el("div","tt-back");
+    var box=el("div","tt-box");
+    box.appendChild(el("h3",null,"Change "+s.name+"'s total?"));
+    var tbl=el("div","tt-rows");
+    function row(k,v){ var r=el("div","tt-row"); r.appendChild(el("span","tt-k",k)); r.appendChild(el("span","tt-v",v)); tbl.appendChild(r); }
+    row("Now", String(cur));
+    row("New total", String(target));
+    row("Change", fmt(delta));
+    box.appendChild(tbl);
+    box.appendChild(el("p","tt-note","This is recorded in History as a manual adjustment, not as points earned for an activity. It can be undone like any other scan."));
+    var cbIn=null;
+    if(contestLive){
+      var lab=el("label","tt-cb");
+      cbIn=el("input"); cbIn.type="checkbox"; cbIn.checked=false;
+      lab.appendChild(cbIn);
+      lab.appendChild(document.createTextNode(" Count toward "+(c.name||"the contest")));
+      box.appendChild(lab);
+    }
+    var btns=el("div","tt-btns");
+    var cancel=el("button","btn btn-sm","Cancel");
+    var ok=el("button","btn btn-sm btn-primary","Apply");
+    btns.appendChild(cancel); btns.appendChild(ok);
+    box.appendChild(btns);
+    back.appendChild(box);
+    document.body.appendChild(back);
+    function close(){ if(back.parentNode) back.parentNode.removeChild(back); }
+    cancel.addEventListener("click", function(){ close(); onCancel&&onCancel(); });
+    back.addEventListener("click", function(e){ if(e.target===back){ close(); onCancel&&onCancel(); } });
+    ok.addEventListener("click", function(){ var t=!!(cbIn&&cbIn.checked); close(); onOk(t); });
+    setTimeout(function(){ ok.focus(); },30);
+  }
   function renderStudents(){
     $("studCustomFrom").value=data.studCustomFrom||"";
     $("studCustomTo").value=data.studCustomTo||"";
@@ -12672,11 +12780,37 @@ nameLine
       name.appendChild(document.createTextNode(s.name+"  "));
       if(s.group){ name.appendChild(el("span","grp-tag",s.group)); }
       var code=el("span","code",s.id);
-      // stepper
+      // stepper. The middle is a TYPED FIELD, not a label: a rebbi fixing a
+      // total should not have to press + forty times.
       var step=el("span","stepper");
-      var minus=el("button",null,"–"); var val=el("span","sval", score(s.id)); var plus=el("button",null,"+");
-      minus.addEventListener("click", function(){ data.scores[s.id]=score(s.id)-1; val.textContent=score(s.id); save(); });
-      plus.addEventListener("click", function(){ data.scores[s.id]=score(s.id)+1; val.textContent=score(s.id); save(); });
+      var minus=el("button",null,"–");
+      var val=el("input","sval"); val.type="text"; val.inputMode="numeric";
+      val.value=score(s.id); val.title="Type a new total and press Enter";
+      var plus=el("button",null,"+");
+      // Stepper clicks go through the SAME logged path as a scan. They used to
+      // write data.scores directly:
+      //     data.scores[s.id] = score(s.id) - 1; save();
+      // — no log entry, so the points were invisible to Undo, to History, to
+      // Trends and to the Sheet, and a boy's total stopped matching the record
+      // that is supposed to explain it. This is the control clicked most often
+      // in the app, so it was quietly the largest source of unlogged points.
+      //
+      // A stepper click is a LIVE AWARD, not a correction: the rebbi is giving
+      // or taking a point for something happening right now. So unlike the
+      // typed total it counts as earned (recordEarn runs) and it takes contest
+      // tagging exactly as a scan does — no skipEarn, no noContest.
+      //
+      // Label "Custom", the same bucket the Custom (add)/(subtract) buttons
+      // already use: a stepper click IS a custom award of 1, and giving it its
+      // own Trends category would split one idea across two labels.
+      minus.addEventListener("click", function(){ applyScore(s, "Custom", -1); val.value=score(s.id); });
+      plus.addEventListener("click", function(){ applyScore(s, "Custom", 1); val.value=score(s.id); });
+      val.addEventListener("focus", function(){ this.select(); });
+      val.addEventListener("keydown", function(e){
+        if(e.key==="Enter"){ e.preventDefault(); this.blur(); }
+        else if(e.key==="Escape"){ this.value=score(s.id); this.blur(); }
+      });
+      val.addEventListener("blur", function(){ commitTypedTotal(s, val); });
       step.appendChild(minus); step.appendChild(val); step.appendChild(plus);
       var breakdownOpen = !!studentBreakdownOpen[s.id];
       var bdBtn=el("button","btn btn-sm", breakdownOpen?"▴ Breakdown":"▾ Breakdown");
