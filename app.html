@@ -1229,6 +1229,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
        It ALWAYS sits at the bottom, in every case — see the note in
        renderSeatChartPrint() before reordering it. */
     body.print-seating .seat-print-activities-footer{break-inside:avoid;page-break-inside:avoid}
+    /* Same rule one level down: if the whole block genuinely cannot fit, a
+       section splitting across pages is still worse than the break falling
+       between two sections. */
+    body.print-seating .seat-print-code-group{break-inside:avoid;page-break-inside:avoid}
     .seat-print-qr{width:55%;max-width:110px;margin:0 auto 6px}
     .seat-print-qr img,.seat-print-qr canvas{width:100%;height:auto;display:block}
     .seat-print-photo{display:flex;justify-content:center;margin:0 auto 6px}
@@ -1326,6 +1330,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      in their line and stay aligned. */
   .seat-print-preview .seat-print-act-label{font-weight:700;margin-top:2px;white-space:normal;overflow-wrap:break-word}
   .seat-print-preview .seat-print-act-sub{color:var(--muted)}
+  /* Grouped layout: the sections sit side by side in boxes instead of stacked
+     full-width, which is both what the chart on screen does and what keeps the
+     block short enough to stay on page 1. Cards inside a section are a grid of
+     N columns (the "wide" button), so they line up rather than wrapping ragged. */
+  .seat-print-preview .seat-print-code-groups{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
+  .seat-print-preview .seat-print-code-group{border:1px solid var(--line);border-radius:8px;padding:6px 8px;flex:1 1 180px;min-width:150px;max-width:340px}
+  .seat-print-preview .seat-print-code-group .seat-print-act-section-label{margin-top:0}
+  .seat-print-preview .seat-print-code-grid{display:grid;gap:6px}
+  .seat-print-preview .seat-print-code-grid .seat-print-act-card{width:auto}
 </style>
 </head>
 <body>
@@ -2339,6 +2352,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem"><input type="checkbox" id="seatPrintShowPoints"> Points</label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Flips the chart 180° — front of room at the bottom, left/right mirrored — matching what you actually see facing the class. Names stay right-side-up and readable."><input type="checkbox" id="seatPrintRebbiView"> Rebbi's view</label>
       <label id="seatPrintShowActivitiesRow" style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Adds a compact row of activity QR codes at the bottom of the page, for a one-page classroom reference."><input type="checkbox" id="seatPrintShowActivities"> Activities footer</label>
+      <span id="seatPrintActLayoutRow" style="display:none;gap:6px">
+        <button class="btn btn-sm" id="seatPrintActGrouped"></button>
+        <button class="btn btn-sm" id="seatPrintActCols"></button>
+      </span>
       <button class="btn btn-sm" id="seatPrintCodesToggle">Choose codes</button>
       <button class="btn btn-primary" id="printSeatChart">🖨 Print my class sheet</button>
     </div>
@@ -3657,7 +3674,7 @@ function setupRoster() {
     //
     // Discoverability is fixed by putting the checkbox on a page rebbeim
     // actually reach, not by flipping a setting under them.
-    seatPrintOpts: { avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"" }
+    seatPrintOpts: { avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", actGrouped:true, actCols:2 }
   };
 
   var SHOR_BANK = [
@@ -7466,6 +7483,18 @@ function setupRoster() {
         });
         toolbar.appendChild(colBtn);
       }
+
+      // Which codes are here, and in what order. Arranging mode on this chart
+      // only ever moved STUDENTS, so the codes underneath could be re-ordered
+      // from the Print class sheet page and nowhere else — which is a strange
+      // place to have to go to fix what is on the smartboard in front of you.
+      // This opens the very same picker (the actual node, moved into a modal
+      // and moved back on close), not a second copy of it: one picker governs
+      // the sheet and the chart together, exactly as one code list already does.
+      var pickBtn=el("button","seat-modebtn","⚙ Choose codes");
+      pickBtn.title="Add, remove or re-order the codes shown here — the same ones that print on the class sheet";
+      pickBtn.addEventListener("click", openCodePickerModal);
+      toolbar.appendChild(pickBtn);
     }
 
     if(effViewMode==="seating"){
@@ -8474,10 +8503,87 @@ function setupRoster() {
       addBtn.classList.remove("selected"); subBtn.classList.remove("selected");
     }
   }
-  $("customAmt").addEventListener("input", syncCustomButtons);
+  // The last amount that actually parsed. A scanner firing while this box has
+  // focus types a student code into it — a number field drops the letters and
+  // can be left empty — so "put back what it was" is what stops a stray scan
+  // silently arming Custom 0.
+  var lastGoodCustomAmt=1;
+  // Commits whatever is in the box: falls back to the last good number if
+  // something emptied it, and re-arms when Custom is what's armed, so the pill,
+  // the buttons and the next scan can never disagree with the box.
+  function commitCustomAmt(){
+    var f=$("customAmt");
+    var n=Math.abs(parseInt(f.value,10)||0);
+    if(n>0) lastGoodCustomAmt=n; else { n=lastGoodCustomAmt; f.value=n; }
+    if(armed && armed.label==="Custom") setArmed("Custom", armed.delta<0 ? -n : n);
+    syncCustomButtons();
+  }
+  $("customAmt").addEventListener("input", function(){
+    // The buttons re-label live ("+25 pts"), which is the feedback a rebbi is
+    // actually looking at while he types. What is ARMED is deliberately NOT
+    // re-set here: setArmed() writes an entry to the scan strip every time the
+    // armed activity changes, so re-arming per keystroke would push a chip for
+    // every digit — three of them for "250", and a screenful for a scanner
+    // firing into this box. It is committed once instead, on the way out, and
+    // every way out goes through commitCustomAmt(): Enter, leaving the field,
+    // and the scan branch below.
+    syncCustomButtons();
+    var n=Math.abs(parseInt(this.value,10)||0);
+    if(n>0) lastGoodCustomAmt=n;
+  });
   $("customAmt").addEventListener("focus", function(){ this.select(); });
-  $("customAdd").addEventListener("click", function(){ var n=Math.abs(parseInt($("customAmt").value,10)||0); setArmed("Custom", n); syncCustomButtons(); $("scanInput").focus(); });
-  $("customSub").addEventListener("click", function(){ var n=Math.abs(parseInt($("customAmt").value,10)||0); setArmed("Custom", -n); syncCustomButtons(); $("scanInput").focus(); });
+  // A wedge scanner fires its whole code in one burst ending in Enter, into
+  // whatever has focus — including this box, now that arming Custom leaves the
+  // cursor here. Same 200ms gap the global capture below uses to tell a scanner
+  // from a person. A student code always carries letters or a "-" (newId() is
+  // base36 with a hyphen) and an amount never does, so "the burst contains a
+  // non-digit" is what separates a scan from someone typing 25. A scan is handed
+  // to handleScannedCode() exactly as if it had landed in the scan box, and the
+  // amount is put back — so scanning boys straight from here works.
+  var caBuf="", caLastT=0, caPreBurst="1";
+  $("customAmt").addEventListener("keydown", function(e){
+    var now=Date.now();
+    // A new burst — remember the box exactly as it stands, before any of it
+    // arrives. This has to be snapshotted at the first keystroke rather than
+    // read back afterwards: a code's own DIGITS do land in a number field (only
+    // its letters and its "-" are refused), so by the time the Enter arrives the
+    // box has already been scribbled on and there is nothing good left to read.
+    if(now-caLastT>200){ caBuf=""; caPreBurst=this.value; }
+    caLastT=now;
+    if(e.key==="Enter"){
+      e.preventDefault();
+      var scanned=caBuf; caBuf="";
+      if(scanned.length>1 && /[^0-9]/.test(scanned)){
+        this.value=caPreBurst;   // put the box back the way the rebbi left it
+        commitCustomAmt();       // ...and re-arm from it, so pill and box agree
+        handleScannedCode(scanned);
+        return;
+      }
+      // An amount, not a scan. Commit it and hand focus on to the scan box, so
+      // the next thing scanned is a student rather than more digits.
+      commitCustomAmt();
+      $("scanInput").focus();
+      return;
+    }
+    if(e.key.length===1) caBuf+=e.key;
+  });
+  $("customAmt").addEventListener("blur", commitCustomAmt);
+  // Arming Custom used to throw focus straight at the scan box, so a rebbi who
+  // clicked "Custom (add)" and THEN typed his amount fed the digits into the
+  // scanner buffer instead of the field sitting right next to the button. Focus
+  // now lands in the amount box, selected, because the amount is the only thing
+  // left to decide; Enter (or clicking anywhere else) hands it on to the scan
+  // box. Scanning without touching the amount still works — see the burst
+  // handling above, which is what makes leaving the cursor here safe.
+  function armCustom(sign){
+    var n=Math.abs(parseInt($("customAmt").value,10)||0);
+    if(n>0) lastGoodCustomAmt=n;
+    setArmed("Custom", sign<0 ? -n : n);
+    syncCustomButtons();
+    var f=$("customAmt"); f.focus(); f.select();
+  }
+  $("customAdd").addEventListener("click", function(){ armCustom(1); });
+  $("customSub").addEventListener("click", function(){ armCustom(-1); });
 
   // global scanner capture (works even if focus is lost / on other tabs)
   var buf="", lastT=0;
@@ -14571,6 +14677,48 @@ nameLine
     this.textContent=open?"Hide codes":"Choose codes";
     if(open) renderSeatPrintCodes();
   });
+  // The same picker, opened from the seating chart instead of the print page.
+  // It MOVES the real #seatPrintCodesCard node into the overlay and puts it back
+  // on close, rather than building a second one: every listener on it — the drag
+  // handlers, the ✕/↩ buttons, All/None — is already wired to that node, and a
+  // duplicate would be a second picker to keep in step with the first. Guarded
+  // against double-opening, since the node can only be in one place at a time.
+  var codePickerOpen=false;
+  function openCodePickerModal(){
+    if(codePickerOpen) return;
+    var card=$("seatPrintCodesCard");
+    if(!card) return;
+    codePickerOpen=true;
+    var home=card.parentNode, anchor=card.nextSibling, prevDisplay=card.style.display;
+    var overlay=el("div","modal-overlay");
+    var box=el("div","modal-card"); box.style.maxWidth="760px";
+    var head=el("div","modal-head");
+    head.appendChild(el("div","modal-title","Choose codes"));
+    var closeBtn=el("button","modal-close","✕"); closeBtn.type="button"; closeBtn.title="Close";
+    head.appendChild(closeBtn);
+    box.appendChild(head);
+    card.style.display="block";
+    card.style.marginBottom="0";
+    box.appendChild(card);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    renderSeatPrintCodes();
+    function close(){
+      // Back to exactly where it came from, in the state it was in — a rebbi who
+      // had the picker open on the print page finds it open when he returns.
+      card.style.display=prevDisplay;
+      card.style.marginBottom="";
+      if(home) home.insertBefore(card, anchor);
+      if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+      codePickerOpen=false;
+      renderTapPanel();
+    }
+    function onKey(e){ if(e.key==="Escape") close(); }
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function(e){ if(e.target===overlay) close(); });
+    document.addEventListener("keydown", onKey);
+  }
   $("seatPrintCodesAll").addEventListener("click", function(){
     data.printExcluded={}; save(); renderSeatPrintCodes(); renderSeatChartPrint();
   });
@@ -14582,7 +14730,35 @@ nameLine
   $("seatPrintActivityPicker").addEventListener("change", function(){ data.seatPrintOpts.activityId=this.value; save(); renderSeatChartPrint(); });
   $("seatPrintShowPoints").addEventListener("change", function(){ data.seatPrintOpts.showPoints=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); renderSeatChartPrint(); });
-  $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); renderSeatChartPrint(); });
+  $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); seatPrintSyncActLayout(); renderSeatChartPrint(); });
+  // Layout of the printed codes block — the print-side twins of the chart's own
+  // ▤ One row / ▦ Grouped and width buttons, worded identically so a rebbi who
+  // has used one already knows this one. Only offered while the footer is
+  // actually being printed; a layout control for something not on the page is
+  // noise, and this toolbar is already crowded.
+  function seatPrintSyncActLayout(){
+    var show = data.seatPrintOpts.showActivities && $("seatPrintAvatarMode").value!=="activity";
+    $("seatPrintActLayoutRow").style.display = show ? "inline-flex" : "none";
+    var grouped=seatPrintActGrouped();
+    var gb=$("seatPrintActGrouped");
+    gb.textContent = grouped ? "▦ Grouped" : "▤ One row";
+    gb.title = grouped
+      ? "Codes print in sections. Click for one plain row instead."
+      : "Codes print in one row. Click to group them into sections.";
+    var cb=$("seatPrintActCols");
+    // Width only means something inside a section, so it goes away with them.
+    cb.style.display = grouped ? "" : "none";
+    cb.textContent = seatPrintActCols()+" wide";
+    cb.title="How many codes sit across each section on the page. Click to cycle 1 → 2 → 3.";
+  }
+  $("seatPrintActGrouped").addEventListener("click", function(){
+    data.seatPrintOpts.actGrouped = !seatPrintActGrouped();
+    save(); seatPrintSyncActLayout(); renderSeatChartPrint();
+  });
+  $("seatPrintActCols").addEventListener("click", function(){
+    data.seatPrintOpts.actCols = seatPrintActCols()>=3 ? 1 : seatPrintActCols()+1;
+    save(); seatPrintSyncActLayout(); renderSeatChartPrint();
+  });
   // Shows the activity picker (and hides the now-redundant Activities-footer
   // checkbox, since a merged PA: code already carries the activity — no
   // separate arming code needed) only in Activity mode, and keeps the
@@ -14598,6 +14774,9 @@ nameLine
     opts.forEach(function(a){ var o=el("option",null,a.name); o.value=a.id; sel.appendChild(o); });
     if(opts.some(function(a){return a.id===cur;})) sel.value=cur; else sel.value = opts.length ? opts[0].id : "";
     data.seatPrintOpts.activityId = sel.value;
+    // The layout buttons follow the same two conditions this row does, so they
+    // are re-synced from the one place that already knows about both.
+    seatPrintSyncActLayout();
   }
   // Compact activity-code footer for the seating-chart printout — distinct
   // from renderMenuLabels()'s full-size (104x104) cards, which are too
@@ -14605,36 +14784,71 @@ nameLine
   // menuLabelItems() for the underlying data ({qrText, name, sub} per
   // activity — confirmed against the actual function, not assumed) but
   // renders at a much smaller, denser size.
+  // Whether the printed codes block is grouped into sections, and how many
+  // codes sit across each one. Deliberately mirrors actFooterCols()'s clamp:
+  // this value is written straight into grid-template-columns, and a stored 0
+  // or a string would produce an invalid rule and collapse the block.
+  function seatPrintActGrouped(){ return data.seatPrintOpts.actGrouped!==false; }
+  function seatPrintActCols(){
+    var c=parseInt(data.seatPrintOpts.actCols,10);
+    if(!(c>=1 && c<=3)) c=2;
+    return c;
+  }
   function renderSeatPrintActivitiesFooter(wrap){
     var items = menuLabelItems();
     if(!items || !items.length) return;
     var hasQR=(typeof QRCode!=="undefined");
     var footer=el("div","seat-print-activities-footer");
     footer.appendChild(el("div","seat-print-activities-title","Activity Codes"));
-    // Same three groups and order as the picker (PRINT_CODE_SECTIONS), so
-    // moving a code's section in "Choose codes" changes where it prints, not
-    // just how it's organized on screen. Empty groups are skipped rather than
-    // printing a bare heading.
     var ordered=orderedPrintCodeItems(items);
+    function actCard(it){
+      var card=el("div","seat-print-act-card");
+      if(hasQR){
+        var holder=el("div"); card.appendChild(holder);
+        try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ card.appendChild(document.createTextNode("QR?")); }
+      }
+      card.appendChild(el("div","seat-print-act-label", it.name));
+      card.appendChild(el("div","seat-print-act-sub", it.sub));
+      return card;
+    }
+    // One row: every code in print order, no headings. The same choice the chart
+    // on screen offers, so the sheet in a rebbi's hand and the board in front of
+    // his class can be made to look alike — which is the whole reason this is a
+    // setting on both rather than a fixed layout on each.
+    if(!seatPrintActGrouped()){
+      var flat=el("div","seat-print-activities-grid");
+      ordered.forEach(function(it){ flat.appendChild(actCard(it)); });
+      footer.appendChild(flat);
+      wrap.appendChild(footer);
+      return;
+    }
+    // Grouped: same three groups, order and names as the picker
+    // (PRINT_CODE_SECTIONS), so moving a code's section in "Choose codes"
+    // changes where it prints, not just how it's organized on screen. Empty
+    // groups are skipped rather than printing a bare heading.
+    //
+    // The sections sit SIDE BY SIDE in boxes rather than stacked full-width the
+    // way they used to. Same shape the chart uses, and it costs the page a lot
+    // less height — this block landing on page 2 (#142) is the failure worth
+    // designing out, and three stacked full-width rows was the way to cause it.
+    var groups=el("div","seat-print-code-groups");
+    var cols=seatPrintActCols();
+    var drawn=0;
     PRINT_CODE_SECTIONS.forEach(function(sec){
       var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
       if(!secItems.length) return;
-      footer.appendChild(el("div","seat-print-act-section-label", codeSectionLabel(sec)));
-      var grid=el("div","seat-print-activities-grid");
-      secItems.forEach(function(it){
-        var card=el("div","seat-print-act-card");
-        if(hasQR){
-          var holder=el("div"); card.appendChild(holder);
-          try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
-          catch(e){ card.appendChild(document.createTextNode("QR?")); }
-        }
-        var label=el("div","seat-print-act-label", it.name);
-        var sub=el("div","seat-print-act-sub", it.sub);
-        card.appendChild(label); card.appendChild(sub);
-        grid.appendChild(card);
-      });
-      footer.appendChild(grid);
+      drawn++;
+      var g=el("div","seat-print-code-group");
+      g.appendChild(el("div","seat-print-act-section-label", codeSectionLabel(sec)));
+      var grid=el("div","seat-print-code-grid");
+      grid.style.gridTemplateColumns="repeat("+cols+", minmax(0, 1fr))";
+      secItems.forEach(function(it){ grid.appendChild(actCard(it)); });
+      g.appendChild(grid);
+      groups.appendChild(g);
     });
+    if(!drawn) return;   // every code turned off — print nothing, not an empty frame
+    footer.appendChild(groups);
     wrap.appendChild(footer);
   }
   // What to head the sheet with. "All Classes" is only honest when there really
@@ -15388,6 +15602,19 @@ nameLine
     // way, is left exactly as the rebbi set it.
     if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
     if(typeof data.seatPrintOpts.activityId!=="string") data.seatPrintOpts.activityId="";
+    // Layout of the printed Activity Codes block — the same two choices the
+    // chart on screen offers (data.actFooterGrouped / data.actFooterCols), kept
+    // as separate fields rather than shared with it on purpose: a smartboard and
+    // a sheet of paper are different shapes, and a rebbi may well want 3-wide on
+    // the board and one row in his hand. WHICH codes appear, their sections and
+    // their order stay shared — that is what "Choose codes" governs, and the
+    // screen and the paper must never disagree about it.
+    // Grouped is the default because a sectioned block is what the sheet has
+    // always printed; an existing save reads as grouped either way.
+    if(typeof data.seatPrintOpts.actGrouped!=="boolean") data.seatPrintOpts.actGrouped=true;
+    // Clamped with the same guard seatPrintActCols() applies, so a hand-edited
+    // or corrupted value can never reach grid-template-columns.
+    if(!(parseInt(data.seatPrintOpts.actCols,10)>=1 && parseInt(data.seatPrintOpts.actCols,10)<=3)) data.seatPrintOpts.actCols=2;
     // Page orientation for the class sheet. It was a module-level variable, so
     // it reset to portrait on every reload and a rebbi whose chart only fits
     // landscape had to re-pick it every single time.
