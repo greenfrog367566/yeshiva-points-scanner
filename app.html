@@ -437,6 +437,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .tile-freeze-badge.paused{background:var(--muted)}
 
   /* ---- Seating chart mode ---- */
+  /* Brief ring on the sheet after "⚙ Rearrange seats" scrolls to it, so it is
+     obvious what the button moved to. Cleared on a 1.2s timer, and explicitly
+     suppressed for print below — a rebbi who hits Print inside that window must
+     not get a gold ring baked onto the paper. */
+  .seat-jump-flash{box-shadow:0 0 0 3px var(--gold,#e8b321);transition:box-shadow .3s ease;border-radius:10px}
+  @media print{ .seat-jump-flash{box-shadow:none!important} }
   .seat-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 0}
   .seat-modebtn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:6px 12px;font-size:.85rem;font-weight:600}
   .seat-modebtn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
@@ -2402,9 +2408,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
   <!-- ============ PRINT: CLASS SHEET (seating chart + activity codes) ============ -->
   <section id="view-printSeats" class="view">
-    <h2 class="view-title">Print my class sheet</h2>
-    <p class="view-note no-print"><b>This is the one page you need to start scanning.</b> Every student's code sitting in his own seat, with the codes for your activities underneath. Print it, keep it on your desk or clipboard, and scan an activity code then a student — that's a whole scoring action in two scans.</p>
-    <div class="pill-note no-print" id="seatAutoPlaceNote" style="display:none;margin-bottom:10px"></div>
+    <h2 class="view-title">Seating chart &amp; print</h2>
+    <p class="view-note no-print"><b>This is the one page you need to start scanning.</b> Arrange your room here, then print it. Every student's code sitting in his own seat, with the codes for your activities underneath. Print it, keep it on your desk or clipboard, and scan an activity code then a student — that's a whole scoring action in two scans.</p>
+    <!-- Was a paragraph saying how many boys were auto-seated and then sending
+         the rebbi to the Dashboard to rearrange them. Both halves were wrong to
+         keep: the count is not something he has to act on, and the directions
+         pointed AWAY from the one page where seats actually drag. A button that
+         takes him to the chart replaces the prose. -->
+    <div class="no-print" id="seatAutoPlaceNote" style="display:none;margin-bottom:10px"></div>
     <!-- The seating editor that used to sit here, above the preview, is gone.
          It and the preview were two boxes showing the same chart, and you
          arranged in one while looking at the other. The preview IS the editor
@@ -4204,10 +4215,15 @@ function setupRoster() {
     passes:"Passes", attendance:"Attendance", tracker:"Tracker", homework:"Homework", gradebook:"Gradebook",
     backup:"Backup & Restore", settings:"Settings",
     "learn-text":"Text", "learn-chart":"Chart", "learn-pesukim":"Pesukim", "learn-mishnayos":"Mishnayos", "learn-shorashim":"Shorashim",
-    // printSeats is navigable and named for what it GIVES the rebbi, not for the
-    // mechanism. "Seating chart" described how it is laid out; nobody looking for
-    // "how do I start scanning" would ever click it.
-    printSeats:"Print class sheet",
+    // printSeats is navigable, and its name has to carry BOTH jobs this page
+    // does. It was called "Print class sheet" alone, on the reasoning that
+    // nobody hunting for "how do I start scanning" would click something named
+    // for a mechanism — which is still true, so "print" stays in the name. But
+    // this is also the only place a rebbi arranges his room (the preview IS the
+    // seat editor — see the note above #seatAutoPlaceNote), and naming it for
+    // printing alone meant a rebbi looking for his seating chart had no reason
+    // to click the one tab that holds it.
+    printSeats:"Seating chart & print",
     // The other three print views are not navigable — reached via 🖨 buttons on
     // their data-owner tabs.
     printStudents:"Students", printActivities:"Activities", printPoints:"Points"
@@ -4406,8 +4422,25 @@ function setupRoster() {
       var apNote=$("seatAutoPlaceNote");
       if(apNote){
         if(seatAutoPlacedCount){
-          apNote.textContent="Seated "+seatAutoPlacedCount+" student"+(seatAutoPlacedCount===1?"":"s")+" for you, in roster order, so this sheet is ready to print. "
-            +"Anyone you had already placed stayed exactly where you put them. Rearrange any time on the Dashboard — Class list → Seating chart → ⚙ Setup.";
+          /* A button, not a paragraph. This used to explain that N boys had
+             been auto-seated and then give directions to the Dashboard to
+             rearrange them — directions that led away from this page, which is
+             the only place seats actually drag. The rebbi does not have to do
+             anything about the count, so it is gone; what he might want is to
+             get to the chart, which on a full class sits below the fold. */
+          apNote.innerHTML="";
+          var goBtn=el("button","btn btn-sm","⚙ Rearrange seats");
+          goBtn.title="Jump to the chart — drag a boy into a different desk, or ✕ to empty his seat";
+          goBtn.addEventListener("click", function(){
+            var grid=$("seatChartGrid");
+            if(!grid) return;
+            grid.scrollIntoView({behavior:"smooth", block:"center"});
+            // Brief highlight, so it is obvious WHICH thing the button moved to
+            // on a page that is mostly controls above a large sheet.
+            grid.classList.add("seat-jump-flash");
+            setTimeout(function(){ grid.classList.remove("seat-jump-flash"); }, 1200);
+          });
+          apNote.appendChild(goBtn);
           apNote.style.display="block";
         } else {
           apNote.style.display="none";
