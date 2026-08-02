@@ -211,6 +211,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      still be reached by scrolling a few pixels instead of being silently
      clipped and invisible, which is strictly worse. --- */
   #seatsBody .seat-toolbar{flex:0 0 auto}
+  #seatsBody .seat-moderow{flex:0 0 auto}
   #seatsBody .seat-front{flex:0 0 auto}
   #seatsBody #tapCard{display:flex; flex-direction:column; height:100%; min-height:0}
   #seatsBody .seat-grid{flex:1; min-height:0}
@@ -252,6 +253,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #view-seats.seats-shrinking #tapCard .board-head{ padding:7px 14px }
   #view-seats.seats-fullscreen .seat-toolbar,
   #view-seats.seats-shrinking .seat-toolbar{ padding:6px 14px 0 }
+  #view-seats.seats-fullscreen .seat-moderow,
+  #view-seats.seats-shrinking .seat-moderow{ padding:6px 14px 0 }
+  #view-seats.seats-fullscreen .seat-segbtn,
+  #view-seats.seats-shrinking .seat-segbtn{ padding:5px 16px; font-size:.85rem }
   #view-seats.seats-fullscreen .seat-front,
   #view-seats.seats-shrinking .seat-front{ margin:4px 14px 0; padding-bottom:4px }
   /* While the seating-chart pop-out is open, the scan bar must stack ABOVE
@@ -440,6 +445,19 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 0}
   .seat-modebtn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:6px 12px;font-size:.85rem;font-weight:600}
   .seat-modebtn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  /* The view switch — List / Seating chart — on its own row above the toolbar.
+     It used to be the first two of six buttons in one wrapped strip, which put
+     the control deciding WHAT YOU ARE LOOKING AT on the same footing as the
+     ones that only decorate it. As a segmented pair it reads as one control
+     with two states rather than two buttons that happen to sit together. */
+  .seat-moderow{padding:12px 14px 0}
+  .seat-segmented{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seat-segbtn{border:0;border-radius:0;background:#fff;color:var(--muted);padding:8px 20px;font-size:.9rem;font-weight:600;cursor:pointer}
+  .seat-segbtn+.seat-segbtn{border-left:1px solid var(--line)}
+  .seat-segbtn.active{background:var(--ink);color:#fff}
+  /* The toolbar is now options WITHIN the chosen mode, so it sits closer under
+     the switch than a full row's padding would put it. */
+  .seat-moderow+.seat-toolbar{padding-top:10px}
   /* Shown only when a rebbi set to Seating chart lands on a class that has no
      chart yet and gets the list instead. Carries the way back in, so the
      fallback can never make an unarranged chart unreachable. */
@@ -7613,12 +7631,25 @@ function setupRoster() {
                        && !data.seatArranging
                        && seatChartIsEmpty();
     if(seatFallback) effViewMode="list";
+    /* The view switch gets its OWN ROW, above the toolbar — it is the mode, and
+     * everything left in the toolbar (Show codes, Show activities, Rebbi's
+     * view, the layout controls) is an option that applies within whichever
+     * mode is picked. All six used to share one wrapped strip, so the switch
+     * looked like two more buttons rather than the thing the rest hangs off.
+     * Built here, appended at both of the two body.appendChild(toolbar) sites
+     * below, so the seating and list branches cannot drift apart.
+     */
+    var modeRow=null;
     if(!opts.forceSeating){
-      var listBtn=el("button","seat-modebtn"+(effViewMode!=="seating"?" active":""),"List");
+      modeRow=el("div","seat-moderow");
+      var seg=el("div","seat-segmented");
+      var listBtn=el("button","seat-segbtn"+(effViewMode!=="seating"?" active":""),"List");
+      listBtn.title="Show the class as a list, alphabetically by last name";
       listBtn.addEventListener("click", function(){ data.tapViewMode="list"; save(); renderTapPanel(); });
-      toolbar.appendChild(listBtn);
+      seg.appendChild(listBtn);
       if(allowSeating){
-        var seatBtn=el("button","seat-modebtn"+(effViewMode==="seating"?" active":""),"Seating chart");
+        var seatBtn=el("button","seat-segbtn"+(effViewMode==="seating"?" active":""),"Seating chart");
+        seatBtn.title="Show the class in their seats, laid out as the room is";
         seatBtn.addEventListener("click", function(){
           // On a class with no chart, plain "seating" would be swallowed by the
           // fallback above and the click would look broken. Take him into
@@ -7626,8 +7657,9 @@ function setupRoster() {
           if(seatChartIsEmpty()){ enterSeatingSetup(); return; }
           data.tapViewMode="seating"; save(); renderTapPanel();
         });
-        toolbar.appendChild(seatBtn);
+        seg.appendChild(seatBtn);
       }
+      modeRow.appendChild(seg);
     }
     // Scannable mode lives in the ALWAYS-VISIBLE toolbar, beside List / Seating
     // chart — not in the ⚙ Setup panel, where it started. Setup is collapsed by
@@ -7813,9 +7845,11 @@ function setupRoster() {
 
       setupToggle.addEventListener("click", function(){ setSeatSetup(!data.seatSetupOpen); });
 
+      if(modeRow) body.appendChild(modeRow);
       body.appendChild(toolbar);
       body.appendChild(setupRow);
     } else {
+      if(modeRow) body.appendChild(modeRow);
       body.appendChild(toolbar);
     }
 
