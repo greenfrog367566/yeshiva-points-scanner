@@ -437,6 +437,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .tile-freeze-badge.paused{background:var(--muted)}
 
   /* ---- Seating chart mode ---- */
+  /* Brief ring on the sheet after "⚙ Rearrange seats" scrolls to it, so it is
+     obvious what the button moved to. Cleared on a 1.2s timer, and explicitly
+     suppressed for print below — a rebbi who hits Print inside that window must
+     not get a gold ring baked onto the paper. */
+  .seat-jump-flash{box-shadow:0 0 0 3px var(--gold,#e8b321);transition:box-shadow .3s ease;border-radius:10px}
+  @media print{ .seat-jump-flash{box-shadow:none!important} }
   .seat-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 0}
   .seat-modebtn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:6px 12px;font-size:.85rem;font-weight:600}
   .seat-modebtn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
@@ -2402,9 +2408,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
   <!-- ============ PRINT: CLASS SHEET (seating chart + activity codes) ============ -->
   <section id="view-printSeats" class="view">
-    <h2 class="view-title">Print my class sheet</h2>
-    <p class="view-note no-print"><b>This is the one page you need to start scanning.</b> Every student's code sitting in his own seat, with the codes for your activities underneath. Print it, keep it on your desk or clipboard, and scan an activity code then a student — that's a whole scoring action in two scans.</p>
-    <div class="pill-note no-print" id="seatAutoPlaceNote" style="display:none;margin-bottom:10px"></div>
+    <h2 class="view-title">Seating chart &amp; print</h2>
+    <p class="view-note no-print"><b>This is the one page you need to start scanning.</b> Arrange your room here, then print it. Every student's code sitting in his own seat, with the codes for your activities underneath. Print it, keep it on your desk or clipboard, and scan an activity code then a student — that's a whole scoring action in two scans.</p>
+    <!-- Was a paragraph saying how many boys were auto-seated and then sending
+         the rebbi to the Dashboard to rearrange them. Both halves were wrong to
+         keep: the count is not something he has to act on, and the directions
+         pointed AWAY from the one page where seats actually drag. A button that
+         takes him to the chart replaces the prose. -->
+    <div class="no-print" id="seatAutoPlaceNote" style="display:none;margin-bottom:10px"></div>
     <!-- The seating editor that used to sit here, above the preview, is gone.
          It and the preview were two boxes showing the same chart, and you
          arranged in one while looking at the other. The preview IS the editor
@@ -4204,10 +4215,15 @@ function setupRoster() {
     passes:"Passes", attendance:"Attendance", tracker:"Tracker", homework:"Homework", gradebook:"Gradebook",
     backup:"Backup & Restore", settings:"Settings",
     "learn-text":"Text", "learn-chart":"Chart", "learn-pesukim":"Pesukim", "learn-mishnayos":"Mishnayos", "learn-shorashim":"Shorashim",
-    // printSeats is navigable and named for what it GIVES the rebbi, not for the
-    // mechanism. "Seating chart" described how it is laid out; nobody looking for
-    // "how do I start scanning" would ever click it.
-    printSeats:"Print class sheet",
+    // printSeats is navigable, and its name has to carry BOTH jobs this page
+    // does. It was called "Print class sheet" alone, on the reasoning that
+    // nobody hunting for "how do I start scanning" would click something named
+    // for a mechanism — which is still true, so "print" stays in the name. But
+    // this is also the only place a rebbi arranges his room (the preview IS the
+    // seat editor — see the note above #seatAutoPlaceNote), and naming it for
+    // printing alone meant a rebbi looking for his seating chart had no reason
+    // to click the one tab that holds it.
+    printSeats:"Seating chart & print",
     // The other three print views are not navigable — reached via 🖨 buttons on
     // their data-owner tabs.
     printStudents:"Students", printActivities:"Activities", printPoints:"Points"
@@ -4406,8 +4422,25 @@ function setupRoster() {
       var apNote=$("seatAutoPlaceNote");
       if(apNote){
         if(seatAutoPlacedCount){
-          apNote.textContent="Seated "+seatAutoPlacedCount+" student"+(seatAutoPlacedCount===1?"":"s")+" for you, in roster order, so this sheet is ready to print. "
-            +"Anyone you had already placed stayed exactly where you put them. Rearrange any time on the Dashboard — Class list → Seating chart → ⚙ Setup.";
+          /* A button, not a paragraph. This used to explain that N boys had
+             been auto-seated and then give directions to the Dashboard to
+             rearrange them — directions that led away from this page, which is
+             the only place seats actually drag. The rebbi does not have to do
+             anything about the count, so it is gone; what he might want is to
+             get to the chart, which on a full class sits below the fold. */
+          apNote.innerHTML="";
+          var goBtn=el("button","btn btn-sm","⚙ Rearrange seats");
+          goBtn.title="Jump to the chart — drag a boy into a different desk, or ✕ to empty his seat";
+          goBtn.addEventListener("click", function(){
+            var grid=$("seatChartGrid");
+            if(!grid) return;
+            grid.scrollIntoView({behavior:"smooth", block:"center"});
+            // Brief highlight, so it is obvious WHICH thing the button moved to
+            // on a page that is mostly controls above a large sheet.
+            grid.classList.add("seat-jump-flash");
+            setTimeout(function(){ grid.classList.remove("seat-jump-flash"); }, 1200);
+          });
+          apNote.appendChild(goBtn);
           apNote.style.display="block";
         } else {
           apNote.style.display="none";
@@ -16627,6 +16660,14 @@ nameLine
     if (!rawSetup && !pendingBackup && !sheetFromImport) return;
 
     var changed = false;
+    /* True when this boot is restoring an existing classroom rather than
+       setting up a new one. It matters because the wizard writes its
+       in-progress blob on EVERY screen change — including simply opening the
+       Restore screen — so `menchmark_setup` existing is not by itself proof
+       that anybody went through Quick Setup. Anything below that imposes a
+       fresh-install default has to check this first, or it would impose that
+       default on a rebbi's restored data. */
+    var restoring = false;
 
     /* 1. Full backup import — highest priority */
     if (pendingBackup) {
@@ -16643,6 +16684,7 @@ nameLine
               clearStaleTicketPools();
             });
             changed = true;
+            restoring = true;
           }
         }
       } catch(e) {}
@@ -16651,6 +16693,10 @@ nameLine
 
     /* 2. Sheet URL — only fills if app has none yet */
     if (sheetFromImport) {
+      // setup.html's Sheet path writes the restored snapshot straight into
+      // KEY before handing off, so by the time this runs `data` is already the
+      // restored classroom.
+      restoring = true;
       if (typeof data.sheetUrl !== "string" || !data.sheetUrl.trim()) {
         data.sheetUrl = sheetFromImport;
         changed = true;
@@ -16664,7 +16710,9 @@ nameLine
         var s = JSON.parse(rawSetup);
         if (s.className)  { data.className = s.className; changed = true; }
         if (s.schoolName) { data.school = s.schoolName; changed = true; }
-        if (s.grade)      { data.grade  = s.grade;      changed = true; }
+        // (There was a `s.grade` read here. The wizard has never collected a
+        //  grade, so it could only ever be undefined — removed rather than
+        //  left as a field that looks supported and isn't.)
 
         if (s.features && typeof s.features === "object") {
           /* Shulchani Mode — route through the same safety check used by
@@ -16683,43 +16731,73 @@ nameLine
               data.shulchaniMode = s.features.shulchani; // nothing to protect — safe to set directly
             }
           }
-          /* Store other feature flags for subsystems to read */
           if (!data.features || typeof data.features !== "object") data.features = {};
-          if (s.features && s.features.learning === true && s.learning && s.learning.type) {
-            data.features.learningType = s.learning.type;
-            if (s.learning.parshaLabel || s.learning.mesechtaLabel) {
-              data.wizardLearning = s.learning;
-            }
-          }
 
           /* Nav visibility — reversible via Settings */
           if (!data.navHidden || typeof data.navHidden !== "object") data.navHidden = {groups:{},tabs:{}};
           if (!data.navHidden.groups) data.navHidden.groups = {};
           if (!data.navHidden.tabs)   data.navHidden.tabs   = {};
-          // Only `learning` is still emitted by the wizard, and `learn` is a real
-          // group key. The `teams` -> groups.leaderboard and `qr` -> tabs.labels
-          // lines that used to sit here were vestigial from the pre-redesign
-          // wizard: it no longer emits either flag, so both tested
-          // `undefined === false` and never ran — and both named keys that do
-          // not exist anyway (the group is `standings`, and there is no `labels`
-          // tab). Removed rather than corrected, since there is nothing left to
-          // drive them. Lean mode (#121) will sit on this path, so it should
-          // start from keys that are known-good.
-          if (s.features.learning === false) data.navHidden.groups.learn = true;
-          changed = true;
-        }
-
-        /* Serial scanner */
-        if (s.hardware && s.hardware.scanner === true) {
-          data.serialAutoConnect = true;
-          if ([9600,19200,38400,57600,115200].indexOf(s.hardware.baud) >= 0) {
-            data.serialBaud = s.hardware.baud;
+          // Review (the `learn` group) starts HIDDEN on a fresh setup. The
+          // wizard no longer asks about texts at all, so nothing here can
+          // depend on an answer — a new rebbi gets the smaller app, and turns
+          // Review on in Settings → the group checkbox when he wants it.
+          //
+          // This only ever runs for a setup that came through the wizard, so
+          // an existing rebbi's saved data is never touched and nobody loses a
+          // group they were already using.
+          //
+          // NOTE for Lean mode (#121): this is a one-time WRITE at first-run,
+          // not a live preset, which is why it doesn't break the "derive,
+          // don't write" rule that Lean has to follow. Lean must still derive
+          // its own hiding — if it ever also writes here, a rebbi's own
+          // un-hiding of Review would be indistinguishable from the default
+          // and would get stomped.
+          //
+          // Skipped entirely when restoring: a rebbi coming back from a backup
+          // or his Sheet already has his own answer to this, saved in the very
+          // data being restored, and a fresh-install default must not overrule
+          // it. He would have had to go find the Settings checkbox to undo a
+          // hide he never asked for.
+          if (!restoring) {
+            data.navHidden.groups.learn = true;
+            changed = true;
           }
+        }
+
+        /* (The Serial/COM scanner branch lived here. The wizard no longer asks
+           about hardware — a keyboard-wedge scanner needs no configuration at
+           all, and Serial mode is still fully available in Settings, which is
+           where the one-time "Connect scanner" tap has to happen anyway.) */
+
+        /* Activities from wizard.
+           MERGE, never replace: by the time this runs, load() -> load2fix()
+           has already seeded the tracked system activities (Homework Checked,
+           Bathroom Pass, Attendance, Freeze). Those are `tracked:true`, award
+           no points, and each backs a tab with its own data store — dropping
+           them would strand those tabs. So only the point-earning activities
+           are swapped out, and anything tracked is carried across untouched. */
+        if (Array.isArray(s.activities)) {
+          var kept = (data.activities || []).filter(function(a){ return a && a.tracked; });
+          var fromWizard = [];
+          s.activities.forEach(function(a) {
+            var nm = (a && a.name || "").trim();
+            if (!nm) return;                       // blank row the rebbi never filled in
+            var n = parseInt(a.pts, 10);
+            fromWizard.push({ id:"", name:nm, pts:isNaN(n) ? 0 : n });
+          });
+          data.activities = fromWizard.concat(kept);
+          // Re-id only the wizard's entries, after the merge, so a generated id
+          // can't collide with one a tracked activity already holds.
+          data.activities.forEach(function(a){ if (!a.id) a.id = nextActId(); });
           changed = true;
         }
 
-        /* Students from wizard — add any that aren't already in the roster */
+        /* Students from wizard — add any that aren't already in the roster.
+           Every boy goes into the class named on the wizard's first screen:
+           the rebbi named his class once, and typing it again per student was
+           the only thing the old "Name, Group" column bought. */
         if (Array.isArray(s.students) && s.students.length) {
+          var wizardClass = (s.className || "").trim();
           var existingNames = {};
           (data.students || []).forEach(function(st) {
             existingNames[st.name.toLowerCase()] = true;
@@ -16730,10 +16808,33 @@ nameLine
             data.students.push({
               id: nextStudentId ? nextStudentId() : ('w' + Date.now() + Math.random()),
               name: p.name,
-              group: p.grp || ''
+              group: wizardClass
             });
             existingNames[p.name.toLowerCase()] = true;
           });
+          /* Select that class too, rather than leaving the header on "All
+             classes". Seating is stored per selected class (seatKey() is
+             data.currentClass||""), so if the rebbi arranged his chart under
+             "All classes" and later picked his own class from the dropdown —
+             which now has a real entry in it because of the line above — he'd
+             land on an empty chart and lose the arrangement. Selecting it up
+             front means one key from the very first sheet. */
+          if (wizardClass) { data.currentClass = wizardClass; }
+          /* Size the seating grid to the roster. The default is 4x6 = 24 and
+             the print page deliberately never changes the column count, so a
+             class of 30 would otherwise print 24 boys seated and the rest
+             listed as unplaced on their very first sheet. */
+          if (data.seating && typeof data.seating === "object") {
+            var roster = (data.students || []).length;
+            var key = wizardClass || "";
+            if (!data.seating[key] || typeof data.seating[key] !== "object") {
+              data.seating[key] = {rows:4, cols:6, seats:[]};
+            }
+            var lay = data.seating[key];
+            if (roster > lay.rows * lay.cols) {
+              lay.rows = Math.ceil(roster / lay.cols);
+            }
+          }
           changed = true;
         }
       } catch(e) {}
@@ -16807,6 +16908,15 @@ nameLine
   renderClassSel();
   renderGroupTabs("scan"); renderSubTabs("scan","scan"); activeGroupName="scan"; activeTabName="scan";
   applyGlobalScanBarVisibility("scan");
+  // The setup wizard finishes by sending the rebbi here, so his first sight of
+  // the app is the sheet he is about to print rather than a dashboard he has
+  // no data in yet. Deliberately opens the page and stops — it does NOT call
+  // print(), because a print dialog appearing by itself on first launch reads
+  // as the app doing something to you. `printSeats` lives in the Run group,
+  // which can never be hidden, so this always has somewhere to land.
+  try {
+    if (location.search.indexOf("tab=printSeats") >= 0) activateTab("printSeats");
+  } catch(e) {}
   if(typeof serialTryAutoReconnect==="function") serialTryAutoReconnect();
   if(typeof window._refreshSnackBtn==="function") window._refreshSnackBtn();
   // Auto-generate text set from wizard learning selection — runs once, async,

@@ -20,21 +20,25 @@ walkthrough.
 | # | Screen / action | What to say | Notes |
 |---|---|---|---|
 | 1 | Cold open: printed class sheet already in the rebbi's hand, scanner on the desk | "This is where we're headed by the end of this video." | Payoff shown first, builds trust that it's achievable |
-| 2 | `setup.html` entry screen | "Every new class starts here — one wizard, about five minutes." | |
-| 3 | Step 1 — Class Basics | Name the class, grade | |
-| 4 | Step 2 — Feature toggles | "Turn on only what you'll actually use — you can change this later in Settings." | Ties into Lean mode messaging once that ships (#121) |
-| 5 | Step 3 — Add Students | Type or paste a roster | Show typing 3–4 names, not a full roster — keep it short |
-| 6 | Step 4 — Learning Setup *(conditional)* | Only if Pesukim/Mishnayos was toggled on | Skip in the recording if not applicable |
-| 7 | Step 5 — Hardware/Scanner | "You can do this later — the app works fine with just a keyboard scanner." | Lower the stakes; scanner is optional at this stage |
-| 8 | Done screen | "That's it — you're in." | |
-| 9 | Run → Activities | Add one activity, set its point value | Real terminology: this is where activities are defined |
-| 10 | Run → Print class sheet | "One sheet — every kid's code, the seating chart, and your activity codes, all on one page." | Stronger demo beat than printing labels separately — combines seating + codes + activity codes |
-| 11 | Close-up: the physical printed sheet | | Cut from screen to paper — this is the "real world" proof |
-| 12 | Run → Settings → Connect scanner | Plug in scanner, click "Connect scanner," one-time permission grant | Only if using Serial/COM mode; keyboard mode needs nothing shown |
-| 13 | Record tab: first scan | Land one scan, watch it appear in the strip | |
-| 14 | Trust beat (VO over B-roll) | "Nothing you do here can lose a kid's history — Undo works everywhere, and there's a one-click backup in Run → Backup & Sheets." | See FAQ below — this is the single most requested reassurance |
+| 2 | `setup.html` entry screen | "Every new class starts here — one wizard, about two minutes." | Match the entry screen's own wording ("under 2 minutes") |
+| 3 | Step 1 — Class Basics | Name the school (optional) and the class | **There is no grade field** — school + class name only |
+| 4 | Step 2 — Add Students | Paste or type a roster, one name per line | Show 3–4 names, not a full roster. **Worth showing on purpose:** paste two lines as "Cohen, Yossi" and let the preview show them flipped to "Yossi Cohen" — that's the moment a rebbi with an office export realises he doesn't have to retype anything |
+| 5 | Step 3 — Points or coins? | "Regular points for most people. Shulchani shows the same thing as coins of the Gemara." | One question, two cards. Regular points is pre-selected |
+| 6 | Step 4 — Activities | Reword one starter, change its points, add one of your own | Don't add from scratch — the three starters are already filled in. The beat is *editing*, which is what a real rebbi does |
+| 7 | Done screen → **Print my class sheet** | "That's it — and it takes you straight to the page you print." | The button goes to Run → Print class sheet directly; don't cut away to a dashboard first |
+| 8 | Run → Print class sheet | "One sheet — every kid's code, the seating chart, and your activity codes, all on one page." | The activity codes on it are the ones he just wrote in step 4 — point that out, it's the payoff for that step |
+| 9 | Close-up: the physical printed sheet | | Cut from screen to paper — this is the "real world" proof |
+| 10 | Run → Settings → Connect scanner | Plug in scanner, click "Connect scanner," one-time permission grant | Only if using Serial/COM mode; keyboard mode needs nothing shown. **No longer part of the wizard** — it lives in Settings |
+| 11 | Record tab: first scan | Land one scan, watch it appear in the strip | |
+| 12 | Trust beat (VO over B-roll) | "Nothing you do here can lose a kid's history — Undo works everywhere, and there's a one-click backup in Run → Backup & Sheets." | See FAQ below — this is the single most requested reassurance |
 
 **Runtime target:** 3–4 minutes.
+
+**Not in the wizard any more — don't film them:** the Learning Setup step
+(Pesukim / Mishnayos / Shorashim) and the Hardware/COM-port step. Both still
+exist in the app, in Settings. Review (the Learn group) also starts hidden on a
+new setup, so it won't be in the tab bar in a fresh screen recording — if a shot
+needs it, turn it on first in Settings → Review.
 
 ---
 
@@ -79,9 +83,10 @@ screen.
 5. Close-up: the scanner — dongle in the laptop, scanner in hand
 
 ### Screen recordings (laptop only)
-6. `setup.html` wizard, start to finish (or the highlights: Class Basics → Done)
-7. Run → Activities: adding one activity, typing a point value
-8. Run → Print class sheet
+6. `setup.html` wizard, start to finish — it's four steps now, so the whole thing is filmable in one take
+6a. The "Cohen, Yossi" paste flipping to "Yossi Cohen" in the preview line — short, and it answers a real question
+7. Step 4: rewording a starter activity and changing its point value
+8. Done screen → Print my class sheet (one click, no detour through the dashboard)
 9. Run → Settings → Connect scanner, showing "Connected"
 10. Record tab: one clean scan landing in the strip
 
