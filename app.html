@@ -1741,11 +1741,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <select id="standGroup" class="field" style="width:auto"><option value="">All groups</option></select>
       <select id="standActivity" class="field" style="width:auto"><option value="">All activities</option></select>
       <div class="seg" id="standRange" style="margin:0">
+        <button data-range="today">Today</button>
+        <button data-bucket="custom">Custom…</button>
         <button data-range="all" class="active">All-time</button>
-        <button data-range="week">This week</button>
-        <button data-range="custom">Custom range…</button>
         <button data-range="contest" id="standRangeContestBtn" style="display:none">🏆 Contest</button>
       </div>
+    </div>
+    <div class="toolbar" id="standCustomSubRow" style="display:none">
+      <span class="seg mini" id="standCustomSub">
+        <button data-sub="week">This week</button>
+        <button data-sub="month">This month</button>
+        <button data-sub="custom">Pick dates…</button>
+      </span>
     </div>
     <div class="toolbar" id="standCustomRangeRow" style="display:none">
       <label class="lbl" style="margin:0;display:flex;align-items:center;gap:6px">From <input type="date" id="standCustomFrom" class="field" style="width:auto"></label>
@@ -8754,7 +8761,8 @@ function setupRoster() {
   });
 
   /* ---------- STANDINGS / LEADER BOARD ---------- */
-  var standRange="all";
+  var standRange="all"; // re-seeded from data.standRange once load() has run — see init below
+  function standRangeInCustomBucket(){ return standRange==="week"||standRange==="month"||standRange==="custom"; }
   function medalForRank(i){ return i===0?"🥇":i===1?"🥈":i===2?"🥉":String(i+1); }
   function rankTitle(i){ return i===0?"1st Place":i===1?"2nd Place":i===2?"3rd Place":("Rank "+(i+1)); }
   function allEarnedLabels(){
@@ -8778,6 +8786,14 @@ function setupRoster() {
     if(range==="week"){
       var d=new Date(now), day=d.getDay(), diff=(day===0?-6:1-day);
       return {from:new Date(d.getFullYear(), d.getMonth(), d.getDate()+diff).getTime(), to:now};
+    }
+    if(range==="today"){
+      var d=new Date(now);
+      return {from:new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(), to:now};
+    }
+    if(range==="month"){
+      var d=new Date(now);
+      return {from:new Date(d.getFullYear(), d.getMonth(), 1).getTime(), to:now};
     }
     if(range==="7d") return {from: now-7*24*60*60*1000, to:now};
     if(range==="30d") return {from: now-30*24*60*60*1000, to:now};
@@ -8845,13 +8861,21 @@ function setupRoster() {
     sel.innerHTML='<option value="">All groups</option>';
     groups().forEach(function(g){ var o=el("option",null,g); o.value=g; sel.appendChild(o); });
     sel.value=cur;
-    document.querySelectorAll("#standRange button").forEach(function(b){ b.classList.toggle("active", b.dataset.range===standRange); });
+    document.querySelectorAll("#standRange button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.bucket==="custom" ? standRangeInCustomBucket() : b.dataset.range===standRange);
+    });
+    document.querySelectorAll("#standCustomSub button").forEach(function(b){ b.classList.toggle("active", b.dataset.sub===standRange); });
+    $("standCustomSubRow").style.display = standRangeInCustomBucket() ? "flex" : "none";
     $("standCustomFrom").value=data.standCustomFrom||"";
     $("standCustomTo").value=data.standCustomTo||"";
-    $("standWeekLbl").style.display = (standRange==="week"||standRange==="custom"||standRange==="contest") ? "block" : "none";
+    $("standWeekLbl").style.display = (standRange==="today"||standRange==="week"||standRange==="month"||standRange==="custom"||standRange==="contest") ? "block" : "none";
     $("standCustomRangeRow").style.display = standRange==="custom" ? "flex" : "none";
-    if(standRange==="week"){
+    if(standRange==="today"){
+      $("standWeekLbl").textContent="Showing points earned today. Spending on the Auction or Store doesn't affect this.";
+    } else if(standRange==="week"){
       $("standWeekLbl").textContent="Showing points earned this week ("+trWeekLabel(weekKeyOf(Date.now()))+", Mon–Fri). Spending on the Auction or Store doesn't affect this.";
+    } else if(standRange==="month"){
+      $("standWeekLbl").textContent="Showing points earned this month ("+new Date().toLocaleDateString(undefined,{month:"long",year:"numeric"})+"). Spending on the Auction or Store doesn't affect this.";
     } else if(standRange==="custom"){
       var cut=standRangeCutoffs("custom");
       var fromTxt = data.standCustomFrom ? new Date(cut.from).toLocaleDateString() : "the beginning";
@@ -8937,7 +8961,29 @@ function setupRoster() {
   $("standSearch").addEventListener("input", renderStandings);
   $("standGroup").addEventListener("change", renderStandings);
   $("standActivity").addEventListener("change", function(){ data.standingsActivity=this.value; save(); renderStandings(); });
-  $("standRange").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; standRange=b.dataset.range; renderStandings(); });
+  // "Custom…" is a bucket, not a value: standRange still has to land on one
+  // concrete value ("week"/"month"/"custom"), so picking it re-enters at the
+  // last-used sub-choice and reveals the sub-row rather than setting a value
+  // itself. "contest" is deliberately never written to data.standRange — it's
+  // auto-driven by an active contest (see renderContestBanner) and already
+  // didn't survive a reload before this feature; keeping it that way avoids a
+  // persisted "contest" choice going stale once the contest ends.
+  $("standRange").addEventListener("click", function(e){
+    var b=e.target.closest("button"); if(!b) return;
+    if(b.dataset.bucket==="custom"){
+      if(!standRangeInCustomBucket()) standRange=data.standRangeCustomSub||"week";
+    } else {
+      standRange=b.dataset.range;
+    }
+    if(standRange!=="contest"){ data.standRange=standRange; save(); }
+    renderStandings();
+  });
+  $("standCustomSub").addEventListener("click", function(e){
+    var b=e.target.closest("button"); if(!b) return;
+    standRange=b.dataset.sub;
+    data.standRange=standRange; data.standRangeCustomSub=standRange; save();
+    renderStandings();
+  });
   $("standCustomFrom").addEventListener("change", function(){ data.standCustomFrom=this.value; save(); renderStandings(); });
   $("standCustomTo").addEventListener("change", function(){ data.standCustomTo=this.value; save(); renderStandings(); });
 
@@ -16190,6 +16236,11 @@ nameLine
     }
     if(typeof data.standCustomFrom!=="string") data.standCustomFrom="";
     if(typeof data.standCustomTo!=="string") data.standCustomTo="";
+    // Remembers the Leader Board's last-picked range across reloads. "contest"
+    // is intentionally excluded — it's never written here (see the standRange
+    // click handler) — so any saved value is one of the real standing choices.
+    if(["today","week","month","custom","all"].indexOf(data.standRange)<0) data.standRange="all";
+    if(["week","month","custom"].indexOf(data.standRangeCustomSub)<0) data.standRangeCustomSub="week";
     if(typeof data.studCustomFrom!=="string") data.studCustomFrom="";
     if(typeof data.studCustomTo!=="string") data.studCustomTo="";
     // Gradebook view state (Phase 2b). Purely additive — five preference
@@ -16694,6 +16745,11 @@ nameLine
 
   /* ---------- init ---------- */
   load();
+  // Leader Board's remembered range — load2fix() has already backfilled
+  // data.standRange/data.standRangeCustomSub by this point, so re-seed the
+  // page-level var here rather than at its declaration above, which runs
+  // before load() and would only ever see the "all" literal default.
+  standRange = data.standRange;
   // Scannable seating mode is ARMED STATE, not a saved preference: it resets
   // exactly once, here, on a genuine boot — a real page load, which is what a
   // hard reload or closing and reopening the app produces.
