@@ -340,6 +340,12 @@ if(typeof data.promptStyle!=="string") data.promptStyle="";
 if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
 if(!data.seating||typeof data.seating!=="object") data.seating={};
 if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
+// Show the class list for a class with no seating chart yet. Additive
+// boolean, defaults ON for existing saves as well as new ones: the state it
+// replaces (a grid of empty seats holding none of your students) is a dead
+// end, never something a rebbi chose, so there is nothing to preserve.
+// Reads data.seating and writes nothing to it.
+if(typeof data.seatListFallback!=="boolean") data.seatListFallback=true;
 if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
 if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
 if(!data.fabPos || typeof data.fabPos!=="object" || Array.isArray(data.fabPos)) data.fabPos={};
@@ -362,6 +368,12 @@ if(typeof data.seatPrintOpts.avatarMode!=="string"){
 }
 if(["qr","photo","none","activity"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
 delete data.seatPrintOpts.showQR;
+// Which layout the class sheet prints in. Anything that isn't exactly
+// "list" becomes "seating" — so a save predating the field, and a corrupt
+// value, both land on the layout every existing sheet already prints.
+// load2fix must NEVER switch an existing rebbi's sheet to List by itself,
+// for the same reason it never turns the Activities footer on by itself.
+if(data.seatPrintOpts.layout!=="list") data.seatPrintOpts.layout="seating";
 if(typeof data.seatPrintOpts.showPoints!=="boolean") data.seatPrintOpts.showPoints=false;
 if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
 // NEW installs get the activities footer on, via `defaults` above. Reaching
@@ -989,6 +1001,10 @@ function runBuiltInTests() {
   assert("Real→raffle preserved", d3.raffle.mode==="manual" && d3.raffle.entries.s1===3);
   assert("Real→shulchaniMode preserved", d3.shulchaniMode === true);
   assert("Real→seating preserved", d3.seating.default && d3.seating.default.seats[0]==="s1");
+  // The list fallback is a VIEW preference. An arranged chart must come through
+  // it byte-identical — the assertion above is what proves that, and this one
+  // proves the new field backfills ON without the chart noticing.
+  assert("Real→seatListFallback backfills ON", d3.seatListFallback === true);
   // Phase 1 dissolved the "print" group (its tabs moved to 🖨 buttons on the
   // data-owner tabs), so load2fix deletes navHidden.groups.print on purpose.
   // This test used to assert that key SURVIVED, which contradicted Test 8 and
@@ -1649,6 +1665,23 @@ function runBuiltInTests() {
     && t16c.seatPrintOpts.showActivities===false
     && t16d.seatPrintOpts.showActivities===false,
     "if this fails, existing rebbeim just had their printed sheet changed for them");
+  // The class sheet's layout switch. Same silent-change guard as the footer
+  // above: an existing rebbi's sheet must keep printing the seating chart.
+  assert("layout→a save predating the field prints the seating chart",
+    t16c.seatPrintOpts.layout==="seating", "got "+t16c.seatPrintOpts.layout);
+  assert("layout→a save with no print options at all prints the seating chart",
+    t16d.seatPrintOpts.layout==="seating", "got "+t16d.seatPrintOpts.layout);
+  assert("layout→load2fix NEVER switches a sheet to List by itself",
+    t16a.seatPrintOpts.layout==="seating"
+    && t16b.seatPrintOpts.layout==="seating"
+    && t16c.seatPrintOpts.layout==="seating"
+    && t16d.seatPrintOpts.layout==="seating",
+    "if this fails, existing rebbeim just had their printed sheet changed for them");
+  var t16L = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", layout:"list"} });
+  assert("layout→a saved List choice survives a reload", t16L.seatPrintOpts.layout==="list");
+  var t16X = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", layout:"nonsense"} });
+  assert("layout→a garbage layout repairs to seating, not List",
+    t16X.seatPrintOpts.layout==="seating", "got "+t16X.seatPrintOpts.layout);
   // Orientation is now remembered rather than resetting to portrait each load.
   assert("sheet→orientation defaults to portrait", t16d.seatPrintOrient==="portrait");
   var t16e = runMigration({ version:4, seatPrintOrient:"landscape" });
