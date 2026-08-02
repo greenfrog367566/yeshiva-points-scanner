@@ -1393,6 +1393,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* The renameable section heading. Only ever a hover/focus tint — no border, no
      padding shift — so the printed heading is pixel-identical to what it was
      before it became editable. */
+  .seat-print-preview .seat-print-code-group-head{display:flex;align-items:center;gap:4px}
+  .seat-print-preview .seat-print-code-group-head .seat-print-act-section-label{flex:1;min-width:0}
+  .seat-print-sec-x{border:none;background:transparent;color:var(--muted);font-size:.62rem;
+    line-height:1;padding:2px 3px;cursor:pointer;opacity:0;flex:none}
+  .seat-print-code-group:hover .seat-print-sec-x{opacity:1}
+  .seat-print-sec-x:hover{color:var(--bad,#b4341f)}
+  .print-code-section-head{display:flex;align-items:center;gap:4px}
+  .print-code-section-head .print-code-section-name{flex:1;min-width:0;margin-bottom:0}
   .seat-print-preview .seat-print-act-section-label[contenteditable]{outline:none;border-radius:4px}
   .seat-print-preview .seat-print-act-section-label[contenteditable]:hover{background:var(--gb-row,#f3f4f8)}
   .seat-print-preview .seat-print-act-section-label[contenteditable]:focus{background:#fff;box-shadow:0 0 0 2px var(--brass)}
@@ -2430,10 +2438,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button class="btn btn-primary" id="printSeatChart">🖨 Print my class sheet</button>
     </div>
     <div class="card pad no-print" id="seatPrintCodesCard" style="margin-bottom:12px;display:none">
-      <p class="view-note" style="margin-top:0">Which codes you use, grouped into Points, Tracked, and Navigation. This one list governs all of them — the class sheet, the activity menu, and the codes under the seating chart. Untick one to leave it off everywhere; drag a code to reorder it within a group, or drag it into a different group — both are remembered. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
+      <p class="view-note" style="margin-top:0">Which codes you use, and how they're grouped. This one list governs all of them — the class sheet, the activity menu, and the codes under the seating chart. Drag a code to reorder it within a section, or into a different section; ✕ takes it off everywhere and it waits in the tray below. <b>The sections are yours:</b> rename one by typing in its heading, add your own with <b>+ Section</b>, or remove one with its ✕ — its codes move to the first section rather than disappearing. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
       <div class="toolbar" style="margin-bottom:8px;gap:6px">
         <button class="btn btn-sm" id="seatPrintCodesAll">All</button>
         <button class="btn btn-sm" id="seatPrintCodesNone">None</button>
+        <button class="btn btn-sm" id="seatPrintCodesAddSection">+ Section</button>
         <span id="seatPrintCodesCount" style="font-size:.82rem;color:var(--muted);font-weight:600"></span>
       </div>
       <div id="seatPrintCodesList" class="print-code-sections"></div>
@@ -3832,7 +3841,7 @@ function setupRoster() {
   // establishing the baseline every migration counts up from. Bump
   // DATA_VERSION and add a new `if(data.version===N)` branch here whenever a
   // future release changes the shape of stored data.
-  var DATA_VERSION = 4;
+  var DATA_VERSION = 5;
   function migrateData(d){
     if(!d.version) d.version = 1;
     // v1 -> v2: rename data.bunk to data.className. This app is a Yeshiva/
@@ -3871,6 +3880,40 @@ function setupRoster() {
     // one extra button, deletable like any other activity.
     if(d.version===3){
       d.version = 4;
+    }
+    // v4 -> v5: the code sections became the rebbi's own list. They used to be a
+    // fixed trio (Points / Tracked / Navigation) with a separate sparse rename
+    // overlay in d.codeSectionNames; they are now d.codeSections — {key,label}
+    // in print order — which he can add to, rename and delete. A section's name
+    // IS its label, so the rename overlay has nothing left to describe.
+    //
+    // The defaults also changed shape: Points split into Positive and Negative,
+    // and Tracked folded into Navigation. Old per-code overrides are therefore
+    // meaningless — "this code lives in Points" cannot be honoured when there is
+    // no Points — so they are cleared and every code falls back to its new
+    // default section. This is a deliberate reset, chosen over a mapping.
+    //
+    // WHAT CAN BE LOST: only the arrangement — which section a code sat in, the
+    // order within it, and any renamed section titles. WHAT CANNOT: every code
+    // itself, and which codes are switched ON or OFF. d.printExcluded is not
+    // touched here, so a rebbi who spent time choosing his ten codes still has
+    // exactly those ten; they are simply grouped the new way. The arrangement is
+    // also the one part that is a few seconds of dragging to restore, which is
+    // why it was the safe thing to reset.
+    //
+    // It lives in a version branch rather than in load2fix() precisely BECAUSE
+    // it is destructive: load2fix() runs on every single load, so a reset there
+    // would wipe the rebbi's new arrangement again every time he reopened the
+    // app. This runs once, ever.
+    if(d.version===4){
+      d.printCodeSections = {};
+      delete d.codeSectionNames;
+      d.codeSections = [
+        {key:"pos", label:"Positive"},
+        {key:"neg", label:"Negative"},
+        {key:"nav", label:"Navigation"}
+      ];
+      d.version = 5;
     }
     return d;
   }
@@ -7809,7 +7852,7 @@ function setupRoster() {
       return;
     }
     // Grouped. Deliberately the SAME sections, order and names the printed
-    // class sheet already uses (PRINT_CODE_SECTIONS + printCodeSectionOf +
+    // class sheet already uses (codeSections() + printCodeSectionOf +
     // orderedPrintCodeItems + codeSectionLabel) rather than a second grouping
     // of its own, so moving a code in "Choose codes" moves it on screen and on
     // paper together. A screen layout that disagreed with the sheet in the
@@ -7818,7 +7861,7 @@ function setupRoster() {
     var ordered=orderedPrintCodeItems(items);
     var cols=actFooterCols();
     var drawn=0;
-    PRINT_CODE_SECTIONS.forEach(function(sec){
+    codeSections().forEach(function(sec){
       var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
       if(!secItems.length) return;   // no bare headings over an empty section
       drawn++;
@@ -14350,6 +14393,14 @@ nameLine
       // defaults to "tracked", every other activity to "points". Only codes a
       // rebbi drags elsewhere get an explicit data.printCodeSections override.
       var tracked = homeworkActivity(a) || attendanceActivity(a) || passActivity(a) || freezeActivity(a);
+      // Which default section this code starts in. Freeze is the one that does
+      // not follow `tracked`: it scores nothing, but it is unmistakably a
+      // consequence, so it belongs with the deductions rather than with
+      // Homework Checked and Attendance.
+      var defSection = freezeActivity(a) ? "neg"
+                     : tracked           ? "nav"
+                     : (a.pts<0)         ? "neg"
+                     :                     "pos";
       // `tone` says what this code DOES to a score — pos / neg / trk — for any
       // surface that wants to colour it. Taken from a.pts directly and never
       // re-derived by reading `sub`: that string is fmtDelta's, which spells
@@ -14363,10 +14414,14 @@ nameLine
                  : freezeActivity(a)     ? "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze"
                  : fmtDelta(a.pts),
               tone: tracked ? "trk" : (a.pts<0 ? "neg" : (a.pts>0 ? "pos" : "trk")),
-              defaultSection: tracked ? "tracked" : "points"};
+              defaultSection: defSection};
     });
-    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", tone:"pos", defaultSection:"nav"});
-    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", tone:"neg", defaultSection:"nav"});
+    // The Custom pair follows the same rule as everything else — one adds, one
+    // subtracts — rather than both sitting under Navigation because they happen
+    // to be control codes. Splitting the pair across Positive and Navigation
+    // would be the odd outcome; a rebbi who wants them together drags one.
+    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", tone:"pos", defaultSection:"pos"});
+    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", tone:"neg", defaultSection:"neg"});
     items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
@@ -14385,24 +14440,75 @@ nameLine
     data.printExcluded={};
     try{ return menuLabelItems(); } finally { data.printExcluded=keep; }
   }
-  // Fixed set of print groupings — matches the app's own real distinction
-  // (regular point activities vs. the rerouted Tracked ones vs. control codes),
-  // not an open-ended rebbi-named category system. Order here is also the
-  // order the groups print in.
-  var PRINT_CODE_SECTIONS=[
-    {key:"points",  label:"Points"},
-    {key:"tracked", label:"Tracked"},
-    {key:"nav",     label:"Navigation"}
+  // The sections a rebbi's codes are grouped into — HIS list now, not a fixed
+  // one. They live in data.codeSections as {key,label} in print order, and he
+  // can add, rename and delete them. The old fixed trio (Points / Tracked /
+  // Navigation) plus the separate data.codeSectionNames rename overlay are gone;
+  // a section's name is simply its label, which is the whole reason renaming and
+  // adding can now be the same idea instead of two.
+  //
+  // The three DEFAULTS below are only a starting point. They split by what a
+  // code does to a boy's score — a gain, a deduction, or neither. Everything
+  // that scores nothing shares Navigation: the tracked codes (Homework Checked,
+  // Bathroom Pass, Attendance) alongside Undo, Pick and the phrase codes. A
+  // rebbi who wants those apart adds a section and drags them into it, which is
+  // the point of sections being his rather than ours.
+  var DEFAULT_CODE_SECTIONS=[
+    {key:"pos", label:"Positive"},
+    {key:"neg", label:"Negative"},
+    {key:"nav", label:"Navigation"}
   ];
-  // What a section is CALLED. Falls back to the built-in label, so a rebbi who
-  // never renames anything stores nothing and sees exactly what he always saw.
-  // Sparse, same spirit as printCodeSections. The section KEYS never change —
-  // they are what data.printCodeSections stores — only the display name does.
-  // Shared by the on-screen footer, the "Choose codes" grid maker and the
-  // printed sheet, so renaming a section renames it in all three at once.
+  // Always a usable array with at least one section: everything downstream
+  // buckets codes into these, and an empty list would leave every code with
+  // nowhere to go.
+  function codeSections(){
+    if(!Array.isArray(data.codeSections) || !data.codeSections.length){
+      data.codeSections = DEFAULT_CODE_SECTIONS.map(function(s){ return {key:s.key, label:s.label}; });
+    }
+    return data.codeSections;
+  }
   function codeSectionLabel(sec){
-    var n=data.codeSectionNames[sec.key];
-    return (typeof n==="string" && n.trim()) ? n.trim() : sec.label;
+    return (sec && typeof sec.label==="string" && sec.label.trim()) ? sec.label.trim() : "Section";
+  }
+  function codeSectionByKey(k){
+    var list=codeSections();
+    for(var i=0;i<list.length;i++){ if(list[i].key===k) return list[i]; }
+    return null;
+  }
+  // Keys must be unique and stable — data.printCodeSections stores them — so a
+  // new one is minted from a counter rather than from the name, which changes.
+  function newCodeSectionKey(){
+    var list=codeSections(), n=1;
+    while(list.some(function(s){ return s.key==="s"+n; })) n++;
+    return "s"+n;
+  }
+  function addCodeSection(){
+    codeSections().push({key:newCodeSectionKey(), label:"New section"});
+    save();
+  }
+  // Deleting never destroys codes: whatever was in the section moves to the
+  // first remaining one. A code with no section would simply stop printing, and
+  // silently dropping codes off the sheet is the failure this app has a rule
+  // about. The last section can't be deleted — there would be nowhere to move to.
+  function removeCodeSection(key){
+    var list=codeSections();
+    if(list.length<=1) return false;
+    var idx=-1;
+    for(var i=0;i<list.length;i++){ if(list[i].key===key) idx=i; }
+    if(idx<0) return false;
+    list.splice(idx,1);
+    var fallback=list[0].key;
+    menuLabelItemsAll().forEach(function(it){
+      if(printCodeSectionOf(it)===fallback && data.printCodeSections[it.qrText]==null){
+        // already lands there by default — nothing to record
+        return;
+      }
+      if(data.printCodeSections[it.qrText]===key || (data.printCodeSections[it.qrText]==null && it.defaultSection===key)){
+        data.printCodeSections[it.qrText]=fallback;
+      }
+    });
+    save();
+    return true;
   }
   // Columns per section in the grouped footer. Clamped rather than trusted:
   // this is rendered into grid-template-columns, and a stored 0 or a string
@@ -14416,10 +14522,17 @@ nameLine
   // rebbi has dragged it elsewhere, in which case data.printCodeSections holds
   // the override. Sparse by design, same spirit as data.printExcluded — a code
   // nobody has ever touched needs no stored entry at all.
+  // Falls back twice, not once: to the code's own default section, and then — if
+  // the rebbi has DELETED that section — to the first one that still exists. A
+  // code whose section no longer exists would otherwise be filtered out of every
+  // group and vanish from the sheet without ever being switched off.
   function printCodeSectionOf(it){
+    var list=codeSections();
+    var known=function(k){ return list.some(function(x){ return x.key===k; }); };
     var s=data.printCodeSections[it.qrText];
-    var known=PRINT_CODE_SECTIONS.some(function(x){ return x.key===s; });
-    return known ? s : (it.defaultSection||"points");
+    if(known(s)) return s;
+    if(known(it.defaultSection)) return it.defaultSection;
+    return list[0].key;
   }
   // Sorts by the rebbi's saved order (data.printCodeOrder, a flat array of
   // qrText covering every section at once); codes not yet in it — new
@@ -14456,7 +14569,7 @@ nameLine
     var moved=byQr[qrText]; if(!moved) return;
     var ordered=orderedPrintCodeItems(all);
     var buckets={};
-    PRINT_CODE_SECTIONS.forEach(function(sec){ buckets[sec.key]=[]; });
+    codeSections().forEach(function(sec){ buckets[sec.key]=[]; });
     ordered.forEach(function(it){
       if(it.qrText===qrText) return;
       buckets[printCodeSectionOf(it)].push(it.qrText);
@@ -14466,7 +14579,7 @@ nameLine
     if(insertAt<0) target.push(qrText); else target.splice(insertAt, 0, qrText);
     if(targetSection===moved.defaultSection) delete data.printCodeSections[qrText];
     else data.printCodeSections[qrText]=targetSection;
-    data.printCodeOrder = PRINT_CODE_SECTIONS.reduce(function(acc,sec){ return acc.concat(buckets[sec.key]); }, []);
+    data.printCodeOrder = codeSections().reduce(function(acc,sec){ return acc.concat(buckets[sec.key]||[]); }, []);
     // renderTapPanel() too: the live chart's grouped footer reads this same
     // section/order model now, so a code moved here has to move there in the
     // same beat or the screen and the sheet disagree until the next redraw.
@@ -14661,7 +14774,7 @@ nameLine
   // #117's picker. Offers EVERY code (menuLabelItemsAll), ticked according to
   // what is not excluded — the list a rebbi is choosing from has to include the
   // ones he has already turned off, or he could never turn them back on.
-  // Grouped into PRINT_CODE_SECTIONS and drag-to-rearrange, same native
+  // Grouped into the rebbi's own sections and drag-to-rearrange, same native
   // dragstart/dragover/drop pattern as the live seating chart's "Arrange
   // seats" mode — dragging a code onto another reorders it within a section;
   // dragging it onto a different section's box (or its empty-space drop
@@ -14678,7 +14791,7 @@ nameLine
     // (data.printExcluded) — this only changes where it is drawn, so nothing
     // about what prints changes for a rebbi who already has codes turned off.
     var removed=ordered.filter(function(it){ return !!data.printExcluded[it.qrText]; });
-    PRINT_CODE_SECTIONS.forEach(function(sec){
+    codeSections().forEach(function(sec){
       var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key && !data.printExcluded[it.qrText]; });
       var secBox=el("div","print-code-section");
       // Renameable heading. A text input rather than a label + edit button:
@@ -14686,22 +14799,32 @@ nameLine
       // to enter would be more chrome than the thing it guards. Committed on
       // change/blur, not on every keystroke, so a half-typed name never lands
       // in storage or on the printed sheet.
+      var nameRow=el("div","print-code-section-head");
       var nameIn=el("input","print-code-section-name");
       nameIn.type="text";
       nameIn.value=codeSectionLabel(sec);
-      nameIn.setAttribute("aria-label", sec.label+" section name");
+      nameIn.setAttribute("aria-label", codeSectionLabel(sec)+" section name");
       nameIn.title="Rename this section — it renames on the printed sheet too";
       nameIn.addEventListener("change", function(){
         var v=nameIn.value.trim();
-        // Blank means "back to the built-in name", which is also how a rebbi
-        // undoes a rename without having to remember what it used to say.
-        if(!v || v===sec.label) delete data.codeSectionNames[sec.key];
-        else data.codeSectionNames[sec.key]=v;
-        save();
-        nameIn.value=codeSectionLabel(sec);
-        renderSeatChartPrint(); renderTapPanel();
+        // A section always has a name; blanking it puts the old one back rather
+        // than leaving an untitled box on the printed sheet.
+        if(!v){ nameIn.value=codeSectionLabel(sec); return; }
+        sec.label=v; save();
+        refreshCodeSurfaces();
       });
-      secBox.appendChild(nameIn);
+      nameRow.appendChild(nameIn);
+      if(codeSections().length>1){
+        var secDel=el("button","print-code-x","✕");
+        secDel.type="button";
+        secDel.title="Remove this section — its codes move to “"+codeSectionLabel(codeSections()[0])+"”";
+        secDel.addEventListener("click", function(ev){
+          ev.preventDefault(); ev.stopPropagation();
+          if(removeCodeSection(sec.key)) refreshCodeSurfaces();
+        });
+        nameRow.appendChild(secDel);
+      }
+      secBox.appendChild(nameRow);
       var chips=el("div","print-code-chips");
       secBox.appendChild(chips);
       // Dropping on empty section space (not on a specific chip) appends to
@@ -14854,6 +14977,7 @@ nameLine
     var ex={}; menuLabelItemsAll().forEach(function(it){ ex[it.qrText]=true; });
     data.printExcluded=ex; save(); refreshCodeSurfaces();
   });
+  $("seatPrintCodesAddSection").addEventListener("click", function(){ addCodeSection(); refreshCodeSurfaces(); });
   $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); seatPrintSyncActivityRow(); renderSeatChartPrint(); });
   $("seatPrintActivityPicker").addEventListener("change", function(){ data.seatPrintOpts.activityId=this.value; save(); renderSeatChartPrint(); });
   // Rows/Cols moved onto this toolbar when the separate seating editor above the
@@ -14961,7 +15085,10 @@ nameLine
       var ex={}; menuLabelItemsAll().forEach(function(it){ ex[it.qrText]=true; });
       data.printExcluded=ex; save(); refreshCodeSurfaces();
     });
-    tools.appendChild(allBtn); tools.appendChild(noneBtn);
+    var addSecBtn=el("button","seat-print-mini","+ Section");
+    addSecBtn.type="button"; addSecBtn.title="Add a section of your own — then drag codes into it";
+    addSecBtn.addEventListener("click", function(){ addCodeSection(); refreshCodeSurfaces(); });
+    tools.appendChild(allBtn); tools.appendChild(noneBtn); tools.appendChild(addSecBtn);
     head.appendChild(tools);
     footer.appendChild(head);
     var ordered=orderedPrintCodeItems(items);
@@ -15076,7 +15203,7 @@ nameLine
       return;
     }
     // Grouped: same three groups, order and names as the picker
-    // (PRINT_CODE_SECTIONS), so moving a code's section in "Choose codes"
+    // (data.codeSections), so moving a code's section in "Choose codes"
     // changes where it prints, not just how it's organized on screen. Empty
     // groups are skipped rather than printing a bare heading.
     //
@@ -15087,7 +15214,7 @@ nameLine
     var groups=el("div","seat-print-code-groups");
     var cols=seatPrintActCols();
     var drawn=0;
-    PRINT_CODE_SECTIONS.forEach(function(sec){
+    codeSections().forEach(function(sec){
       var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
       var g=el("div","seat-print-code-group"+(secItems.length?"":" empty no-print"));
       // The heading renames in place. contenteditable rather than an <input>
@@ -15106,13 +15233,29 @@ nameLine
       });
       lbl.addEventListener("blur", function(){
         var v=this.textContent.trim();
-        // Clearing it, or typing the built-in name back, stores nothing — so a
-        // rename can always be undone without remembering what it used to say.
-        if(!v || v===sec.label){ delete data.codeSectionNames[sec.key]; this.textContent=sec.label; }
-        else data.codeSectionNames[sec.key]=v;
+        // A section always has a name. Blanking it puts the old one back rather
+        // than leaving an untitled box on the printed sheet.
+        if(!v){ this.textContent=codeSectionLabel(sec); return; }
+        if(v===sec.label) return;
+        sec.label=v;
         save(); refreshCodeSurfaces();
       });
-      g.appendChild(lbl);
+      var head2=el("div","seat-print-code-group-head");
+      head2.appendChild(lbl);
+      // Delete this section. Only offered while more than one exists, and it
+      // moves whatever is in it into the first section rather than dropping the
+      // codes — see removeCodeSection().
+      if(codeSections().length>1){
+        var delBtn=el("button","seat-print-sec-x no-print","✕");
+        delBtn.type="button";
+        delBtn.title="Remove this section — its codes move to “"+codeSectionLabel(codeSections()[0])+"”";
+        delBtn.addEventListener("click", function(ev){
+          ev.preventDefault(); ev.stopPropagation();
+          if(removeCodeSection(sec.key)) refreshCodeSurfaces();
+        });
+        head2.appendChild(delBtn);
+      }
+      g.appendChild(head2);
       var grid=el("div","seat-print-code-grid");
       grid.style.gridTemplateColumns="repeat("+cols+", minmax(0, 1fr))";
       secItems.forEach(function(it){ grid.appendChild(actCard(it, sec.key)); });
@@ -15985,7 +16128,24 @@ nameLine
     // Renamed section titles, keyed by the SAME fixed section keys
     // printCodeSections uses. Sparse: a section nobody renamed stores nothing
     // and shows its built-in label, so an existing save reads identically.
-    if(!data.codeSectionNames || typeof data.codeSectionNames!=="object" || Array.isArray(data.codeSectionNames)) data.codeSectionNames={};
+    // The rebbi's own sections. Guarded structurally rather than just for
+    // presence: every entry must be an object with a usable string key and
+    // label, because these keys are what data.printCodeSections points at and a
+    // malformed one would send codes to a section that cannot be rendered. A
+    // save with nothing usable here gets the three defaults, which is also what
+    // a brand-new install gets.
+    if(Array.isArray(data.codeSections)){
+      data.codeSections = data.codeSections.filter(function(s){
+        return s && typeof s==="object" && typeof s.key==="string" && s.key
+            && typeof s.label==="string";
+      });
+    }
+    if(!Array.isArray(data.codeSections) || !data.codeSections.length){
+      data.codeSections = DEFAULT_CODE_SECTIONS.map(function(s){ return {key:s.key, label:s.label}; });
+    }
+    // Replaced by each section's own label in v5. Deleted rather than left to
+    // rot, so nothing can read a stale name back later.
+    delete data.codeSectionNames;
     // On-screen activity-codes footer layout. Grouped is the default because
     // the sections are what make a long code list readable, and it is what the
     // printed sheet has always done — the flat row stays available as "One row".

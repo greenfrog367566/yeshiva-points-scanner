@@ -69,7 +69,12 @@
 // These must match what's in app.html. When you change migrateData or
 // load2fix in the app, update them here too and re-run.
 
-var DATA_VERSION = 4;
+var DATA_VERSION = 5;
+var DEFAULT_CODE_SECTIONS=[
+  {key:"pos", label:"Positive"},
+  {key:"neg", label:"Negative"},
+  {key:"nav", label:"Navigation"}
+];
 var PASS_ACT_NAME = "Bathroom Pass";
 var ATT_ACT_NAME = "Attendance";
 
@@ -111,6 +116,40 @@ function migrateData(d){
   }
   if(d.version===3){
     d.version = 4;
+  }
+  // v4 -> v5: the code sections became the rebbi's own list. They used to be a
+  // fixed trio (Points / Tracked / Navigation) with a separate sparse rename
+  // overlay in d.codeSectionNames; they are now d.codeSections — {key,label}
+  // in print order — which he can add to, rename and delete. A section's name
+  // IS its label, so the rename overlay has nothing left to describe.
+  //
+  // The defaults also changed shape: Points split into Positive and Negative,
+  // and Tracked folded into Navigation. Old per-code overrides are therefore
+  // meaningless — "this code lives in Points" cannot be honoured when there is
+  // no Points — so they are cleared and every code falls back to its new
+  // default section. This is a deliberate reset, chosen over a mapping.
+  //
+  // WHAT CAN BE LOST: only the arrangement — which section a code sat in, the
+  // order within it, and any renamed section titles. WHAT CANNOT: every code
+  // itself, and which codes are switched ON or OFF. d.printExcluded is not
+  // touched here, so a rebbi who spent time choosing his ten codes still has
+  // exactly those ten; they are simply grouped the new way. The arrangement is
+  // also the one part that is a few seconds of dragging to restore, which is
+  // why it was the safe thing to reset.
+  //
+  // It lives in a version branch rather than in load2fix() precisely BECAUSE
+  // it is destructive: load2fix() runs on every single load, so a reset there
+  // would wipe the rebbi's new arrangement again every time he reopened the
+  // app. This runs once, ever.
+  if(d.version===4){
+    d.printCodeSections = {};
+    delete d.codeSectionNames;
+    d.codeSections = [
+      {key:"pos", label:"Positive"},
+      {key:"neg", label:"Negative"},
+      {key:"nav", label:"Navigation"}
+    ];
+    d.version = 5;
   }
   return d;
 }
@@ -378,10 +417,24 @@ if(!data.printExcludedSeeded){
 // something.
 if(!data.printCodeSections || typeof data.printCodeSections!=="object" || Array.isArray(data.printCodeSections)) data.printCodeSections={};
 if(!Array.isArray(data.printCodeOrder)) data.printCodeOrder=[];
-// Renamed section titles, keyed by the SAME fixed section keys
-// printCodeSections uses. Sparse: a section nobody renamed stores nothing
-// and shows its built-in label, so an existing save reads identically.
-if(!data.codeSectionNames || typeof data.codeSectionNames!=="object" || Array.isArray(data.codeSectionNames)) data.codeSectionNames={};
+// The rebbi's own sections. Guarded structurally rather than just for
+// presence: every entry must be an object with a usable string key and
+// label, because these keys are what data.printCodeSections points at and a
+// malformed one would send codes to a section that cannot be rendered. A
+// save with nothing usable here gets the three defaults, which is also what
+// a brand-new install gets.
+if(Array.isArray(data.codeSections)){
+  data.codeSections = data.codeSections.filter(function(s){
+    return s && typeof s==="object" && typeof s.key==="string" && s.key
+        && typeof s.label==="string";
+  });
+}
+if(!Array.isArray(data.codeSections) || !data.codeSections.length){
+  data.codeSections = DEFAULT_CODE_SECTIONS.map(function(s){ return {key:s.key, label:s.label}; });
+}
+// Replaced by each section's own label in v5. Deleted rather than left to
+// rot, so nothing can read a stale name back later.
+delete data.codeSectionNames;
 // On-screen activity-codes footer layout. Grouped is the default because
 // the sections are what make a long code list readable, and it is what the
 // printed sheet has always done — the flat row stays available as "One row".
@@ -995,7 +1048,7 @@ function runBuiltInTests() {
     activities:[{id:"a1",name:"Davening nicely",pts:2}],
     scores:{s1:12}, students:[{id:"s1",name:"Dovid",group:""}],
     passes:{used:{s1:1720000000000}, reset:1719000000000} });
-  assert("v3→v4 version bumped", d3g.version===4, "got v"+d3g.version);
+  assert("v3 save migrates through to the current version", d3g.version===DATA_VERSION, "got v"+d3g.version+", expected v"+DATA_VERSION);
   var passAct = d3g.activities.filter(function(a){ return a.name===PASS_ACT_NAME; });
   assert("v3→v4 Bathroom Pass activity seeded once", passAct.length===1, "got "+passAct.length);
   assert("v3→v4 seeded tracked + 0 points", passAct[0] && passAct[0].tracked===true && passAct[0].pts===0);
@@ -1213,7 +1266,7 @@ function runBuiltInTests() {
   // co-existence check rather than a run where 2a simply did nothing.
   assert("2a→new shell seeded alongside the untouched old stores",
     t10.trackedItems.length>0 && t10.trackedItemsSeeded===true);
-  assert("2a→DATA_VERSION NOT bumped (purely additive)", t10.version===4 && DATA_VERSION===4,
+  assert("2a→save reaches current DATA_VERSION (5); 2a itself added no bump", t10.version===DATA_VERSION && DATA_VERSION===5,
     "got v"+t10.version+", DATA_VERSION="+DATA_VERSION);
 
   // --- Test 11: Phase 2b Gradebook view state ---
@@ -1251,7 +1304,7 @@ function runBuiltInTests() {
     && JSON.stringify(t10.hw)===snapBefore.hw
     && JSON.stringify(t10.trackerLog)===snapBefore.trackerLog
     && JSON.stringify(t10.passes)===snapBefore.passes);
-  assert("2b→DATA_VERSION still NOT bumped", t10.version===4 && DATA_VERSION===4);
+  assert("2b→save reaches current DATA_VERSION (5); 2b itself added no bump", t10.version===DATA_VERSION && DATA_VERSION===5);
 
   // --- Test 12: settable Bathroom Pass cap ---
   // The whole point is that data.passes.used keeps its old meaning and its old
@@ -1282,7 +1335,7 @@ function runBuiltInTests() {
     !!t12c.passCount && typeof t12c.passCount==="object" && !Array.isArray(t12c.passCount));
   var t12d=runMigration({ version:4, passes:{ used:{} }, passCap:"three" });
   assert("cap→non-numeric cap repaired to 1", t12d.passCap===1, "got "+t12d.passCap);
-  assert("cap→DATA_VERSION still NOT bumped", t12.version===4 && DATA_VERSION===4);
+  assert("cap→save reaches current DATA_VERSION (5); the log cap added no bump", t12.version===DATA_VERSION && DATA_VERSION===5);
   // data.passes.reset is written but deliberately never read — automatic weekly
   // rollover is 2c's problem. If this ever fails, someone has started reading it.
   assert("cap→no automatic rollover was introduced",
@@ -1341,7 +1394,7 @@ function runBuiltInTests() {
     pastContests:[{id:"cX", name:"Bad", startTs:1, endTs:2, mode:"both", savedTs:3, totals:["not","an","object"]}] });
   assert("snap→array totals repaired to an object",
     !Array.isArray(t13e.pastContests[0].totals) && typeof t13e.pastContests[0].totals==="object");
-  assert("snap→DATA_VERSION still NOT bumped", t13.version===4 && DATA_VERSION===4);
+  assert("snap→save reaches current DATA_VERSION (5); the snapshot added no bump", t13.version===DATA_VERSION && DATA_VERSION===5);
   // The four Phase 2a stores stay untouched by all of this.
   assert("snap→old stores STILL byte-identical",
     JSON.stringify(t10.attendance)===snapBefore.attendance
@@ -1378,7 +1431,7 @@ function runBuiltInTests() {
     "before "+beforePast+"\nafter  "+JSON.stringify(t14c.pastContests));
   assert("hide→contest-tagged log entries untouched",
     t14c.log.length===1 && t14c.log[0].contestId==="c0" && t14c.log[0].delta===7);
-  assert("hide→DATA_VERSION still NOT bumped", t14c.version===4 && DATA_VERSION===4);
+  assert("hide→save reaches current DATA_VERSION (5); hiding added no bump", t14c.version===DATA_VERSION && DATA_VERSION===5);
 
   // --- Test 15: Phase 2c — Attendance converted into the tracked item ---
   // These run over the REAL {status, ts} shape (see Test 10's fixture), which
@@ -1441,8 +1494,8 @@ function runBuiltInTests() {
     JSON.stringify(t10.hw)===snapBefore.hw
     && JSON.stringify(t10.trackerLog)===snapBefore.trackerLog
     && JSON.stringify(t10.passes)===snapBefore.passes);
-  assert("2c→DATA_VERSION NOT bumped (derives a new store, converts nothing in place)",
-    t10.version===4 && DATA_VERSION===4, "got v"+t10.version);
+  assert("2c→save reaches current DATA_VERSION (5); 2c derives a new store and converts nothing in place",
+    t10.version===DATA_VERSION && DATA_VERSION===5, "got v"+t10.version);
 
   // All THREE states convert. "late" is a real recorded state with its own
   // button and its own Sheet status — collapsing it into present or absent
@@ -1630,7 +1683,70 @@ function runBuiltInTests() {
   var t17c = runMigration({ version:4, printExcluded:["not","an","object"] });
   assert("codes→corrupt printExcluded repaired to an object",
     !Array.isArray(t17c.printExcluded) && typeof t17c.printExcluded==="object");
-  assert("codes→DATA_VERSION still NOT bumped", t17.version===4 && DATA_VERSION===4);
+  assert("codes→save reaches current DATA_VERSION (5); the code picker added no bump", t17.version===DATA_VERSION && DATA_VERSION===5);
+  /* ---- v4 -> v5: code sections become the rebbi's own list ----
+   * The one DESTRUCTIVE migration in this app so far, so it is the one that
+   * most needs holding to exactly what it claims: it clears the arrangement
+   * and nothing else. These check both halves of that — what goes, and what
+   * must survive untouched. */
+  var t18 = runMigration({
+    version: 4,
+    activities: [{id:"a1",name:"On time",pts:2},{id:"a2",name:"Minus One",pts:-1}],
+    printExcluded: { "ACT:a2": true, "CTRL:PASUKNEXT": true },
+    printCodeSections: { "ACT:a1": "nav", "CTRL:UNDO": "points" },
+    codeSectionNames: { points: "Middos", nav: "Controls" },
+    printCodeOrder: ["CTRL:UNDO", "ACT:a1", "ACT:a2"]
+  });
+  assert("v5→version bumped to 5", t18.version===5, "got v"+t18.version);
+  assert("v5→three default sections seeded, in order",
+    Array.isArray(t18.codeSections)
+    && t18.codeSections.map(function(s){return s.key;}).join()==="pos,neg,nav",
+    "got "+JSON.stringify(t18.codeSections));
+  assert("v5→default section labels are Positive / Negative / Navigation",
+    t18.codeSections.map(function(s){return s.label;}).join()==="Positive,Negative,Navigation");
+  assert("v5→per-code section overrides cleared (old keys cannot be honoured)",
+    t18.printCodeSections && Object.keys(t18.printCodeSections).length===0,
+    "got "+JSON.stringify(t18.printCodeSections));
+  assert("v5→codeSectionNames removed, not left to rot",
+    t18.codeSectionNames===undefined);
+  // THE PART THAT MUST NOT BE LOST. A rebbi's chosen set of codes is real work;
+  // the arrangement is seconds of dragging. Only the second one resets.
+  assert("v5→which codes are switched OFF is untouched",
+    t18.printExcluded["ACT:a2"]===true && t18.printExcluded["CTRL:PASUKNEXT"]===true,
+    "got "+JSON.stringify(t18.printExcluded));
+  // The rebbi's own two activities are still there. Not an exact count —
+  // load2fix() seeds the built-in Homework/Pass/Attendance/Freeze activities
+  // onto any save that lacks them, so the list legitimately grows here.
+  assert("v5→no activity was harmed",
+    t18.activities.some(function(a){ return a.id==="a1" && a.pts===2; })
+    && t18.activities.some(function(a){ return a.id==="a2" && a.pts===-1; }),
+    "got "+JSON.stringify(t18.activities.map(function(a){return a.id;})));
+  // Runs ONCE, ever. A reset that re-ran on every load would wipe the rebbi's
+  // new arrangement each time he reopened the app — which is exactly why this
+  // lives in a version branch and not in load2fix().
+  var t18b = runMigration({
+    version: 5,
+    codeSections: [{key:"pos",label:"Good"},{key:"mine",label:"My section"}],
+    printCodeSections: { "ACT:a1": "mine" },
+    activities: [{id:"a1",name:"On time",pts:2}]
+  });
+  assert("v5→an already-migrated save is NOT reset again",
+    t18b.printCodeSections["ACT:a1"]==="mine"
+    && t18b.codeSections.map(function(s){return s.key;}).join()==="pos,mine",
+    "got "+JSON.stringify(t18b.codeSections)+" / "+JSON.stringify(t18b.printCodeSections));
+  assert("v5→a renamed section keeps its name across a reload",
+    t18b.codeSections[0].label==="Good");
+  // load2fix() repairs, since these keys are what printCodeSections points at.
+  var t18c = runMigration({ version:5, codeSections:"not an array" });
+  assert("v5→corrupt codeSections repaired to the defaults",
+    Array.isArray(t18c.codeSections) && t18c.codeSections.length===3);
+  var t18d = runMigration({ version:5, codeSections:[{key:"ok",label:"Fine"},{key:"",label:"no key"},{nope:1},null] });
+  assert("v5→malformed section entries dropped, usable ones kept",
+    t18d.codeSections.length===1 && t18d.codeSections[0].key==="ok");
+  var t18e = runMigration({ version:5, codeSections:[] });
+  assert("v5→an emptied section list falls back to the defaults (codes always have somewhere to go)",
+    t18e.codeSections.length===3);
+
   // And none of this disturbed the Phase 2a promise.
   assert("codes→old stores STILL byte-identical",
     JSON.stringify(t10.attendance)===snapBefore.attendance
