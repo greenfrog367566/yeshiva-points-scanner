@@ -1,0 +1,38 @@
+name: Validate app.html
+
+# Catches the class of bug that took the live app down on 2026-07-31: a merge
+# conflict resolution left invalid JS in app.html, and since all of its logic
+# lives in one <script> block, that syntax error broke the whole app for
+# every rebbi the moment it reached main. These are the same checks
+# CLAUDE.md documents as manual pre-commit steps — running them here means a
+# bad merge fails loudly on the PR instead of shipping silently.
+#
+# Runs on PRs into main (so it's a merge-blocking check on GitHub) and on
+# pushes to main (so a direct push or an admin merge still gets flagged).
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: JS syntax check (app.html script blocks)
+        run: node .github/scripts/check-js-syntax.js
+
+      - name: CSS comment-delimiter check
+        run: node .github/scripts/check-css-balance.js
+
+      - name: migrateData/load2fix sync check (app.html vs test-migration.html)
+        run: node .github/scripts/check-migration-sync.js
+
+      - name: sw.js syntax check
+        run: node --check sw.js

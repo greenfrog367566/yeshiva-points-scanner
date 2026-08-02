@@ -105,6 +105,18 @@ chore/cleanup-task
 git checkout main && git pull origin main
 git checkout -b feat/short-description     # or continue an existing branch
 ```
+**Run this first, unconditionally — even when resuming a branch that already
+existed.** This repo runs many parallel Claude Code sessions/worktrees, each
+merging its own branch via its own PR; none of them touch this shared checkout
+when they merge. That means the branch sitting here can already be merged, and
+`main` can already be several merges ahead, without anything in this folder
+showing it. Before resuming a branch that's more than a few minutes old, confirm
+it isn't already merged:
+```bash
+gh pr view <branch-name> --json state,mergedAt
+```
+If `state` is `MERGED`, don't keep editing that branch — switch to `main`, pull,
+and branch fresh instead.
 
 ### Every session must end with:
 ```bash
@@ -119,6 +131,24 @@ git push origin <branch-name>
 - Commit to `main`, push to `main`, or force-push to `main`
 - Merge a PR (that's the maintainer's explicit action)
 - Assume two Claude sessions are working from the same file — always verify
+- Assume this checkout reflects current `main` just because you haven't touched
+  it — other sessions merge through isolated worktrees that never update this
+  folder; `git pull` before trusting what's on disk here
+
+### The shared checkout now self-syncs (but don't lean on it)
+
+`.claude/hooks/sync-main-checkout.sh` runs on `SessionStart` and `SessionEnd`
+for every session in this repo — worktrees included — and fast-forwards the
+shared checkout at `C:\Dev\yeshiva-points-scanner` to `origin/main`. That closes
+the drift window that once left it 31 commits stale while every merge looked
+healthy.
+
+It is deliberately timid, and **it refuses in exactly the cases where you most
+need it**: it only acts when the shared checkout is on `main` with nothing
+uncommitted. Parked on a branch, or holding uncommitted work, it fast-forwards
+nothing and only prints how far behind the folder has fallen. So the rules above
+still stand unchanged — the hook is a safety net for the folder you *aren't*
+looking at, not a substitute for pulling in the one you are.
 
 ## Critical rules — read before writing any code
 
@@ -239,6 +269,7 @@ These docs in `docs/` are the settled design. They answer most "should we..." qu
 - **Print_Wizard_Spec.md** — the Print Wizard, six print components, Shulchani coin cards, the Tera-barcode constraint.
 - **Offline_NoComputer_Secretary_Spec.md** — Offline Mode, Batch Import parser (spec'd against real scanner data), Secretary Mode.
 - **Positioning.md** — settled copy decisions: the canonical self-description, "classroom economy" rejected as positioning (with its one permitted exception), "rebbeim" not "teachers", no licensing/free-forever language in user-facing copy, no AI framing. **Check it before writing or editing any user-facing copy.**
+- **Firebase_Rebuild_Scope.md** — the settled scope for the upcoming Firebase/Firestore rebuild: real accounts, Firestore replacing localStorage-as-database, three tiers (rebbi/admin/superadmin), the incremental-write data model (not one JSON blob per class), the converter tool, what retires (file:// offline copy, Sheets-as-database, Apps Script), and the 8-step build order. **Not started — build order step 1 (data model design session) hasn't begun.** Read before touching anything auth/sync/data-model shaped, and before assuming the current localStorage-only architecture described elsewhere in this file is the long-term plan.
 
 If a spec and this CLAUDE.md ever conflict, **CLAUDE.md wins**; flag the conflict to the maintainer.
 

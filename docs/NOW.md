@@ -10,6 +10,8 @@ The current working queue. Read this at the start of a session.
 
 Nothing in flight. Next item is Lean mode.
 
+**On the horizon:** the Firebase/Firestore rebuild is fully scoped in `docs/Firebase_Rebuild_Scope.md` — real accounts, Firestore replacing localStorage, three tiers, incremental-write data model, converter tool, 8-step build order. Not started; step 1 (data model design session) hasn't begun. Read it before this becomes the active queue item.
+
 ---
 
 ## Next, in order
