@@ -2360,7 +2360,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button class="btn btn-primary" id="printSeatChart">🖨 Print my class sheet</button>
     </div>
     <div class="card pad no-print" id="seatPrintCodesCard" style="margin-bottom:12px;display:none">
-      <p class="view-note" style="margin-top:0">Which codes go on the sheet, grouped into Points, Tracked, and Navigation. Untick one to leave it off; drag a code to reorder it within a group, or drag it into a different group — both are remembered. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
+      <p class="view-note" style="margin-top:0">Which codes you use, grouped into Points, Tracked, and Navigation. This one list governs all of them — the class sheet, the activity menu, and the codes under the seating chart. Untick one to leave it off everywhere; drag a code to reorder it within a group, or drag it into a different group — both are remembered. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
       <div class="toolbar" style="margin-bottom:8px;gap:6px">
         <button class="btn btn-sm" id="seatPrintCodesAll">All</button>
         <button class="btn btn-sm" id="seatPrintCodesNone">None</button>
@@ -2427,6 +2427,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <p class="view-note no-print">Print this and keep it on your clipboard. Scanning one of these <b>switches what you're scoring</b> and jumps you to the scan screen — it doesn't give points to anyone.</p>
       <div class="toolbar no-print">
         <select id="menuLabelFormat" class="field" style="width:auto"></select>
+        <button class="btn btn-sm" id="menuChooseCodes">Choose codes</button>
         <button class="btn btn-primary" id="printMenu">🖨 Print activity menu</button>
       </div>
       <div id="menuPrintTitle" class="seat-print-title" style="display:none"></div>
@@ -14322,6 +14323,19 @@ nameLine
       return (ai!==bi) ? (ai-bi) : (a.i-b.i);
     }).map(function(x){ return x.it; });
   }
+  // Every surface that draws from menuLabelItems(), redrawn together. There are
+  // four of them — the picker itself, the class sheet, the chart on screen and
+  // the printed activity menu — and each edit in the picker has to reach all
+  // four in the same beat or two of them disagree until something else happens
+  // to redraw one. Calling them from one place is what stops the next surface
+  // added from quietly being left out: the All / None buttons had already
+  // drifted, redrawing the sheet but not the chart.
+  function refreshCodeSurfaces(){
+    renderSeatPrintCodes();
+    renderSeatChartPrint();
+    renderTapPanel();
+    renderMenuLabels();
+  }
   // Moves one code into targetSection, positioned immediately before
   // beforeQrText (end of section if null), and rebuilds data.printCodeOrder
   // from the CURRENT full picker so every section's order stays consistent in
@@ -14346,7 +14360,7 @@ nameLine
     // renderTapPanel() too: the live chart's grouped footer reads this same
     // section/order model now, so a code moved here has to move there in the
     // same beat or the screen and the sheet disagree until the next redraw.
-    save(); renderSeatPrintCodes(); renderSeatChartPrint(); renderTapPanel();
+    save(); refreshCodeSurfaces();
   }
   function renderMenuLabels(hasQR){
     if(typeof hasQR==="undefined") hasQR=(typeof QRCode!=="undefined");
@@ -14510,6 +14524,13 @@ nameLine
   });
   $("printLabels").addEventListener("click", function(){ document.body.classList.add("print-students"); window.print(); });
   $("printMenu").addEventListener("click", function(){ document.body.classList.add("print-menu"); window.print(); });
+  // This page draws from menuLabelItems() like every other code surface, so it
+  // has always honoured the on/off choice — it just had no way to CHANGE it.
+  // A rebbi printing his activity menu saw ten of his thirteen codes with the
+  // phrase-nav pair and −Custom simply absent (they start off), nothing on the
+  // page saying so, and the only switch three tabs away under the class sheet.
+  // Same picker as everywhere else, same modal the seating chart opens.
+  $("menuChooseCodes").addEventListener("click", openCodePickerModal);
   $("personalGroup").addEventListener("change", renderLabels);
   $("personalWho").addEventListener("change", renderLabels);
   $("personalScale").addEventListener("change", renderLabels);
@@ -14599,7 +14620,7 @@ nameLine
     // menuLabelItems() being the single source buys), so one tray governs
     // both rather than a rebbi having to remove the same code twice.
     var binBox=el("div","print-code-section print-code-bin");
-    binBox.appendChild(el("h4",null,"🗑 Removed — not on the sheet or the chart"));
+    binBox.appendChild(el("h4",null,"🗑 Removed — not on any sheet or the chart"));
     var binChips=el("div","print-code-chips");
     binBox.appendChild(binChips);
     binBox.addEventListener("dragover", function(ev){ ev.preventDefault(); binBox.classList.add("drag-over"); });
@@ -14610,14 +14631,14 @@ nameLine
       var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
       if(!payload.qrText) return;
       data.printExcluded[payload.qrText]=true;
-      save(); renderSeatPrintCodes(); renderSeatChartPrint(); renderTapPanel();
+      save(); refreshCodeSurfaces();
     });
     if(!removed.length) binChips.appendChild(el("div","print-code-empty","Drag a code here to take it off"));
     removed.forEach(function(it){ binChips.appendChild(printCodeChip(it, hasQR, null)); });
     box.appendChild(binBox);
 
     var on=all.filter(function(it){ return !data.printExcluded[it.qrText]; }).length;
-    $("seatPrintCodesCount").textContent=on+" of "+all.length+" on the sheet";
+    $("seatPrintCodesCount").textContent=on+" of "+all.length+" in use";
   }
   // One draggable code chip. `sec` is the section it currently sits in, or
   // null when it is sitting in the bin — which is the only difference between
@@ -14638,12 +14659,12 @@ nameLine
     var act=el("button","print-code-x");
     act.type="button";
     act.textContent = sec ? "✕" : "↩";
-    act.title = sec ? "Take this code off the sheet and the chart" : "Put this code back";
+    act.title = sec ? "Take this code off the sheets and the chart" : "Put this code back";
     act.addEventListener("click", function(ev){
       ev.preventDefault(); ev.stopPropagation();
       if(sec) data.printExcluded[it.qrText]=true;
       else delete data.printExcluded[it.qrText];
-      save(); renderSeatPrintCodes(); renderSeatChartPrint(); renderTapPanel();
+      save(); refreshCodeSurfaces();
     });
     chip.appendChild(act);
     chip.addEventListener("dragstart", function(ev){
@@ -14720,11 +14741,11 @@ nameLine
     document.addEventListener("keydown", onKey);
   }
   $("seatPrintCodesAll").addEventListener("click", function(){
-    data.printExcluded={}; save(); renderSeatPrintCodes(); renderSeatChartPrint();
+    data.printExcluded={}; save(); refreshCodeSurfaces();
   });
   $("seatPrintCodesNone").addEventListener("click", function(){
     var ex={}; menuLabelItemsAll().forEach(function(it){ ex[it.qrText]=true; });
-    data.printExcluded=ex; save(); renderSeatPrintCodes(); renderSeatChartPrint();
+    data.printExcluded=ex; save(); refreshCodeSurfaces();
   });
   $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); seatPrintSyncActivityRow(); renderSeatChartPrint(); });
   $("seatPrintActivityPicker").addEventListener("change", function(){ data.seatPrintOpts.activityId=this.value; save(); renderSeatChartPrint(); });
