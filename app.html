@@ -1211,24 +1211,39 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     body.print-students #personalPagesBlock{display:none!important}
     body.print-personal #studentLabelsBlock{display:none!important}
     body.print-personal #personalPagesBlock{margin-top:0!important}
-    body.print-seating #seatChartGrid{display:block!important;width:8.5in;padding:0.3in;box-sizing:border-box}
+    /* The on-screen wrapper scrolls; on paper there is nothing to scroll and a
+       clipped edge would silently crop the sheet. */
+    body.print-seating .seat-print-scroll{overflow:visible!important}
+    /* The preview's card border sits exactly on the paper edge now that the two
+       are the same size, which no printer can render — drop it. */
+    body.print-seating #seatChartGrid{display:block!important;width:8.5in;padding:0.3in;box-sizing:border-box;border:none;border-radius:0}
     body.print-seating-landscape #seatChartGrid{width:11in}
-    .seat-print-title{text-align:center;font-family:var(--serif);font-size:1.3rem;font-weight:700;margin-bottom:4px}
     .seat-print-activity-badge-wrap{text-align:center;margin-bottom:0.12in}
     .seat-print-activity-badge{display:inline-block;padding:3px 14px;border:2px solid currentColor;border-radius:999px;font-weight:700;font-size:1rem;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    body.print-seating .seat-front{margin:0 0 0.15in;font-size:1rem}
-    body.print-seating .print-seat-grid{padding:0;gap:0.15in}
+    /* NOTHING here re-sizes the sheet any more. The title, the seats, the QR
+       codes and the gaps used to be set twice — once for the preview and again,
+       differently, in this block: seats were 1.5in tall on paper against ~1in on
+       screen and the QR was 110px against 60px, so the mock-up was never quite
+       the sheet. Every one of those numbers now lives once, in the
+       .seat-print-preview rules, which apply in both places because
+       #seatChartGrid keeps that class when it prints. What is left here is only
+       what is genuinely print-only: page breaks and the paper-width box. */
+    body.print-seating .print-seat-grid{padding:0}
     /* A seat is never split by a page break. This is also what stops a seat ROW
        being split: .seat-grid is display:grid, so rows exist only as grid line
        positions and there is no row element to put a break rule on — making
        every item unbreakable is what pushes the fragmentation boundary out to a
        row edge. Same rule the rest of the print CSS already uses on .label,
        .personal-qr-card, .point-card and .lb-row-compact. */
-    body.print-seating .seat{min-height:1.5in;border:1px solid #999;break-inside:avoid;page-break-inside:avoid}
+    body.print-seating .seat{border:1px solid #999;break-inside:avoid;page-break-inside:avoid}
     /* The codes block stays whole. Half a key on each page is worse than none.
        It ALWAYS sits at the bottom, in every case — see the note in
        renderSeatChartPrint() before reordering it. */
     body.print-seating .seat-print-activities-footer{break-inside:avoid;page-break-inside:avoid}
+    /* Same rule one level down: if the whole block genuinely cannot fit, a
+       section splitting across pages is still worse than the break falling
+       between two sections. */
+    body.print-seating .seat-print-code-group{break-inside:avoid;page-break-inside:avoid}
     .seat-print-qr{width:55%;max-width:110px;margin:0 auto 6px}
     .seat-print-qr img,.seat-print-qr canvas{width:100%;height:auto;display:block}
     .seat-print-photo{display:flex;justify-content:center;margin:0 auto 6px}
@@ -1299,25 +1314,43 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* On-screen preview of the seating chart print (not the print output
      itself, which uses inch-based sizing scoped inside @media print above)
      — a reasonably-sized, contained card so it fits the normal page layout. */
-  .seat-print-preview{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;max-width:1100px;margin:0 auto;overflow:visible}
-  .seat-print-preview .seat-print-title,#menuPrintTitle{text-align:center;font-family:var(--serif);font-size:1.25rem;font-weight:700;margin-bottom:6px}
+  /* The preview IS the page, at page size. It used to be a ~1100px-wide card
+     with 20px of padding while the sheet prints 8.5in (816px) with 0.3in
+     margins — so the same seats and codes had ~300px more room on screen than
+     on paper and wrapped differently, which is exactly how a mock-up stops
+     being a mock-up. Width, padding and box model now match the print rule in
+     the @media print block below, so what wraps here wraps there.
+     The wrapper scrolls rather than the page being squeezed: shrinking the
+     preview to fit a narrow window would reintroduce the very mismatch this
+     removes. */
+  .seat-print-scroll{overflow-x:auto;overflow-y:hidden;padding-bottom:4px}
+  .seat-print-preview{background:#fff;border:1px solid var(--line);border-radius:12px;
+    width:8.5in;padding:0.3in;box-sizing:border-box;margin:0 auto;overflow:visible}
+  .seat-print-preview.landscape{width:11in}
+  .seat-print-preview .seat-print-title,#menuPrintTitle{text-align:center;font-family:var(--serif);font-size:1.15rem;font-weight:700;margin-bottom:3px}
   .seat-print-preview .seat-print-activity-badge-wrap{text-align:center;margin-bottom:10px}
   .seat-print-preview .seat-print-activity-badge{display:inline-block;padding:3px 14px;border:2px solid currentColor;border-radius:999px;font-weight:700;font-size:.9rem}
-  .seat-print-preview .seat-front{margin:0 0 14px;text-align:center;font-size:.75rem;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;padding-bottom:8px;border-bottom:2px solid var(--line)}
-  .seat-print-preview .print-seat-grid{display:grid;gap:10px}
-  .seat-print-preview .seat{border:1px solid var(--line);border-radius:10px;padding:10px 6px;text-align:center;min-height:0;min-width:0}
+  .seat-print-preview .seat-front{margin:0 0 8px;text-align:center;font-size:.7rem;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;padding-bottom:4px;border-bottom:2px solid var(--line)}
+  .seat-print-preview .print-seat-grid{display:grid;gap:7px}
+  .seat-print-preview .seat{border:1px solid var(--line);border-radius:8px;padding:5px 4px;text-align:center;min-height:0;min-width:0}
   .seat-print-preview .seat.empty{border-style:dashed;color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:.8rem}
-  .seat-print-preview .seat-print-qr{width:100%;max-width:60px;margin-left:auto;margin-right:auto}
+  /* aspect-ratio, not height:auto off the image. The QR library hands back an
+     <img> carrying a data: URI, and an <img> is zero-height until it decodes —
+     so every seat was briefly a short box, the preview jumped as the codes
+     popped in, and anything measuring the page in that window (the fit warning)
+     read a sheet that looked like it fitted when it did not. A square box holds
+     its height from the first layout, before the image exists. */
+  .seat-print-preview .seat-print-qr{width:100%;max-width:60px;aspect-ratio:1;margin-left:auto;margin-right:auto}
   .seat-print-preview .seat-print-qr img,.seat-print-preview .seat-print-qr canvas{width:100%;height:auto;display:block}
   .seat-print-preview .seat-print-photo .avatar{width:40px!important;height:40px!important;font-size:15px!important}
   .seat-print-preview .seat-name{font-weight:600;font-size:.82rem;display:block;overflow-wrap:break-word;word-wrap:break-word;white-space:normal;text-align:center;line-height:1.2}
   .seat-print-preview .seat-print-pts{font-size:.7rem;color:var(--muted);margin-top:2px;display:block}
-  .seat-print-preview .seat-print-activities-footer{margin-top:16px;border-top:2px solid var(--line);padding-top:10px}
-  .seat-print-preview .seat-print-activities-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;margin-bottom:6px}
-  .seat-print-preview .seat-print-act-section-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;margin:8px 0 4px}
+  .seat-print-preview .seat-print-activities-footer{margin-top:9px;border-top:2px solid var(--line);padding-top:6px}
+  .seat-print-preview .seat-print-activities-title{font-size:.7rem;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;margin-bottom:4px}
+  .seat-print-preview .seat-print-act-section-label{font-size:.65rem;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;margin:5px 0 3px}
   .seat-print-preview .seat-print-act-section-label:first-of-type{margin-top:0}
-  .seat-print-preview .seat-print-activities-grid{display:flex;flex-wrap:wrap;gap:6px}
-  .seat-print-preview .seat-print-act-card{border:1px solid var(--line);border-radius:6px;padding:4px 6px;text-align:center;width:76px;font-size:.62rem;line-height:1.2}
+  .seat-print-preview .seat-print-activities-grid{display:flex;flex-wrap:wrap;gap:4px}
+  .seat-print-preview .seat-print-act-card{border:1px solid var(--line);border-radius:6px;padding:2px 4px;text-align:center;width:76px;font-size:.6rem;line-height:1.15}
   /* The label WRAPS rather than being clipped. It used to be nowrap + ellipsis
      in a fixed-width card, which turned the codes into "Davening…", "Homewor…",
      "Undo Last…" — and reading the label at a glance while scanning is the
@@ -1326,6 +1359,59 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      in their line and stay aligned. */
   .seat-print-preview .seat-print-act-label{font-weight:700;margin-top:2px;white-space:normal;overflow-wrap:break-word}
   .seat-print-preview .seat-print-act-sub{color:var(--muted)}
+  /* Grouped layout: the sections sit side by side in boxes instead of stacked
+     full-width, which is both what the chart on screen does and what keeps the
+     block short enough to stay on page 1. Cards inside a section are a grid of
+     N columns (the "wide" button), so they line up rather than wrapping ragged. */
+  .seat-print-preview .seat-print-code-groups{display:flex;flex-wrap:wrap;gap:7px;align-items:flex-start}
+  .seat-print-preview .seat-print-code-group{border:1px solid var(--line);border-radius:8px;padding:4px 6px;flex:1 1 180px;min-width:150px;max-width:340px}
+  .seat-print-preview .seat-print-code-group .seat-print-act-section-label{margin-top:0}
+  .seat-print-preview .seat-print-code-grid{display:grid;gap:4px}
+  .seat-print-preview .seat-print-code-grid .seat-print-act-card{width:auto}
+  /* The mock-up is editable: cards drag, and each carries a ✕. Every one of
+     these affordances is .no-print or a screen-only outline, so the sheet that
+     comes out of the printer is exactly what the preview shows minus the
+     handles. */
+  .seat-print-preview .seat-print-act-card{position:relative;cursor:grab}
+  .seat-print-preview .seat-print-act-card.dragging{opacity:.4}
+  .seat-print-preview .seat-print-act-card.drag-over{outline:2px solid var(--brass);outline-offset:1px}
+  .seat-print-act-x{position:absolute;top:1px;right:2px;border:none;background:transparent;
+    color:var(--muted);font-size:.7rem;line-height:1;padding:2px;cursor:pointer;opacity:0}
+  .seat-print-act-card:hover .seat-print-act-x{opacity:1}
+  .seat-print-act-x:hover{color:var(--bad,#b4341f)}
+  .seat-print-preview .seat-print-code-group.drag-over{outline:2px solid var(--brass);outline-offset:2px}
+  .seat-print-preview .seat-print-code-group.empty{border-style:dashed;opacity:.7}
+  .seat-print-code-empty{font-size:.62rem;color:var(--muted);text-align:center;padding:8px 4px;
+    border:1px dashed var(--line);border-radius:6px}
+  .seat-print-activities-empty{font-size:.72rem;color:var(--muted);margin-bottom:6px}
+  .seat-print-preview .seat-print-codes-head{display:flex;align-items:baseline;gap:8px}
+  .seat-print-preview .seat-print-codes-head .seat-print-activities-title{flex:1;min-width:0}
+  .seat-print-codes-tools{display:inline-flex;gap:4px}
+  .seat-print-mini{font-size:.62rem;border:1px solid var(--line);background:#fff;border-radius:5px;
+    padding:1px 6px;cursor:pointer;color:var(--muted)}
+  .seat-print-mini:hover{color:var(--ink);border-color:var(--ink)}
+  /* The renameable section heading. Only ever a hover/focus tint — no border, no
+     padding shift — so the printed heading is pixel-identical to what it was
+     before it became editable. */
+  .seat-print-preview .seat-print-code-group-head{display:flex;align-items:center;gap:4px}
+  .seat-print-preview .seat-print-code-group-head .seat-print-act-section-label{flex:1;min-width:0}
+  .seat-print-sec-x{border:none;background:transparent;color:var(--muted);font-size:.62rem;
+    line-height:1;padding:2px 3px;cursor:pointer;opacity:0;flex:none}
+  .seat-print-code-group:hover .seat-print-sec-x{opacity:1}
+  .seat-print-sec-x:hover{color:var(--bad,#b4341f)}
+  .print-code-section-head{display:flex;align-items:center;gap:4px}
+  .print-code-section-head .print-code-section-name{flex:1;min-width:0;margin-bottom:0}
+  .seat-print-preview .seat-print-act-section-label[contenteditable]{outline:none;border-radius:4px}
+  .seat-print-preview .seat-print-act-section-label[contenteditable]:hover{background:var(--gb-row,#f3f4f8)}
+  .seat-print-preview .seat-print-act-section-label[contenteditable]:focus{background:#fff;box-shadow:0 0 0 2px var(--brass)}
+  .seat-print-removed{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;
+    padding:6px 8px;border:1px dashed var(--line);border-radius:8px}
+  .seat-print-removed.drag-over{border-color:var(--brass);border-style:solid}
+  .seat-print-removed-lbl{font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;
+    color:var(--muted);font-weight:700}
+  .seat-print-removed-chip{font-size:.68rem;border:1px solid var(--line);background:#fff;
+    border-radius:999px;padding:2px 8px;cursor:pointer;color:var(--muted)}
+  .seat-print-removed-chip:hover{color:var(--ink);border-color:var(--ink)}
 </style>
 </head>
 <body>
@@ -2312,18 +2398,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <h2 class="view-title">Print my class sheet</h2>
     <p class="view-note no-print"><b>This is the one page you need to start scanning.</b> Every student's code sitting in his own seat, with the codes for your activities underneath. Print it, keep it on your desk or clipboard, and scan an activity code then a student — that's a whole scoring action in two scans.</p>
     <div class="pill-note no-print" id="seatAutoPlaceNote" style="display:none;margin-bottom:10px"></div>
-    <!-- The REAL seating editor, not a copy of it. renderTapPanelInto() already
-         renders into any container and is already called for the Scan tab and
-         the Dashboard precisely so the two cannot drift; this is a third
-         container, so there is still exactly one seating editor in the app. -->
-    <div class="card pad no-print" id="seatEditCard" style="margin-bottom:12px">
-      <div class="board-head"><h3>Seating — drag to rearrange</h3></div>
-      <div id="classSheetTapPanelBody"></div>
-    </div>
+    <!-- The seating editor that used to sit here, above the preview, is gone.
+         It and the preview were two boxes showing the same chart, and you
+         arranged in one while looking at the other. The preview IS the editor
+         now: seats drag, ✕ empties one, and the codes underneath drag too. -->
     <div class="toolbar no-print">
       <span class="seg" id="seatPrintOrient">
         <button data-orient="portrait" class="active">Portrait (vertical)</button>
         <button data-orient="landscape">Landscape (horizontal)</button>
+      </span>
+      <span class="seat-dims" id="seatPrintDims" title="How many desks the sheet is laid out in. Changing it never moves a boy you have already placed.">Rows
+        <input type="number" id="seatPrintRows" min="1" max="12">Cols
+        <input type="number" id="seatPrintCols" min="1" max="12">
       </span>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem">Avatar:
         <select id="seatPrintAvatarMode" class="field" style="width:auto">
@@ -2339,20 +2425,34 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem"><input type="checkbox" id="seatPrintShowPoints"> Points</label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Flips the chart 180° — front of room at the bottom, left/right mirrored — matching what you actually see facing the class. Names stay right-side-up and readable."><input type="checkbox" id="seatPrintRebbiView"> Rebbi's view</label>
       <label id="seatPrintShowActivitiesRow" style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Adds a compact row of activity QR codes at the bottom of the page, for a one-page classroom reference."><input type="checkbox" id="seatPrintShowActivities"> Activities footer</label>
-      <button class="btn btn-sm" id="seatPrintCodesToggle">Choose codes</button>
+      <span id="seatPrintActLayoutRow" style="display:none;gap:6px">
+        <button class="btn btn-sm" id="seatPrintActGrouped"></button>
+        <button class="btn btn-sm" id="seatPrintActCols"></button>
+      </span>
+      <!-- "Choose codes" no longer opens here: everything it did on THIS page —
+           choosing, re-ordering, renaming a section, All/None — is on the
+           preview below, on the real cards. The picker itself is still very much
+           alive; it is what the seating chart and Print: Activities open, since
+           neither of those has a sheet to edit. #seatPrintCodesCard below stays
+           in the DOM because that is the node the modal borrows. -->
       <button class="btn btn-primary" id="printSeatChart">🖨 Print my class sheet</button>
     </div>
     <div class="card pad no-print" id="seatPrintCodesCard" style="margin-bottom:12px;display:none">
-      <p class="view-note" style="margin-top:0">Which codes go on the sheet, grouped into Points, Tracked, and Navigation. Untick one to leave it off; drag a code to reorder it within a group, or drag it into a different group — both are remembered. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
+      <p class="view-note" style="margin-top:0">Which codes you use, and how they're grouped. This one list governs all of them — the class sheet, the activity menu, and the codes under the seating chart. Drag a code to reorder it within a section, or into a different section; ✕ takes it off everywhere and it waits in the tray below. <b>The sections are yours:</b> rename one by typing in its heading, add your own with <b>+ Section</b>, or remove one with its ✕ — its codes move to the first section rather than disappearing. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
       <div class="toolbar" style="margin-bottom:8px;gap:6px">
         <button class="btn btn-sm" id="seatPrintCodesAll">All</button>
         <button class="btn btn-sm" id="seatPrintCodesNone">None</button>
+        <button class="btn btn-sm" id="seatPrintCodesAddSection">+ Section</button>
         <span id="seatPrintCodesCount" style="font-size:.82rem;color:var(--muted);font-weight:600"></span>
       </div>
       <div id="seatPrintCodesList" class="print-code-sections"></div>
     </div>
-    <p class="view-note no-print" style="margin:4px 0 10px">Preview — this is what will print:</p>
-    <div id="seatChartGrid" class="seat-print-preview"></div>
+    <p class="view-note no-print" style="margin:4px 0 10px">Preview — this is what will print, and <b>you edit it here.</b> Drag a boy into a different desk, or ✕ to empty his seat. Drag a code to re-order it or move it to another section, ✕ to take it off, and click a section's name to rename it. Anything you take off waits in the tray below the sheet.</p>
+    <div class="seat-print-scroll"><div id="seatChartGrid" class="seat-print-preview"></div></div>
+    <!-- Anyone without a seat, under the sheet rather than inside it: the
+         preview is drawn at true page size, so putting a screen-only tray in
+         there would make the white box taller than the page it is meant to be. -->
+    <div id="seatPrintUnplaced" class="no-print"></div>
     <div id="seatPrintFitWarning" class="pill-note no-print" style="display:none;margin-top:10px;background:var(--bad-soft);color:#7c2d1c">This may not fit on one printed page with the current settings — try hiding photos, turning off the activities footer, or switching to Landscape.</div>
   </section>
 
@@ -2410,6 +2510,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <p class="view-note no-print">Print this and keep it on your clipboard. Scanning one of these <b>switches what you're scoring</b> and jumps you to the scan screen — it doesn't give points to anyone.</p>
       <div class="toolbar no-print">
         <select id="menuLabelFormat" class="field" style="width:auto"></select>
+        <button class="btn btn-sm" id="menuChooseCodes">Choose codes</button>
         <button class="btn btn-primary" id="printMenu">🖨 Print activity menu</button>
       </div>
       <div id="menuPrintTitle" class="seat-print-title" style="display:none"></div>
@@ -3657,7 +3758,7 @@ function setupRoster() {
     //
     // Discoverability is fixed by putting the checkbox on a page rebbeim
     // actually reach, not by flipping a setting under them.
-    seatPrintOpts: { avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"" }
+    seatPrintOpts: { avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", actGrouped:true, actCols:2 }
   };
 
   var SHOR_BANK = [
@@ -3740,7 +3841,7 @@ function setupRoster() {
   // establishing the baseline every migration counts up from. Bump
   // DATA_VERSION and add a new `if(data.version===N)` branch here whenever a
   // future release changes the shape of stored data.
-  var DATA_VERSION = 4;
+  var DATA_VERSION = 5;
   function migrateData(d){
     if(!d.version) d.version = 1;
     // v1 -> v2: rename data.bunk to data.className. This app is a Yeshiva/
@@ -3779,6 +3880,40 @@ function setupRoster() {
     // one extra button, deletable like any other activity.
     if(d.version===3){
       d.version = 4;
+    }
+    // v4 -> v5: the code sections became the rebbi's own list. They used to be a
+    // fixed trio (Points / Tracked / Navigation) with a separate sparse rename
+    // overlay in d.codeSectionNames; they are now d.codeSections — {key,label}
+    // in print order — which he can add to, rename and delete. A section's name
+    // IS its label, so the rename overlay has nothing left to describe.
+    //
+    // The defaults also changed shape: Points split into Positive and Negative,
+    // and Tracked folded into Navigation. Old per-code overrides are therefore
+    // meaningless — "this code lives in Points" cannot be honoured when there is
+    // no Points — so they are cleared and every code falls back to its new
+    // default section. This is a deliberate reset, chosen over a mapping.
+    //
+    // WHAT CAN BE LOST: only the arrangement — which section a code sat in, the
+    // order within it, and any renamed section titles. WHAT CANNOT: every code
+    // itself, and which codes are switched ON or OFF. d.printExcluded is not
+    // touched here, so a rebbi who spent time choosing his ten codes still has
+    // exactly those ten; they are simply grouped the new way. The arrangement is
+    // also the one part that is a few seconds of dragging to restore, which is
+    // why it was the safe thing to reset.
+    //
+    // It lives in a version branch rather than in load2fix() precisely BECAUSE
+    // it is destructive: load2fix() runs on every single load, so a reset there
+    // would wipe the rebbi's new arrangement again every time he reopened the
+    // app. This runs once, ever.
+    if(d.version===4){
+      d.printCodeSections = {};
+      delete d.codeSectionNames;
+      d.codeSections = [
+        {key:"pos", label:"Positive"},
+        {key:"neg", label:"Negative"},
+        {key:"nav", label:"Navigation"}
+      ];
+      d.version = 5;
     }
     return d;
   }
@@ -4181,6 +4316,7 @@ function setupRoster() {
     // so it ends when you leave the page you were doing it on.
     if(activeTabName==="printSeats" && tab!=="printSeats" && data.seatArranging){
       data.seatArranging=false;
+      data.seatSetupOpen=false;   // the two are one switch now
       save();
       renderTapPanel();
     }
@@ -4249,6 +4385,7 @@ function setupRoster() {
       $("seatPrintRebbiView").checked = data.seatPrintOpts.rebbiView;
       $("seatPrintShowActivities").checked = data.seatPrintOpts.showActivities;
       seatPrintSyncActivityRow();
+      seatPrintSyncDims();
       // A rebbi who has only imported a roster has no seat layout, and this page
       // used to hand him 24 boxes reading "Empty seat" with no student codes at
       // all — a sheet that looks real and is useless. Seat whoever has no seat
@@ -7423,7 +7560,10 @@ function setupRoster() {
     scanBtn.title="Show each student's QR code, so the class can be scanned straight off the screen";
     scanBtn.addEventListener("click", function(){
       data.seatScanMode=!data.seatScanMode;
-      if(data.seatScanMode) data.seatArranging=false;
+      // Show codes and arranging still can't both be on — a QR in every cell
+      // while seats are draggable is a way to mis-seat a boy you cannot read.
+      // Closes Setup with it, since Setup being open now MEANS arranging.
+      if(data.seatScanMode){ data.seatArranging=false; data.seatSetupOpen=false; }
       save(); renderTapPanel();
     });
     toolbar.appendChild(scanBtn);
@@ -7466,6 +7606,18 @@ function setupRoster() {
         });
         toolbar.appendChild(colBtn);
       }
+
+      // Which codes are here, and in what order. Arranging mode on this chart
+      // only ever moved STUDENTS, so the codes underneath could be re-ordered
+      // from the Print class sheet page and nowhere else — which is a strange
+      // place to have to go to fix what is on the smartboard in front of you.
+      // This opens the very same picker (the actual node, moved into a modal
+      // and moved back on close), not a second copy of it: one picker governs
+      // the sheet and the chart together, exactly as one code list already does.
+      var pickBtn=el("button","seat-modebtn","⚙ Choose codes");
+      pickBtn.title="Add, remove or re-order the codes shown here — the same ones that print on the class sheet";
+      pickBtn.addEventListener("click", openCodePickerModal);
+      toolbar.appendChild(pickBtn);
     }
 
     if(effViewMode==="seating"){
@@ -7474,7 +7626,26 @@ function setupRoster() {
       // ⚙ toggle — hides/shows the setup controls without hiding the chart.
       // Lives in the top "Tap a name to give points" row, on the right.
       if(typeof data.seatSetupOpen==="undefined") data.seatSetupOpen=false;
-      var setupToggle=el("button","btn btn-sm", data.seatSetupOpen?"⚙ Hide setup":"⚙ Setup");
+      // Setup and arranging used to be two separate switches: you opened Setup
+      // and then had to find "Arrange seats" inside it before a boy would
+      // actually move, which reads as the panel being broken. Arranging is the
+      // only reason to open Setup, so it is now one switch — opening it turns
+      // arranging on, closing it turns arranging off — and every other place
+      // that cancels arranging goes through this too, so the two flags cannot
+      // drift apart into "setup open but nothing drags".
+      function setSeatSetup(on){
+        data.seatSetupOpen=!!on;
+        data.seatArranging=!!on;
+        // Rebbi's view and arranging stay strictly mutually exclusive — see
+        // rebbiBtn below for why this first pass keeps that as a hard rule.
+        if(on) data.seatLiveRebbiView=false;
+        save(); renderTapPanel();
+      }
+      var setupToggle=el("button","btn btn-sm"+(data.seatSetupOpen?" btn-primary":""),
+                         data.seatSetupOpen?"✓ Done arranging":"⚙ Setup & arrange");
+      setupToggle.title = data.seatSetupOpen
+        ? "Finish — seats stop being draggable"
+        : "Change the rows and columns and drag boys into their seats";
       var boardHead = body.parentElement ? body.parentElement.querySelector(".board-head") : null;
       if(boardHead){
         // Remove any stale copy from a previous render before re-inserting.
@@ -7525,18 +7696,8 @@ function setupRoster() {
       // Offered everywhere except the print page itself.
       if(!opts.hidePrint) setupRow.appendChild(printWrap);
 
-      var arrangeBtn=el("button","btn btn-sm seat-arrange-toggle", data.seatArranging?"Done arranging":"Arrange seats");
-      arrangeBtn.addEventListener("click", function(){
-        data.seatArranging=!data.seatArranging;
-        // Belt-and-suspenders: force Rebbi's view off the moment arranging
-        // turns on, rather than only disabling its button going forward —
-        // guarantees the two never overlap even if Rebbi's view was already
-        // on before arranging started. See rebbiBtn below for why this
-        // first pass keeps them strictly mutually exclusive.
-        if(data.seatArranging) data.seatLiveRebbiView=false;
-        save(); renderTapPanel();
-      });
-      setupRow.appendChild(arrangeBtn);
+      // (The separate "Arrange seats" button that used to sit here is gone —
+      // opening this row IS arranging now. See setSeatSetup() above.)
 
       // "Rebbi's view" for the LIVE chart — same 180° flip as the print
       // option, but this one is interactive (click-to-award, drag-to-
@@ -7549,7 +7710,7 @@ function setupRoster() {
       // that threading alone — don't relax without extensive testing.
       // No static id here (unlike the print toggle) since this panel is
       // rendered twice into two different containers (Scan tab + Dashboard);
-      // a shared id would collide, so — matching arrangeBtn/setupToggle
+      // a shared id would collide, so — matching setupToggle
       // above — it's referenced only via its own closure, not $(id).
       var rebbiBtn=el("button","btn btn-sm seat-arrange-toggle", data.seatLiveRebbiView?"↩ Normal view":"🔄 Rebbi's view");
       rebbiBtn.disabled = !!data.seatArranging;
@@ -7560,13 +7721,14 @@ function setupRoster() {
         if(data.seatArranging) return; // extra guard; button is also disabled
         data.seatLiveRebbiView=!data.seatLiveRebbiView; save(); renderTapPanel();
       });
-      setupRow.appendChild(rebbiBtn);
+      // Lives in the main toolbar rather than inside Setup. It is a way of
+      // LOOKING at the chart, not a setup step — and now that opening Setup
+      // means arranging, leaving it in there would have made it permanently
+      // unreachable: it is disabled while arranging, and arranging is exactly
+      // when that row is on screen.
+      toolbar.appendChild(rebbiBtn);
 
-      setupToggle.addEventListener("click", function(){
-        data.seatSetupOpen=!data.seatSetupOpen; save();
-        setupRow.style.display=data.seatSetupOpen?"flex":"none";
-        setupToggle.textContent=data.seatSetupOpen?"⚙ Hide setup":"⚙ Setup";
-      });
+      setupToggle.addEventListener("click", function(){ setSeatSetup(!data.seatSetupOpen); });
 
       body.appendChild(toolbar);
       body.appendChild(setupRow);
@@ -7612,7 +7774,8 @@ function setupRoster() {
     renderTapPanelInto("dashTapPanelBody", null);
     // The class sheet's own copy — a dedicated editor, so it always shows the
     // chart and never offers to print the page it is already on.
-    renderTapPanelInto("classSheetTapPanelBody", null, {forceSeating:true, hidePrint:true});
+    // (The class sheet's own copy of the seating editor used to render here.
+    // Its preview does the job now — see renderSeatChartPrint().)
     // teachTapPanelBody removed — no tap panel on Pesukim/Mishnayos pages
     // shorTapPanelBody removed — no tap panel on Shorashim page
     // Moving a boy in the editor has to redraw the sheet above it, or the rebbi
@@ -7689,7 +7852,7 @@ function setupRoster() {
       return;
     }
     // Grouped. Deliberately the SAME sections, order and names the printed
-    // class sheet already uses (PRINT_CODE_SECTIONS + printCodeSectionOf +
+    // class sheet already uses (codeSections() + printCodeSectionOf +
     // orderedPrintCodeItems + codeSectionLabel) rather than a second grouping
     // of its own, so moving a code in "Choose codes" moves it on screen and on
     // paper together. A screen layout that disagreed with the sheet in the
@@ -7698,7 +7861,7 @@ function setupRoster() {
     var ordered=orderedPrintCodeItems(items);
     var cols=actFooterCols();
     var drawn=0;
-    PRINT_CODE_SECTIONS.forEach(function(sec){
+    codeSections().forEach(function(sec){
       var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
       if(!secItems.length) return;   // no bare headings over an empty section
       drawn++;
@@ -7724,6 +7887,75 @@ function setupRoster() {
     undoRow.appendChild(undoBtn);
     body.appendChild(undoRow);
   }
+  // The seat drag-drop-and-place contract, in ONE place. The live chart and the
+  // class sheet's mock-up both wire their seats through it, so a boy dragged on
+  // either behaves identically. This used to live inside renderSeatGrid() only,
+  // which is exactly why the class sheet needed a second seating editor sitting
+  // above its own preview to do the same job — two boxes for one thing.
+  //
+  // trueIdx, never the display position: Rebbi's view reverses the DISPLAY
+  // order only, so writing by display index would move the wrong boy.
+  function wireSeatArrange(seat, lay, trueIdx, hasStudent, redraw){
+    seat.draggable=true;
+    seat.addEventListener("dragstart", function(ev){
+      seat.classList.add("dragging");
+      ev.dataTransfer.setData("text/plain", JSON.stringify({from:trueIdx}));
+      ev.dataTransfer.effectAllowed="move";
+    });
+    seat.addEventListener("dragend", function(){ seat.classList.remove("dragging"); });
+    seat.addEventListener("dragover", function(ev){ ev.preventDefault(); seat.classList.add("drag-over"); });
+    seat.addEventListener("dragleave", function(){ seat.classList.remove("drag-over"); });
+    seat.addEventListener("drop", function(ev){
+      ev.preventDefault(); seat.classList.remove("drag-over");
+      var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+      var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
+      var toIdx=trueIdx;
+      if(payload.from!=null){
+        var fromIdx=payload.from;
+        var tmp=lay.seats[toIdx];
+        lay.seats[toIdx]=lay.seats[fromIdx];
+        lay.seats[fromIdx]=tmp;
+      } else if(payload.sid){
+        // coming from the unplaced tray — only place into an empty seat
+        if(lay.seats[toIdx]) return;
+        lay.seats[toIdx]=payload.sid;
+      } else return;
+      save(); redraw();
+    });
+    // tap-to-place fallback for touch devices: tap an empty seat, then tap an
+    // unplaced name (or the other way round).
+    if(!hasStudent){
+      seat.addEventListener("click", function(){
+        if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); redraw(); }
+      });
+    }
+  }
+  // "Not yet seated" tray, shared by the live chart and the class sheet for the
+  // same reason wireSeatArrange() is: a boy with no seat has to be placeable
+  // from whichever chart the rebbi is actually looking at.
+  function renderUnplacedTray(body, unplaced, redraw){
+    var trayWrap=el("div","seat-unplaced no-print");
+    trayWrap.appendChild(el("div","seat-unplaced-label", unplaced.length
+      ? "Not yet seated — drag into an empty seat, or tap a name then tap an empty seat:"
+      : "Everyone has a seat."));
+    var tray=el("div","seat-tray");
+    unplaced.forEach(function(s){
+      var chip=el("div","seat-chip", s.name);
+      chip.draggable=true;
+      chip.addEventListener("dragstart", function(ev){
+        ev.dataTransfer.setData("text/plain", JSON.stringify({sid:s.id}));
+        ev.dataTransfer.effectAllowed="move";
+      });
+      chip.addEventListener("click", function(){
+        seatGridPending = (seatGridPending===s.id) ? null : s.id;
+        redraw();
+      });
+      if(seatGridPending===s.id) chip.style.borderColor="var(--ink)";
+      tray.appendChild(chip);
+    });
+    trayWrap.appendChild(tray);
+    body.appendChild(trayWrap);
+  }
   function renderSeatGrid(body, studs){
     var lay=seatLayout();
     var unplaced=seatPruneAndFillUnplaced(lay, studs);
@@ -7746,7 +7978,7 @@ function setupRoster() {
     // underlying array would make those writes target the wrong seat the
     // moment Rebbi's view is on during arranging. Instead, build a list of
     // {sid, trueIdx} pairs in DISPLAY order, and use trueIdx (never the
-    // display-loop's own position) for every mutation. arrangeBtn's handler
+    // display-loop's own position) for every mutation. setSeatSetup()
     // additionally forces seatLiveRebbiView off the moment arranging turns
     // on, so in practice `arranging && data.seatLiveRebbiView` should never
     // both be true — this trueIdx threading is the second layer regardless.
@@ -7786,38 +8018,7 @@ function setupRoster() {
       }
 
       if(arranging){
-        seat.draggable=true;
-        seat.addEventListener("dragstart", function(ev){
-          seat.classList.add("dragging");
-          ev.dataTransfer.setData("text/plain", JSON.stringify({from:trueIdx}));
-          ev.dataTransfer.effectAllowed="move";
-        });
-        seat.addEventListener("dragend", function(){ seat.classList.remove("dragging"); });
-        seat.addEventListener("dragover", function(ev){ ev.preventDefault(); seat.classList.add("drag-over"); });
-        seat.addEventListener("dragleave", function(){ seat.classList.remove("drag-over"); });
-        seat.addEventListener("drop", function(ev){
-          ev.preventDefault(); seat.classList.remove("drag-over");
-          var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
-          var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
-          var toIdx=trueIdx;
-          if(payload.from!=null){
-            var fromIdx=payload.from;
-            var tmp=lay.seats[toIdx];
-            lay.seats[toIdx]=lay.seats[fromIdx];
-            lay.seats[fromIdx]=tmp;
-          } else if(payload.sid){
-            // coming from the unplaced tray — only place into an empty seat
-            if(lay.seats[toIdx]) return;
-            lay.seats[toIdx]=payload.sid;
-          }
-          save(); renderTapPanel();
-        });
-        // tap-to-place fallback for touch devices: tap an empty seat, then tap an unplaced name
-        if(!s){
-          seat.addEventListener("click", function(){
-            if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); renderTapPanel(); }
-          });
-        }
+        wireSeatArrange(seat, lay, trueIdx, !!s, renderTapPanel);
       } else if(s){
         seat.addEventListener("click", function(){ tapClick(s, seat); });
       }
@@ -7840,25 +8041,7 @@ function setupRoster() {
     renderScanUndoRow(body);
 
     if(arranging){
-      var trayWrap=el("div","seat-unplaced");
-      trayWrap.appendChild(el("div","seat-unplaced-label", unplaced.length ? "Not yet seated — drag into an empty seat, or tap a name then tap an empty seat:" : "Everyone has a seat."));
-      var tray=el("div","seat-tray");
-      unplaced.forEach(function(s){
-        var chip=el("div","seat-chip", s.name);
-        chip.draggable=true;
-        chip.addEventListener("dragstart", function(ev){
-          ev.dataTransfer.setData("text/plain", JSON.stringify({sid:s.id}));
-          ev.dataTransfer.effectAllowed="move";
-        });
-        chip.addEventListener("click", function(){
-          seatGridPending = (seatGridPending===s.id) ? null : s.id;
-          renderTapPanel();
-        });
-        if(seatGridPending===s.id) chip.style.borderColor="var(--ink)";
-        tray.appendChild(chip);
-      });
-      trayWrap.appendChild(tray);
-      body.appendChild(trayWrap);
+      renderUnplacedTray(body, unplaced, renderTapPanel);
     } else {
       seatGridPending=null;
     }
@@ -8474,10 +8657,87 @@ function setupRoster() {
       addBtn.classList.remove("selected"); subBtn.classList.remove("selected");
     }
   }
-  $("customAmt").addEventListener("input", syncCustomButtons);
+  // The last amount that actually parsed. A scanner firing while this box has
+  // focus types a student code into it — a number field drops the letters and
+  // can be left empty — so "put back what it was" is what stops a stray scan
+  // silently arming Custom 0.
+  var lastGoodCustomAmt=1;
+  // Commits whatever is in the box: falls back to the last good number if
+  // something emptied it, and re-arms when Custom is what's armed, so the pill,
+  // the buttons and the next scan can never disagree with the box.
+  function commitCustomAmt(){
+    var f=$("customAmt");
+    var n=Math.abs(parseInt(f.value,10)||0);
+    if(n>0) lastGoodCustomAmt=n; else { n=lastGoodCustomAmt; f.value=n; }
+    if(armed && armed.label==="Custom") setArmed("Custom", armed.delta<0 ? -n : n);
+    syncCustomButtons();
+  }
+  $("customAmt").addEventListener("input", function(){
+    // The buttons re-label live ("+25 pts"), which is the feedback a rebbi is
+    // actually looking at while he types. What is ARMED is deliberately NOT
+    // re-set here: setArmed() writes an entry to the scan strip every time the
+    // armed activity changes, so re-arming per keystroke would push a chip for
+    // every digit — three of them for "250", and a screenful for a scanner
+    // firing into this box. It is committed once instead, on the way out, and
+    // every way out goes through commitCustomAmt(): Enter, leaving the field,
+    // and the scan branch below.
+    syncCustomButtons();
+    var n=Math.abs(parseInt(this.value,10)||0);
+    if(n>0) lastGoodCustomAmt=n;
+  });
   $("customAmt").addEventListener("focus", function(){ this.select(); });
-  $("customAdd").addEventListener("click", function(){ var n=Math.abs(parseInt($("customAmt").value,10)||0); setArmed("Custom", n); syncCustomButtons(); $("scanInput").focus(); });
-  $("customSub").addEventListener("click", function(){ var n=Math.abs(parseInt($("customAmt").value,10)||0); setArmed("Custom", -n); syncCustomButtons(); $("scanInput").focus(); });
+  // A wedge scanner fires its whole code in one burst ending in Enter, into
+  // whatever has focus — including this box, now that arming Custom leaves the
+  // cursor here. Same 200ms gap the global capture below uses to tell a scanner
+  // from a person. A student code always carries letters or a "-" (newId() is
+  // base36 with a hyphen) and an amount never does, so "the burst contains a
+  // non-digit" is what separates a scan from someone typing 25. A scan is handed
+  // to handleScannedCode() exactly as if it had landed in the scan box, and the
+  // amount is put back — so scanning boys straight from here works.
+  var caBuf="", caLastT=0, caPreBurst="1";
+  $("customAmt").addEventListener("keydown", function(e){
+    var now=Date.now();
+    // A new burst — remember the box exactly as it stands, before any of it
+    // arrives. This has to be snapshotted at the first keystroke rather than
+    // read back afterwards: a code's own DIGITS do land in a number field (only
+    // its letters and its "-" are refused), so by the time the Enter arrives the
+    // box has already been scribbled on and there is nothing good left to read.
+    if(now-caLastT>200){ caBuf=""; caPreBurst=this.value; }
+    caLastT=now;
+    if(e.key==="Enter"){
+      e.preventDefault();
+      var scanned=caBuf; caBuf="";
+      if(scanned.length>1 && /[^0-9]/.test(scanned)){
+        this.value=caPreBurst;   // put the box back the way the rebbi left it
+        commitCustomAmt();       // ...and re-arm from it, so pill and box agree
+        handleScannedCode(scanned);
+        return;
+      }
+      // An amount, not a scan. Commit it and hand focus on to the scan box, so
+      // the next thing scanned is a student rather than more digits.
+      commitCustomAmt();
+      $("scanInput").focus();
+      return;
+    }
+    if(e.key.length===1) caBuf+=e.key;
+  });
+  $("customAmt").addEventListener("blur", commitCustomAmt);
+  // Arming Custom used to throw focus straight at the scan box, so a rebbi who
+  // clicked "Custom (add)" and THEN typed his amount fed the digits into the
+  // scanner buffer instead of the field sitting right next to the button. Focus
+  // now lands in the amount box, selected, because the amount is the only thing
+  // left to decide; Enter (or clicking anywhere else) hands it on to the scan
+  // box. Scanning without touching the amount still works — see the burst
+  // handling above, which is what makes leaving the cursor here safe.
+  function armCustom(sign){
+    var n=Math.abs(parseInt($("customAmt").value,10)||0);
+    if(n>0) lastGoodCustomAmt=n;
+    setArmed("Custom", sign<0 ? -n : n);
+    syncCustomButtons();
+    var f=$("customAmt"); f.focus(); f.select();
+  }
+  $("customAdd").addEventListener("click", function(){ armCustom(1); });
+  $("customSub").addEventListener("click", function(){ armCustom(-1); });
 
   // global scanner capture (works even if focus is lost / on other tabs)
   var buf="", lastT=0;
@@ -14133,6 +14393,14 @@ nameLine
       // defaults to "tracked", every other activity to "points". Only codes a
       // rebbi drags elsewhere get an explicit data.printCodeSections override.
       var tracked = homeworkActivity(a) || attendanceActivity(a) || passActivity(a) || freezeActivity(a);
+      // Which default section this code starts in. Freeze is the one that does
+      // not follow `tracked`: it scores nothing, but it is unmistakably a
+      // consequence, so it belongs with the deductions rather than with
+      // Homework Checked and Attendance.
+      var defSection = freezeActivity(a) ? "neg"
+                     : tracked           ? "nav"
+                     : (a.pts<0)         ? "neg"
+                     :                     "pos";
       // `tone` says what this code DOES to a score — pos / neg / trk — for any
       // surface that wants to colour it. Taken from a.pts directly and never
       // re-derived by reading `sub`: that string is fmtDelta's, which spells
@@ -14146,10 +14414,14 @@ nameLine
                  : freezeActivity(a)     ? "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze"
                  : fmtDelta(a.pts),
               tone: tracked ? "trk" : (a.pts<0 ? "neg" : (a.pts>0 ? "pos" : "trk")),
-              defaultSection: tracked ? "tracked" : "points"};
+              defaultSection: defSection};
     });
-    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", tone:"pos", defaultSection:"nav"});
-    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", tone:"neg", defaultSection:"nav"});
+    // The Custom pair follows the same rule as everything else — one adds, one
+    // subtracts — rather than both sitting under Navigation because they happen
+    // to be control codes. Splitting the pair across Positive and Navigation
+    // would be the odd outcome; a rebbi who wants them together drags one.
+    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", tone:"pos", defaultSection:"pos"});
+    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", tone:"neg", defaultSection:"neg"});
     items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
@@ -14168,24 +14440,75 @@ nameLine
     data.printExcluded={};
     try{ return menuLabelItems(); } finally { data.printExcluded=keep; }
   }
-  // Fixed set of print groupings — matches the app's own real distinction
-  // (regular point activities vs. the rerouted Tracked ones vs. control codes),
-  // not an open-ended rebbi-named category system. Order here is also the
-  // order the groups print in.
-  var PRINT_CODE_SECTIONS=[
-    {key:"points",  label:"Points"},
-    {key:"tracked", label:"Tracked"},
-    {key:"nav",     label:"Navigation"}
+  // The sections a rebbi's codes are grouped into — HIS list now, not a fixed
+  // one. They live in data.codeSections as {key,label} in print order, and he
+  // can add, rename and delete them. The old fixed trio (Points / Tracked /
+  // Navigation) plus the separate data.codeSectionNames rename overlay are gone;
+  // a section's name is simply its label, which is the whole reason renaming and
+  // adding can now be the same idea instead of two.
+  //
+  // The three DEFAULTS below are only a starting point. They split by what a
+  // code does to a boy's score — a gain, a deduction, or neither. Everything
+  // that scores nothing shares Navigation: the tracked codes (Homework Checked,
+  // Bathroom Pass, Attendance) alongside Undo, Pick and the phrase codes. A
+  // rebbi who wants those apart adds a section and drags them into it, which is
+  // the point of sections being his rather than ours.
+  var DEFAULT_CODE_SECTIONS=[
+    {key:"pos", label:"Positive"},
+    {key:"neg", label:"Negative"},
+    {key:"nav", label:"Navigation"}
   ];
-  // What a section is CALLED. Falls back to the built-in label, so a rebbi who
-  // never renames anything stores nothing and sees exactly what he always saw.
-  // Sparse, same spirit as printCodeSections. The section KEYS never change —
-  // they are what data.printCodeSections stores — only the display name does.
-  // Shared by the on-screen footer, the "Choose codes" grid maker and the
-  // printed sheet, so renaming a section renames it in all three at once.
+  // Always a usable array with at least one section: everything downstream
+  // buckets codes into these, and an empty list would leave every code with
+  // nowhere to go.
+  function codeSections(){
+    if(!Array.isArray(data.codeSections) || !data.codeSections.length){
+      data.codeSections = DEFAULT_CODE_SECTIONS.map(function(s){ return {key:s.key, label:s.label}; });
+    }
+    return data.codeSections;
+  }
   function codeSectionLabel(sec){
-    var n=data.codeSectionNames[sec.key];
-    return (typeof n==="string" && n.trim()) ? n.trim() : sec.label;
+    return (sec && typeof sec.label==="string" && sec.label.trim()) ? sec.label.trim() : "Section";
+  }
+  function codeSectionByKey(k){
+    var list=codeSections();
+    for(var i=0;i<list.length;i++){ if(list[i].key===k) return list[i]; }
+    return null;
+  }
+  // Keys must be unique and stable — data.printCodeSections stores them — so a
+  // new one is minted from a counter rather than from the name, which changes.
+  function newCodeSectionKey(){
+    var list=codeSections(), n=1;
+    while(list.some(function(s){ return s.key==="s"+n; })) n++;
+    return "s"+n;
+  }
+  function addCodeSection(){
+    codeSections().push({key:newCodeSectionKey(), label:"New section"});
+    save();
+  }
+  // Deleting never destroys codes: whatever was in the section moves to the
+  // first remaining one. A code with no section would simply stop printing, and
+  // silently dropping codes off the sheet is the failure this app has a rule
+  // about. The last section can't be deleted — there would be nowhere to move to.
+  function removeCodeSection(key){
+    var list=codeSections();
+    if(list.length<=1) return false;
+    var idx=-1;
+    for(var i=0;i<list.length;i++){ if(list[i].key===key) idx=i; }
+    if(idx<0) return false;
+    list.splice(idx,1);
+    var fallback=list[0].key;
+    menuLabelItemsAll().forEach(function(it){
+      if(printCodeSectionOf(it)===fallback && data.printCodeSections[it.qrText]==null){
+        // already lands there by default — nothing to record
+        return;
+      }
+      if(data.printCodeSections[it.qrText]===key || (data.printCodeSections[it.qrText]==null && it.defaultSection===key)){
+        data.printCodeSections[it.qrText]=fallback;
+      }
+    });
+    save();
+    return true;
   }
   // Columns per section in the grouped footer. Clamped rather than trusted:
   // this is rendered into grid-template-columns, and a stored 0 or a string
@@ -14199,10 +14522,17 @@ nameLine
   // rebbi has dragged it elsewhere, in which case data.printCodeSections holds
   // the override. Sparse by design, same spirit as data.printExcluded — a code
   // nobody has ever touched needs no stored entry at all.
+  // Falls back twice, not once: to the code's own default section, and then — if
+  // the rebbi has DELETED that section — to the first one that still exists. A
+  // code whose section no longer exists would otherwise be filtered out of every
+  // group and vanish from the sheet without ever being switched off.
   function printCodeSectionOf(it){
+    var list=codeSections();
+    var known=function(k){ return list.some(function(x){ return x.key===k; }); };
     var s=data.printCodeSections[it.qrText];
-    var known=PRINT_CODE_SECTIONS.some(function(x){ return x.key===s; });
-    return known ? s : (it.defaultSection||"points");
+    if(known(s)) return s;
+    if(known(it.defaultSection)) return it.defaultSection;
+    return list[0].key;
   }
   // Sorts by the rebbi's saved order (data.printCodeOrder, a flat array of
   // qrText covering every section at once); codes not yet in it — new
@@ -14216,6 +14546,19 @@ nameLine
       return (ai!==bi) ? (ai-bi) : (a.i-b.i);
     }).map(function(x){ return x.it; });
   }
+  // Every surface that draws from menuLabelItems(), redrawn together. There are
+  // four of them — the picker itself, the class sheet, the chart on screen and
+  // the printed activity menu — and each edit in the picker has to reach all
+  // four in the same beat or two of them disagree until something else happens
+  // to redraw one. Calling them from one place is what stops the next surface
+  // added from quietly being left out: the All / None buttons had already
+  // drifted, redrawing the sheet but not the chart.
+  function refreshCodeSurfaces(){
+    renderSeatPrintCodes();
+    renderSeatChartPrint();
+    renderTapPanel();
+    renderMenuLabels();
+  }
   // Moves one code into targetSection, positioned immediately before
   // beforeQrText (end of section if null), and rebuilds data.printCodeOrder
   // from the CURRENT full picker so every section's order stays consistent in
@@ -14226,7 +14569,7 @@ nameLine
     var moved=byQr[qrText]; if(!moved) return;
     var ordered=orderedPrintCodeItems(all);
     var buckets={};
-    PRINT_CODE_SECTIONS.forEach(function(sec){ buckets[sec.key]=[]; });
+    codeSections().forEach(function(sec){ buckets[sec.key]=[]; });
     ordered.forEach(function(it){
       if(it.qrText===qrText) return;
       buckets[printCodeSectionOf(it)].push(it.qrText);
@@ -14236,11 +14579,11 @@ nameLine
     if(insertAt<0) target.push(qrText); else target.splice(insertAt, 0, qrText);
     if(targetSection===moved.defaultSection) delete data.printCodeSections[qrText];
     else data.printCodeSections[qrText]=targetSection;
-    data.printCodeOrder = PRINT_CODE_SECTIONS.reduce(function(acc,sec){ return acc.concat(buckets[sec.key]); }, []);
+    data.printCodeOrder = codeSections().reduce(function(acc,sec){ return acc.concat(buckets[sec.key]||[]); }, []);
     // renderTapPanel() too: the live chart's grouped footer reads this same
     // section/order model now, so a code moved here has to move there in the
     // same beat or the screen and the sheet disagree until the next redraw.
-    save(); renderSeatPrintCodes(); renderSeatChartPrint(); renderTapPanel();
+    save(); refreshCodeSurfaces();
   }
   function renderMenuLabels(hasQR){
     if(typeof hasQR==="undefined") hasQR=(typeof QRCode!=="undefined");
@@ -14404,6 +14747,13 @@ nameLine
   });
   $("printLabels").addEventListener("click", function(){ document.body.classList.add("print-students"); window.print(); });
   $("printMenu").addEventListener("click", function(){ document.body.classList.add("print-menu"); window.print(); });
+  // This page draws from menuLabelItems() like every other code surface, so it
+  // has always honoured the on/off choice — it just had no way to CHANGE it.
+  // A rebbi printing his activity menu saw ten of his thirteen codes with the
+  // phrase-nav pair and −Custom simply absent (they start off), nothing on the
+  // page saying so, and the only switch three tabs away under the class sheet.
+  // Same picker as everywhere else, same modal the seating chart opens.
+  $("menuChooseCodes").addEventListener("click", openCodePickerModal);
   $("personalGroup").addEventListener("change", renderLabels);
   $("personalWho").addEventListener("change", renderLabels);
   $("personalScale").addEventListener("change", renderLabels);
@@ -14424,7 +14774,7 @@ nameLine
   // #117's picker. Offers EVERY code (menuLabelItemsAll), ticked according to
   // what is not excluded — the list a rebbi is choosing from has to include the
   // ones he has already turned off, or he could never turn them back on.
-  // Grouped into PRINT_CODE_SECTIONS and drag-to-rearrange, same native
+  // Grouped into the rebbi's own sections and drag-to-rearrange, same native
   // dragstart/dragover/drop pattern as the live seating chart's "Arrange
   // seats" mode — dragging a code onto another reorders it within a section;
   // dragging it onto a different section's box (or its empty-space drop
@@ -14441,7 +14791,7 @@ nameLine
     // (data.printExcluded) — this only changes where it is drawn, so nothing
     // about what prints changes for a rebbi who already has codes turned off.
     var removed=ordered.filter(function(it){ return !!data.printExcluded[it.qrText]; });
-    PRINT_CODE_SECTIONS.forEach(function(sec){
+    codeSections().forEach(function(sec){
       var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key && !data.printExcluded[it.qrText]; });
       var secBox=el("div","print-code-section");
       // Renameable heading. A text input rather than a label + edit button:
@@ -14449,22 +14799,32 @@ nameLine
       // to enter would be more chrome than the thing it guards. Committed on
       // change/blur, not on every keystroke, so a half-typed name never lands
       // in storage or on the printed sheet.
+      var nameRow=el("div","print-code-section-head");
       var nameIn=el("input","print-code-section-name");
       nameIn.type="text";
       nameIn.value=codeSectionLabel(sec);
-      nameIn.setAttribute("aria-label", sec.label+" section name");
+      nameIn.setAttribute("aria-label", codeSectionLabel(sec)+" section name");
       nameIn.title="Rename this section — it renames on the printed sheet too";
       nameIn.addEventListener("change", function(){
         var v=nameIn.value.trim();
-        // Blank means "back to the built-in name", which is also how a rebbi
-        // undoes a rename without having to remember what it used to say.
-        if(!v || v===sec.label) delete data.codeSectionNames[sec.key];
-        else data.codeSectionNames[sec.key]=v;
-        save();
-        nameIn.value=codeSectionLabel(sec);
-        renderSeatChartPrint(); renderTapPanel();
+        // A section always has a name; blanking it puts the old one back rather
+        // than leaving an untitled box on the printed sheet.
+        if(!v){ nameIn.value=codeSectionLabel(sec); return; }
+        sec.label=v; save();
+        refreshCodeSurfaces();
       });
-      secBox.appendChild(nameIn);
+      nameRow.appendChild(nameIn);
+      if(codeSections().length>1){
+        var secDel=el("button","print-code-x","✕");
+        secDel.type="button";
+        secDel.title="Remove this section — its codes move to “"+codeSectionLabel(codeSections()[0])+"”";
+        secDel.addEventListener("click", function(ev){
+          ev.preventDefault(); ev.stopPropagation();
+          if(removeCodeSection(sec.key)) refreshCodeSurfaces();
+        });
+        nameRow.appendChild(secDel);
+      }
+      secBox.appendChild(nameRow);
       var chips=el("div","print-code-chips");
       secBox.appendChild(chips);
       // Dropping on empty section space (not on a specific chip) appends to
@@ -14493,7 +14853,7 @@ nameLine
     // menuLabelItems() being the single source buys), so one tray governs
     // both rather than a rebbi having to remove the same code twice.
     var binBox=el("div","print-code-section print-code-bin");
-    binBox.appendChild(el("h4",null,"🗑 Removed — not on the sheet or the chart"));
+    binBox.appendChild(el("h4",null,"🗑 Removed — not on any sheet or the chart"));
     var binChips=el("div","print-code-chips");
     binBox.appendChild(binChips);
     binBox.addEventListener("dragover", function(ev){ ev.preventDefault(); binBox.classList.add("drag-over"); });
@@ -14504,14 +14864,14 @@ nameLine
       var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
       if(!payload.qrText) return;
       data.printExcluded[payload.qrText]=true;
-      save(); renderSeatPrintCodes(); renderSeatChartPrint(); renderTapPanel();
+      save(); refreshCodeSurfaces();
     });
     if(!removed.length) binChips.appendChild(el("div","print-code-empty","Drag a code here to take it off"));
     removed.forEach(function(it){ binChips.appendChild(printCodeChip(it, hasQR, null)); });
     box.appendChild(binBox);
 
     var on=all.filter(function(it){ return !data.printExcluded[it.qrText]; }).length;
-    $("seatPrintCodesCount").textContent=on+" of "+all.length+" on the sheet";
+    $("seatPrintCodesCount").textContent=on+" of "+all.length+" in use";
   }
   // One draggable code chip. `sec` is the section it currently sits in, or
   // null when it is sitting in the bin — which is the only difference between
@@ -14532,12 +14892,12 @@ nameLine
     var act=el("button","print-code-x");
     act.type="button";
     act.textContent = sec ? "✕" : "↩";
-    act.title = sec ? "Take this code off the sheet and the chart" : "Put this code back";
+    act.title = sec ? "Take this code off the sheets and the chart" : "Put this code back";
     act.addEventListener("click", function(ev){
       ev.preventDefault(); ev.stopPropagation();
       if(sec) data.printExcluded[it.qrText]=true;
       else delete data.printExcluded[it.qrText];
-      save(); renderSeatPrintCodes(); renderSeatChartPrint(); renderTapPanel();
+      save(); refreshCodeSurfaces();
     });
     chip.appendChild(act);
     chip.addEventListener("dragstart", function(ev){
@@ -14564,25 +14924,112 @@ nameLine
     }
     return chip;
   }
-  $("seatPrintCodesToggle").addEventListener("click", function(){
-    var c=$("seatPrintCodesCard");
-    var open=c.style.display==="none";
-    c.style.display=open?"block":"none";
-    this.textContent=open?"Hide codes":"Choose codes";
-    if(open) renderSeatPrintCodes();
-  });
+  // (The button that used to open this card inline on the print page is gone —
+  // the preview does that job now. The card is only ever shown through the modal
+  // below, so it has no inline open/close state left to keep.)
+
+  // The same picker, opened from the seating chart instead of the print page.
+  // It MOVES the real #seatPrintCodesCard node into the overlay and puts it back
+  // on close, rather than building a second one: every listener on it — the drag
+  // handlers, the ✕/↩ buttons, All/None — is already wired to that node, and a
+  // duplicate would be a second picker to keep in step with the first. Guarded
+  // against double-opening, since the node can only be in one place at a time.
+  var codePickerOpen=false;
+  function openCodePickerModal(){
+    if(codePickerOpen) return;
+    var card=$("seatPrintCodesCard");
+    if(!card) return;
+    codePickerOpen=true;
+    var home=card.parentNode, anchor=card.nextSibling, prevDisplay=card.style.display;
+    var overlay=el("div","modal-overlay");
+    var box=el("div","modal-card"); box.style.maxWidth="760px";
+    var head=el("div","modal-head");
+    head.appendChild(el("div","modal-title","Choose codes"));
+    var closeBtn=el("button","modal-close","✕"); closeBtn.type="button"; closeBtn.title="Close";
+    head.appendChild(closeBtn);
+    box.appendChild(head);
+    card.style.display="block";
+    card.style.marginBottom="0";
+    box.appendChild(card);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    renderSeatPrintCodes();
+    function close(){
+      // Back to exactly where it came from, in the state it was in — a rebbi who
+      // had the picker open on the print page finds it open when he returns.
+      card.style.display=prevDisplay;
+      card.style.marginBottom="";
+      if(home) home.insertBefore(card, anchor);
+      if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+      codePickerOpen=false;
+      renderTapPanel();
+    }
+    function onKey(e){ if(e.key==="Escape") close(); }
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function(e){ if(e.target===overlay) close(); });
+    document.addEventListener("keydown", onKey);
+  }
   $("seatPrintCodesAll").addEventListener("click", function(){
-    data.printExcluded={}; save(); renderSeatPrintCodes(); renderSeatChartPrint();
+    data.printExcluded={}; save(); refreshCodeSurfaces();
   });
   $("seatPrintCodesNone").addEventListener("click", function(){
     var ex={}; menuLabelItemsAll().forEach(function(it){ ex[it.qrText]=true; });
-    data.printExcluded=ex; save(); renderSeatPrintCodes(); renderSeatChartPrint();
+    data.printExcluded=ex; save(); refreshCodeSurfaces();
   });
+  $("seatPrintCodesAddSection").addEventListener("click", function(){ addCodeSection(); refreshCodeSurfaces(); });
   $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); seatPrintSyncActivityRow(); renderSeatChartPrint(); });
   $("seatPrintActivityPicker").addEventListener("change", function(){ data.seatPrintOpts.activityId=this.value; save(); renderSeatChartPrint(); });
+  // Rows/Cols moved onto this toolbar when the separate seating editor above the
+  // preview was removed — they were the one thing in that card with nowhere else
+  // to live. Same seatResize() the chart's own ⚙ Setup calls, so a grid resized
+  // here is resized everywhere, and resizing still never moves a placed boy.
+  function seatPrintSyncDims(){
+    var lay=seatLayout();
+    if($("seatPrintRows")) $("seatPrintRows").value=lay.rows;
+    if($("seatPrintCols")) $("seatPrintCols").value=lay.cols;
+  }
+  function seatPrintApplyDims(){
+    var lay=seatLayout();
+    var r=parseInt($("seatPrintRows").value,10), c=parseInt($("seatPrintCols").value,10);
+    if(isNaN(r)||r<1) r=1; if(r>12) r=12;
+    if(isNaN(c)||c<1) c=1; if(c>12) c=12;
+    seatResize(lay, r, c); save();
+    seatPrintSyncDims(); renderTapPanel(); renderSeatChartPrint();
+  }
+  $("seatPrintRows").addEventListener("change", seatPrintApplyDims);
+  $("seatPrintCols").addEventListener("change", seatPrintApplyDims);
   $("seatPrintShowPoints").addEventListener("change", function(){ data.seatPrintOpts.showPoints=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); renderSeatChartPrint(); });
-  $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); renderSeatChartPrint(); });
+  $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); seatPrintSyncActLayout(); renderSeatChartPrint(); });
+  // Layout of the printed codes block — the print-side twins of the chart's own
+  // ▤ One row / ▦ Grouped and width buttons, worded identically so a rebbi who
+  // has used one already knows this one. Only offered while the footer is
+  // actually being printed; a layout control for something not on the page is
+  // noise, and this toolbar is already crowded.
+  function seatPrintSyncActLayout(){
+    var show = data.seatPrintOpts.showActivities && $("seatPrintAvatarMode").value!=="activity";
+    $("seatPrintActLayoutRow").style.display = show ? "inline-flex" : "none";
+    var grouped=seatPrintActGrouped();
+    var gb=$("seatPrintActGrouped");
+    gb.textContent = grouped ? "▦ Grouped" : "▤ One row";
+    gb.title = grouped
+      ? "Codes print in sections. Click for one plain row instead."
+      : "Codes print in one row. Click to group them into sections.";
+    var cb=$("seatPrintActCols");
+    // Width only means something inside a section, so it goes away with them.
+    cb.style.display = grouped ? "" : "none";
+    cb.textContent = seatPrintActCols()+" wide";
+    cb.title="How many codes sit across each section on the page. Click to cycle 1 → 2 → 3.";
+  }
+  $("seatPrintActGrouped").addEventListener("click", function(){
+    data.seatPrintOpts.actGrouped = !seatPrintActGrouped();
+    save(); seatPrintSyncActLayout(); renderSeatChartPrint();
+  });
+  $("seatPrintActCols").addEventListener("click", function(){
+    data.seatPrintOpts.actCols = seatPrintActCols()>=3 ? 1 : seatPrintActCols()+1;
+    save(); seatPrintSyncActLayout(); renderSeatChartPrint();
+  });
   // Shows the activity picker (and hides the now-redundant Activities-footer
   // checkbox, since a merged PA: code already carries the activity — no
   // separate arming code needed) only in Activity mode, and keeps the
@@ -14598,6 +15045,9 @@ nameLine
     opts.forEach(function(a){ var o=el("option",null,a.name); o.value=a.id; sel.appendChild(o); });
     if(opts.some(function(a){return a.id===cur;})) sel.value=cur; else sel.value = opts.length ? opts[0].id : "";
     data.seatPrintOpts.activityId = sel.value;
+    // The layout buttons follow the same two conditions this row does, so they
+    // are re-synced from the one place that already knows about both.
+    seatPrintSyncActLayout();
   }
   // Compact activity-code footer for the seating-chart printout — distinct
   // from renderMenuLabels()'s full-size (104x104) cards, which are too
@@ -14605,36 +15055,230 @@ nameLine
   // menuLabelItems() for the underlying data ({qrText, name, sub} per
   // activity — confirmed against the actual function, not assumed) but
   // renders at a much smaller, denser size.
+  // Whether the printed codes block is grouped into sections, and how many
+  // codes sit across each one. Deliberately mirrors actFooterCols()'s clamp:
+  // this value is written straight into grid-template-columns, and a stored 0
+  // or a string would produce an invalid rule and collapse the block.
+  function seatPrintActGrouped(){ return data.seatPrintOpts.actGrouped!==false; }
+  function seatPrintActCols(){
+    var c=parseInt(data.seatPrintOpts.actCols,10);
+    if(!(c>=1 && c<=3)) c=2;
+    return c;
+  }
   function renderSeatPrintActivitiesFooter(wrap){
-    var items = menuLabelItems();
-    if(!items || !items.length) return;
+    var items = menuLabelItems() || [];
     var hasQR=(typeof QRCode!=="undefined");
     var footer=el("div","seat-print-activities-footer");
-    footer.appendChild(el("div","seat-print-activities-title","Activity Codes"));
-    // Same three groups and order as the picker (PRINT_CODE_SECTIONS), so
-    // moving a code's section in "Choose codes" changes where it prints, not
-    // just how it's organized on screen. Empty groups are skipped rather than
-    // printing a bare heading.
-    var ordered=orderedPrintCodeItems(items);
-    PRINT_CODE_SECTIONS.forEach(function(sec){
-      var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
-      if(!secItems.length) return;
-      footer.appendChild(el("div","seat-print-act-section-label", codeSectionLabel(sec)));
-      var grid=el("div","seat-print-activities-grid");
-      secItems.forEach(function(it){
-        var card=el("div","seat-print-act-card");
-        if(hasQR){
-          var holder=el("div"); card.appendChild(holder);
-          try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
-          catch(e){ card.appendChild(document.createTextNode("QR?")); }
-        }
-        var label=el("div","seat-print-act-label", it.name);
-        var sub=el("div","seat-print-act-sub", it.sub);
-        card.appendChild(label); card.appendChild(sub);
-        grid.appendChild(card);
-      });
-      footer.appendChild(grid);
+    // Heading row: the printed title, plus All / None. Those two were the last
+    // thing on this page you still had to open the separate picker for, and they
+    // are one click each — so they sit on the block they act on, marked
+    // .no-print like every other handle here.
+    var head=el("div","seat-print-codes-head");
+    head.appendChild(el("div","seat-print-activities-title","Activity Codes"));
+    var tools=el("span","seat-print-codes-tools no-print");
+    var allBtn=el("button","seat-print-mini","All");
+    allBtn.type="button"; allBtn.title="Put every code back on the sheet";
+    allBtn.addEventListener("click", function(){ data.printExcluded={}; save(); refreshCodeSurfaces(); });
+    var noneBtn=el("button","seat-print-mini","None");
+    noneBtn.type="button"; noneBtn.title="Take every code off — they all wait in the tray underneath";
+    noneBtn.addEventListener("click", function(){
+      var ex={}; menuLabelItemsAll().forEach(function(it){ ex[it.qrText]=true; });
+      data.printExcluded=ex; save(); refreshCodeSurfaces();
     });
+    var addSecBtn=el("button","seat-print-mini","+ Section");
+    addSecBtn.type="button"; addSecBtn.title="Add a section of your own — then drag codes into it";
+    addSecBtn.addEventListener("click", function(){ addCodeSection(); refreshCodeSurfaces(); });
+    tools.appendChild(allBtn); tools.appendChild(noneBtn); tools.appendChild(addSecBtn);
+    head.appendChild(tools);
+    footer.appendChild(head);
+    var ordered=orderedPrintCodeItems(items);
+    // The cards on the mock-up are the real controls: drag one to re-order it or
+    // move it into another section, and press its ✕ to take it off. It is the
+    // same model underneath as the "Choose codes" picker — movePrintCode() and
+    // data.printExcluded, nothing new — so the two cannot disagree; this is the
+    // same edit made on the thing you are actually looking at rather than on a
+    // list of chips standing in for it. Every affordance is .no-print, so the
+    // sheet that comes off the printer is unchanged.
+    function actCard(it, sec){
+      var card=el("div","seat-print-act-card");
+      card.draggable=true;
+      if(hasQR){
+        var holder=el("div"); card.appendChild(holder);
+        try{ new QRCode(holder,{text:it.qrText, width:44, height:44, correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ card.appendChild(document.createTextNode("QR?")); }
+      }
+      card.appendChild(el("div","seat-print-act-label", it.name));
+      card.appendChild(el("div","seat-print-act-sub", it.sub));
+      var x=el("button","seat-print-act-x no-print","✕");
+      x.type="button";
+      x.title="Take this code off — it comes back from the tray below";
+      x.addEventListener("click", function(ev){
+        ev.preventDefault(); ev.stopPropagation();
+        data.printExcluded[it.qrText]=true;
+        save(); refreshCodeSurfaces();
+      });
+      card.appendChild(x);
+      card.addEventListener("dragstart", function(ev){
+        card.classList.add("dragging");
+        ev.dataTransfer.setData("text/plain", JSON.stringify({qrText:it.qrText}));
+        ev.dataTransfer.effectAllowed="move";
+      });
+      card.addEventListener("dragend", function(){ card.classList.remove("dragging"); });
+      card.addEventListener("dragover", function(ev){ ev.preventDefault(); ev.stopPropagation(); card.classList.add("drag-over"); });
+      card.addEventListener("dragleave", function(){ card.classList.remove("drag-over"); });
+      card.addEventListener("drop", function(ev){
+        ev.preventDefault(); ev.stopPropagation(); card.classList.remove("drag-over");
+        var payload=dragPayload(ev); if(!payload || payload.qrText===it.qrText) return;
+        // Dropping onto a card puts the dragged one immediately before it — and
+        // into ITS section. In one-row mode there are no sections on screen, so
+        // `sec` is the target card's own section: the rule stays "it lands where
+        // you dropped it", which is the only thing the rebbi can see. Restoring
+        // first, so dragging out of the tray both puts a code back and places it
+        // in one gesture rather than moving a code that is still switched off.
+        delete data.printExcluded[payload.qrText];
+        movePrintCode(payload.qrText, sec || printCodeSectionOf(it), it.qrText);
+      });
+      return card;
+    }
+    function dragPayload(ev){
+      var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return null;
+      try{ return JSON.parse(raw); }catch(e){ return null; }
+    }
+    // Somewhere for a removed code to go, and to come back from. Without this,
+    // pressing ✕ on the mock-up would be a one-way door with the way back on
+    // another screen — the same "is there a way back" question the Contest
+    // work turned into a rule. Only appears once something is actually off.
+    function removedTray(){
+      var off=menuLabelItemsAll().filter(function(it){ return data.printExcluded[it.qrText]; });
+      if(!off.length) return null;
+      var tray=el("div","seat-print-removed no-print");
+      tray.appendChild(el("span","seat-print-removed-lbl","Not on the sheet — click to put back:"));
+      off.forEach(function(it){
+        var b=el("button","seat-print-removed-chip", it.name+" ↩");
+        b.type="button";
+        b.title="Put “"+it.name+"” back on the sheet";
+        b.draggable=true;
+        b.addEventListener("click", function(){
+          delete data.printExcluded[it.qrText];
+          save(); refreshCodeSurfaces();
+        });
+        b.addEventListener("dragstart", function(ev){
+          ev.dataTransfer.setData("text/plain", JSON.stringify({qrText:it.qrText}));
+          ev.dataTransfer.effectAllowed="move";
+        });
+        tray.appendChild(b);
+      });
+      // Dropping a card here takes it off — the drag counterpart of its ✕.
+      tray.addEventListener("dragover", function(ev){ ev.preventDefault(); tray.classList.add("drag-over"); });
+      tray.addEventListener("dragleave", function(){ tray.classList.remove("drag-over"); });
+      tray.addEventListener("drop", function(ev){
+        ev.preventDefault(); tray.classList.remove("drag-over");
+        var payload=dragPayload(ev); if(!payload) return;
+        data.printExcluded[payload.qrText]=true;
+        save(); refreshCodeSurfaces();
+      });
+      return tray;
+    }
+    // Every code switched off. The block would previously vanish entirely,
+    // taking the only way back with it — so the tray is drawn on its own, with
+    // a line saying what happened. Nothing of this prints.
+    if(!ordered.length){
+      var emptyTray=removedTray();
+      if(!emptyTray) return;   // nothing on and nothing off: genuinely nothing to draw
+      footer.appendChild(el("div","seat-print-activities-empty no-print","Every code is switched off, so nothing prints here."));
+      footer.appendChild(emptyTray);
+      wrap.appendChild(footer);
+      return;
+    }
+    // One row: every code in print order, no headings. The same choice the chart
+    // on screen offers, so the sheet in a rebbi's hand and the board in front of
+    // his class can be made to look alike — which is the whole reason this is a
+    // setting on both rather than a fixed layout on each.
+    if(!seatPrintActGrouped()){
+      var flat=el("div","seat-print-activities-grid");
+      ordered.forEach(function(it){ flat.appendChild(actCard(it, null)); });
+      footer.appendChild(flat);
+      var flatTray=removedTray(); if(flatTray) footer.appendChild(flatTray);
+      wrap.appendChild(footer);
+      return;
+    }
+    // Grouped: same three groups, order and names as the picker
+    // (data.codeSections), so moving a code's section in "Choose codes"
+    // changes where it prints, not just how it's organized on screen. Empty
+    // groups are skipped rather than printing a bare heading.
+    //
+    // The sections sit SIDE BY SIDE in boxes rather than stacked full-width the
+    // way they used to. Same shape the chart uses, and it costs the page a lot
+    // less height — this block landing on page 2 (#142) is the failure worth
+    // designing out, and three stacked full-width rows was the way to cause it.
+    var groups=el("div","seat-print-code-groups");
+    var cols=seatPrintActCols();
+    var drawn=0;
+    codeSections().forEach(function(sec){
+      var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
+      var g=el("div","seat-print-code-group"+(secItems.length?"":" empty no-print"));
+      // The heading renames in place. contenteditable rather than an <input>
+      // (which is what the picker uses) because this one PRINTS — an input would
+      // come off the printer as a form field, while a contenteditable div prints
+      // as the plain text it looks like. Same pattern the school-name heading in
+      // Settings already uses.
+      var lbl=el("div","seat-print-act-section-label", codeSectionLabel(sec));
+      lbl.contentEditable="true";
+      lbl.spellcheck=false;
+      lbl.title="Rename this section — it renames on the sheet, the chart and the activity menu";
+      lbl.addEventListener("keydown", function(e){
+        if(e.key==="Enter"){ e.preventDefault(); this.blur(); }
+        else if(e.key==="Escape"){ this.textContent=codeSectionLabel(sec); this.blur(); }
+        e.stopPropagation();   // never let a heading being typed into reach the scanner buffer
+      });
+      lbl.addEventListener("blur", function(){
+        var v=this.textContent.trim();
+        // A section always has a name. Blanking it puts the old one back rather
+        // than leaving an untitled box on the printed sheet.
+        if(!v){ this.textContent=codeSectionLabel(sec); return; }
+        if(v===sec.label) return;
+        sec.label=v;
+        save(); refreshCodeSurfaces();
+      });
+      var head2=el("div","seat-print-code-group-head");
+      head2.appendChild(lbl);
+      // Delete this section. Only offered while more than one exists, and it
+      // moves whatever is in it into the first section rather than dropping the
+      // codes — see removeCodeSection().
+      if(codeSections().length>1){
+        var delBtn=el("button","seat-print-sec-x no-print","✕");
+        delBtn.type="button";
+        delBtn.title="Remove this section — its codes move to “"+codeSectionLabel(codeSections()[0])+"”";
+        delBtn.addEventListener("click", function(ev){
+          ev.preventDefault(); ev.stopPropagation();
+          if(removeCodeSection(sec.key)) refreshCodeSurfaces();
+        });
+        head2.appendChild(delBtn);
+      }
+      g.appendChild(head2);
+      var grid=el("div","seat-print-code-grid");
+      grid.style.gridTemplateColumns="repeat("+cols+", minmax(0, 1fr))";
+      secItems.forEach(function(it){ grid.appendChild(actCard(it, sec.key)); });
+      if(!secItems.length) grid.appendChild(el("div","seat-print-code-empty no-print","Drop a code here"));
+      g.appendChild(grid);
+      // Dropping on the box itself (rather than on a card) appends to the end of
+      // that section — and it is the only way into a section that is currently
+      // empty, which is why an empty section is still drawn on screen. It is
+      // marked .no-print, so a section a rebbi has emptied still prints as
+      // nothing at all rather than as a bare heading.
+      g.addEventListener("dragover", function(ev){ ev.preventDefault(); g.classList.add("drag-over"); });
+      g.addEventListener("dragleave", function(){ g.classList.remove("drag-over"); });
+      g.addEventListener("drop", function(ev){
+        ev.preventDefault(); g.classList.remove("drag-over");
+        var payload=dragPayload(ev); if(!payload) return;
+        delete data.printExcluded[payload.qrText];
+        movePrintCode(payload.qrText, sec.key, null);
+      });
+      if(secItems.length) drawn++;
+      groups.appendChild(g);
+    });
+    footer.appendChild(groups);
+    var tray=removedTray(); if(tray) footer.appendChild(tray);
     wrap.appendChild(footer);
   }
   // What to head the sheet with. "All Classes" is only honest when there really
@@ -14652,8 +15296,13 @@ nameLine
   }
   function renderSeatChartPrint(){
     var wrap=$("seatChartGrid"); wrap.innerHTML="";
+    // The preview is drawn at the real page size, so it has to follow the real
+    // orientation — otherwise a rebbi setting up a landscape sheet lays it out
+    // against a portrait page.
+    wrap.classList.toggle("landscape", data.seatPrintOrient==="landscape");
     var lay=seatLayout();
     var studs=activeStudents();
+    var unplaced=seatPruneAndFillUnplaced(lay, studs);
     var byId={}; studs.forEach(function(s){ byId[s.id]=s; });
     var hasQR=(typeof QRCode!=="undefined");
     var avatarMode = $("seatPrintAvatarMode") ? $("seatPrintAvatarMode").value : "qr";
@@ -14696,13 +15345,24 @@ nameLine
     // actually matches what a teacher sees, not just a vertical flip. Only
     // the SEATING ORDER is reversed; each name is still rendered normally
     // (never mirrored/flipped text), so it stays perfectly readable.
-    var seatsInOrder = rebbiView ? lay.seats.slice().reverse() : lay.seats;
+    // Paired with their true index, the same way the live chart does it, because
+    // the seats here are draggable now and Rebbi's view reverses only what you
+    // SEE — writing by the display position would move the wrong boy.
+    var displayOrder = lay.seats.map(function(sid, trueIdx){ return {sid:sid, trueIdx:trueIdx}; });
+    if(rebbiView) displayOrder = displayOrder.slice().reverse();
     if(!rebbiView) wrap.appendChild(el("div","seat-front","Front of room"));
-    var grid=el("div","seat-grid print-seat-grid");
+    var grid=el("div","seat-grid print-seat-grid arranging");
     grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
-    seatsInOrder.forEach(function(sid){
+    // Redraws both charts: this one because it is what the rebbi is looking at,
+    // the live one because it is the same seating and must not go stale behind
+    // him. Same function the seating editor that used to sit above this page
+    // called — there is one seat model, and now one place to edit it.
+    function seatRedraw(){ renderTapPanel(); renderSeatChartPrint(); }
+    displayOrder.forEach(function(item){
+      var sid=item.sid, trueIdx=item.trueIdx;
       var s = sid ? byId[sid] : null;
       var seat=el("div","seat"+(s?"":" empty"));
+      seat.dataset.idx=trueIdx;
       if(s){
         if(avatarMode==="qr" || avatarMode==="activity"){
           var qrw=el("div","seat-print-qr");
@@ -14725,9 +15385,21 @@ nameLine
         }
         seat.appendChild(el("span","seat-name",s.name));
         if(showPts) seat.appendChild(el("span","seat-print-pts", fmtScore(s.id)));
+        var clearBtn=el("button","seat-clear no-print","✕");
+        clearBtn.type="button";
+        clearBtn.title="Empty this seat — he moves to the tray below";
+        clearBtn.addEventListener("click", function(ev){
+          ev.stopPropagation(); lay.seats[trueIdx]=null; save(); seatRedraw();
+        });
+        seat.appendChild(clearBtn);
       } else {
         seat.textContent="Empty seat";
       }
+      // Always draggable here, unlike the live chart, which keeps arranging
+      // behind a switch so a stray touch on a smartboard mid-lesson can't move
+      // a boy. This page is where you set the sheet up — there is no lesson
+      // running on it, and making the mock-up the thing you edit is the point.
+      wireSeatArrange(seat, lay, trueIdx, !!s, seatRedraw);
       grid.appendChild(seat);
     });
     wrap.appendChild(grid);
@@ -14737,6 +15409,11 @@ nameLine
     // (and the checkbox that controls it is hidden in Activity mode too).
     if(data.seatPrintOpts.showActivities && avatarMode!=="activity"){
       renderSeatPrintActivitiesFooter(wrap);
+    }
+    var unplacedBox=$("seatPrintUnplaced");
+    if(unplacedBox){
+      unplacedBox.innerHTML="";
+      renderUnplacedTray(unplacedBox, unplaced, seatRedraw);
     }
     /* Non-blocking fit check.
      *
@@ -14749,24 +15426,40 @@ nameLine
      * reported FITS on a sheet that overflowed by roughly three inches and the
      * warning never appeared (#142).
      *
-     * So the height is computed from the PRINT geometry instead of read from
-     * the preview: rows x (card + gap), plus the fixed furniture. It is still
-     * an estimate — real page dimensions never map exactly to CSS inches — but
-     * it is an estimate of the right document. Anything that "simplifies" this
-     * back to reading a rendered height reintroduces the bug.
+     * THAT REASON HAS NOW GONE, and the check has been put back to measuring —
+     * deliberately, not by "simplification". The preview and the page are the
+     * same document again: #seatChartGrid is the paper's own width with the
+     * paper's own padding, and every measurement that decides how the seats and
+     * codes wrap is written once and used by both. The estimate it replaced was
+     * hard-coded to the print-only numbers that made the two differ (1.5in
+     * seats, 0.15in gaps), so leaving it would now over-warn about sheets that
+     * fit comfortably.
+     *
+     * The rule the bug taught still stands: measure the thing you are comparing
+     * against. If the preview and the page are ever allowed to diverge again,
+     * this must go back to computing the page rather than reading the screen.
      */
     var warnEl=$("seatPrintFitWarning");
-    var rowsUsed=Math.max(1, lay.rows);
-    // Matches the @media print rules above: .seat min-height 1.5in,
-    // .print-seat-grid gap 0.15in, .seat-front margin 0.15in, title ~0.45in,
-    // and #seatChartGrid padding 0.3in top and bottom.
-    var printInches = 0.6 + 0.45 + 0.15
-      + (rowsUsed * 1.5) + (Math.max(0, rowsUsed-1) * 0.15)
-      + (data.seatPrintOpts.showActivities && avatarMode!=="activity" ? 1.1 : 0)
-      + (act ? 0.35 : 0);
-    var usableInches = seatPrintOrient==="landscape" ? 7.5 : 10;
-    var fits = printInches <= usableInches;
-    if(warnEl) warnEl.style.display = fits ? "none" : "block";
+    // data.seatPrintOrient, not the module-level `seatPrintOrient` mirror: the
+    // mirror is only assigned by the orientation buttons and by opening the tab,
+    // so anything else that re-renders this page (a code edit, a seat drag) can
+    // find it stale — and a stale orientation here silently compares a landscape
+    // sheet against a portrait page and never warns. The stored value is what
+    // the .landscape class above already follows, so they cannot disagree.
+    // Measured RIGHT HERE, synchronously — not deferred to a frame or to the QR
+    // images. Both were tried and both silently never ran: the QR library
+    // replaces the <img> nodes it has just created, so load handlers attached
+    // here fire on elements already thrown away; and requestAnimationFrame does
+    // not fire at all while the tab is not being painted, which is exactly when
+    // a rebbi has this page open behind something else and comes back to it.
+    // Reading scrollHeight forces the layout it needs, and it is correct at this
+    // point because the QR boxes are square by CSS rather than sized by their
+    // images (see .seat-print-qr) — the page's height is final before a single
+    // code has decoded.
+    if(warnEl){
+      var pageIn = data.seatPrintOrient==="landscape" ? 8.5 : 11;
+      warnEl.style.display = (wrap.scrollHeight <= pageIn*96) ? "none" : "block";
+    }
 
     /* THE ACTIVITY CODES GO AT THE BOTTOM, ALWAYS. Do not reorder them based on
      * whether the chart fits.
@@ -15388,6 +16081,19 @@ nameLine
     // way, is left exactly as the rebbi set it.
     if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
     if(typeof data.seatPrintOpts.activityId!=="string") data.seatPrintOpts.activityId="";
+    // Layout of the printed Activity Codes block — the same two choices the
+    // chart on screen offers (data.actFooterGrouped / data.actFooterCols), kept
+    // as separate fields rather than shared with it on purpose: a smartboard and
+    // a sheet of paper are different shapes, and a rebbi may well want 3-wide on
+    // the board and one row in his hand. WHICH codes appear, their sections and
+    // their order stay shared — that is what "Choose codes" governs, and the
+    // screen and the paper must never disagree about it.
+    // Grouped is the default because a sectioned block is what the sheet has
+    // always printed; an existing save reads as grouped either way.
+    if(typeof data.seatPrintOpts.actGrouped!=="boolean") data.seatPrintOpts.actGrouped=true;
+    // Clamped with the same guard seatPrintActCols() applies, so a hand-edited
+    // or corrupted value can never reach grid-template-columns.
+    if(!(parseInt(data.seatPrintOpts.actCols,10)>=1 && parseInt(data.seatPrintOpts.actCols,10)<=3)) data.seatPrintOpts.actCols=2;
     // Page orientation for the class sheet. It was a module-level variable, so
     // it reset to portrait on every reload and a rebbi whose chart only fits
     // landscape had to re-pick it every single time.
@@ -15422,7 +16128,24 @@ nameLine
     // Renamed section titles, keyed by the SAME fixed section keys
     // printCodeSections uses. Sparse: a section nobody renamed stores nothing
     // and shows its built-in label, so an existing save reads identically.
-    if(!data.codeSectionNames || typeof data.codeSectionNames!=="object" || Array.isArray(data.codeSectionNames)) data.codeSectionNames={};
+    // The rebbi's own sections. Guarded structurally rather than just for
+    // presence: every entry must be an object with a usable string key and
+    // label, because these keys are what data.printCodeSections points at and a
+    // malformed one would send codes to a section that cannot be rendered. A
+    // save with nothing usable here gets the three defaults, which is also what
+    // a brand-new install gets.
+    if(Array.isArray(data.codeSections)){
+      data.codeSections = data.codeSections.filter(function(s){
+        return s && typeof s==="object" && typeof s.key==="string" && s.key
+            && typeof s.label==="string";
+      });
+    }
+    if(!Array.isArray(data.codeSections) || !data.codeSections.length){
+      data.codeSections = DEFAULT_CODE_SECTIONS.map(function(s){ return {key:s.key, label:s.label}; });
+    }
+    // Replaced by each section's own label in v5. Deleted rather than left to
+    // rot, so nothing can read a stale name back later.
+    delete data.codeSectionNames;
     // On-screen activity-codes footer layout. Grouped is the default because
     // the sections are what make a long code list readable, and it is what the
     // printed sheet has always done — the flat row stays available as "One row".
