@@ -1334,7 +1334,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-print-preview .print-seat-grid{display:grid;gap:7px}
   .seat-print-preview .seat{border:1px solid var(--line);border-radius:8px;padding:5px 4px;text-align:center;min-height:0;min-width:0}
   .seat-print-preview .seat.empty{border-style:dashed;color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:.8rem}
-  .seat-print-preview .seat-print-qr{width:100%;max-width:60px;margin-left:auto;margin-right:auto}
+  /* aspect-ratio, not height:auto off the image. The QR library hands back an
+     <img> carrying a data: URI, and an <img> is zero-height until it decodes —
+     so every seat was briefly a short box, the preview jumped as the codes
+     popped in, and anything measuring the page in that window (the fit warning)
+     read a sheet that looked like it fitted when it did not. A square box holds
+     its height from the first layout, before the image exists. */
+  .seat-print-preview .seat-print-qr{width:100%;max-width:60px;aspect-ratio:1;margin-left:auto;margin-right:auto}
   .seat-print-preview .seat-print-qr img,.seat-print-preview .seat-print-qr canvas{width:100%;height:auto;display:block}
   .seat-print-preview .seat-print-photo .avatar{width:40px!important;height:40px!important;font-size:15px!important}
   .seat-print-preview .seat-name{font-weight:600;font-size:.82rem;display:block;overflow-wrap:break-word;word-wrap:break-word;white-space:normal;text-align:center;line-height:1.2}
@@ -2372,18 +2378,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <h2 class="view-title">Print my class sheet</h2>
     <p class="view-note no-print"><b>This is the one page you need to start scanning.</b> Every student's code sitting in his own seat, with the codes for your activities underneath. Print it, keep it on your desk or clipboard, and scan an activity code then a student — that's a whole scoring action in two scans.</p>
     <div class="pill-note no-print" id="seatAutoPlaceNote" style="display:none;margin-bottom:10px"></div>
-    <!-- The REAL seating editor, not a copy of it. renderTapPanelInto() already
-         renders into any container and is already called for the Scan tab and
-         the Dashboard precisely so the two cannot drift; this is a third
-         container, so there is still exactly one seating editor in the app. -->
-    <div class="card pad no-print" id="seatEditCard" style="margin-bottom:12px">
-      <div class="board-head"><h3>Seating — drag to rearrange</h3></div>
-      <div id="classSheetTapPanelBody"></div>
-    </div>
+    <!-- The seating editor that used to sit here, above the preview, is gone.
+         It and the preview were two boxes showing the same chart, and you
+         arranged in one while looking at the other. The preview IS the editor
+         now: seats drag, ✕ empties one, and the codes underneath drag too. -->
     <div class="toolbar no-print">
       <span class="seg" id="seatPrintOrient">
         <button data-orient="portrait" class="active">Portrait (vertical)</button>
         <button data-orient="landscape">Landscape (horizontal)</button>
+      </span>
+      <span class="seat-dims" id="seatPrintDims" title="How many desks the sheet is laid out in. Changing it never moves a boy you have already placed.">Rows
+        <input type="number" id="seatPrintRows" min="1" max="12">Cols
+        <input type="number" id="seatPrintCols" min="1" max="12">
       </span>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem">Avatar:
         <select id="seatPrintAvatarMode" class="field" style="width:auto">
@@ -2417,6 +2423,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     </div>
     <p class="view-note no-print" style="margin:4px 0 10px">Preview — this is what will print. <b>The codes underneath are editable right here:</b> drag one to re-order it or move it to another section, and use its ✕ to take it off. Anything you take off waits in the tray below the codes.</p>
     <div class="seat-print-scroll"><div id="seatChartGrid" class="seat-print-preview"></div></div>
+    <!-- Anyone without a seat, under the sheet rather than inside it: the
+         preview is drawn at true page size, so putting a screen-only tray in
+         there would make the white box taller than the page it is meant to be. -->
+    <div id="seatPrintUnplaced" class="no-print"></div>
     <div id="seatPrintFitWarning" class="pill-note no-print" style="display:none;margin-top:10px;background:var(--bad-soft);color:#7c2d1c">This may not fit on one printed page with the current settings — try hiding photos, turning off the activities footer, or switching to Landscape.</div>
   </section>
 
@@ -4315,6 +4325,7 @@ function setupRoster() {
       $("seatPrintRebbiView").checked = data.seatPrintOpts.rebbiView;
       $("seatPrintShowActivities").checked = data.seatPrintOpts.showActivities;
       seatPrintSyncActivityRow();
+      seatPrintSyncDims();
       // A rebbi who has only imported a roster has no seat layout, and this page
       // used to hand him 24 boxes reading "Empty seat" with no student codes at
       // all — a sheet that looks real and is useless. Seat whoever has no seat
@@ -7703,7 +7714,8 @@ function setupRoster() {
     renderTapPanelInto("dashTapPanelBody", null);
     // The class sheet's own copy — a dedicated editor, so it always shows the
     // chart and never offers to print the page it is already on.
-    renderTapPanelInto("classSheetTapPanelBody", null, {forceSeating:true, hidePrint:true});
+    // (The class sheet's own copy of the seating editor used to render here.
+    // Its preview does the job now — see renderSeatChartPrint().)
     // teachTapPanelBody removed — no tap panel on Pesukim/Mishnayos pages
     // shorTapPanelBody removed — no tap panel on Shorashim page
     // Moving a boy in the editor has to redraw the sheet above it, or the rebbi
@@ -7815,6 +7827,75 @@ function setupRoster() {
     undoRow.appendChild(undoBtn);
     body.appendChild(undoRow);
   }
+  // The seat drag-drop-and-place contract, in ONE place. The live chart and the
+  // class sheet's mock-up both wire their seats through it, so a boy dragged on
+  // either behaves identically. This used to live inside renderSeatGrid() only,
+  // which is exactly why the class sheet needed a second seating editor sitting
+  // above its own preview to do the same job — two boxes for one thing.
+  //
+  // trueIdx, never the display position: Rebbi's view reverses the DISPLAY
+  // order only, so writing by display index would move the wrong boy.
+  function wireSeatArrange(seat, lay, trueIdx, hasStudent, redraw){
+    seat.draggable=true;
+    seat.addEventListener("dragstart", function(ev){
+      seat.classList.add("dragging");
+      ev.dataTransfer.setData("text/plain", JSON.stringify({from:trueIdx}));
+      ev.dataTransfer.effectAllowed="move";
+    });
+    seat.addEventListener("dragend", function(){ seat.classList.remove("dragging"); });
+    seat.addEventListener("dragover", function(ev){ ev.preventDefault(); seat.classList.add("drag-over"); });
+    seat.addEventListener("dragleave", function(){ seat.classList.remove("drag-over"); });
+    seat.addEventListener("drop", function(ev){
+      ev.preventDefault(); seat.classList.remove("drag-over");
+      var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+      var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
+      var toIdx=trueIdx;
+      if(payload.from!=null){
+        var fromIdx=payload.from;
+        var tmp=lay.seats[toIdx];
+        lay.seats[toIdx]=lay.seats[fromIdx];
+        lay.seats[fromIdx]=tmp;
+      } else if(payload.sid){
+        // coming from the unplaced tray — only place into an empty seat
+        if(lay.seats[toIdx]) return;
+        lay.seats[toIdx]=payload.sid;
+      } else return;
+      save(); redraw();
+    });
+    // tap-to-place fallback for touch devices: tap an empty seat, then tap an
+    // unplaced name (or the other way round).
+    if(!hasStudent){
+      seat.addEventListener("click", function(){
+        if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); redraw(); }
+      });
+    }
+  }
+  // "Not yet seated" tray, shared by the live chart and the class sheet for the
+  // same reason wireSeatArrange() is: a boy with no seat has to be placeable
+  // from whichever chart the rebbi is actually looking at.
+  function renderUnplacedTray(body, unplaced, redraw){
+    var trayWrap=el("div","seat-unplaced no-print");
+    trayWrap.appendChild(el("div","seat-unplaced-label", unplaced.length
+      ? "Not yet seated — drag into an empty seat, or tap a name then tap an empty seat:"
+      : "Everyone has a seat."));
+    var tray=el("div","seat-tray");
+    unplaced.forEach(function(s){
+      var chip=el("div","seat-chip", s.name);
+      chip.draggable=true;
+      chip.addEventListener("dragstart", function(ev){
+        ev.dataTransfer.setData("text/plain", JSON.stringify({sid:s.id}));
+        ev.dataTransfer.effectAllowed="move";
+      });
+      chip.addEventListener("click", function(){
+        seatGridPending = (seatGridPending===s.id) ? null : s.id;
+        redraw();
+      });
+      if(seatGridPending===s.id) chip.style.borderColor="var(--ink)";
+      tray.appendChild(chip);
+    });
+    trayWrap.appendChild(tray);
+    body.appendChild(trayWrap);
+  }
   function renderSeatGrid(body, studs){
     var lay=seatLayout();
     var unplaced=seatPruneAndFillUnplaced(lay, studs);
@@ -7877,38 +7958,7 @@ function setupRoster() {
       }
 
       if(arranging){
-        seat.draggable=true;
-        seat.addEventListener("dragstart", function(ev){
-          seat.classList.add("dragging");
-          ev.dataTransfer.setData("text/plain", JSON.stringify({from:trueIdx}));
-          ev.dataTransfer.effectAllowed="move";
-        });
-        seat.addEventListener("dragend", function(){ seat.classList.remove("dragging"); });
-        seat.addEventListener("dragover", function(ev){ ev.preventDefault(); seat.classList.add("drag-over"); });
-        seat.addEventListener("dragleave", function(){ seat.classList.remove("drag-over"); });
-        seat.addEventListener("drop", function(ev){
-          ev.preventDefault(); seat.classList.remove("drag-over");
-          var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
-          var payload; try{ payload=JSON.parse(raw); }catch(e){ return; }
-          var toIdx=trueIdx;
-          if(payload.from!=null){
-            var fromIdx=payload.from;
-            var tmp=lay.seats[toIdx];
-            lay.seats[toIdx]=lay.seats[fromIdx];
-            lay.seats[fromIdx]=tmp;
-          } else if(payload.sid){
-            // coming from the unplaced tray — only place into an empty seat
-            if(lay.seats[toIdx]) return;
-            lay.seats[toIdx]=payload.sid;
-          }
-          save(); renderTapPanel();
-        });
-        // tap-to-place fallback for touch devices: tap an empty seat, then tap an unplaced name
-        if(!s){
-          seat.addEventListener("click", function(){
-            if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); renderTapPanel(); }
-          });
-        }
+        wireSeatArrange(seat, lay, trueIdx, !!s, renderTapPanel);
       } else if(s){
         seat.addEventListener("click", function(){ tapClick(s, seat); });
       }
@@ -7931,25 +7981,7 @@ function setupRoster() {
     renderScanUndoRow(body);
 
     if(arranging){
-      var trayWrap=el("div","seat-unplaced");
-      trayWrap.appendChild(el("div","seat-unplaced-label", unplaced.length ? "Not yet seated — drag into an empty seat, or tap a name then tap an empty seat:" : "Everyone has a seat."));
-      var tray=el("div","seat-tray");
-      unplaced.forEach(function(s){
-        var chip=el("div","seat-chip", s.name);
-        chip.draggable=true;
-        chip.addEventListener("dragstart", function(ev){
-          ev.dataTransfer.setData("text/plain", JSON.stringify({sid:s.id}));
-          ev.dataTransfer.effectAllowed="move";
-        });
-        chip.addEventListener("click", function(){
-          seatGridPending = (seatGridPending===s.id) ? null : s.id;
-          renderTapPanel();
-        });
-        if(seatGridPending===s.id) chip.style.borderColor="var(--ink)";
-        tray.appendChild(chip);
-      });
-      trayWrap.appendChild(tray);
-      body.appendChild(trayWrap);
+      renderUnplacedTray(body, unplaced, renderTapPanel);
     } else {
       seatGridPending=null;
     }
@@ -14810,6 +14842,25 @@ nameLine
   });
   $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); seatPrintSyncActivityRow(); renderSeatChartPrint(); });
   $("seatPrintActivityPicker").addEventListener("change", function(){ data.seatPrintOpts.activityId=this.value; save(); renderSeatChartPrint(); });
+  // Rows/Cols moved onto this toolbar when the separate seating editor above the
+  // preview was removed — they were the one thing in that card with nowhere else
+  // to live. Same seatResize() the chart's own ⚙ Setup calls, so a grid resized
+  // here is resized everywhere, and resizing still never moves a placed boy.
+  function seatPrintSyncDims(){
+    var lay=seatLayout();
+    if($("seatPrintRows")) $("seatPrintRows").value=lay.rows;
+    if($("seatPrintCols")) $("seatPrintCols").value=lay.cols;
+  }
+  function seatPrintApplyDims(){
+    var lay=seatLayout();
+    var r=parseInt($("seatPrintRows").value,10), c=parseInt($("seatPrintCols").value,10);
+    if(isNaN(r)||r<1) r=1; if(r>12) r=12;
+    if(isNaN(c)||c<1) c=1; if(c>12) c=12;
+    seatResize(lay, r, c); save();
+    seatPrintSyncDims(); renderTapPanel(); renderSeatChartPrint();
+  }
+  $("seatPrintRows").addEventListener("change", seatPrintApplyDims);
+  $("seatPrintCols").addEventListener("change", seatPrintApplyDims);
   $("seatPrintShowPoints").addEventListener("change", function(){ data.seatPrintOpts.showPoints=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); seatPrintSyncActLayout(); renderSeatChartPrint(); });
@@ -15054,6 +15105,7 @@ nameLine
     wrap.classList.toggle("landscape", data.seatPrintOrient==="landscape");
     var lay=seatLayout();
     var studs=activeStudents();
+    var unplaced=seatPruneAndFillUnplaced(lay, studs);
     var byId={}; studs.forEach(function(s){ byId[s.id]=s; });
     var hasQR=(typeof QRCode!=="undefined");
     var avatarMode = $("seatPrintAvatarMode") ? $("seatPrintAvatarMode").value : "qr";
@@ -15096,13 +15148,24 @@ nameLine
     // actually matches what a teacher sees, not just a vertical flip. Only
     // the SEATING ORDER is reversed; each name is still rendered normally
     // (never mirrored/flipped text), so it stays perfectly readable.
-    var seatsInOrder = rebbiView ? lay.seats.slice().reverse() : lay.seats;
+    // Paired with their true index, the same way the live chart does it, because
+    // the seats here are draggable now and Rebbi's view reverses only what you
+    // SEE — writing by the display position would move the wrong boy.
+    var displayOrder = lay.seats.map(function(sid, trueIdx){ return {sid:sid, trueIdx:trueIdx}; });
+    if(rebbiView) displayOrder = displayOrder.slice().reverse();
     if(!rebbiView) wrap.appendChild(el("div","seat-front","Front of room"));
-    var grid=el("div","seat-grid print-seat-grid");
+    var grid=el("div","seat-grid print-seat-grid arranging");
     grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
-    seatsInOrder.forEach(function(sid){
+    // Redraws both charts: this one because it is what the rebbi is looking at,
+    // the live one because it is the same seating and must not go stale behind
+    // him. Same function the seating editor that used to sit above this page
+    // called — there is one seat model, and now one place to edit it.
+    function seatRedraw(){ renderTapPanel(); renderSeatChartPrint(); }
+    displayOrder.forEach(function(item){
+      var sid=item.sid, trueIdx=item.trueIdx;
       var s = sid ? byId[sid] : null;
       var seat=el("div","seat"+(s?"":" empty"));
+      seat.dataset.idx=trueIdx;
       if(s){
         if(avatarMode==="qr" || avatarMode==="activity"){
           var qrw=el("div","seat-print-qr");
@@ -15125,9 +15188,21 @@ nameLine
         }
         seat.appendChild(el("span","seat-name",s.name));
         if(showPts) seat.appendChild(el("span","seat-print-pts", fmtScore(s.id)));
+        var clearBtn=el("button","seat-clear no-print","✕");
+        clearBtn.type="button";
+        clearBtn.title="Empty this seat — he moves to the tray below";
+        clearBtn.addEventListener("click", function(ev){
+          ev.stopPropagation(); lay.seats[trueIdx]=null; save(); seatRedraw();
+        });
+        seat.appendChild(clearBtn);
       } else {
         seat.textContent="Empty seat";
       }
+      // Always draggable here, unlike the live chart, which keeps arranging
+      // behind a switch so a stray touch on a smartboard mid-lesson can't move
+      // a boy. This page is where you set the sheet up — there is no lesson
+      // running on it, and making the mock-up the thing you edit is the point.
+      wireSeatArrange(seat, lay, trueIdx, !!s, seatRedraw);
       grid.appendChild(seat);
     });
     wrap.appendChild(grid);
@@ -15137,6 +15212,11 @@ nameLine
     // (and the checkbox that controls it is hidden in Activity mode too).
     if(data.seatPrintOpts.showActivities && avatarMode!=="activity"){
       renderSeatPrintActivitiesFooter(wrap);
+    }
+    var unplacedBox=$("seatPrintUnplaced");
+    if(unplacedBox){
+      unplacedBox.innerHTML="";
+      renderUnplacedTray(unplacedBox, unplaced, seatRedraw);
     }
     /* Non-blocking fit check.
      *
@@ -15149,24 +15229,40 @@ nameLine
      * reported FITS on a sheet that overflowed by roughly three inches and the
      * warning never appeared (#142).
      *
-     * So the height is computed from the PRINT geometry instead of read from
-     * the preview: rows x (card + gap), plus the fixed furniture. It is still
-     * an estimate — real page dimensions never map exactly to CSS inches — but
-     * it is an estimate of the right document. Anything that "simplifies" this
-     * back to reading a rendered height reintroduces the bug.
+     * THAT REASON HAS NOW GONE, and the check has been put back to measuring —
+     * deliberately, not by "simplification". The preview and the page are the
+     * same document again: #seatChartGrid is the paper's own width with the
+     * paper's own padding, and every measurement that decides how the seats and
+     * codes wrap is written once and used by both. The estimate it replaced was
+     * hard-coded to the print-only numbers that made the two differ (1.5in
+     * seats, 0.15in gaps), so leaving it would now over-warn about sheets that
+     * fit comfortably.
+     *
+     * The rule the bug taught still stands: measure the thing you are comparing
+     * against. If the preview and the page are ever allowed to diverge again,
+     * this must go back to computing the page rather than reading the screen.
      */
     var warnEl=$("seatPrintFitWarning");
-    var rowsUsed=Math.max(1, lay.rows);
-    // Matches the @media print rules above: .seat min-height 1.5in,
-    // .print-seat-grid gap 0.15in, .seat-front margin 0.15in, title ~0.45in,
-    // and #seatChartGrid padding 0.3in top and bottom.
-    var printInches = 0.6 + 0.45 + 0.15
-      + (rowsUsed * 1.5) + (Math.max(0, rowsUsed-1) * 0.15)
-      + (data.seatPrintOpts.showActivities && avatarMode!=="activity" ? 1.1 : 0)
-      + (act ? 0.35 : 0);
-    var usableInches = seatPrintOrient==="landscape" ? 7.5 : 10;
-    var fits = printInches <= usableInches;
-    if(warnEl) warnEl.style.display = fits ? "none" : "block";
+    // data.seatPrintOrient, not the module-level `seatPrintOrient` mirror: the
+    // mirror is only assigned by the orientation buttons and by opening the tab,
+    // so anything else that re-renders this page (a code edit, a seat drag) can
+    // find it stale — and a stale orientation here silently compares a landscape
+    // sheet against a portrait page and never warns. The stored value is what
+    // the .landscape class above already follows, so they cannot disagree.
+    // Measured RIGHT HERE, synchronously — not deferred to a frame or to the QR
+    // images. Both were tried and both silently never ran: the QR library
+    // replaces the <img> nodes it has just created, so load handlers attached
+    // here fire on elements already thrown away; and requestAnimationFrame does
+    // not fire at all while the tab is not being painted, which is exactly when
+    // a rebbi has this page open behind something else and comes back to it.
+    // Reading scrollHeight forces the layout it needs, and it is correct at this
+    // point because the QR boxes are square by CSS rather than sized by their
+    // images (see .seat-print-qr) — the page's height is final before a single
+    // code has decoded.
+    if(warnEl){
+      var pageIn = data.seatPrintOrient==="landscape" ? 8.5 : 11;
+      warnEl.style.display = (wrap.scrollHeight <= pageIn*96) ? "none" : "block";
+    }
 
     /* THE ACTIVITY CODES GO AT THE BOTTOM, ALWAYS. Do not reorder them based on
      * whether the chart fits.
