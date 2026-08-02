@@ -2391,6 +2391,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <div>
           <label class="lbl" id="newActPtsLabel">Points</label>
           <input id="newActPts" type="number" class="field" value="2" step="1" style="width:100px">
+          <select id="newActCoin" class="field" style="width:auto;font-weight:700;display:none"></select>
           <span id="newActPtsUnit" style="font-size:.82rem;color:var(--muted);margin-left:4px">pts</span>
         </div>
         <button class="btn btn-primary" id="addActivity">Add</button>
@@ -3737,6 +3738,10 @@ function setupRoster() {
     gameBoards: {},
     muted: false,
     shulchaniMode: false,
+    // Flipped true the first time a rebbi lands in Shulchani Mode, by
+    // seedShulchaniCoinCodes(). Guards a one-time mint, not a preference —
+    // a rebbi who deletes a coin code keeps it deleted.
+    shulchaniCoinsSeeded: false,
     showPrutot: false,
     // "Instant" (no-spin) preference, remembered SEPARATELY per random-selection
     // tool — a rebbi who wants the Picker instant for fast repeated turn-taking
@@ -4951,7 +4956,7 @@ function setupRoster() {
   // activities (Tracker, Homework Checked) write to their own stores, so the
   // default arm must never land on one — activities[0] can be tracked once a
   // teacher deletes the starter point activities.
-  function firstArmableActivity(){ return data.activities.filter(function(a){ return !a.tracked; })[0]; }
+  function firstArmableActivity(){ return data.activities.filter(function(a){ return !a.tracked && actInCurrentMode(a); })[0]; }
   // THE tracked activity that is nonetheless safe to arm anywhere, because
   // award() reroutes it to markHwCheckedToday() no matter which tab the scan
   // came from. Tracker activities have no such backstop, which is why they stay
@@ -5615,6 +5620,7 @@ function setupRoster() {
       // reroute, so arming it here would still write points. fpRenderActs() hides
       // tracked activities from this panel's buttons for the same reason.
       if(a.tracked){ fpFlash(false,"Not scannable here — "+a.name+" has its own tab"); beep(false); return; }
+      if(!actInCurrentMode(a)){ fpFlash(false,a.name+" only scans in Shulchani Mode"); beep(false); return; }
       fpActId=a.id; fpCustomAct=null; fpRenderActs();
       fpFlash(true, "Now scoring: "+a.name+"  "+fmtDeltaBare(a.pts));
       beep(true);
@@ -6314,8 +6320,8 @@ function setupRoster() {
     // affects the on-screen buttons — the full set still prints, which is where
     // a coin strip is actually used. One checkbox in the editor shows any of them.
     COINS.forEach(function(c){
-      data.activities.push({id:nextActId(), name:"+ "+c.name,        pts:c.prutot,  coin:c.abbr, groups:[]});
-      data.activities.push({id:nextActId(), name:"− "+c.name,   pts:-c.prutot, coin:c.abbr, groups:[], hidden:true});
+      data.activities.push({id:nextActId(), name:"+ "+c.name, pts:c.prutot,  coin:c.abbr, groups:[]});
+      data.activities.push({id:nextActId(), name:"− "+c.name, pts:-c.prutot, coin:c.abbr, groups:[], hidden:true});
     });
     if(!codeSections().some(function(s){ return s.key===COIN_SECTION_KEY; })){
       codeSections().push({key:COIN_SECTION_KEY, label:"Coins"});
@@ -6338,6 +6344,46 @@ function setupRoster() {
   function coinByAbbr(ab){
     for(var i=0;i<COINS.length;i++){ if(COINS[i].abbr===ab) return COINS[i]; }
     return COINS[COINS.length-1];
+  }
+  // The Shulchani value editor: "how many" × "which coin", with the Prutot it
+  // comes to shown beside it. Replaces the raw ±1 Prutot stepper, where setting
+  // an activity to a Dinar meant knowing — and then typing — 192.
+  //   get() -> the current value in Prutot;  set(v) -> store it.
+  // A value that isn't a whole number of any one coin still round-trips: it
+  // reads back as the largest denomination that divides it (200 -> 25 Isar),
+  // and worst case as Prutot, so nothing a rebbi already saved is unreachable.
+  // Styled inline rather than with new CSS classes — .field already carries the
+  // input/select look, and this is three boxes on one row.
+  function coinValueEditor(get, set){
+    var wrap=el("span");
+    wrap.style.cssText="display:inline-flex;align-items:center;gap:6px";
+    var count=el("input","field"); count.type="number"; count.step="1";
+    count.style.width="62px"; count.style.textAlign="center";
+    count.title="How many of this coin — a negative number makes it a deduction";
+    var sel=el("select","field"); sel.style.width="auto"; sel.style.fontWeight="700";
+    sel.title="Which coin this activity is worth";
+    COINS.forEach(function(c){ var o=el("option",null,c.name); o.value=c.abbr; sel.appendChild(o); });
+    var out=el("span"); out.style.cssText="color:var(--muted);font-size:.82rem;white-space:nowrap";
+    function sync(){
+      var v=get(), sp=coinSplit(v);
+      count.value=sp.count; sel.value=sp.abbr;
+      sel.style.color=coinByAbbr(sel.value).color;
+      out.textContent="= "+v+" pr";
+    }
+    function commit(){
+      var n=parseInt(count.value,10); if(isNaN(n)) n=0;
+      set(n*coinByAbbr(sel.value).prutot);
+      sync();
+    }
+    count.addEventListener("change", commit);
+    sel.addEventListener("change", commit);
+    wrap.appendChild(count);
+    var x=el("span",null,"×"); x.style.cssText="color:var(--muted);font-size:.82rem";
+    wrap.appendChild(x);
+    wrap.appendChild(sel);
+    wrap.appendChild(out);
+    sync();
+    return wrap;
   }
   /* ---------- Shulchani mode toggle ---------- */
   function hasAnyScores(){
@@ -6364,6 +6410,9 @@ function setupRoster() {
       data.scores={}; data.log=[];
     }
     data.shulchaniMode=newMode;
+    // Set the mode FIRST: seeding pushes a "Coins" section and re-values the
+    // starters, and both read isShulchani() on the way through.
+    if(newMode) seedShulchaniCoinCodes(true);
     save();
     $("shulchaniModal").style.display="none";
     $("shulchaniConvert").style.display="none";
@@ -6422,7 +6471,7 @@ function setupRoster() {
       $("shulchaniClear").onclick=function(){ doShulchaniSwitch(true, false); };
       $("shulchaniModal").style.display="flex";
     } else {
-      data.shulchaniMode=true; save();
+      data.shulchaniMode=true; seedShulchaniCoinCodes(true); save();
       renderShulchaniStatus(); renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities(); renderActButtons();
     }
   });
@@ -8691,6 +8740,13 @@ function setupRoster() {
     // arming it by code then scanning students marks homework for real.
     if(a.tracked && !reroutedActivity(a)){
       flash(false, "Not scannable here", "Use the Tracker tab", "“"+a.name+"” keeps its own record");
+      beep(false); return;
+    }
+    // A printed coin code in a class that has since switched back to points
+    // would otherwise arm a bare 192, with nothing on screen saying where that
+    // number came from. Says so instead of silently scoring.
+    if(!actInCurrentMode(a)){
+      flash(false, "Coin code", "Shulchani Mode is off", "“"+a.name+"” only scans while balances are coins");
       beep(false); return;
     }
     setArmed(a.name, a.pts);
@@ -14259,18 +14315,54 @@ nameLine
   });
 
   /* ---------- ACTIVITIES ---------- */
+  // The Add form's value field means two different things by mode: a raw point
+  // total in points mode, and a COUNT of the coin picked beside it in Shulchani.
+  // newActValuePrutot() is the one place that resolves which, so the unit
+  // readout and the Add handler can never disagree about what was typed.
+  function newActCoinAbbr(){
+    var sel=$("newActCoin");
+    return (sel && sel.value) ? sel.value : "M";
+  }
+  function newActValuePrutot(){
+    var n=parseInt($("newActPts").value,10); if(isNaN(n)) n=0;
+    return isShulchani() ? n*coinByAbbr(newActCoinAbbr()).prutot : n;
+  }
+  function syncNewActUnit(){
+    var unit=$("newActPtsUnit"); if(!unit) return;
+    unit.textContent = isShulchani() ? ("= "+newActValuePrutot()+" pr") : "pts";
+    var sel=$("newActCoin");
+    if(sel) sel.style.color=coinByAbbr(newActCoinAbbr()).color;
+  }
   function renderActivities(){
     var list=$("activityList"); list.innerHTML="";
     // Update the "Add" form labels for current mode
-    var lbl=$("newActPtsLabel"); if(lbl) lbl.textContent=isShulchani()?"Prutot":"Points";
-    var unit=$("newActPtsUnit"); if(unit) unit.textContent=isShulchani()?"prutot":"pts";
+    var lbl=$("newActPtsLabel"); if(lbl) lbl.textContent=isShulchani()?"Worth":"Points";
+    var coinSel=$("newActCoin");
+    if(coinSel){
+      // Built once, on first render, then only shown/hidden — rebuilding the
+      // options every render would throw away a half-finished choice each time
+      // anything else on the tab re-renders.
+      if(!coinSel.options.length){
+        COINS.forEach(function(c){ var o=el("option",null,c.name); o.value=c.abbr; coinSel.appendChild(o); });
+        coinSel.value="M";   // Maah — mid-scale, a sane everyday default
+        coinSel.addEventListener("change", syncNewActUnit);
+        $("newActPts").addEventListener("input", syncNewActUnit);
+      }
+      coinSel.style.display=isShulchani()?"":"none";
+    }
+    syncNewActUnit();
     var vt=$("actViewTitle"); if(vt) vt.textContent=isShulchani()?"Activities & coin values":"Activities & point values";
     var vn=$("actViewNote"); if(vn) vn.textContent=isShulchani()
-      ?"These are the buttons on the Scan screen. Values are in Prutot — tap +/– or type a number. Use a negative value for a deduction."
+      ?"These are the buttons on the Scan screen. Set a value by picking a coin and how many — the Prutot are worked out for you. Use a negative number for a deduction."
       :"These are the buttons on the Scan screen. Change a point value right here — tap the +/– or type a number. Use a negative value for a deduction.";
-    if(!data.activities.length){ list.appendChild(el("div","recent-empty","No activities yet.")); }
+    // Coin codes only appear in the mode they mean something in — the same rule
+    // actVisibleOnScreen() applies to the Scan screen. Editing a Dinar's value
+    // while balances are counted in points would be editing nothing a rebbi can
+    // see or scan, so the rows stay out rather than sitting there inert.
+    var editable=data.activities.filter(actInCurrentMode);
+    if(!editable.length){ list.appendChild(el("div","recent-empty","No activities yet.")); }
     var allGroups=groups();
-    data.activities.forEach(function(a){
+    editable.forEach(function(a){
       if(!Array.isArray(a.groups)) a.groups=[];
       var row=el("div","erow act-erow");
       // Universal "Show on screen" checklist — unchecking hides this activity
@@ -14315,7 +14407,14 @@ nameLine
         data.activities=data.activities.filter(function(x){return x.id!==a.id;}); save(); renderActivities(); renderActButtons();
       });
       var controls=el("div","act-controls");
-      controls.appendChild(name); controls.appendChild(stp); controls.appendChild(ptsLbl); controls.appendChild(del);
+      controls.appendChild(name);
+      // Same stored a.pts either way — Shulchani only changes how it is entered.
+      if(isShulchani()){
+        controls.appendChild(coinValueEditor(function(){ return a.pts; }, setpts));
+      } else {
+        controls.appendChild(stp); controls.appendChild(ptsLbl);
+      }
+      controls.appendChild(del);
       row.appendChild(controls);
       // Group checklist — "All groups" (unchecked = all, checked groups = restricted)
       if(allGroups.length>0){
@@ -14354,7 +14453,9 @@ nameLine
   function refreshArmed(a){ if(armed && armed.label===a.name){ setArmed(a.name, a.pts); } }
   $("addActivity").addEventListener("click", function(){
     var name=$("newActName").value.trim(); if(!name){ $("newActName").focus(); return; }
-    var pts=parseInt($("newActPts").value,10); if(isNaN(pts)) pts=0;
+    // In Shulchani the field is a COUNT of the coin picked beside it, so the
+    // stored value is that count × the denomination. Points mode is unchanged.
+    var pts=newActValuePrutot();
     data.activities.push({id:nextActId(), name:name, pts:pts});
     $("newActName").value=""; save(); renderActivities(); renderActButtons();
   });
@@ -14522,10 +14623,17 @@ nameLine
       // not follow `tracked`: it scores nothing, but it is unmistakably a
       // consequence, so it belongs with the deductions rather than with
       // Homework Checked and Attendance.
-      var defSection = freezeActivity(a) ? "neg"
-                     : tracked           ? "nav"
-                     : (a.pts<0)         ? "neg"
-                     :                     "pos";
+      // Coin codes start in their own section rather than being split across
+      // Positive and Negative by sign: on paper they are one strip a rebbi reads
+      // as a currency chart, and a Dinar filed away from its own deduction is
+      // the odd outcome. Still only a DEFAULT — dragging one splits the pair,
+      // and if the rebbi has deleted the Coins section printCodeSectionOf()
+      // falls them back to the first section rather than dropping them.
+      var defSection = coinActivity(a)    ? COIN_SECTION_KEY
+                     : freezeActivity(a)  ? "neg"
+                     : tracked            ? "nav"
+                     : (a.pts<0)          ? "neg"
+                     :                      "pos";
       // `tone` says what this code DOES to a score — pos / neg / trk — for any
       // surface that wants to colour it. Taken from a.pts directly and never
       // re-derived by reading `sub`: that string is fmtDelta's, which spells
@@ -16386,6 +16494,13 @@ nameLine
     if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
     if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
     if(typeof data.shulchaniMode!=="boolean") data.shulchaniMode=false;
+    if(typeof data.shulchaniCoinsSeeded!=="boolean") data.shulchaniCoinsSeeded=false;
+    // A rebbi ALREADY in Shulchani Mode before coin codes existed never passes
+    // through the mode switch again, so he would never get them. Seed here too —
+    // but with revalueStarters false: he has been scanning with whatever his
+    // activities are worth, and a routine load is not the moment to change that
+    // under him. Additive either way; nothing existing is renamed or removed.
+    if(data.shulchaniMode && !data.shulchaniCoinsSeeded) seedShulchaniCoinCodes(false);
     if(typeof data.showPrutot!=="boolean") data.showPrutot=false;
     if(typeof data.snackSeconds!=="number" || data.snackSeconds<=0) data.snackSeconds=420;
     if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerExcluded={};
