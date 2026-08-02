@@ -440,6 +440,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 0}
   .seat-modebtn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:6px 12px;font-size:.85rem;font-weight:600}
   .seat-modebtn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  /* Shown only when a rebbi set to Seating chart lands on a class that has no
+     chart yet and gets the list instead. Carries the way back in, so the
+     fallback can never make an unarranged chart unreachable. */
+  .seat-fallback-note{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px 0;font-size:.82rem;color:var(--muted);font-weight:600}
   .spin-mode-btn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
   .seat-dims{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
   .seat-dims input{width:46px;padding:5px 6px;border:1px solid var(--line);border-radius:7px;text-align:center}
@@ -3554,6 +3558,8 @@ function setupRoster() {
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Scan Tab — Tap Panel</h3>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setTapBreakdown"> Tapping a student shows their points breakdown instead of giving points</label>
       <p class="view-note" style="margin:8px 0 0">Off by default. When on, tapping a name in the list or seating chart on the Scan tab pops up that student's points breakdown (same as the "▾ Breakdown" panel on the Students tab) instead of scoring them — handy if you want to use the Tap Panel to check on a student mid-class without accidentally giving or taking points. Scanning a QR code still always scores normally, even while this is on.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-top:12px"><input type="checkbox" id="setSeatListFallback"> Show the class list when a class has no seating chart yet</label>
+      <p class="view-note" style="margin:8px 0 0">On by default. List / Seating chart is one setting shared by all your classes, but each class has its own chart. So if you arrange one class and leave the panel on Seating chart, switching to a class you haven't arranged yet would otherwise show a grid of empty seats with none of your students in it. With this on, that class shows your class list — alphabetically by last name — with a button to set its chart up when you're ready. The class you did arrange still opens straight to its chart, and nothing about any chart is changed or deleted either way.</p>
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
@@ -5833,6 +5839,7 @@ function setupRoster() {
     $("setShulchani").checked = !!data.shulchaniMode;
     renderShulchaniStatus();
     $("setTapBreakdown").checked = !!data.tapShowsBreakdown;
+    $("setSeatListFallback").checked = data.seatListFallback!==false;
     $("setHeaderShortcuts").checked = data.showHeaderShortcuts!==false;
     $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setFullWidth").checked = !!data.fullWidth;
@@ -5884,6 +5891,9 @@ function setupRoster() {
     var mb=$("muteBtn"); if(mb) mb.textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   });
   $("setTapBreakdown").addEventListener("change", function(){ data.tapShowsBreakdown=this.checked; save(); });
+  // Redraws the panel: turning this off has to put the empty grid back straight
+  // away, or the setting reads as doing nothing until the next render.
+  $("setSeatListFallback").addEventListener("change", function(){ data.seatListFallback=this.checked; save(); renderTapPanel(); });
   $("setHeaderShortcuts").addEventListener("change", function(){ data.showHeaderShortcuts=this.checked; save(); applyHeaderShortcutsVisibility(); });
   $("setHebrewDate").addEventListener("change", function(){ data.showHebrewDate=this.checked; save(); showDate(); });
   $("setFullWidth").addEventListener("change", function(){ data.fullWidth=this.checked; save(); applyFullWidth(); });
@@ -7513,6 +7523,42 @@ function setupRoster() {
     return studs.filter(function(s){ return !seen[s.id]; });
   }
 
+  /* Has the CURRENT class had anyone seated yet?
+   *
+   * Deliberately does NOT go through seatLayout(): that invents a 4x6 layout
+   * and writes it into data.seating for any class it is asked about, so merely
+   * *checking* a class would leave a 24-null layout behind for it. This only
+   * reads. It also ignores seats holding students who have since been deleted
+   * or moved class — a chart whose every occupant is gone is an empty chart,
+   * which is the same rule seatAutoPlaceUnplaced() applies after pruning.
+   */
+  function seatChartIsEmpty(){
+    var lay=data.seating[seatKey()];
+    if(!lay || !Array.isArray(lay.seats)) return true;
+    var valid={}; activeStudents().forEach(function(s){ valid[s.id]=1; });
+    return !lay.seats.some(function(sid){ return sid && valid[sid]; });
+  }
+
+  /* Switch to the seating chart AND open arranging in one step.
+   *
+   * This is the only way into a chart that hasn't been built yet, because the
+   * list fallback below hides an all-empty chart on sight. Arranging is what
+   * turns the fallback off (see seatFallback in renderTapPanelInto), so a rebbi
+   * who clicks in gets the grid and the "Not yet seated" tray straight away
+   * rather than clicking "Seating chart" and watching nothing happen.
+   *
+   * Mirrors setSeatSetup()'s exclusions — Rebbi's view and Show codes both
+   * fight arranging, for the reasons documented at their own toggles.
+   */
+  function enterSeatingSetup(){
+    data.tapViewMode="seating";
+    data.seatSetupOpen=true;
+    data.seatArranging=true;
+    data.seatLiveRebbiView=false;
+    data.seatScanMode=false;
+    save(); renderTapPanel();
+  }
+
   // Renders the Tap Panel (List/Seating chart) into a specific container —
   // called once for each place it lives (the Seats tab, and Dashboard's
   // "Class list" panel), so both stay in sync automatically: they read the
@@ -7543,13 +7589,43 @@ function setupRoster() {
     // Seating chart not shown in Teach / Shorashim context
     var allowSeating=true; // teachTapPanelBody/shorTapPanelBody no longer exist; all remaining tap panels allow seating view
     var effViewMode=opts.forceSeating ? "seating" : (allowSeating ? data.tapViewMode : "list");
+    /* THE LIST FALLBACK. data.tapViewMode is one global setting but data.seating
+     * is keyed per class, so a rebbi who arranged Shiur A and left the panel on
+     * "Seating chart" used to switch to a freshly-imported class and get a grid
+     * of "Empty seat" boxes with not one student in it — renderSeatGrid only
+     * draws the "Not yet seated" tray while arranging is on, so there was
+     * nobody to tap and nothing on screen saying why. Show him his class
+     * instead, alphabetically, which is what he actually needs in front of a
+     * room.
+     *
+     * NOTHING IS WRITTEN. data.tapViewMode keeps saying "seating", so switching
+     * back to the class he did arrange still opens straight into its chart —
+     * this only changes what is drawn for a class that has no chart.
+     *
+     * Off while arranging: that state IS the rebbi building the chart, and
+     * hiding the grid he is dragging boys into would make it unusable. It also
+     * self-heals — the moment one boy is seated the class stops being empty,
+     * so "Done arranging" leaves him on the chart he just built.
+     */
+    var seatFallback = !opts.forceSeating && allowSeating
+                       && data.seatListFallback!==false
+                       && data.tapViewMode==="seating"
+                       && !data.seatArranging
+                       && seatChartIsEmpty();
+    if(seatFallback) effViewMode="list";
     if(!opts.forceSeating){
       var listBtn=el("button","seat-modebtn"+(effViewMode!=="seating"?" active":""),"List");
       listBtn.addEventListener("click", function(){ data.tapViewMode="list"; save(); renderTapPanel(); });
       toolbar.appendChild(listBtn);
       if(allowSeating){
         var seatBtn=el("button","seat-modebtn"+(effViewMode==="seating"?" active":""),"Seating chart");
-        seatBtn.addEventListener("click", function(){ data.tapViewMode="seating"; save(); renderTapPanel(); });
+        seatBtn.addEventListener("click", function(){
+          // On a class with no chart, plain "seating" would be swallowed by the
+          // fallback above and the click would look broken. Take him into
+          // arranging instead — the one thing there is to do with an empty chart.
+          if(seatChartIsEmpty()){ enterSeatingSetup(); return; }
+          data.tapViewMode="seating"; save(); renderTapPanel();
+        });
         toolbar.appendChild(seatBtn);
       }
     }
@@ -7746,6 +7822,19 @@ function setupRoster() {
     var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
 
     if(effViewMode==="seating"){ renderSeatGrid(body, studs); return; }
+
+    // Says why this is a list when the toolbar was set to Seating chart, and
+    // carries the only way in. Shown ONLY on the fallback — a rebbi who chose
+    // List is not nagged about a chart he never asked for.
+    if(seatFallback){
+      var fbNote=el("div","seat-fallback-note no-print");
+      fbNote.appendChild(el("span",null,"No seating chart for this class yet — showing the class list."));
+      var fbBtn=el("button","btn btn-sm","⚙ Set up seating chart");
+      fbBtn.title="Open the seating chart for this class and start placing students";
+      fbBtn.addEventListener("click", enterSeatingSetup);
+      fbNote.appendChild(fbBtn);
+      body.appendChild(fbNote);
+    }
 
     var listScanMode=!!data.seatScanMode;
     var grid=el("div","tap-grid");
@@ -16092,6 +16181,12 @@ nameLine
     if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
     if(!data.seating||typeof data.seating!=="object") data.seating={};
     if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
+    // Show the class list for a class with no seating chart yet. Additive
+    // boolean, defaults ON for existing saves as well as new ones: the state it
+    // replaces (a grid of empty seats holding none of your students) is a dead
+    // end, never something a rebbi chose, so there is nothing to preserve.
+    // Reads data.seating and writes nothing to it.
+    if(typeof data.seatListFallback!=="boolean") data.seatListFallback=true;
     if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
     if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
     // Dropped position per floating launcher FAB. Additive/empty-safe — an
