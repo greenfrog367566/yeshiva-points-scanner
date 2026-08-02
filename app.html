@@ -1384,6 +1384,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-print-code-empty{font-size:.62rem;color:var(--muted);text-align:center;padding:8px 4px;
     border:1px dashed var(--line);border-radius:6px}
   .seat-print-activities-empty{font-size:.72rem;color:var(--muted);margin-bottom:6px}
+  .seat-print-preview .seat-print-codes-head{display:flex;align-items:baseline;gap:8px}
+  .seat-print-preview .seat-print-codes-head .seat-print-activities-title{flex:1;min-width:0}
+  .seat-print-codes-tools{display:inline-flex;gap:4px}
+  .seat-print-mini{font-size:.62rem;border:1px solid var(--line);background:#fff;border-radius:5px;
+    padding:1px 6px;cursor:pointer;color:var(--muted)}
+  .seat-print-mini:hover{color:var(--ink);border-color:var(--ink)}
+  /* The renameable section heading. Only ever a hover/focus tint — no border, no
+     padding shift — so the printed heading is pixel-identical to what it was
+     before it became editable. */
+  .seat-print-preview .seat-print-act-section-label[contenteditable]{outline:none;border-radius:4px}
+  .seat-print-preview .seat-print-act-section-label[contenteditable]:hover{background:var(--gb-row,#f3f4f8)}
+  .seat-print-preview .seat-print-act-section-label[contenteditable]:focus{background:#fff;box-shadow:0 0 0 2px var(--brass)}
   .seat-print-removed{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;
     padding:6px 8px;border:1px dashed var(--line);border-radius:8px}
   .seat-print-removed.drag-over{border-color:var(--brass);border-style:solid}
@@ -2409,7 +2421,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <button class="btn btn-sm" id="seatPrintActGrouped"></button>
         <button class="btn btn-sm" id="seatPrintActCols"></button>
       </span>
-      <button class="btn btn-sm" id="seatPrintCodesToggle">Choose codes</button>
+      <!-- "Choose codes" no longer opens here: everything it did on THIS page —
+           choosing, re-ordering, renaming a section, All/None — is on the
+           preview below, on the real cards. The picker itself is still very much
+           alive; it is what the seating chart and Print: Activities open, since
+           neither of those has a sheet to edit. #seatPrintCodesCard below stays
+           in the DOM because that is the node the modal borrows. -->
       <button class="btn btn-primary" id="printSeatChart">🖨 Print my class sheet</button>
     </div>
     <div class="card pad no-print" id="seatPrintCodesCard" style="margin-bottom:12px;display:none">
@@ -2421,7 +2438,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       </div>
       <div id="seatPrintCodesList" class="print-code-sections"></div>
     </div>
-    <p class="view-note no-print" style="margin:4px 0 10px">Preview — this is what will print. <b>The codes underneath are editable right here:</b> drag one to re-order it or move it to another section, and use its ✕ to take it off. Anything you take off waits in the tray below the codes.</p>
+    <p class="view-note no-print" style="margin:4px 0 10px">Preview — this is what will print, and <b>you edit it here.</b> Drag a boy into a different desk, or ✕ to empty his seat. Drag a code to re-order it or move it to another section, ✕ to take it off, and click a section's name to rename it. Anything you take off waits in the tray below the sheet.</p>
     <div class="seat-print-scroll"><div id="seatChartGrid" class="seat-print-preview"></div></div>
     <!-- Anyone without a seat, under the sheet rather than inside it: the
          preview is drawn at true page size, so putting a screen-only tray in
@@ -14784,13 +14801,10 @@ nameLine
     }
     return chip;
   }
-  $("seatPrintCodesToggle").addEventListener("click", function(){
-    var c=$("seatPrintCodesCard");
-    var open=c.style.display==="none";
-    c.style.display=open?"block":"none";
-    this.textContent=open?"Hide codes":"Choose codes";
-    if(open) renderSeatPrintCodes();
-  });
+  // (The button that used to open this card inline on the print page is gone —
+  // the preview does that job now. The card is only ever shown through the modal
+  // below, so it has no inline open/close state left to keep.)
+
   // The same picker, opened from the seating chart instead of the print page.
   // It MOVES the real #seatPrintCodesCard node into the overlay and puts it back
   // on close, rather than building a second one: every listener on it — the drag
@@ -14931,7 +14945,25 @@ nameLine
     var items = menuLabelItems() || [];
     var hasQR=(typeof QRCode!=="undefined");
     var footer=el("div","seat-print-activities-footer");
-    footer.appendChild(el("div","seat-print-activities-title","Activity Codes"));
+    // Heading row: the printed title, plus All / None. Those two were the last
+    // thing on this page you still had to open the separate picker for, and they
+    // are one click each — so they sit on the block they act on, marked
+    // .no-print like every other handle here.
+    var head=el("div","seat-print-codes-head");
+    head.appendChild(el("div","seat-print-activities-title","Activity Codes"));
+    var tools=el("span","seat-print-codes-tools no-print");
+    var allBtn=el("button","seat-print-mini","All");
+    allBtn.type="button"; allBtn.title="Put every code back on the sheet";
+    allBtn.addEventListener("click", function(){ data.printExcluded={}; save(); refreshCodeSurfaces(); });
+    var noneBtn=el("button","seat-print-mini","None");
+    noneBtn.type="button"; noneBtn.title="Take every code off — they all wait in the tray underneath";
+    noneBtn.addEventListener("click", function(){
+      var ex={}; menuLabelItemsAll().forEach(function(it){ ex[it.qrText]=true; });
+      data.printExcluded=ex; save(); refreshCodeSurfaces();
+    });
+    tools.appendChild(allBtn); tools.appendChild(noneBtn);
+    head.appendChild(tools);
+    footer.appendChild(head);
     var ordered=orderedPrintCodeItems(items);
     // The cards on the mock-up are the real controls: drag one to re-order it or
     // move it into another section, and press its ✕ to take it off. It is the
@@ -15058,7 +15090,29 @@ nameLine
     PRINT_CODE_SECTIONS.forEach(function(sec){
       var secItems=ordered.filter(function(it){ return printCodeSectionOf(it)===sec.key; });
       var g=el("div","seat-print-code-group"+(secItems.length?"":" empty no-print"));
-      g.appendChild(el("div","seat-print-act-section-label", codeSectionLabel(sec)));
+      // The heading renames in place. contenteditable rather than an <input>
+      // (which is what the picker uses) because this one PRINTS — an input would
+      // come off the printer as a form field, while a contenteditable div prints
+      // as the plain text it looks like. Same pattern the school-name heading in
+      // Settings already uses.
+      var lbl=el("div","seat-print-act-section-label", codeSectionLabel(sec));
+      lbl.contentEditable="true";
+      lbl.spellcheck=false;
+      lbl.title="Rename this section — it renames on the sheet, the chart and the activity menu";
+      lbl.addEventListener("keydown", function(e){
+        if(e.key==="Enter"){ e.preventDefault(); this.blur(); }
+        else if(e.key==="Escape"){ this.textContent=codeSectionLabel(sec); this.blur(); }
+        e.stopPropagation();   // never let a heading being typed into reach the scanner buffer
+      });
+      lbl.addEventListener("blur", function(){
+        var v=this.textContent.trim();
+        // Clearing it, or typing the built-in name back, stores nothing — so a
+        // rename can always be undone without remembering what it used to say.
+        if(!v || v===sec.label){ delete data.codeSectionNames[sec.key]; this.textContent=sec.label; }
+        else data.codeSectionNames[sec.key]=v;
+        save(); refreshCodeSurfaces();
+      });
+      g.appendChild(lbl);
       var grid=el("div","seat-print-code-grid");
       grid.style.gridTemplateColumns="repeat("+cols+", minmax(0, 1fr))";
       secItems.forEach(function(it){ grid.appendChild(actCard(it, sec.key)); });
