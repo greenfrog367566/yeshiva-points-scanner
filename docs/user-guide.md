@@ -454,6 +454,9 @@ Print → Seating chart prints your current class's seating chart full-page, lai
 - Choose what appears in each seat: a QR code (scan straight off the printed page), a Student photo (uses the photo from the Students tab, or initials if none is set), or None.
 
 
+- **QR code + photo** puts both in the same card, side by side — so you can recognise a boy by his face and scan him from that same card, without printing two sheets. Side by side rather than one above the other on purpose: it spends the empty width either one leaves behind instead of making every card taller. On a 6-column chart the picture comes out about half an inch; with 4 or 5 columns, or in Landscape, it grows to around three-quarters of an inch. (**Activity code + photo** does the same for a one-activity sheet.) If the sheet stops fitting on one page, the warning under the preview will say so.
+
+
 - Optionally show each student's current points on their seat.
 
 
