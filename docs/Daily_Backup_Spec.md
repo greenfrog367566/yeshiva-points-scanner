@@ -53,7 +53,8 @@ That is achievable, and for the Chromebook audience it is achievable well.
 - The app stores the `FileSystemDirectoryHandle` in IndexedDB.
 - On every app open, if the newest backup in that folder is older than today, it
   writes `menchmark-backup-YYYY-MM-DD.json` — no prompt, no dialog, no download
-  bubble. Prune to the last ~14 files so the folder does not grow forever.
+  bubble. Whether old files get pruned is an open question — see the plan below;
+  pruning means deleting files in the rebbi's own folder, which needs a yes.
 
 **Why it fits this audience specifically:**
 
@@ -105,7 +106,7 @@ Worth writing down so it does not get proposed again.
 Cheap, works in every browser, no permissions, and fixes the "app doesn't know"
 gap above. Should ship regardless of which automatic path wins.
 
-- Add `data.lastBackupAt` (ISO string). **Purely additive** — a `load2fix()`
+- Add `data.lastBackupAt` (ms epoch number). **Purely additive** — a `load2fix()`
   backfill, no `DATA_VERSION` bump. Stamp it in the existing `exportJson` handler
   and in any automatic write.
 - On load, if it is older than N days (start at 7), show one dismissible bar on
@@ -161,6 +162,194 @@ build on. Noted so it is not re-investigated.
 
 ---
 
+# Implementation plan
+
+Grounded in the actual code. Two PRs, in this order — **A ships alone and is
+useful alone**; B depends on A's timestamp field.
+
+**Two corrections found while planning:**
+- `CLAUDE.md` says `DATA_VERSION` is `4`. It is **`5`** (`app.html:3890`). Worth
+  fixing in `CLAUDE.md` separately.
+- The app uses **no IndexedDB at all** today (zero occurrences). Layer B has to
+  introduce it, because a `FileSystemDirectoryHandle` is not JSON-serializable
+  and therefore cannot live in `localStorage`.
+
+---
+
+## PR A — the staleness nudge
+
+Universal, no permissions, no new browser APIs. ~80 lines.
+
+### Data model — purely additive, no `DATA_VERSION` bump
+
+Two fields in `defaults` (`app.html:3731`) and backfilled in `load2fix()`
+(`app.html:16264`):
+
+```js
+lastBackupAt: 0,        // ms epoch of the last real backup file written
+backupNudgeSince: 0,    // ms epoch this device started counting
+```
+
+```js
+if(typeof data.lastBackupAt!=="number" || !isFinite(data.lastBackupAt)) data.lastBackupAt=0;
+if(typeof data.backupNudgeSince!=="number" || !isFinite(data.backupNudgeSince)) data.backupNudgeSince=Date.now();
+```
+
+**Why the second field.** Backfilling `lastBackupAt` to `0` alone would nag every
+existing rebbi the instant he loads the update — the app has no idea he has been
+backing up by hand for months, and greeting him with a warning he did nothing to
+earn is the fastest way to teach him to dismiss it forever. `backupNudgeSince`
+stamps *now* on first load after upgrade, so the clock starts fresh and the first
+nudge is a week out. Honest, and it never fires on a fresh install either.
+
+Nudge fires when `Date.now() - max(lastBackupAt, backupNudgeSince) > 7 days`.
+
+### Where `lastBackupAt` gets stamped
+
+Every path that actually writes a backup file the rebbi keeps:
+- `$("exportJson")` handler — `app.html:16087`
+- the pre-Shulchani-switch safety download — `app.html:6331`
+- the pre-mode-switch download — `app.html:6406` area
+- (PR B) every automatic folder write
+
+Deliberately **not** stamped by the Log CSV or standings CSV exports — those are
+reports, not restorable backups. Restoring from a Log CSV is a salvage path, not
+a backup.
+
+### The Sheet question
+
+A rebbi whose Sheet is syncing every 30 seconds has a working off-device backup
+and should not be nagged. Proposed: suppress the nudge when a Sheet is connected
+**and** a snapshot pushed successfully within the window. Needs a
+`lastSnapshotOkAt` stamp in `pushSnapshot()`'s success path (`app.html:15927`).
+**Flagged as a judgment call** — the counter-argument is that a Sheet is not a
+file the rebbi holds, and the whole point is that Sheets is going away.
+
+### UI
+
+Precedent is `#saveWarn` (`app.html:1589`), which sits at the top of `<main>`
+outside every `<section class="view">` — so it shows on whatever tab is open, and
+is already in the `@media print` hide list (`app.html:1231`). Add `#backupNudge`
+immediately after it, same shape, amber (`--warn`) rather than red:
+
+> **Last backup: 12 days ago.** &nbsp; [ Back up now ] &nbsp; [ Not now ]
+
+- **Back up now** → the existing `exportJson` path, stamps, hides the bar.
+- **Not now** → hides for the session via `sessionStorage`, not `data`. It comes
+  back tomorrow but does not reappear on every tab switch. Nothing about a
+  dismissal belongs in the saved data.
+- When `lastBackupAt === 0` the copy reads *"Menchmark has no record of a backup
+  on this device yet"* rather than "never" — accurate, since the app genuinely
+  cannot see files he saved before this existed.
+- Add `#backupNudge` to the print-hide selector list at `app.html:1231`.
+
+### Where the check runs
+
+Tail of the main IIFE init, alongside the other startup calls at
+`app.html:17163–17169`, inside a `setTimeout` so it never competes with first
+paint. Never blocks startup; wrapped in `try/catch` like its neighbours.
+
+### Validation
+
+- `validate` skill (JS syntax per block, CSS brace + comment-delimiter balance).
+- **Sync `test-migration.html`'s copies of `migrateData()`/`load2fix()`** and run
+  every scenario including "Corrupted data".
+- Browser-verify over http, per `NOW.md` — a Node stub run is not a browser pass.
+
+---
+
+## PR B — File System Access auto-backup
+
+Chromium only. Feature-detected; entirely invisible where unsupported.
+
+### New: a minimal IndexedDB handle store
+
+~30 lines, inside the main IIFE near the BACKUP section (`app.html:16071`). One
+database (`menchmark-fs`), one store (`handles`), one key (`backupDir`). Only
+ever holds the directory handle — **never app data**. `localStorage` via `save()`
+remains the only store for `data`, unchanged.
+
+### Data model — additive again, no bump
+
+```js
+autoBackupOn: false,      // rebbi turned it on
+autoBackupLastAt: 0,      // ms epoch of last successful automatic write
+autoBackupDirName: "",    // display only, e.g. "Menchmark Backups"
+```
+
+### UI — a new card on Backup & Sheets
+
+Slots into the existing `.backup-grid` (`app.html:2590`), next to "Back up
+everything". Feature-detect `window.showDirectoryPicker`; if absent, render the
+card in a "not available in this browser — use the backup button above" state
+rather than hiding it, so the option is discoverable when he switches to Chrome.
+
+- **Choose a backup folder…** → `showDirectoryPicker({mode:"readwrite"})`
+- Status: *"✓ Backing up automatically to **Menchmark Backups** — last backup
+  today."*
+- **Turn off** — clears the flag and the stored handle. Never deletes files.
+
+Copy steers ChromeOS users to a **Google Drive** folder, since the ChromeOS
+picker exposes Drive and that is what makes it off-device.
+
+### The write cycle
+
+On boot, if `autoBackupOn`:
+
+1. Read the handle from IndexedDB. **If it is missing, treat as off** and show
+   the choose-a-folder state. This is a real case, not a theoretical one: the
+   offline-copy download seeds `localStorage` into a fresh origin, so
+   `autoBackupOn` travels to the copy while the handle does not.
+2. `queryPermission({mode:"readwrite"})`:
+   - `granted` → proceed silently.
+   - `prompt` → show a one-tap re-grant chip. **Cannot be automatic** —
+     `requestPermission()` needs a user gesture. This is the "silent almost
+     always, one tap occasionally" caveat, made concrete.
+   - `denied` → show the off state, do not re-ask.
+3. If no `menchmark-backup-<today>.json` exists in the folder, write one via
+   `getFileHandle(name,{create:true})` → `createWritable()` → `write` → `close`.
+   Idempotent per day, so reopening the app ten times writes once.
+4. Stamp `lastBackupAt` and `autoBackupLastAt`.
+
+Runs in the same startup `setTimeout` as the nudge, after it — a successful write
+means the nudge never renders.
+
+Immediately after the rebbi picks the folder, **write the first file right then**,
+before he navigates away. He needs to see a file appear to believe the feature.
+
+### 🔴 Pruning deletes files — needs an explicit yes
+
+Keeping the last ~14 and removing older ones means calling
+`dirHandle.removeEntry()` on files **in the rebbi's own folder** — quite possibly
+his Google Drive. `CLAUDE.md` requires explicit approval before deleting
+anything, and this is deletion, automatic, and off-app. Options:
+
+- **(a) Do not prune.** ~180 files a year. Ugly, completely safe. Safe default.
+- **(b) Prune to N**, with hard guards: only exact `/^menchmark-backup-\d{4}-\d{2}-\d{2}\.json$/`
+  matches, never today's file, never anything the app did not write, N settable
+  and never below 7.
+
+Recommend shipping **(a)** and adding (b) later only if a rebbi complains about
+clutter. Nobody has ever asked for fewer backups.
+
+### Validation
+
+Same as PR A, plus a real **Chromebook** pass — this is where the "installed PWA
+persists permission automatically" claim gets confirmed or dropped. Until it is
+confirmed on hardware, no user-facing copy may promise it.
+
+---
+
+## What this does not do
+
+- Does not back up while the app is closed. Only Option 4 does that.
+- Does not touch `migrateData()` logic, `DATA_VERSION`, or any existing store.
+  Every field above is new and additive.
+- Does not change `pushSnapshot`, the Sheet, or the Apps Script — except the one
+  optional `lastSnapshotOkAt` stamp, which is additive and read-only elsewhere.
+
+---
+
 ## Open questions for the maintainer
 
 - Is pulling File System Access **before** the cutover acceptable, or does it
@@ -171,4 +360,17 @@ build on. Noted so it is not re-investigated.
 - Staleness threshold: 7 days, or tighter?
 - Does the nudge belong on the Dashboard, or only on Backup & Sheets? Dashboard
   is where it will actually be seen; Backup & Sheets is where it belongs
-  logically.
+  logically. *(The plan above answers this: `#saveWarn`'s slot at the top of
+  `<main>` shows on every tab, which is strictly better than either. Confirm.)*
+
+**From the implementation plan:**
+
+- **Pruning old backup files — (a) never delete, or (b) keep the last N?** This
+  is the one item that needs an explicit yes either way, because it deletes files
+  in the rebbi's own folder. Recommendation: ship (a).
+- **Does a live Google Sheet suppress the nudge?** Argument for: he has a working
+  off-device backup, nagging him is wrong. Argument against: a Sheet is not a file
+  he holds, and Sheets is being retired.
+- **Is `backupNudgeSince` the right call** — start the clock fresh on upgrade so
+  no existing rebbi gets nagged on first load — or should the nudge fire
+  immediately for anyone with no recorded backup?
