@@ -76,9 +76,9 @@ stale *offline* copy.
 All work happens on a **branch**, merged into `main` only via pull request after
 Rabbi Steinerman's review (see CONTRIBUTING.md).
 
-**There is no `dev` branch.** `main` is the only long-lived branch: branch off
-freshly-pulled `main`, PR back into `main`. The old `dev` → `main` promotion flow
-was retired — `dev` stopped moving 2026-07-21, its content was confirmed fully
+**There is no `dev` branch.** `main` is the only long-lived branch: every
+worktree branches off freshly-fetched `origin/main` and PRs back into `main`.
+The old `dev` → `main` promotion flow was retired — `dev` stopped moving 2026-07-21, its content was confirmed fully
 present on `main` (squash-merged as PR #94), and the branch was deleted. Don't
 recreate it or look for it; if a doc still mentions it, that doc is out of date.
 
@@ -100,40 +100,77 @@ docs/what-changed
 chore/cleanup-task
 ```
 
-### Every session must start with:
-```bash
-git checkout main && git pull origin main
-git checkout -b feat/short-description     # or continue an existing branch
+### Every code-changing session must start with a worktree
+
+**One workflow, no exceptions — not for one-line fixes, not for "just a doc
+tweak."** Every change happens in its own worktree under `.claude/worktrees/`.
+
+**The shared checkout at `C:\Dev\yeshiva-points-scanner` stays on `main`,
+always.** Never `git checkout -b` there, never park a branch there, never edit
+there. That folder's only job is to show what is live.
+
+Read-only sessions — questions, audits, "explain how X works", reading logs —
+skip all of this and work in place. No worktree, no branch.
+
+Two steps, in this order, **before the first edit**:
+
 ```
-**Run this first, unconditionally — even when resuming a branch that already
-existed.** This repo runs many parallel Claude Code sessions/worktrees, each
-merging its own branch via its own PR; none of them touch this shared checkout
-when they merge. That means the branch sitting here can already be merged, and
-`main` can already be several merges ahead, without anything in this folder
-showing it. Before resuming a branch that's more than a few minutes old, confirm
-it isn't already merged:
-```bash
-gh pr view <branch-name> --json state,mergedAt
+1. EnterWorktree { name: "feat/short-description" }   # feat/ fix/ docs/ chore/ steinerman/
+2. git branch -m feat/short-description               # ← immediately, same breath
 ```
-If `state` is `MERGED`, don't keep editing that branch — switch to `main`, pull,
-and branch fresh instead.
+
+**Step 2 is not optional and must not wait until push time.** `EnterWorktree`
+creates the branch as `worktree-feat+short-description` — it prefixes
+`worktree-` and rewrites `/` as `+`. Rename before editing, or that name reaches
+the remote and the PR. A large share of this repo's branches carry that prefix
+purely because the rename was left as a thing to remember later, which is how
+two branch-naming conventions ended up coexisting. Renaming inside a worktree is
+safe: git updates the worktree's own HEAD, and the harness tracks the worktree
+by path, not by branch name.
+
+`EnterWorktree` branches from freshly-fetched `origin/main` by itself, so there
+is **no `git checkout main && git pull` to run first** — that dance existed only
+to keep the shared checkout honest, and a worktree is current by construction.
+It also retires the "is the branch sitting here already merged?" trap: a fresh
+worktree per change means there is never a stale branch to resume.
+
+### Before starting new work: look at stale worktrees, never sweep them
+
+Merged worktrees accumulate and are worth clearing — but this repo runs several
+Claude sessions at once, and **removing a worktree out from under a live session
+breaks it.** So this is a look-then-ask step, never an automatic cleanup:
+
+```bash
+git worktree list --porcelain | grep -E '^(worktree|branch|locked)'
+```
+
+A worktree is safe to propose for removal only when **all** of these hold:
+- its PR is `MERGED` (check both names — the local branch may still be
+  `worktree-feat+x` while the PR is `feat/x`; match on the directory name too)
+- it is **not** `locked` — the lock reads `claude session … (pid N)` and means a
+  session is live in it right now
+- `git -C <path> status --porcelain` is empty
+- no session has written to it recently
+
+**List the candidates and ask before removing any.** Deleting is a stop-and-ask
+action (see Confirmation policy).
 
 ### Every session must end with:
 ```bash
 git add <changed files>
 git commit -m "description of what changed"
-git push origin <branch-name>
+git push -u origin feat/short-description   # the RENAMED branch, never worktree-*
 # Then tell Rabbi Steinerman: "Pushed to <branch>. Ready for a PR into main
 # when you confirm it works."
 ```
 
 ### Never:
 - Commit to `main`, push to `main`, or force-push to `main`
+- Edit, branch, or park work in the shared checkout — it stays on `main`
+- Push a `worktree-*` branch name; rename it at step 2 instead
+- Remove a worktree that is `locked`, dirty, or in use by another session
 - Merge a PR (that's the maintainer's explicit action)
 - Assume two Claude sessions are working from the same file — always verify
-- Assume this checkout reflects current `main` just because you haven't touched
-  it — other sessions merge through isolated worktrees that never update this
-  folder; `git pull` before trusting what's on disk here
 
 ### The shared checkout now self-syncs (but don't lean on it)
 
@@ -143,12 +180,15 @@ shared checkout at `C:\Dev\yeshiva-points-scanner` to `origin/main`. That closes
 the drift window that once left it 31 commits stale while every merge looked
 healthy.
 
-It is deliberately timid, and **it refuses in exactly the cases where you most
-need it**: it only acts when the shared checkout is on `main` with nothing
-uncommitted. Parked on a branch, or holding uncommitted work, it fast-forwards
-nothing and only prints how far behind the folder has fallen. So the rules above
-still stand unchanged — the hook is a safety net for the folder you *aren't*
-looking at, not a substitute for pulling in the one you are.
+It is deliberately timid: it only acts when the shared checkout is on `main`
+with nothing uncommitted. Parked on a branch, or holding uncommitted work, it
+fast-forwards nothing and only prints how far behind the folder has fallen.
+
+**This is exactly why the worktree rule above says the shared checkout stays on
+`main`.** The two work together: keep that folder on `main` and the hook
+silently keeps it current, so opening `app.html` there always shows what
+rebbeim have. Park a branch there and the hook goes mute — which is the state
+that once let the folder sit 31 commits stale while every merge looked healthy.
 
 ## Critical rules — read before writing any code
 
@@ -311,7 +351,7 @@ The app file is large (~13,800 lines / ~800 KB) — never read it whole.
 
 ## 🔁 SESSION SHAPE (when working a whole phase)
 
-1. Branch off fresh `main` (or continue the phase's existing branch).
+1. `EnterWorktree`, then `git branch -m <type>/<name>` — see BRANCH RULES.
 2. Read the relevant spec doc(s) + the Phased Build Plan for that phase.
 3. Work in surgical edits; validate after each (`node --check`).
 4. If the data model changed: sync + run `test-migration.html`.
