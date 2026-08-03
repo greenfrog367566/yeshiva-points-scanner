@@ -555,6 +555,27 @@ if(!data.contestHiddenSeeded){
   data.navHidden.tabs.contest=true;
   data.contestHiddenSeeded=true;
 }
+// Hide the Gradebook (#185). WHY: it reads data.trackedData, which only the
+// one-shot Phase 2c attendance conversion below ever writes, so the grid
+// freezes at the migration and every day since is silently missing.
+// Unhiding is gated on #123 (Phase 2d) landing, not on anything cosmetic.
+//
+// Same one-shot shape as contestHiddenSeeded above, and deliberately NOT in
+// `defaults`: the flag is absent from a new install AND from every existing
+// save, so both are hidden on the next load. That is the opposite of #121's
+// three-state seam on purpose — Lean mode must not take a working tab away
+// from a rebbi who never asked, whereas this tab is showing wrong numbers
+// and everyone should stop seeing it. A rebbi who switches it back on in
+// Settings keeps it on, because the flag is set here and never re-checked.
+//
+// HIDDEN, NOT REMOVED. No Gradebook code is deleted and no tracked-item
+// data is touched: data.trackedItems and data.trackedData are not read,
+// written or reshaped here, so 2a's byte-identity guarantee still holds and
+// 2d inherits the finished 2b UI intact.
+if(!data.gradebookHiddenSeeded){
+  data.navHidden.tabs.gradebook=true;
+  data.gradebookHiddenSeeded=true;
+}
 if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
 if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
 if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
@@ -1450,6 +1471,44 @@ function runBuiltInTests() {
   assert("hide→contest-tagged log entries untouched",
     t14c.log.length===1 && t14c.log[0].contestId==="c0" && t14c.log[0].delta===7);
   assert("hide→save reaches current DATA_VERSION (5); hiding added no bump", t14c.version===DATA_VERSION && DATA_VERSION===5);
+
+  // --- Test 14b: Gradebook hidden (not removed) — #185 ---
+  // Same one-shot shape as Contest above. The difference that matters is that
+  // EXISTING saves must be hidden too, not just new installs: the tab is
+  // showing attendance frozen at the 2c migration, so a rebbi already running
+  // it is the one most affected. That is why the flag is not in `defaults`.
+  assert("gb→gradebook tab hidden on a new save", d1.navHidden.tabs.gradebook===true);
+  assert("gb→one-shot flag set", d1.gradebookHiddenSeeded===true);
+  var t14d=runMigration({ version:4, navHidden:{groups:{}, tabs:{trends:true}} });
+  assert("gb→EXISTING save gets the gradebook hidden too", t14d.navHidden.tabs.gradebook===true);
+  assert("gb→other hidden tabs are left alone", t14d.navHidden.tabs.trends===true);
+  assert("gb→flag stamped so it only happens once", t14d.gradebookHiddenSeeded===true);
+  // The whole point of the one-shot: a rebbi who turns it back on keeps it on.
+  var t14e=runMigration({ version:4, gradebookHiddenSeeded:true,
+    navHidden:{groups:{}, tabs:{}} });
+  assert("gb→a deliberate un-hide is NOT re-hidden on the next load",
+    t14e.navHidden.tabs.gradebook===undefined, "got "+JSON.stringify(t14e.navHidden.tabs));
+  // Hiding is a NAV setting only — no tracked-item data may be touched by it.
+  var gbSrc={ version:4,
+    trackedItems:[{id:"ti-custom", name:"Mine", method:"count", config:{step:2}}],
+    trackedData:{"ti-custom":{s1:[{value:1, ts:1721460000000}]}},
+    trackedItemsSeeded:true, attConversion:{ts:1, days:0, converted:0} };
+  var beforeTi=JSON.stringify(gbSrc.trackedItems);
+  var beforeTd=JSON.stringify(gbSrc.trackedData);
+  var t14f=runMigration(JSON.parse(JSON.stringify(gbSrc)));
+  assert("gb→data.trackedItems untouched by hiding",
+    JSON.stringify(t14f.trackedItems)===beforeTi,
+    "before "+beforeTi+"\nafter  "+JSON.stringify(t14f.trackedItems));
+  assert("gb→data.trackedData untouched by hiding",
+    JSON.stringify(t14f.trackedData)===beforeTd,
+    "before "+beforeTd+"\nafter  "+JSON.stringify(t14f.trackedData));
+  assert("gb→save reaches current DATA_VERSION (5); hiding added no bump",
+    t14f.version===DATA_VERSION && DATA_VERSION===5);
+  // Corrupted flag must not strand the tab hidden-forever or re-hide forever.
+  var t14g=runMigration({ version:4, gradebookHiddenSeeded:"yes",
+    navHidden:{groups:{}, tabs:{}} });
+  assert("gb→a truthy non-boolean flag is honoured as already-seeded",
+    t14g.navHidden.tabs.gradebook===undefined);
 
   // --- Test 15: Phase 2c — Attendance converted into the tracked item ---
   // These run over the REAL {status, ts} shape (see Test 10's fixture), which

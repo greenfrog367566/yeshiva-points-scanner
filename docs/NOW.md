@@ -27,19 +27,14 @@ One toggle in Settings. Assignment and mechanism already decided:
 - Homework and Passes are in LEAN because hiding them strands the pass-refusal message, whose only correction path is the Passes tab.
 - The Settings toggle must be self-explanatory to an **existing** rebbi who never asked for it. Existing rebbeim are the ones most likely to want Lean and will never get it as a default, so the toggle has to sell itself. Say plainly what it hides and that nothing is deleted.
 
-**2. Dashboard undo + date range**
-- Undo button on the dashboard, same path as History's. Do not write a second undo.
-- Recognize date range: Today · Custom · All time, with Custom offering week, month, or a calendar. Extend `standRange` rather than building a parallel mechanism. Remember the choice.
-
-**3. Offline resync** — read-only investigation first, then PROPOSE FIRST
+**2. Offline resync** — read-only investigation first, then PROPOSE FIRST
 The snapshot recovers after being offline; logged scans do not unless "resync all scans" is pressed. Want it automatic on reconnect and periodically.
 **Retry safety differs per tab.** The Log dedups by ID so re-pushing is safe. The Attendance Log has no dedup, so a retry duplicates rows. Confirm per tab before proposing.
 
-**4. Freeze timer, raffle note, warning flash**
-Small standalone features for a live bunk. **Not the behavior ladder** — no marks store, no rung counting, no reset periods. Those stay in `docs/Behavior_Ladder_Spec.md`.
-- Freeze: corner countdown, default 3 min, stores remaining seconds plus running-since, never an end timestamp. Drops stale freezes in `load2fix()`. Hidden in `@media print`. **Does not gate earning** — it is a visible reminder, not enforcement.
-- Raffle removal note, and report how a removal could clear itself after the next draw rather than staying sticky.
-- Warning flash: reuses the minus flash, **records nothing**. A recorded warning implies a count, a count implies rungs, and rungs are the ladder.
+**3. Warning flash, and the sticky raffle removal**
+What is left of the old "small standalone features" item once Freeze and the raffle note shipped. **Not the behavior ladder** — no marks store, no rung counting, no reset periods. Those stay in `docs/Behavior_Ladder_Spec.md`.
+- Warning flash: reuses the minus flash, **records nothing**. A recorded warning implies a count, a count implies rungs, and rungs are the ladder. Verified not started — nothing in `app.html` matches.
+- The raffle removal *note* shipped (`renderRaffleAdjustNote()`, "N students removed … from past wins"). What did **not** ship is the question it was filed with: report how a removal could clear itself after the next draw rather than staying sticky. Still open, still a report before a change.
 
 ---
 
@@ -65,5 +60,7 @@ Small standalone features for a live bunk. **Not the behavior ladder** — no ma
 ## Phase 2 status
 
 2a, 2b, 2c shipped. **2d** (armed-item scan mechanic) is the last slice and is not started. It also pins down the count value shape, which is still undefined — the 2b gradebook carries a guess that should collapse when 2d lands.
+
+**The Gradebook tab is hidden until 2d lands (#185).** Nothing writes `data.trackedData` except the one-shot 2c attendance conversion, so the grid froze at the migration and showed every day since as missing — a working-looking feature with wrong numbers. Hidden the same one-shot `navHidden` way as Contest, no data touched. **Un-hiding is gated on 2d, not on anything cosmetic** — not tidier empty columns, not #119's item tabs. When 2d lands, decide at the same time whether it forward-ports attendance from the cutoff; `data.attConversion` holds the receipt needed to do that safely.
 
 Instances for worksheets and quizzes are #120, deliberately separate from 2c so two migrations stay small.
