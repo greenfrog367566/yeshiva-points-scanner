@@ -1371,6 +1371,57 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-print-preview .seat-print-qr{width:100%;max-width:60px;aspect-ratio:1;margin-left:auto;margin-right:auto}
   .seat-print-preview .seat-print-qr img,.seat-print-preview .seat-print-qr canvas{width:100%;height:auto;display:block}
   .seat-print-preview .seat-print-photo .avatar{width:40px!important;height:40px!important;font-size:15px!important}
+  /* PHOTO AND CODE IN THE SAME CARD — ACROSS, NOT STACKED.
+     A seat card is about 1.25in wide with a 0.6in code centred in it, so close
+     to half its width sits empty while its HEIGHT is the thing that runs the
+     sheet off the page. Stacking the face above the code would spend the scarce
+     dimension to save the plentiful one; putting them side by side spends the
+     empty width instead. That is the whole reason this is a flex row and not
+     another block above the name — do not "simplify" it back into a stack.
+     Both boxes flex from the same zero basis, so they split the card evenly and
+     grow together when the grid has few columns (fewer columns => bigger
+     picture, which is what the Avatar tooltip promises).
+
+     WHAT THIS COSTS IN PAGE HEIGHT, honestly — the row is as tall as the TALLER
+     of the two boxes, so it depends entirely on how many columns the chart has.
+     Measured in the preview, portrait, seat height code-only vs code+photo:
+
+       4 cols  87 -> 113px  (+26px/row)  photo 76px, at its cap
+       5 cols  87 -> 100px  (+13px/row)  photo 63px
+       6 cols  87 ->  88px  (+1px/row)   photo 50px
+       7 cols  the photo row is SHORTER than the code-only one
+
+     So on a 6-column-or-narrower chart the picture is effectively free, and it
+     is only the wide cards — 4 and 5 columns, where the photo hits its cap while
+     the code is still at 64px — that pay about a quarter inch per row. That is
+     the right trade in exactly those cases: the cards are wide there and a
+     recognisable face is the whole point of the mode. The photo's max-width
+     below is the single number that governs this, and the fit warning under the
+     preview is what catches a sheet that stops fitting because of it (verified:
+     a 48-boy 12x4 sheet warns in both modes, 1270px vs 1582px against 1056).
+
+     Each box keeps aspect-ratio:1. That is load-bearing, for the same reason it
+     is on .seat-print-qr above: the fit check reads scrollHeight synchronously,
+     before any QR or photo has decoded, and a row sized by its images would be
+     measured collapsed and report a sheet that fits when it does not (#142). */
+  .seat-print-preview .seat-print-pair{display:flex;align-items:center;justify-content:center;gap:5px;margin:0 auto 5px}
+  .seat-print-preview .seat-print-pair>*{flex:1 1 0;min-width:0;margin:0}
+  .seat-print-preview .seat-print-pair .seat-print-qr{max-width:64px}
+  /* The face is capped slightly larger than the code, and cropped SQUARE here
+     rather than round. A circle throws away the corners of an already small
+     photo — at this size that is most of a boy's hair and chin, and "which boy
+     is this" is the entire job of printing the picture. Round avatars stay
+     everywhere else in the app; this is the one place the crop is paying for
+     something. Between the square crop and the size, the smallest case here
+     (0.55in) already shows a bit over twice the face of the 40px circle that
+     photo-on-its-own prints, and the largest about five times.
+     76px, not more: this cap is the one number that decides how much taller
+     than a code-only sheet a photo sheet gets (see the row-height note above),
+     so raising it is a pagination change, not a cosmetic one.
+     display:block so the avatar's own width:100% governs in both the preview
+     and the print (.seat-print-photo is display:flex only in print). */
+  .seat-print-preview .seat-print-pair .seat-print-photo{display:block;max-width:76px}
+  .seat-print-preview .seat-print-pair .seat-print-photo .avatar{width:100%!important;height:auto!important;aspect-ratio:1;border-radius:6px;font-size:19px!important}
   .seat-print-preview .seat-name{font-weight:600;font-size:.82rem;display:block;overflow-wrap:break-word;word-wrap:break-word;white-space:normal;text-align:center;line-height:1.2}
   .seat-print-preview .seat-print-pts{font-size:.7rem;color:var(--muted);margin-top:2px;display:block}
   .seat-print-preview .seat-print-activities-footer{margin-top:9px;border-top:2px solid var(--line);padding-top:6px}
@@ -2455,12 +2506,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <input type="number" id="seatPrintRows" min="1" max="12">Cols
         <input type="number" id="seatPrintCols" min="1" max="12">
       </span>
-      <label style="display:flex;align-items:center;gap:5px;font-size:.9rem">Avatar:
+      <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="What sits in each boy's card. The two &quot;+ photo&quot; options print his picture and his code SIDE BY SIDE, which costs no extra height on the page — so you can recognise a boy and scan him from the same card. Fewer columns, or Landscape, makes the pictures bigger.">Avatar:
         <select id="seatPrintAvatarMode" class="field" style="width:auto">
           <option value="qr">QR code</option>
+          <option value="qrphoto">QR code + photo</option>
           <option value="photo">Student photo</option>
           <option value="none">None</option>
           <option value="activity">Activity code</option>
+          <option value="actphoto">Activity code + photo</option>
         </select>
       </label>
       <label id="seatPrintActivityRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Every seat's code becomes that one activity, pre-applied to that student — scan straight down the grid with no arming step. One sheet per activity.">Activity:
@@ -15197,7 +15250,7 @@ nameLine
   // actually being printed; a layout control for something not on the page is
   // noise, and this toolbar is already crowded.
   function seatPrintSyncActLayout(){
-    var show = data.seatPrintOpts.showActivities && $("seatPrintAvatarMode").value!=="activity";
+    var show = data.seatPrintOpts.showActivities && seatPrintCodeKind($("seatPrintAvatarMode").value)!=="activity";
     $("seatPrintActLayoutRow").style.display = show ? "inline-flex" : "none";
     var grouped=seatPrintActGrouped();
     var gb=$("seatPrintActGrouped");
@@ -15288,7 +15341,7 @@ nameLine
   // picker's options in sync with the same armable/visible filter every
   // other arming surface uses (armableActivities() + actVisibleInCurrentClass).
   function seatPrintSyncActivityRow(){
-    var isActivity = $("seatPrintAvatarMode").value==="activity";
+    var isActivity = seatPrintCodeKind($("seatPrintAvatarMode").value)==="activity";
     $("seatPrintActivityRow").style.display = isActivity ? "flex" : "none";
     $("seatPrintShowActivitiesRow").style.display = isActivity ? "none" : "flex";
     var sel=$("seatPrintActivityPicker"), cur=sel.value || data.seatPrintOpts.activityId;
@@ -15551,6 +15604,28 @@ nameLine
    * seating" rule lives in one place, matching the load2fix backfill. */
   function seatPrintIsList(){ return data.seatPrintOpts.layout==="list"; }
 
+  /* WHAT GOES IN A CARD — read the one stored mode string through these two,
+   * never by comparing it directly.
+   *
+   * It stays a single string because that is what old saves carry, but two of
+   * its values now mean "a code AND a face": "qrphoto" and "actphoto". Every
+   * place that used to test avatarMode against "qr" / "activity" / "photo" asks
+   * these instead, so a combined value cannot be understood by the renderer and
+   * missed by something else. That asymmetry is not hypothetical — the activity
+   * picker, the Activities-footer checkbox, the footer itself and the
+   * "pick an activity first" empty state all branch on Activity mode
+   * separately, and a new value understood by four of those five prints PA:
+   * codes for an activity nobody chose.
+   */
+  function seatPrintCodeKind(mode){
+    if(mode==="qr" || mode==="qrphoto") return "qr";
+    if(mode==="activity" || mode==="actphoto") return "activity";
+    return "none";
+  }
+  function seatPrintWantsPhoto(mode){
+    return mode==="photo" || mode==="qrphoto" || mode==="actphoto";
+  }
+
   /* ONE STUDENT'S PRINTED CARD — shared by both layouts on this page.
    *
    * Extracted rather than copied. The two layouts must carry an identical card
@@ -15560,25 +15635,36 @@ nameLine
    * picker already follows. Fills `seat` in place and returns nothing.
    */
   function fillSeatPrintCard(seat, s, avatarMode, act, showPts, hasQR){
-    if(avatarMode==="qr" || avatarMode==="activity"){
+    var kind=seatPrintCodeKind(avatarMode), wantPhoto=seatPrintWantsPhoto(avatarMode);
+    /* THE FLEX ROW EXISTS ONLY WHEN BOTH ARE PRINTED. A code alone, or a face
+     * alone, keeps the exact DOM it has always had, and therefore the exact
+     * printed height — a rebbi who has a one-page sheet set up today must not
+     * find it paginating differently because a mode he does not use was added.
+     * The side-by-side sizing lives in .seat-print-pair (see the stylesheet). */
+    var both = (kind!=="none" && wantPhoto);
+    var host = both ? el("div","seat-print-pair") : seat;
+    // Face first, code second: you find the boy by looking, then scan him.
+    if(wantPhoto){
+      var pw=el("div","seat-print-photo");
+      pw.appendChild(avatarEl(s, 76));
+      host.appendChild(pw);
+    }
+    if(kind!=="none"){
       var qrw=el("div","seat-print-qr");
       if(hasQR){
         var holder=el("div"); qrw.appendChild(holder);
         // Same PA:<student>:<activity> merged code renderPersonalPages()
         // prints per student, just laid out in the grid instead — one scan
         // applies this exact activity to this exact student.
-        var qrText = (avatarMode==="activity") ? ("PA:"+s.id+":"+act.id) : s.id;
+        var qrText = (kind==="activity") ? ("PA:"+s.id+":"+act.id) : s.id;
         try{ new QRCode(holder,{text:qrText,width:95,height:95,correctLevel:QRCode.CorrectLevel.M}); }
         catch(e){ qrw.appendChild(document.createTextNode("QR?")); }
       } else {
         qrw.appendChild(document.createTextNode("(offline)"));
       }
-      seat.appendChild(qrw);
-    } else if(avatarMode==="photo"){
-      var pw=el("div","seat-print-photo");
-      pw.appendChild(avatarEl(s, 76));
-      seat.appendChild(pw);
+      host.appendChild(qrw);
     }
+    if(both) seat.appendChild(host);
     seat.appendChild(el("span","seat-name",s.name));
     if(showPts) seat.appendChild(el("span","seat-print-pts", fmtScore(s.id)));
   }
@@ -15601,8 +15687,8 @@ nameLine
     var avatarMode = $("seatPrintAvatarMode") ? $("seatPrintAvatarMode").value : "qr";
     var showPts = $("seatPrintShowPoints") ? $("seatPrintShowPoints").checked : false;
     var rebbiView = $("seatPrintRebbiView") ? $("seatPrintRebbiView").checked : false;
-    var act = (avatarMode==="activity") ? actById(data.seatPrintOpts.activityId) : null;
-    if(avatarMode==="activity" && !act){
+    var act = (seatPrintCodeKind(avatarMode)==="activity") ? actById(data.seatPrintOpts.activityId) : null;
+    if(seatPrintCodeKind(avatarMode)==="activity" && !act){
       wrap.appendChild(el("div","seat-print-title", seatPrintTitle()));
       wrap.appendChild(el("div","empty-state", data.activities.length
         ? "Pick an activity above to print its seating chart."
@@ -15714,7 +15800,7 @@ nameLine
     // The footer arms an activity code to scan-then-scan-student; a merged
     // PA: code already carries the activity, so it would be redundant here
     // (and the checkbox that controls it is hidden in Activity mode too).
-    if(data.seatPrintOpts.showActivities && avatarMode!=="activity"){
+    if(data.seatPrintOpts.showActivities && seatPrintCodeKind(avatarMode)!=="activity"){
       renderSeatPrintActivitiesFooter(wrap);
     }
     var unplacedBox=$("seatPrintUnplaced");
@@ -16384,7 +16470,13 @@ nameLine
     if(typeof data.seatPrintOpts.avatarMode!=="string"){
       data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
     }
-    if(["qr","photo","none","activity"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
+    // "qrphoto"/"actphoto" (code + face side by side) are additive VALUES of a
+    // field that already existed, so there is nothing to convert and no version
+    // bump: every value an existing save can hold is still in this list and
+    // still means exactly what it meant. The list is the whitelist the renderer
+    // trusts, so a value missing from it silently reverts a rebbi's setting to
+    // QR — add here whenever a mode is added to seatPrintCodeKind().
+    if(["qr","qrphoto","photo","none","activity","actphoto"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
     delete data.seatPrintOpts.showQR;
     // Which layout the class sheet prints in. Anything that isn't exactly
     // "list" becomes "seating" — so a save predating the field, and a corrupt
@@ -17721,6 +17813,9 @@ Print → Seating chart prints your current class's seating chart full-page, lai
 
 
 - Choose what appears in each seat: a QR code (scan straight off the printed page), a Student photo (uses the photo from the Students tab, or initials if none is set), or None.
+
+
+- **QR code + photo** puts both in the same card, side by side — so you can recognise a boy by his face and scan him from that same card, without printing two sheets. Side by side rather than one above the other on purpose: it spends the empty width either one leaves behind instead of making every card taller. On a 6-column chart the picture comes out about half an inch; with 4 or 5 columns, or in Landscape, it grows to around three-quarters of an inch. (**Activity code + photo** does the same for a one-activity sheet.) If the sheet stops fitting on one page, the warning under the preview will say so.
 
 
 - Optionally show each student's current points on their seat.
