@@ -5132,7 +5132,36 @@ function setupRoster() {
   // tracked:true — it has its own dedicated tab and data store (data.hw), not
   // data.trackerLog. Letting it appear in Tracker's dropdown meant scanning it
   // there silently logged into the wrong bucket, invisible to the Homework tab.
-  function trackedActivities(){ return data.activities.filter(function(a){ return a.tracked && a.name!=="Homework Checked"; }); }
+  //
+  // Freeze is excluded for a different reason, and it is the same reason it
+  // gets no tracked item of its own: a Tracker row for Freeze is a per-boy
+  // tally of how many times he was frozen — a record nobody asked for, which
+  // arrived only as a side effect of Freeze being built like the other tracked
+  // activities. Freeze is not a regular tracked activity; it starts a
+  // countdown (data.freezes) and keeps no count.
+  //
+  // A freeze that ALREADY has logged entries stays listed, so a rebbi who
+  // tapped +1 on one before this can still see and undo those entries. Nothing
+  // is hidden that has anything behind it — same emptiness test the one-shot
+  // freeze tracked-item drop uses in load2fix().
+  function trackedActivities(){
+    return data.activities.filter(function(a){
+      if(!a.tracked || a.name==="Homework Checked") return false;
+      if(freezeActivity(a)) return (data.trackerLog||[]).some(function(e){ return e.actId===a.id; });
+      return true;
+    });
+  }
+  // The tracked activities a rebbi may hide but must not delete. Each owns a
+  // TAB and a store of its own (Homework, Attendance, Bathroom Pass), and each
+  // is matched BY NAME by the predicates just below, seeded exactly once behind
+  // a one-shot flag. So deleting one doesn't retire a button — it strands a
+  // whole tab: the records stay on screen with no way left to record into them,
+  // and the seed never brings it back. Unchecking "Show" on the Activities tab
+  // does everything a delete was reached for and loses nothing.
+  //
+  // Freeze is deliberately NOT on this list — it owns no tab and no record, so
+  // a rebbi who doesn't want it may still delete it outright.
+  function coreTrackedActivity(a){ return homeworkActivity(a) || passActivity(a) || attendanceActivity(a); }
   // First activity that may legitimately be ARMED for point-scoring. Tracked
   // activities (Tracker, Homework Checked) write to their own stores, so the
   // default arm must never land on one — activities[0] can be tracked once a
@@ -14622,11 +14651,22 @@ nameLine
         var trkBadge=el("span",null, freezeActivity(a) ? ("❄️ Freeze — "+fmtFreezeDuration(a.freezeSeconds)) : "Tracked (non-point)");
         trkBadge.style.cssText="font-size:.72rem;font-weight:700;color:#6b4d18;background:var(--brass-soft);border-radius:999px;padding:2px 9px;white-space:nowrap";
         row.appendChild(name); row.appendChild(trkBadge);
-        var delT=el("button","btn btn-sm btn-bad","Delete");
-        delT.addEventListener("click", function(){
-          data.activities=data.activities.filter(function(x){return x.id!==a.id;}); save(); renderActivities(); renderActButtons();
-        });
-        row.appendChild(delT);
+        // Homework, Attendance and Bathroom Pass are hideable, never deletable
+        // — see coreTrackedActivity(). The "Show" checkbox at the head of this
+        // same row is the whole replacement, so say so here rather than leaving
+        // a rebbi hunting for the missing button.
+        if(coreTrackedActivity(a)){
+          var lockNote=el("span",null,"Built in — uncheck Show to hide it");
+          lockNote.title="This one has its own tab and record. Deleting it would leave that tab with no way to record into it, so it can be hidden but not deleted.";
+          lockNote.style.cssText="font-size:.72rem;color:var(--muted);white-space:nowrap";
+          row.appendChild(lockNote);
+        } else {
+          var delT=el("button","btn btn-sm btn-bad","Delete");
+          delT.addEventListener("click", function(){
+            data.activities=data.activities.filter(function(x){return x.id!==a.id;}); save(); renderActivities(); renderActButtons();
+          });
+          row.appendChild(delT);
+        }
         list.appendChild(row);
         return;
       }
