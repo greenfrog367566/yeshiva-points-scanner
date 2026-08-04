@@ -2579,8 +2579,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <button data-orient="portrait" class="active">Portrait (vertical)</button>
         <button data-orient="landscape">Landscape (horizontal)</button>
       </span>
-      <span class="seat-dims" id="seatPrintDims" title="How many desks the sheet is laid out in. Changing it never moves a boy you have already placed.">Rows
-        <input type="number" id="seatPrintRows" min="1" max="12">Cols
+      <span class="seat-dims" id="seatPrintDims" title="How many desks the sheet is laid out in. Every boy keeps his row and column. Making the room narrower moves only the boys whose column no longer exists — they are re-seated further down, never dropped, and Rows grows to make room for them.">Rows
+        <!-- max is re-applied from SEAT_MAX_ROWS/SEAT_MAX_COLS in
+             seatPrintSyncDims() so these attributes can never drift from the
+             clamp the JS actually enforces. -->
+        <input type="number" id="seatPrintRows" min="1" max="60">Cols
         <input type="number" id="seatPrintCols" min="1" max="12">
       </span>
       <!-- Re-seat the whole class in one go. Everything else on this page moves
@@ -7806,10 +7809,81 @@ function setupRoster() {
     if(lay.seats.length!==need) seatResize(lay, lay.rows, lay.cols);
     return lay;
   }
+  // How tall/wide the Rows and Cols spinners let a rebbi go. Rows is generous
+  // because a narrow room is a real arrangement: one column of 30 boys needs 30
+  // rows, and the old cap of 12 made that layout unrepresentable — the grid
+  // stored 15 rows while the input said 12, so the next nudge of either spinner
+  // clamped back to 12 and silently destroyed six seats. Cols stays at 12: wider
+  // than that stops fitting a printed page long before it stops being a room.
+  // NOTE: these bound what can be TYPED, not what seatResize() may produce —
+  // seatResize's "never drop a placed student" floor always wins over them.
+  var SEAT_MAX_ROWS=60, SEAT_MAX_COLS=12;
+  /* Reshape the grid WITHOUT ever unseating a boy who has already been placed.
+   *
+   * The old version did `lay.seats.slice(0, rows*cols)`, which was wrong twice
+   * over, because `seats` is one flat row-major array and nothing re-mapped it
+   * when the column count changed:
+   *
+   *   1. Narrowing 4x6 -> 4x2 cut 24 slots to 8 and threw 16 boys out of their
+   *      seats with no warning and no way back. The print page then quietly
+   *      re-seated them by stretching the grid to 12 rows and saving it, so a
+   *      rebbi who asked for two columns got a twelve-row sheet he never built.
+   *   2. Even the survivors moved: flat index 7 is row 1/col 1 in a 6-wide grid
+   *      and row 3/col 1 in a 2-wide one, so every remaining boy slid somewhere
+   *      new. Changing the width of a room should not rearrange the boys in it.
+   *
+   * So: read the old grid as (row, col) pairs, keep every boy at his own
+   * (row, col), and grow `rows` past what was asked for rather than drop
+   * anyone. A boy whose column no longer exists (the room narrowed) is carried
+   * as overflow and re-seated into the first free cells in reading order —
+   * the same top-down fill seatAutoPlaceUnplaced() already uses.
+   *
+   * The requested `rows` is therefore a MINIMUM, not a maximum. Callers re-read
+   * lay.rows afterwards (renderTapPanel / seatPrintSyncDims both re-sync the
+   * spinners from it), so the rebbi sees the height that actually took effect.
+   */
   function seatResize(lay, rows, cols){
-    var n=rows*cols, next=lay.seats.slice(0,n);
-    while(next.length<n) next.push(null);
-    lay.rows=rows; lay.cols=cols; lay.seats=next;
+    cols=Math.max(1, Math.floor(cols)||1);
+    rows=Math.max(1, Math.floor(rows)||1);
+    // The width the existing flat array is written against. lay.seats.length
+    // need not equal lay.rows*lay.cols — seatLayout() calls us precisely to
+    // repair that case — so trust lay.cols for the mapping, not the length.
+    var oldCols=(typeof lay.cols==="number" && lay.cols>0) ? lay.cols : cols;
+    var old=Array.isArray(lay.seats) ? lay.seats : [];
+    var keep=[], overflow=[];
+    for(var i=0;i<old.length;i++){
+      if(!old[i]) continue;
+      var p={ r:Math.floor(i/oldCols), c:i%oldCols, id:old[i] };
+      // Distinct flat indices map to distinct (r,c) for a fixed oldCols, so
+      // `keep` can never collide.
+      (p.c<cols ? keep : overflow).push(p);
+    }
+    // Never truncate a boy off the bottom either — a stored layout whose seats
+    // array outran its own row count (or a caller asking for fewer rows than
+    // are occupied) grows instead of losing anyone.
+    keep.forEach(function(p){ if(p.r+1>rows) rows=p.r+1; });
+    function build(rowCount){
+      var g=[], n=rowCount*cols;
+      while(g.length<n) g.push(null);
+      keep.forEach(function(p){ g[p.r*cols+p.c]=p.id; });
+      return g;
+    }
+    var grid=build(rows);
+    if(overflow.length){
+      var free=0;
+      grid.forEach(function(v){ if(!v) free++; });
+      if(free<overflow.length){
+        rows+=Math.ceil((overflow.length-free)/cols);
+        grid=build(rows);
+      }
+      // Reading order, so a narrowed room keeps the class in the sequence the
+      // rebbi arranged them rather than in flat-array order.
+      overflow.sort(function(a,b){ return (a.r-b.r)||(a.c-b.c); });
+      for(var j=0,n=0;j<grid.length && n<overflow.length;j++){
+        if(!grid[j]){ grid[j]=overflow[n].id; n++; }
+      }
+    }
+    lay.rows=rows; lay.cols=cols; lay.seats=grid;
   }
   /* Seats any student who has none, so a rebbi who has only imported a roster
    * gets a usable class sheet instead of a page of empty boxes. Returns how
@@ -7856,9 +7930,9 @@ function setupRoster() {
       // included — a gap in a row is usually deliberate (an absent boy's seat,
       // an aisle, the shape of the room), and resizing would destroy the
       // spatial map that is the whole reason to print a seating chart.
-      // Rows grow only if the roster genuinely no longer fits, and never
-      // shrink: seatResize truncates, so a smaller grid would drop
-      // already-placed students off the end.
+      // Rows grow only if the roster genuinely no longer fits, and are never
+      // asked to shrink: seatResize would refuse anyway — its floor keeps
+      // every placed boy — but asking honestly keeps the intent readable.
       var free=0; lay.seats.forEach(function(sid){ if(!sid) free++; });
       if(free<unplaced.length){
         var need=(lay.seats.length-free)+unplaced.length;
@@ -7892,8 +7966,8 @@ function setupRoster() {
    *
    * GRID SHAPE follows the same rules as the auto-placer, and for the same
    * reasons: a room the rebbi has arranged keeps its shape (grow if the roster
-   * no longer fits, never shrink — seatResize truncates, which would drop boys
-   * off the end), while a chart nobody has touched gets sized roughly square to
+   * no longer fits, never shrink — seatResize will not drop a placed boy to
+   * honour a smaller grid anyway), while a chart nobody has touched gets sized roughly square to
    * the roster rather than keeping seatLayout()'s invented 4x6 and printing a
    * small class inside a page of "Empty seat" boxes (#116).
    */
@@ -8196,15 +8270,18 @@ function setupRoster() {
 
       var dims=el("div","seat-dims");
       dims.appendChild(document.createTextNode("Rows"));
-      var rowsIn=el("input"); rowsIn.type="number"; rowsIn.min="1"; rowsIn.max="12"; rowsIn.value=lay.rows;
+      var rowsIn=el("input"); rowsIn.type="number"; rowsIn.min="1"; rowsIn.max=String(SEAT_MAX_ROWS); rowsIn.value=lay.rows;
       dims.appendChild(rowsIn);
       dims.appendChild(document.createTextNode("Cols"));
-      var colsIn=el("input"); colsIn.type="number"; colsIn.min="1"; colsIn.max="12"; colsIn.value=lay.cols;
+      var colsIn=el("input"); colsIn.type="number"; colsIn.min="1"; colsIn.max=String(SEAT_MAX_COLS); colsIn.value=lay.cols;
       dims.appendChild(colsIn);
       function applyDims(){
         var r=parseInt(rowsIn.value,10), c=parseInt(colsIn.value,10);
-        if(isNaN(r)||r<1) r=1; if(r>12) r=12;
-        if(isNaN(c)||c<1) c=1; if(c>12) c=12;
+        if(isNaN(r)||r<1) r=1; if(r>SEAT_MAX_ROWS) r=SEAT_MAX_ROWS;
+        if(isNaN(c)||c<1) c=1; if(c>SEAT_MAX_COLS) c=SEAT_MAX_COLS;
+        // seatResize() may hand back MORE rows than r — it grows rather than
+        // unseat anyone — so renderTapPanel() below redraws the spinners from
+        // lay.rows and the rebbi sees the height that actually took effect.
         seatResize(lay, r, c); save(); renderTapPanel();
       }
       rowsIn.addEventListener("change", applyDims);
@@ -15718,14 +15795,18 @@ nameLine
   // here is resized everywhere, and resizing still never moves a placed boy.
   function seatPrintSyncDims(){
     var lay=seatLayout();
-    if($("seatPrintRows")) $("seatPrintRows").value=lay.rows;
-    if($("seatPrintCols")) $("seatPrintCols").value=lay.cols;
+    // Re-apply the bounds from the constants, so the markup's max attributes
+    // can never fall out of step with the clamp below.
+    if($("seatPrintRows")){ $("seatPrintRows").max=String(SEAT_MAX_ROWS); $("seatPrintRows").value=lay.rows; }
+    if($("seatPrintCols")){ $("seatPrintCols").max=String(SEAT_MAX_COLS); $("seatPrintCols").value=lay.cols; }
   }
   function seatPrintApplyDims(){
     var lay=seatLayout();
     var r=parseInt($("seatPrintRows").value,10), c=parseInt($("seatPrintCols").value,10);
-    if(isNaN(r)||r<1) r=1; if(r>12) r=12;
-    if(isNaN(c)||c<1) c=1; if(c>12) c=12;
+    if(isNaN(r)||r<1) r=1; if(r>SEAT_MAX_ROWS) r=SEAT_MAX_ROWS;
+    if(isNaN(c)||c<1) c=1; if(c>SEAT_MAX_COLS) c=SEAT_MAX_COLS;
+    // May come back taller than r — see seatResize(). seatPrintSyncDims() just
+    // below re-reads lay.rows, so the spinner shows what really happened.
     seatResize(lay, r, c); save();
     seatPrintSyncDims(); renderTapPanel(); renderSeatChartPrint();
   }
