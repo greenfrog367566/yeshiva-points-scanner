@@ -10,7 +10,9 @@ The current working queue. Read this at the start of a session.
 
 Nothing in flight. Next item is Lean mode.
 
-**On the horizon:** the Firebase/Firestore rebuild is fully scoped in `docs/Firebase_Rebuild_Scope.md` — real accounts, Firestore replacing localStorage, three tiers, incremental-write data model, converter tool, 8-step build order. Not started; step 1 (data model design session) hasn't begun. Read it before this becomes the active queue item.
+**On the horizon:** the Firebase/Firestore rebuild is fully scoped in `docs/Firebase_Rebuild_Scope.md` — real accounts, Firestore replacing localStorage, three tiers, incremental-write data model, converter tool, 8-step build order. Not started; step 1 (data model design session) hasn't begun.
+
+Its phase mapping was reconciled against the code on 2026-08-04 and it now carries an **"Open questions for step 1"** list — read that first when the rebuild becomes the active queue item. Two things were locked in that pass: **2d runs before step 1**, and Secretary Mode folds into the rebuild. Per-phase status for everything else lives in `Menchmark_Phased_Build_Plan.md`, which is the authority on what has shipped.
 
 ---
 
@@ -30,6 +32,7 @@ One toggle in Settings. Assignment and mechanism already decided:
 **2. Offline resync** — read-only investigation first, then PROPOSE FIRST
 The snapshot recovers after being offline; logged scans do not unless "resync all scans" is pressed. Want it automatic on reconnect and periodically.
 **Retry safety differs per tab.** The Log dedups by ID so re-pushing is safe. The Attendance Log has no dedup, so a retry duplicates rows. Confirm per tab before proposing.
+**In the Firestore era this asymmetry dissolves** — see the rebuild doc's open question 3 (deterministic client-generated write ids make every retry idempotent). That does not answer the question here; the localStorage/Apps Script investigation is still owed as written.
 
 **3. Warning flash, and the sticky raffle removal**
 What is left of the old "small standalone features" item once Freeze and the raffle note shipped. **Not the behavior ladder** — no marks store, no rung counting, no reset periods. Those stay in `docs/Behavior_Ladder_Spec.md`.
@@ -59,7 +62,9 @@ What is left of the old "small standalone features" item once Freeze and the raf
 
 ## Phase 2 status
 
-2a, 2b, 2c shipped. **2d** (armed-item scan mechanic) is the last slice and is not started. It also pins down the count value shape, which is still undefined — the 2b gradebook carries a guess that should collapse when 2d lands.
+2a and 2b shipped. **2c is partial** — only `data.attendance` was converted (#138); `data.hw` resets, `data.trackerLog` and `data.passes` are still TBD, and all four old tabs are still visible. The remainder is re-scoped in #122. **2d** (armed-item scan mechanic) is the last slice and is not started. It also pins down the count value shape, which is still undefined — the 2b gradebook carries a guess that should collapse when 2d lands.
+
+**2d now runs ahead of the Firebase rebuild** (locked 2026-08-04): the rebuild's data-model session has to model `trackedData`, and modelling it against 2b's guess means doing it twice.
 
 **The Gradebook tab is hidden until 2d lands (#185).** Nothing writes `data.trackedData` except the one-shot 2c attendance conversion, so the grid froze at the migration and showed every day since as missing — a working-looking feature with wrong numbers. Hidden the same one-shot `navHidden` way as Contest, no data touched. **Un-hiding is gated on 2d, not on anything cosmetic** — not tidier empty columns, not #119's item tabs. When 2d lands, decide at the same time whether it forward-ports attendance from the cutoff; `data.attConversion` holds the receipt needed to do that safely.
 

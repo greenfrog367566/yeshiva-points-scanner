@@ -2,6 +2,10 @@
 
 *The complete Phase 7 "no-computer / offline" spec. Grounded in a real Tera 1300 storage-mode test dump and the app's actual primitives (`addLogEntry`, `undoEntryById`, `save`, verified in app.html). This unblocks Phase 7d — the scanner timestamp format is now known.*
 
+> **Sequencing note (2026-08-04) — this spec is now split across two timelines.**
+> **Offline Mode and the Batch Import parser stay exactly as specced here and are free to build now** — no dependency on anything else.
+> **Secretary Mode is folded into the Firebase rebuild** (`docs/Firebase_Rebuild_Scope.md`). This spec itself calls it "the first multi-user feature, build carefully & last" — and real accounts, tiers and permissions are precisely what that rebuild delivers. Building the upload-for-others flow on the saved-roster model first would mean rebuilding it on real accounts immediately after. Its design here still stands; only its timing moved.
+
 ---
 
 ## Why this is one spec, not four

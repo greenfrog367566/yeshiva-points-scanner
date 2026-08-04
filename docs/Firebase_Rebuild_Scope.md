@@ -46,7 +46,7 @@ Attendance sends that lied about succeeding. A class that couldn't move from Bra
 - **Students get real `firstName` / `lastName` fields.** The current single free-text name with last-word guessing breaks on anything unusual. Manual add and paste require both. Sorting and display read structured fields.
 - **Roster paste handles three columns** — a Google Sheets copy of Last / First / Class pastes directly (the tab-detection is already half-built; extend it).
 - **Archive, not delete:** a student who leaves mid-year is archived — off the active roster, history intact everywhere. Delete stays for genuine mistakes only, behind type-to-confirm. Un-archive restores a returning student with his history attached.
-- **The live Gradebook migrates faithfully.** Phase 2a/2b are shipped and in production — tracked items are live data, not a future spec. The Firestore model carries them the same way it carries scores and rosters.
+- **The Gradebook migrates faithfully — but there is less to migrate than this doc once claimed.** Phase 2a/2b shipped, so `data.trackedItems` / `data.trackedData` exist and are real stores. But **the Gradebook tab is hidden (#185) and `trackedData` has been frozen since the one-shot 2c attendance conversion** — nothing writes to it in normal use. So it is a live *store* with almost no live *data*, and the shape it will carry is a 2d output, not a settled fact. The Firestore model still carries tracked items the same way it carries scores and rosters; it just cannot be designed until 2d lands. See "Open questions for step 1".
 
 ### Who builds the roster — a real gap, now closed
 
@@ -84,34 +84,82 @@ The doc as first written assumed someone else always builds the roster before a 
 
 ### The old phased Gradebook plan — where it actually fits
 
-Phase 2 of the original 9-phase plan had four slices: 2a (tracked-item data model + migration) and 2b (Gradebook UI) are **shipped, live in production** — this is the "live Gradebook data" referenced above, already accounted for in the migration.
+Phase 2 of the original 9-phase plan had four slices: 2a (tracked-item data model + migration, PR #107) and 2b (Gradebook UI, PR #115) are **shipped** — with the hidden-and-frozen caveat above.
 
-- **2c — retiring the old standalone tabs** (Attendance/Homework/Passes/Tracker, now redundant since the Gradebook covers them): pure UI cleanup, data already unified in 2a, doesn't touch the data model. **Independent of this rebuild — safe to do anytime, before, during, or unrelated to it.**
-- **2d — armed-item scan mechanic + staleness badges** (scan-to-arm, tap-to-arm, "last:3d/never" indicators): genuinely new interaction design, and it lives in the same territory the rebuild already restructures — real routing (step 4) touches how Record/Scan works, admin's gradebook view (step 6) decides how tracked items get read and interacted with. **Fold this into the rebuild's interaction design rather than building it on the old model and redoing it after.** Don't build 2d twice.
+- **2c — retiring the old standalone tabs** (Attendance/Homework/Passes/Tracker): **partially shipped, not "safe to do anytime."** The attendance conversion landed (PR #138, receipt in `data.attConversion`), but only attendance. `data.hw`, `data.trackerLog` and `data.passes` still hold every pre-2a record and have never been carried anywhere, and **all four old tabs are still registered and visible** in `TAB_GROUPS`. The remainder — a per-store convert/export/accept-reset decision, then the tab retirement — is re-scoped in #122. Still independent of this rebuild, but it is in-flight work with a data decision pending, not a free cleanup.
+- **2d — armed-item scan mechanic + staleness badges** (scan-to-arm, tap-to-arm, "last:3d/never" indicators): **LOCKED — 2d is sequenced *before* rebuild step 1** (decided 2026-08-04). Two reasons, and the second is the one that moved it. First, as originally noted, it lives in the territory the rebuild restructures — real routing (step 4) touches how Record/Scan works, admin's gradebook view (step 6) decides how tracked items get read. Second, and decisively: **2d pins down the count value shape, which is still undefined.** The 2b gradebook carries a guess. Step 1 designs the Firestore collections — designing `trackedData`'s shape against a guess that 2d is about to collapse means designing it twice. 2d is a step-1 *input*, not merely an interaction-design overlap. It also un-hides the Gradebook (#185) and settles whether attendance forward-ports from the cutoff.
 
 ### The rest of the 9-phase plan — full mapping
 
-**Already shipped, needs nothing from this rebuild:** Phase 1 (tab restructure into the five R's). Phase 4 (Shulchani coin engine — worth a status check on the Prize Ledger consolidation specifically, but the coin system itself is done). Phase 6 parts 1–4 (the Library, draft/partial/reviewed states, the Review Wizard).
+> **Which doc is authoritative for what:** *Status* (what has shipped, partially shipped, or not started) lives in the per-phase status stamps in `Menchmark_Phased_Build_Plan.md` — update those, and only those, when a phase moves. *Sequencing and dependencies* live in the same doc's dependency map. *Rebuild scope* (what this build includes, folds in, retires, or defers) lives here. *The immediate queue* lives in `docs/NOW.md`. When these disagree, the build plan wins on status, this doc wins on rebuild scope, and the disagreement itself is a bug — file it.
 
-**Fully independent — build whenever, before or after, no conflict either way:**
-- **Phase 5 (Quiz & Speed Round)** — depended on Phase 2 for grade storage; 2a/2b are shipped so it's unblocked now. Fully offline by design (pre-baked distractor pools), touches nothing Firestore does.
-- **Phase 7 (Print Wizard + No-Computer)** — the print-wizard piece (Avery label offsets etc.) is pure UI. The No-Computer batch-import piece is still blocked on the real scanner timestamp test, exactly as before; the rebuild changes nothing about that dependency.
-- **Phase 8 (Chavrusa Mode)** — already scoped as biggest-and-isolated. Still isolated.
-- **Phase 3's non-interaction parts** — Trends redesign, History's contest include/exclude filter and bulk-undo. Pure display and filtering, no storage-layer dependency.
+**Reconciled against the code on 2026-08-04.** The previous version of this section was written from the planning docs rather than the repo, and four of its claims were wrong: Phase 5 was called unblocked, Phase 6 was called shipped, Phase 7d was called blocked, and Phase 8 was called isolated. Buckets are dated because they rot; re-verify before trusting one.
 
-**Fold into the rebuild rather than build twice (same logic as 2d):**
-- **Phase 3's interaction parts** — the Dashboard List/Class-view toggle and the floating Points panel fix. Both live in the Record/Scan territory that the rebuild's real-routing step (step 4) restructures anyway.
+**1 · Shipped —** Phase 1 (five-R tab restructure). Phase 2a (#107) and 2b (#115), with the hidden/frozen caveat above. Phase 3's Dashboard List/Seating toggle (#195). Phase 7b's Shulchani coin cards (#197 / #201 / #203) — denomination cards and the printable Coin Guide, though **per-student coin codes were never built**. Phase 7c's Scanner Setup sheet (reference-only, no Tera barcodes reproduced). The Shulchani coin engine itself (predates Phase 4's own items). Daily-Backup PR A, the staleness nudge.
 
-**Already handled elsewhere in this doc:** Phase 6's remaining piece — the Library's deferred **share-back** — is exactly what Firebase unlocks, and it's already in the deferred section above. Nothing new needed.
+**2 · Partial / in-flight —**
+- **Phase 2c** — attendance converted only; three stores and the tab retirement remain (#122).
+- **Phase 6a (the Library)** — **shipped as data and orphaned.** `library/index.json` plus Vayelech exist, but **nothing in `app.html` references `library/` at all** (#187). The Pesukim and Mishnayos tabs still source from the AI proxy or manual entry. This doc previously called Phase 6 "parts 1–4 shipped"; that was wrong on both counts — 6a has no loader and **6b (the Review Wizard) was never built.**
+
+**3 · Blocked on 2d —**
+- **Phase 5 (Quiz & Speed Round)** — previously called "unblocked now" on the reasoning that 2a/2b shipped. Wrong: Phase 5 stores quiz results **as Grade-type tracked items feeding Gradebook columns**, and that store is the frozen, hidden one. Its real gate is 2d, which pins the value shape Phase 5 would write into. The rest of the old claim stands — it's offline by design and touches nothing Firestore does.
+
+**4 · Fold into the rebuild rather than build twice —**
+- **2d** — now locked *ahead of* step 1 (see above). Still in this bucket for interaction design; the sequencing is what changed.
+- **Phase 3's remaining interaction part** — the floating Points panel fix. (The List/Class toggle shipped outside the rebuild, so this bucket shrank to one item.)
+- **Phase 7d's Secretary Mode** — **LOCKED, folded in** (decided 2026-08-04). The build plan describes it as "upload-for-others with saved rebbi roster … **the first multi-user feature**, build carefully & last." That is precisely this rebuild's territory: real accounts, tiers, and permissions. Building it first on the no-accounts model and rebuilding it on real accounts after is the exact trap the 2d reasoning exists to avoid. `Offline_NoComputer_Secretary_Spec.md` carries a banner pointing here.
+
+**5 · Independent — build whenever, no conflict either way:**
+- **Phase 3's non-interaction parts** — Trends redesign, History's contest include/exclude filter, bulk-undo. All still unbuilt. Pure display and filtering, no storage-layer dependency.
+- **Phase 4** — and note it is **0 of 3**: Prize Ledger, the Auction audit-log fix, and Coin Deposit/Withdraw are all absent. This doc previously implied Phase 4 was done because the *coin engine* is. See open question 9 on the Prize Ledger.
+- **Phase 7a (Print Wizard shell)** — not built; pure UI.
+- **Phase 7d's Offline Mode + Batch Import parser** — **UNBLOCKED.** This doc previously said "still blocked on the real scanner timestamp test, exactly as before." That blocker cleared: the format is confirmed (`YYYY/MM/DD HH:MM:SS`, 1-sec resolution) and the build plan has said so for some time. Only the Secretary Mode slice folds into the rebuild; the parser and Offline Mode are free to build now.
+- **Phase 8 (Chavrusa Mode)** — independent in *scope*, but **no longer "isolated."** Its Dashboard integration builds on Phase 3's Dashboard, parts of which this rebuild absorbs. Sequence it after the rebuild's routing work rather than treating it as orthogonal.
+
+**6 · Decide before step 1 —** see "Open questions for step 1" below.
+
+**Phase 6's share-back, corrected:** the deferred **share-back** is indeed what Firebase unlocks, and it stays deferred. But this doc previously filed it as "already handled, nothing new needed" — which assumed 6b existed. It doesn't. Share-back is downstream of a Review Wizard that was never built, so the dependency chain is 6a loader → 6b Wizard → share-back, and only the last link is a Firebase question.
 
 ### Do this first, before any building
 
-**Fold issue #154 into this document.** There is no separate sync-architecture doc — `docs/Sync_Architecture_Direction.md` does not exist and never did (verified: not on any branch, no commit history, nothing similar under another name). The Firebase thinking lives in two places instead:
+**Issue #154 is now folded in (2026-08-04).** There is no separate sync-architecture doc — `docs/Sync_Architecture_Direction.md` does not exist and never did (verified: not on any branch, no commit history, nothing similar under another name). The Firebase thinking lived in two places:
 
-- **Issue #154** — the substantive investigation: what Firestore would replace, SDK cost against the single-file/no-build constraint, the offline queue, auth and the anonymous-UID orphaning risk, whole-blob clobbering, the 1 MiB ceiling, and the cost curve at 12 / 100 / 1000 rebbeim. Most of its findings are already reflected in this document, but it deliberately stopped short of recommending anything, so it's raw material rather than decisions. Worth reading once alongside this doc to catch anything that didn't make it across — **the anonymous-UID orphaning risk in particular is not addressed anywhere in this scope**, and it's the kind of thing that matters once real accounts exist.
-- **`docs/NOW.md` item 3, "Offline resync"** — the narrower retry-safety question: the Log dedups by ID so re-pushing is safe, but the Attendance Log has no dedup, so a retry duplicates. That asymmetry needs a real answer in the Firestore model, since incremental writes make retries routine rather than exceptional.
+- **Issue #154** — the substantive investigation: what Firestore would replace, SDK cost against the single-file/no-build constraint, the offline queue, auth and the anonymous-UID orphaning risk, whole-blob clobbering, the 1 MiB ceiling, and the cost curve at 12 / 100 / 1000 rebbeim. Its findings are now carried here: the SDK-vs-single-file tension became open question 1, whole-blob clobbering and the 1 MiB ceiling were already locked into the incremental-write model, the retry/dedup problem became open question 3, and the two-disagreeing-caches problem from its §5 became open question 5.
+  - **Two of its findings were corrected on the way in.** (a) **The anonymous-UID orphaning risk is moot.** This doc previously flagged it as "not addressed anywhere in this scope" — but both locked sign-in paths (magic link, Google) use real identity, and anonymous auth appears nowhere in this design. The risk it describes cannot occur. (b) **The cost curve needs recomputing.** Its 12 / 100 / 1000-rebbeim write volumes were derived from the current 30-second whole-blob snapshot. The locked incremental-write model has a completely different write profile — many small writes rather than a few large ones. The *shape* of the concern survives (document limit bites first, then daily writes, then storage never); the numbers do not. Recompute during step 1.
+  - **#154 can now be closed pointing here.**
+- **`docs/NOW.md` item 2, "Offline resync"** — the narrower retry-safety question: the Log dedups by ID so re-pushing is safe, but the Attendance Log has no dedup, so a retry duplicates. That asymmetry needs a real answer in the Firestore model, since incremental writes make retries routine rather than exceptional. **Proposed answer in open question 3** — the asymmetry dissolves rather than needing per-tab handling. The narrower localStorage-era investigation is still owed as written in NOW.md.
 
-Once both are folded in, this document is the single source for the rebuild and #154 can be closed pointing at it.
+---
+
+### Open questions for step 1
+
+Not features — the decisions the data-model session cannot start without, plus the ones that change what gets built. **Work this list at the top of step 1.** Two items that were on it are now locked and have moved into the body of this document: 2d is sequenced before step 1, and Secretary Mode folds into the rebuild.
+
+**1. Single file, or split?** `CLAUDE.md` rule 3 says `app.html` stays one file with no build step. Firebase Auth + Firestore cannot honor that untouched: the modular SDK is ESM built for bundlers, so it's either a CDN `<script type="module">` (forbidden, and breaks the offline promise) or a vendored compat bundle inlined the way the QR library already is — a few hundred KB onto a file that is already ~1.2 MB and served network-first by `sw.js`, so every deploy re-downloads all of it.
+
+  **Two things this decision is NOT about,** both of which the old Navigation section implied it was:
+  - *The back button.* Real routing needs the History API — `pushState`/`popstate` or hash routing — and that works identically in one file or twenty. Step 4 costs the same either way. Only a multi-*page* app gets "native" back, and that's the worst option here: full reload per tab switch on classroom Chromebooks, shared state through storage on every navigation.
+  - *Security.* Firebase API keys are public by design; they identify the project and authorize nothing. All real gating is Firestore security rules enforced server-side, which is already locked above. An attacker reads the client either way. The one genuine difference is Content-Security-Policy — separate script files allow a strict `script-src 'self'`, while a large inline script needs hashes or `'unsafe-inline'`. The app ships no CSP today, so either path is an improvement.
+
+  **What it IS about:** deploy re-download size, merge-conflict surface on a 19,750-line file, and one-time restructuring risk — against the simplicity that made rule 3 worth having. Note that rule 3's original justification ("download one file, double-click it") **does not survive this rebuild regardless**, because Firebase Auth cannot work from a `file://` origin. What's left to protect is the no-build-step simplicity, which is achievable either way (plain local `<script src>` files need no bundler). Decide, then amend whichever document loses.
+
+**2. A "class" does not exist in the data model.** Students are `{id, name, group}` with a single top-level `className`. There is no class entity — `group` is a free-text label on each student. But the entire tier design rests on one ("a rebbi's rules physically cannot read another class"), and so does the motivating story of a class that couldn't move from Braun to Weinberg. Step 1 must design the entity **and** decide what existing `group` values become: separate classes, or subdivisions within one. This has roster, permission, and migration consequences and is currently unwritten anywhere.
+
+**3. Deterministic write IDs — proposed, promote to locked.** Give every appendable record a client-generated deterministic id (device id + timestamp + sequence) and write it with `set()` at that path rather than `add()`. Every retry then overwrites its own prior write instead of creating a duplicate — idempotent by construction, no server-side dedup, and **the Log-vs-Attendance-Log asymmetry disappears entirely** rather than needing per-tab handling. Since incremental writes make retries routine, this wants deciding at model-design time, not after.
+
+**4. Photos: inline, and drop Firebase Storage.** Student photos are 128px JPEG data URLs at q0.72 — roughly 4–8 KB each. Inside a per-student document that is comfortable, so they can stay exactly where they are. #154 raised Firebase Storage only because it assumed one blob per class; the collections model removes the reason. Confirm and drop Storage from scope.
+
+**5. Cutover detection is one sentence for a hard problem.** "The app detects a converted device and shows a one-time 'your class has moved' screen" — the mechanism is unspecified. Related and entirely absent from this doc: #154's §5 point that during transition `localStorage` remains the working store while Firestore's IndexedDB cache becomes a second persistence layer, and the two can hold different versions of the same class. This is where data actually gets lost in practice. Design it explicitly.
+
+**6. The converter tool has to become the new Phase 0 gate.** The build plan's foundational rule is that data safety gates every phase, enforced by `test-migration.html`. That harness tests `migrateData()` / `load2fix()` against localStorage and has **no Firestore analogue** — none of it applies to a Firestore write. This rebuild is the largest data migration in the project's history and currently has no verification harness at all. Step 3's converter should be scoped as *migration tool plus verification harness*, not just a tool.
+
+**7. Step 4 is the biggest hidden scope in the build order.** "Real routing / back button" is one line between two much smaller steps, but it is a rewrite of the tab system **and** the landing zone for 2d's interaction design and Phase 3's floating-panel fix. Break it into its own sub-scope before starting it, or it will quietly become the longest step.
+
+**8. Count value shape — the handoff from 2d.** 2d now lands first (locked). Step 1's agenda should open with *reading* what 2d settled: the count value shape, whether attendance forward-ports from the conversion cutoff, and what `data.attConversion`'s receipt makes possible. Sequencing is decided; the handoff itself still needs to happen deliberately.
+
+**9. The Prize Ledger isn't built — decide its shape here.** Phase 4's Prize Ledger unifies Store / Auction / Raffle wins and carries the Auction audit-log fix. That is transaction-integrity data the Firestore model has to hold. Cheaper to design its collection during step 1 than to bolt it on afterward.
+
+**10. Student View means something different now.** The build plan lists it among undesigned gaps. A student-facing screen under real accounts and three tiers is a fundamentally different design than one under a single shared localStorage — it becomes an access-control question, not just a UI. Revisit after step 2, not before.
 
 ### File System Access API — local backup safety net
 
@@ -119,11 +167,14 @@ Once both are folded in, this document is the single source for the rebuild and 
 - **Chromium-only (Chrome, Edge) — no Safari, no Firefox.** This happens to line up exactly with the fragile-storage audience already at the center of this build: Chromebooks run Chrome. Not a generic nice-to-have, a targeted fit.
 - **A third layer, not a replacement.** Firestore stays the real source of truth. CSV export stays the "I can open and read this myself" option. This becomes a quiet local safety net underneath both — a real file on the rebbi's own disk regardless of what the cloud is doing.
 - **Sequencing:** after the core rebuild (steps 1–8 below), not part of it. Small, self-contained addition once accounts and sync exist.
-- **Challenged by `docs/Daily_Backup_Spec.md` (proposal, not settled).** A beta rebbi pointed out that retiring Sheets removes the only *automatic* backup the app has (the 30-second snapshot push), and that the named replacement on line 72 — a CSV export button — is manual. That spec argues for pulling this section forward to *before* the cutover, since it has no dependency on accounts or Firestore, and adds a browser-universal staleness nudge underneath it. Decide the sequencing question before step 1.
+- **Challenged by `docs/Daily_Backup_Spec.md` — and half of that challenge is already answered.** A beta rebbi pointed out that retiring Sheets removes the only *automatic* backup the app has (the 30-second snapshot push), and that the named replacement above — a CSV export button — is manual. That spec proposed two layers: a browser-universal staleness nudge, and this File System Access folder backup.
+  - **The nudge shipped** (its PR A — `data.lastBackupAt` / `backupNudgeSince` are in `defaults`), so the app can now tell a rebbi he is weeks stale. That gap is closed.
+  - **Still open: this section's own sequencing.** The spec argues for pulling File System Access forward to *before* the cutover, since it has no dependency on accounts or Firestore and otherwise leaves a window where the automatic Sheet snapshot is gone and nothing automatic has replaced it. Decide before step 1.
 
 ### Navigation
 
-- **Tabs become real routable states.** Back button (browser or hardware) moves through the app instead of doing nothing or exiting. Raised independently by the chazara-app rebbi; it's what makes the app feel like an app. Same restructuring "not everything on one HTML" implies — one rebuild, one more requirement.
+- **Tabs become real routable states.** Back button (browser or hardware) moves through the app instead of doing nothing or exiting. Raised independently by the chazara-app rebbi; it's what makes the app feel like an app.
+- **This does *not* require splitting the file.** An earlier version of this line read "same restructuring 'not everything on one HTML' implies," which quietly assumed a multi-file app and conflicted with `CLAUDE.md` rule 3 without ever saying so. Routing needs the History API, which works identically in one file or many — see open question 1, where the single-file decision is stated properly and separated from the things that don't depend on it.
 
 ### Communications
 
@@ -157,7 +208,8 @@ That's "make it real."
 
 ## Build order
 
-1. **Data model design session** — the collections, the incremental-write shape, the migration map from the current `data` object (including tracked items), `firstName`/`lastName`, archive states, the `sharedWithAdmin` flag. **This is its own real session, the biggest single step, and everything else stands on it.** Do not compress it into a prompt.
+0. **Phase 2d, first.** Locked 2026-08-04 — it pins the count value shape step 1 has to model, and un-hides the Gradebook. Not a rebuild step, but a prerequisite to one.
+1. **Data model design session** — the collections, the incremental-write shape, the migration map from the current `data` object (including tracked items), `firstName`/`lastName`, archive states, the `sharedWithAdmin` flag. **This is its own real session, the biggest single step, and everything else stands on it.** Do not compress it into a prompt. **Open the session by working the "Open questions for step 1" list above** — the class entity (question 2) and the write-id model (question 3) in particular are inputs to the collection design, not follow-ups to it.
 2. **Auth + tiers + security rules** — both sign-in paths, the three tiers, gating proven with no real UI yet.
 3. **The converter tool** — both modes plus bulk. Prove the migration carries a real class (with gradebook data) on a throwaway account.
 4. **Real routing / back button.**
