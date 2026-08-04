@@ -187,6 +187,49 @@ function recordEarn(sid, label, pts, ts){
 
 function nextActId(){ var n=1; var used={}; data.activities.forEach(function(a){used[a.id]=1;}); while(used["a"+n]) n++; return "a"+n; }
 
+// Shulchani coin seeding — load2fix() calls seedShulchaniCoinCodes() for a save
+// that is already in Shulchani Mode, so the harness needs the same COINS table
+// and the same seeder. Logically identical to app.html's; the colors are dropped
+// because nothing here renders.
+var COINS = [
+  {name:"Darkon", abbr:"Dk", prutot:1536},
+  {name:"Sela",   abbr:"S",  prutot:768},
+  {name:"Dinar",  abbr:"Di", prutot:192},
+  {name:"Maah",   abbr:"M",  prutot:32},
+  {name:"Pundion",abbr:"Pu", prutot:16},
+  {name:"Isar",   abbr:"I",  prutot:8},
+  {name:"Prutah", abbr:"Pr", prutot:1}
+];
+var COIN_SECTION_KEY="coin";
+var SHULCHANI_STARTER_VALUES={
+  a1:{name:"On time",         pts:8},
+  a2:{name:"Davening nicely", pts:32},
+  a3:{name:"Learning nicely", pts:32}
+};
+function codeSections(){
+  if(!Array.isArray(data.codeSections) || !data.codeSections.length){
+    data.codeSections = DEFAULT_CODE_SECTIONS.map(function(s){ return {key:s.key, label:s.label}; });
+  }
+  return data.codeSections;
+}
+function seedShulchaniCoinCodes(revalueStarters){
+  if(data.shulchaniCoinsSeeded) return;
+  data.shulchaniCoinsSeeded=true;
+  if(revalueStarters){
+    data.activities.forEach(function(a){
+      var st=SHULCHANI_STARTER_VALUES[a.id];
+      if(st && !a.tracked && a.name===st.name && a.pts===1) a.pts=st.pts;
+    });
+  }
+  COINS.forEach(function(c){
+    data.activities.push({id:nextActId(), name:"+ "+c.name, pts:c.prutot,  coin:c.abbr, groups:[]});
+    data.activities.push({id:nextActId(), name:"− "+c.name, pts:-c.prutot, coin:c.abbr, groups:[], hidden:true});
+  });
+  if(!codeSections().some(function(s){ return s.key===COIN_SECTION_KEY; })){
+    codeSections().push({key:COIN_SECTION_KEY, label:"Coins"});
+  }
+}
+
 // Simplified versions of layout/set functions for test context (no DOM)
 var SCAN_PANELS=["activities","scanbar","recent","tappanel","leaderboard"];
 function defaultScanLayout(){ return {cols:2, columns:[["activities","scanbar","recent"],["leaderboard","tappanel"],[]]}; }
@@ -415,6 +458,15 @@ if(typeof data.seatPrintOpts.actGrouped!=="boolean") data.seatPrintOpts.actGroup
 // Clamped with the same guard seatPrintActCols() applies, so a hand-edited
 // or corrupted value can never reach grid-template-columns.
 if(!(parseInt(data.seatPrintOpts.actCols,10)>=1 && parseInt(data.seatPrintOpts.actCols,10)<=3)) data.seatPrintOpts.actCols=2;
+// How big the codes and photos print, as a multiplier. 1 = the size every
+// sheet printed before this field existed, so a save without it comes out
+// byte-identical on paper — nothing repaginates behind a rebbi. Clamped with
+// the same 0.5–1.5 guard seatPrintIconScale() applies, because the value is
+// multiplied straight into a CSS calc(): a stored 0, a negative or a string
+// would collapse every code on the sheet to nothing, and the codes ARE the
+// sheet. parseFloat, and compared with >=/<=, so NaN falls through to 1.
+var seatIconScale=parseFloat(data.seatPrintOpts.iconScale);
+if(!(seatIconScale>=0.5 && seatIconScale<=1.5)) data.seatPrintOpts.iconScale=1;
 // Page orientation for the class sheet. It was a module-level variable, so
 // it reset to portrait on every reload and a rebbi whose chart only fits
 // landscape had to re-pick it every single time.
@@ -535,6 +587,26 @@ if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
 // left showing QR codes instead of names is not the view anyone wants to
 // come back to on a smartboard.
 if(typeof data.seatScanMode!=="boolean") data.seatScanMode=false;
+/* The four card modes that replaced that boolean — same values and same
+ * meaning as data.seatPrintOpts.avatarMode, minus the two activity ones.
+ *
+ * PURELY ADDITIVE, AND NOTHING CAN BE LOST: seatScanMode is still written
+ * and still backfilled above, it just stopped being what the chart reads.
+ * An old save arrives here with only the boolean, so the mode is derived
+ * from it — and since the boot-time disarm below turns a code mode back
+ * into "photo" anyway, every existing save opens on exactly the chart it
+ * opens on today: faces, names and scores.
+ */
+if(["qr","qrphoto","photo","none"].indexOf(data.seatCardMode)<0){
+  data.seatCardMode = data.seatScanMode ? "qr" : "photo";
+}
+/* Scores on the live cards. Defaults ON because that is what every chart
+ * shows today in the state it boots into — the old code drew the score
+ * unconditionally whenever codes were off, and codes are always off at
+ * boot. The toggle exists because turning codes on used to take the scores
+ * away with no way to keep them; it must not now take them away by default.
+ */
+if(typeof data.seatShowPoints!=="boolean") data.seatShowPoints=true;
 // Same armed-state contract as seatScanMode, independent flag: a rebbi can
 // show the activity codes footer with or without student QR codes showing.
 if(typeof data.seatActivitiesMode!=="boolean") data.seatActivitiesMode=false;
@@ -597,6 +669,13 @@ if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
 if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
 if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
 if(typeof data.shulchaniMode!=="boolean") data.shulchaniMode=false;
+if(typeof data.shulchaniCoinsSeeded!=="boolean") data.shulchaniCoinsSeeded=false;
+// A rebbi ALREADY in Shulchani Mode before coin codes existed never passes
+// through the mode switch again, so he would never get them. Seed here too —
+// but with revalueStarters false: he has been scanning with whatever his
+// activities are worth, and a routine load is not the moment to change that
+// under him. Additive either way; nothing existing is renamed or removed.
+if(data.shulchaniMode && !data.shulchaniCoinsSeeded) seedShulchaniCoinCodes(false);
 if(typeof data.showPrutot!=="boolean") data.showPrutot=false;
 if(typeof data.snackSeconds!=="number" || data.snackSeconds<=0) data.snackSeconds=420;
 if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerExcluded={};
@@ -1892,6 +1971,20 @@ function runBuiltInTests() {
   var t16h = runMigration({ version:4, seatPrintOpts:{avatarMode:"activity"} });
   assert("sheet→a garbage/missing avatarMode value list still accepts 'activity'",
     t16h.seatPrintOpts.avatarMode==="activity", "got "+t16h.seatPrintOpts.avatarMode);
+  // Code size. The one that matters is the first: a save predating the field must
+  // land on 1, because 1 is the size every sheet already prints at — anything
+  // else silently repaginates a rebbi's Monday sheet. The rest keep a value that
+  // is multiplied into a CSS calc() from ever being 0, negative or a string.
+  assert("sheet→a save predating iconScale backfills to 1 (no sheet repaginates)",
+    t16d.seatPrintOpts.iconScale===1, "got "+JSON.stringify(t16d.seatPrintOpts.iconScale));
+  var t16i = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", iconScale:0.7} });
+  assert("sheet→a chosen code size survives a reload", t16i.seatPrintOpts.iconScale===0.7);
+  var t16j = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", iconScale:0} });
+  assert("sheet→a zero code size repairs to 1", t16j.seatPrintOpts.iconScale===1);
+  var t16k = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", iconScale:"huge"} });
+  assert("sheet→a string code size repairs to 1", t16k.seatPrintOpts.iconScale===1);
+  var t16m = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", iconScale:9} });
+  assert("sheet→an out-of-range code size repairs to 1", t16m.seatPrintOpts.iconScale===1);
 
   // --- Test 17: #117 printed-code selection ---
   assert("codes→printExcluded backfills to an object",
