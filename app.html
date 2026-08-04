@@ -491,6 +491,26 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat.scan-seat{padding:5px 4px;gap:2px;justify-content:flex-start}
   .seat.scan-seat .seat-name{font-size:.66rem;line-height:1.1;overflow:hidden;
     display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;word-break:break-word}
+  /* Beside a 1-line clamped name, the normal .74rem score reads bigger than the
+     name it belongs to. */
+  .seat.scan-seat .ts{font-size:.62rem;margin-top:1px}
+  /* Photo AND code in one card — the live chart's copy of the printed sheet's
+     .seat-print-pair. Side by side rather than stacked, so showing the face
+     costs the cell no extra height. It WRAPS rather than clipping: .seat is
+     overflow:hidden, and a half-clipped QR is a code that silently won't scan,
+     which is worse than a taller cell. */
+  .seat-live-pair{display:flex;align-items:center;justify-content:center;gap:6px;
+    flex-wrap:wrap;width:100%}
+  .seat-live-pair .avatar,.seat-live-pair .seat-qr{margin:0}
+  /* A List tile is a plain block, not the seat's flex column, so the code and
+     the face need their own centring there. */
+  .tap-btn .seat-qr{margin:0 auto 5px}
+  /* The card-mode picker, matching the printed sheet's Avatar select rather
+     than inventing a second vocabulary for the same four choices. */
+  .seat-modesel{display:flex;align-items:center;gap:6px;font-size:.85rem;
+    color:var(--muted);font-weight:600}
+  .seat-modesel select{border:1px solid var(--line);background:#fff;color:var(--ink);
+    border-radius:8px;padding:6px 8px;font-size:.85rem;font-weight:600;font-family:inherit}
   /* Activity codes under the chart — the same set the printed sheet carries. */
   .seat-scan-codes{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
     padding:10px 14px 14px;border-top:2px solid var(--line);margin-top:6px}
@@ -2526,6 +2546,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <div>
           <label class="lbl" id="newActPtsLabel">Points</label>
           <input id="newActPts" type="number" class="field" value="2" step="1" style="width:100px">
+          <select id="newActCoin" class="field" style="width:auto;font-weight:700;display:none"></select>
           <span id="newActPtsUnit" style="font-size:.82rem;color:var(--muted);margin-left:4px">pts</span>
         </div>
         <button class="btn btn-primary" id="addActivity">Add</button>
@@ -2558,9 +2579,22 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <button data-orient="portrait" class="active">Portrait (vertical)</button>
         <button data-orient="landscape">Landscape (horizontal)</button>
       </span>
-      <span class="seat-dims" id="seatPrintDims" title="How many desks the sheet is laid out in. Changing it never moves a boy you have already placed.">Rows
-        <input type="number" id="seatPrintRows" min="1" max="12">Cols
+      <span class="seat-dims" id="seatPrintDims" title="How many desks the sheet is laid out in. Every boy keeps his row and column. Making the room narrower moves only the boys whose column no longer exists — they are re-seated further down, never dropped, and Rows grows to make room for them.">Rows
+        <!-- max is re-applied from SEAT_MAX_ROWS/SEAT_MAX_COLS in
+             seatPrintSyncDims() so these attributes can never drift from the
+             clamp the JS actually enforces. -->
+        <input type="number" id="seatPrintRows" min="1" max="60">Cols
         <input type="number" id="seatPrintCols" min="1" max="12">
+      </span>
+      <!-- Re-seat the whole class in one go. Everything else on this page moves
+           ONE boy at a time (drag a seat, ✕ to empty one), which is right for
+           tuning a chart and hopeless for building one from scratch or for
+           breaking up a room that has settled into cliques. Both confirm first:
+           they overwrite an arrangement the rebbi may have built by hand, and
+           there is no undo for a seating chart. -->
+      <span id="seatPrintArrangeRow" style="display:flex;gap:6px">
+        <button class="btn btn-sm" id="seatSortByName" title="Seat the whole class alphabetically by last name, filling the desks left to right, front to back. Only where each boy sits changes.">A&ndash;Z by name</button>
+        <button class="btn btn-sm" id="seatShuffle" title="Deal the whole class into random desks. Only where each boy sits changes.">🎲 Shuffle</button>
       </span>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="What sits in each boy's card. The two &quot;+ photo&quot; options print his picture and his code SIDE BY SIDE, which costs no extra height on the page — so you can recognise a boy and scan him from the same card. Fewer columns, or Landscape, makes the pictures bigger.">Avatar:
         <select id="seatPrintAvatarMode" class="field" style="width:auto">
@@ -3885,6 +3919,10 @@ function setupRoster() {
     gameBoards: {},
     muted: false,
     shulchaniMode: false,
+    // Flipped true the first time a rebbi lands in Shulchani Mode, by
+    // seedShulchaniCoinCodes(). Guards a one-time mint, not a preference —
+    // a rebbi who deletes a coin code keeps it deleted.
+    shulchaniCoinsSeeded: false,
     showPrutot: false,
     // "Instant" (no-spin) preference, remembered SEPARATELY per random-selection
     // tool — a rebbi who wants the Picker instant for fast repeated turn-taking
@@ -5112,12 +5150,41 @@ function setupRoster() {
   // tracked:true — it has its own dedicated tab and data store (data.hw), not
   // data.trackerLog. Letting it appear in Tracker's dropdown meant scanning it
   // there silently logged into the wrong bucket, invisible to the Homework tab.
-  function trackedActivities(){ return data.activities.filter(function(a){ return a.tracked && a.name!=="Homework Checked"; }); }
+  //
+  // Freeze is excluded for a different reason, and it is the same reason it
+  // gets no tracked item of its own: a Tracker row for Freeze is a per-boy
+  // tally of how many times he was frozen — a record nobody asked for, which
+  // arrived only as a side effect of Freeze being built like the other tracked
+  // activities. Freeze is not a regular tracked activity; it starts a
+  // countdown (data.freezes) and keeps no count.
+  //
+  // A freeze that ALREADY has logged entries stays listed, so a rebbi who
+  // tapped +1 on one before this can still see and undo those entries. Nothing
+  // is hidden that has anything behind it — same emptiness test the one-shot
+  // freeze tracked-item drop uses in load2fix().
+  function trackedActivities(){
+    return data.activities.filter(function(a){
+      if(!a.tracked || a.name==="Homework Checked") return false;
+      if(freezeActivity(a)) return (data.trackerLog||[]).some(function(e){ return e.actId===a.id; });
+      return true;
+    });
+  }
+  // The tracked activities a rebbi may hide but must not delete. Each owns a
+  // TAB and a store of its own (Homework, Attendance, Bathroom Pass), and each
+  // is matched BY NAME by the predicates just below, seeded exactly once behind
+  // a one-shot flag. So deleting one doesn't retire a button — it strands a
+  // whole tab: the records stay on screen with no way left to record into them,
+  // and the seed never brings it back. Unchecking "Show" on the Activities tab
+  // does everything a delete was reached for and loses nothing.
+  //
+  // Freeze is deliberately NOT on this list — it owns no tab and no record, so
+  // a rebbi who doesn't want it may still delete it outright.
+  function coreTrackedActivity(a){ return homeworkActivity(a) || passActivity(a) || attendanceActivity(a); }
   // First activity that may legitimately be ARMED for point-scoring. Tracked
   // activities (Tracker, Homework Checked) write to their own stores, so the
   // default arm must never land on one — activities[0] can be tracked once a
   // teacher deletes the starter point activities.
-  function firstArmableActivity(){ return data.activities.filter(function(a){ return !a.tracked; })[0]; }
+  function firstArmableActivity(){ return data.activities.filter(function(a){ return !a.tracked && actInCurrentMode(a); })[0]; }
   // THE tracked activity that is nonetheless safe to arm anywhere, because
   // award() reroutes it to markHwCheckedToday() no matter which tab the scan
   // came from. Tracker activities have no such backstop, which is why they stay
@@ -5136,10 +5203,19 @@ function setupRoster() {
   // not on this list — they have no reroute, so arming one would write points.
   // Anything added here must have a matching branch in award().
   function reroutedActivity(a){ return homeworkActivity(a) || passActivity(a) || attendanceActivity(a) || freezeActivity(a); }
+  // A coin activity is one of the seeded Shulchani denomination codes: it
+  // carries a.coin = the COINS abbreviation it was minted from ("Di", "S", …).
+  // The flag is what makes them mode-scoped — they only mean anything while
+  // balances are counted in Prutot, so every surface hides them in points mode
+  // rather than the app deleting them on a switch. See seedShulchaniCoinCodes().
+  function coinActivity(a){ return !!a && typeof a.coin==="string" && !!a.coin; }
+  // Belongs in the mode the app is currently in. Only coin codes are scoped;
+  // everything a rebbi made himself shows in both modes, unchanged.
+  function actInCurrentMode(a){ return !coinActivity(a) || isShulchani(); }
   // Activities offerable as an armable choice: point activities, plus the
   // rerouted ones. Shared by the Scan tab's buttons, the seating-chart dropdown
   // and the printed Activity Menu so the three can't drift apart.
-  function armableActivities(){ return data.activities.filter(function(a){ return !a.tracked || reroutedActivity(a); }); }
+  function armableActivities(){ return data.activities.filter(function(a){ return (!a.tracked || reroutedActivity(a)) && actInCurrentMode(a); }); }
   // Wording for the rerouted activities on printed cards, where a point value
   // would be wrong. Kept next to the predicates so a future rerouted activity
   // gets its wording here rather than in three separate print call sites.
@@ -5772,6 +5848,7 @@ function setupRoster() {
       // reroute, so arming it here would still write points. fpRenderActs() hides
       // tracked activities from this panel's buttons for the same reason.
       if(a.tracked){ fpFlash(false,"Not scannable here — "+a.name+" has its own tab"); beep(false); return; }
+      if(!actInCurrentMode(a)){ fpFlash(false,a.name+" only scans in Shulchani Mode"); beep(false); return; }
       fpActId=a.id; fpCustomAct=null; fpRenderActs();
       fpFlash(true, "Now scoring: "+a.name+"  "+fmtDeltaBare(a.pts));
       beep(true);
@@ -6430,6 +6507,116 @@ function setupRoster() {
     modal.style.display = "flex";
   }
 
+  /* ---------- Shulchani coin codes ---------- */
+  // The section the seeded denomination codes print under. Pushed into the
+  // rebbi's OWN data.codeSections list at seed time, so it renames, reorders
+  // and deletes exactly like the three he already has — a starting point, not
+  // a fixed fourth group. Empty (in points mode) it prints nothing: every
+  // section renderer already skips or greys a section with no codes in it.
+  var COIN_SECTION_KEY="coin";
+  // What the three shipped starter activities are worth once balances are
+  // counted in Prutot. Left at 1 they are worth one PRUTAH each — the smallest
+  // coin in the system — which puts a Darkon (1536 prutot) 1536 scans away and
+  // makes most of the currency unreachable. Keyed by the shipped id AND name so
+  // only an untouched starter is ever re-valued; a rebbi who renamed or
+  // re-valued one keeps his own number.
+  var SHULCHANI_STARTER_VALUES={
+    a1:{name:"On time",         pts:8},   // 1 Isar
+    a2:{name:"Davening nicely", pts:32},  // 1 Maah
+    a3:{name:"Learning nicely", pts:32}   // 1 Maah
+  };
+  // Mints one scannable code per denomination, positive and negative, the first
+  // time a rebbi lands in Shulchani Mode. Runs ONCE (data.shulchaniCoinsSeeded)
+  // and is purely additive: nothing existing is renamed, re-valued or removed,
+  // and switching back to points never deletes what this made — the codes carry
+  // a.coin and are simply scoped out of the other mode by actInCurrentMode().
+  //
+  // revalueStarters is false on the load-time backfill for a rebbi ALREADY in
+  // Shulchani Mode: he has been scanning with whatever his activities are worth,
+  // and quietly changing their values under him on a routine load is not a thing
+  // to do. Only a deliberate switch into the mode — where the dialog has already
+  // said balances are changing — re-values the untouched starters.
+  function seedShulchaniCoinCodes(revalueStarters){
+    if(data.shulchaniCoinsSeeded) return;
+    data.shulchaniCoinsSeeded=true;
+    if(revalueStarters){
+      data.activities.forEach(function(a){
+        var st=SHULCHANI_STARTER_VALUES[a.id];
+        if(st && !a.tracked && a.name===st.name && a.pts===1) a.pts=st.pts;
+      });
+    }
+    // Largest-first, the same order COINS uses on every other surface, each
+    // denomination's give/take pair kept together. Deductions seed hidden:
+    // fourteen tiles is more than the Record tab wants, and taking a Darkon
+    // back (−1536) is not a button to reach past by accident. `hidden` only
+    // affects the on-screen buttons — the full set still prints, which is where
+    // a coin strip is actually used. One checkbox in the editor shows any of them.
+    COINS.forEach(function(c){
+      data.activities.push({id:nextActId(), name:"+ "+c.name, pts:c.prutot,  coin:c.abbr, groups:[]});
+      data.activities.push({id:nextActId(), name:"− "+c.name, pts:-c.prutot, coin:c.abbr, groups:[], hidden:true});
+    });
+    if(!codeSections().some(function(s){ return s.key===COIN_SECTION_KEY; })){
+      codeSections().push({key:COIN_SECTION_KEY, label:"Coins"});
+    }
+  }
+  // The largest denomination that divides `n` exactly, with how many of them.
+  // Every integer divides by Prutah (1), so this always returns something — the
+  // fallback is "n Prutah", never nothing. Sign rides on the count, so a
+  // deduction is −1 Dinar rather than a separate concept.
+  function coinSplit(n){
+    n=parseInt(n,10)||0;
+    var mag=Math.abs(n), sign=n<0?-1:1;
+    for(var i=0;i<COINS.length;i++){
+      if(mag>=COINS[i].prutot && mag%COINS[i].prutot===0){
+        return {abbr:COINS[i].abbr, count:sign*(mag/COINS[i].prutot)};
+      }
+    }
+    return {abbr:"Pr", count:n};
+  }
+  function coinByAbbr(ab){
+    for(var i=0;i<COINS.length;i++){ if(COINS[i].abbr===ab) return COINS[i]; }
+    return COINS[COINS.length-1];
+  }
+  // The Shulchani value editor: "how many" × "which coin", with the Prutot it
+  // comes to shown beside it. Replaces the raw ±1 Prutot stepper, where setting
+  // an activity to a Dinar meant knowing — and then typing — 192.
+  //   get() -> the current value in Prutot;  set(v) -> store it.
+  // A value that isn't a whole number of any one coin still round-trips: it
+  // reads back as the largest denomination that divides it (200 -> 25 Isar),
+  // and worst case as Prutot, so nothing a rebbi already saved is unreachable.
+  // Styled inline rather than with new CSS classes — .field already carries the
+  // input/select look, and this is three boxes on one row.
+  function coinValueEditor(get, set){
+    var wrap=el("span");
+    wrap.style.cssText="display:inline-flex;align-items:center;gap:6px";
+    var count=el("input","field"); count.type="number"; count.step="1";
+    count.style.width="62px"; count.style.textAlign="center";
+    count.title="How many of this coin — a negative number makes it a deduction";
+    var sel=el("select","field"); sel.style.width="auto"; sel.style.fontWeight="700";
+    sel.title="Which coin this activity is worth";
+    COINS.forEach(function(c){ var o=el("option",null,c.name); o.value=c.abbr; sel.appendChild(o); });
+    var out=el("span"); out.style.cssText="color:var(--muted);font-size:.82rem;white-space:nowrap";
+    function sync(){
+      var v=get(), sp=coinSplit(v);
+      count.value=sp.count; sel.value=sp.abbr;
+      sel.style.color=coinByAbbr(sel.value).color;
+      out.textContent="= "+v+" pr";
+    }
+    function commit(){
+      var n=parseInt(count.value,10); if(isNaN(n)) n=0;
+      set(n*coinByAbbr(sel.value).prutot);
+      sync();
+    }
+    count.addEventListener("change", commit);
+    sel.addEventListener("change", commit);
+    wrap.appendChild(count);
+    var x=el("span",null,"×"); x.style.cssText="color:var(--muted);font-size:.82rem";
+    wrap.appendChild(x);
+    wrap.appendChild(sel);
+    wrap.appendChild(out);
+    sync();
+    return wrap;
+  }
   /* ---------- Shulchani mode toggle ---------- */
   function hasAnyScores(){
     return data.students.some(function(s){ return score(s.id)!==0; });
@@ -6456,6 +6643,9 @@ function setupRoster() {
       data.scores={}; data.log=[];
     }
     data.shulchaniMode=newMode;
+    // Set the mode FIRST: seeding pushes a "Coins" section and re-values the
+    // starters, and both read isShulchani() on the way through.
+    if(newMode) seedShulchaniCoinCodes(true);
     save();
     $("shulchaniModal").style.display="none";
     $("shulchaniConvert").style.display="none";
@@ -6514,7 +6704,7 @@ function setupRoster() {
       $("shulchaniClear").onclick=function(){ doShulchaniSwitch(true, false); };
       $("shulchaniModal").style.display="flex";
     } else {
-      data.shulchaniMode=true; save();
+      data.shulchaniMode=true; seedShulchaniCoinCodes(true); save();
       renderShulchaniStatus(); renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities(); renderActButtons();
     }
   });
@@ -6551,7 +6741,7 @@ function setupRoster() {
   // rebbi can always print the full set of codes even for activities hidden
   // from the screen. The mirror image of printExcluded (#117), which hides a
   // code from print only and leaves the screen alone.
-  function actVisibleOnScreen(a){ return !a.hidden; }
+  function actVisibleOnScreen(a){ return !a.hidden && actInCurrentMode(a); }
   function renderActButtons(){
     var wrap=$("actButtons"); wrap.innerHTML="";
     // Homework Checked gets a button here like any other activity — arming it and
@@ -7619,10 +7809,81 @@ function setupRoster() {
     if(lay.seats.length!==need) seatResize(lay, lay.rows, lay.cols);
     return lay;
   }
+  // How tall/wide the Rows and Cols spinners let a rebbi go. Rows is generous
+  // because a narrow room is a real arrangement: one column of 30 boys needs 30
+  // rows, and the old cap of 12 made that layout unrepresentable — the grid
+  // stored 15 rows while the input said 12, so the next nudge of either spinner
+  // clamped back to 12 and silently destroyed six seats. Cols stays at 12: wider
+  // than that stops fitting a printed page long before it stops being a room.
+  // NOTE: these bound what can be TYPED, not what seatResize() may produce —
+  // seatResize's "never drop a placed student" floor always wins over them.
+  var SEAT_MAX_ROWS=60, SEAT_MAX_COLS=12;
+  /* Reshape the grid WITHOUT ever unseating a boy who has already been placed.
+   *
+   * The old version did `lay.seats.slice(0, rows*cols)`, which was wrong twice
+   * over, because `seats` is one flat row-major array and nothing re-mapped it
+   * when the column count changed:
+   *
+   *   1. Narrowing 4x6 -> 4x2 cut 24 slots to 8 and threw 16 boys out of their
+   *      seats with no warning and no way back. The print page then quietly
+   *      re-seated them by stretching the grid to 12 rows and saving it, so a
+   *      rebbi who asked for two columns got a twelve-row sheet he never built.
+   *   2. Even the survivors moved: flat index 7 is row 1/col 1 in a 6-wide grid
+   *      and row 3/col 1 in a 2-wide one, so every remaining boy slid somewhere
+   *      new. Changing the width of a room should not rearrange the boys in it.
+   *
+   * So: read the old grid as (row, col) pairs, keep every boy at his own
+   * (row, col), and grow `rows` past what was asked for rather than drop
+   * anyone. A boy whose column no longer exists (the room narrowed) is carried
+   * as overflow and re-seated into the first free cells in reading order —
+   * the same top-down fill seatAutoPlaceUnplaced() already uses.
+   *
+   * The requested `rows` is therefore a MINIMUM, not a maximum. Callers re-read
+   * lay.rows afterwards (renderTapPanel / seatPrintSyncDims both re-sync the
+   * spinners from it), so the rebbi sees the height that actually took effect.
+   */
   function seatResize(lay, rows, cols){
-    var n=rows*cols, next=lay.seats.slice(0,n);
-    while(next.length<n) next.push(null);
-    lay.rows=rows; lay.cols=cols; lay.seats=next;
+    cols=Math.max(1, Math.floor(cols)||1);
+    rows=Math.max(1, Math.floor(rows)||1);
+    // The width the existing flat array is written against. lay.seats.length
+    // need not equal lay.rows*lay.cols — seatLayout() calls us precisely to
+    // repair that case — so trust lay.cols for the mapping, not the length.
+    var oldCols=(typeof lay.cols==="number" && lay.cols>0) ? lay.cols : cols;
+    var old=Array.isArray(lay.seats) ? lay.seats : [];
+    var keep=[], overflow=[];
+    for(var i=0;i<old.length;i++){
+      if(!old[i]) continue;
+      var p={ r:Math.floor(i/oldCols), c:i%oldCols, id:old[i] };
+      // Distinct flat indices map to distinct (r,c) for a fixed oldCols, so
+      // `keep` can never collide.
+      (p.c<cols ? keep : overflow).push(p);
+    }
+    // Never truncate a boy off the bottom either — a stored layout whose seats
+    // array outran its own row count (or a caller asking for fewer rows than
+    // are occupied) grows instead of losing anyone.
+    keep.forEach(function(p){ if(p.r+1>rows) rows=p.r+1; });
+    function build(rowCount){
+      var g=[], n=rowCount*cols;
+      while(g.length<n) g.push(null);
+      keep.forEach(function(p){ g[p.r*cols+p.c]=p.id; });
+      return g;
+    }
+    var grid=build(rows);
+    if(overflow.length){
+      var free=0;
+      grid.forEach(function(v){ if(!v) free++; });
+      if(free<overflow.length){
+        rows+=Math.ceil((overflow.length-free)/cols);
+        grid=build(rows);
+      }
+      // Reading order, so a narrowed room keeps the class in the sequence the
+      // rebbi arranged them rather than in flat-array order.
+      overflow.sort(function(a,b){ return (a.r-b.r)||(a.c-b.c); });
+      for(var j=0,n=0;j<grid.length && n<overflow.length;j++){
+        if(!grid[j]){ grid[j]=overflow[n].id; n++; }
+      }
+    }
+    lay.rows=rows; lay.cols=cols; lay.seats=grid;
   }
   /* Seats any student who has none, so a rebbi who has only imported a roster
    * gets a usable class sheet instead of a page of empty boxes. Returns how
@@ -7669,9 +7930,9 @@ function setupRoster() {
       // included — a gap in a row is usually deliberate (an absent boy's seat,
       // an aisle, the shape of the room), and resizing would destroy the
       // spatial map that is the whole reason to print a seating chart.
-      // Rows grow only if the roster genuinely no longer fits, and never
-      // shrink: seatResize truncates, so a smaller grid would drop
-      // already-placed students off the end.
+      // Rows grow only if the roster genuinely no longer fits, and are never
+      // asked to shrink: seatResize would refuse anyway — its floor keeps
+      // every placed boy — but asking honestly keeps the intent readable.
       var free=0; lay.seats.forEach(function(sid){ if(!sid) free++; });
       if(free<unplaced.length){
         var need=(lay.seats.length-free)+unplaced.length;
@@ -7684,6 +7945,46 @@ function setupRoster() {
     }
     save();
     return n;
+  }
+  /* Re-seats the ENTIRE class in a given order — the engine behind the print
+   * page's "A–Z by name" and "Shuffle" buttons.
+   *
+   * The deliberate opposite of seatAutoPlaceUnplaced() above, which exists
+   * precisely NOT to move anyone. This one is asked for by name and rebuilds
+   * the arrangement from scratch, so it clears every seat first: leaving the
+   * already-placed alone would make "A–Z" produce something that is not in
+   * alphabetical order, which is worse than doing nothing.
+   *
+   * IT ONLY EVER WRITES lay.seats — where each boy sits. No score, scan, log
+   * entry or anything else is read or touched, so the worst case is a rebbi
+   * re-dragging a chart, never lost data. There is no undo for it, which is
+   * why both callers confirm first.
+   *
+   * Stale ids can't survive: the seat array is rebuilt from the students passed
+   * in, so anyone deleted or moved to another class simply isn't in it — no
+   * separate prune needed.
+   *
+   * GRID SHAPE follows the same rules as the auto-placer, and for the same
+   * reasons: a room the rebbi has arranged keeps its shape (grow if the roster
+   * no longer fits, never shrink — seatResize will not drop a placed boy to
+   * honour a smaller grid anyway), while a chart nobody has touched gets sized roughly square to
+   * the roster rather than keeping seatLayout()'s invented 4x6 and printing a
+   * small class inside a page of "Empty seat" boxes (#116).
+   */
+  function seatReseatAll(order){
+    var lay=seatLayout();
+    var need=order.length;
+    var anyPlaced=lay.seats.some(function(sid){ return !!sid; });
+    if(!anyPlaced){
+      var cols=Math.max(1, Math.ceil(Math.sqrt(need)));
+      seatResize(lay, Math.max(1, Math.ceil(need/cols)), cols);
+    } else if(lay.seats.length<need){
+      seatResize(lay, Math.max(lay.rows, Math.ceil(need/lay.cols)), lay.cols);
+    }
+    var seats=lay.seats.map(function(){ return null; });
+    order.forEach(function(s,i){ seats[i]=s.id; });
+    lay.seats=seats;
+    save();
   }
   // drop any seat ids that no longer belong to the active roster (deleted / moved classes)
   function seatPruneAndFillUnplaced(lay, studs){
@@ -7721,15 +8022,19 @@ function setupRoster() {
    * who clicks in gets the grid and the "Not yet seated" tray straight away
    * rather than clicking "Seating chart" and watching nothing happen.
    *
-   * Mirrors setSeatSetup()'s exclusions — Rebbi's view and Show codes both
-   * fight arranging, for the reasons documented at their own toggles.
+   * Mirrors setSeatSetup()'s exclusions — Rebbi's view and the two code-bearing
+   * card modes both fight arranging, for the reasons documented at their own
+   * controls.
    */
   function enterSeatingSetup(){
     data.tapViewMode="seating";
     data.seatSetupOpen=true;
     data.seatArranging=true;
     data.seatLiveRebbiView=false;
-    data.seatScanMode=false;
+    // Codes off for arranging — see effSeatCardMode(). Written through the
+    // setter rather than by poking seatScanMode, so the mode the picker shows
+    // and the legacy flag can never disagree.
+    if(seatPrintCodeKind(data.seatCardMode)==="qr") setSeatCardMode("photo");
     save(); renderTapPanel();
   }
 
@@ -7788,7 +8093,7 @@ function setupRoster() {
                        && seatChartIsEmpty();
     if(seatFallback) effViewMode="list";
     /* The view switch gets its OWN ROW, above the toolbar — it is the mode, and
-     * everything left in the toolbar (Show codes, Show activities, Rebbi's
+     * everything left in the toolbar (Avatar, Points, Show activities, Rebbi's
      * view, the layout controls) is an option that applies within whichever
      * mode is picked. All six used to share one wrapped strip, so the switch
      * looked like two more buttons rather than the thing the rest hangs off.
@@ -7827,17 +8132,46 @@ function setupRoster() {
     // Arranging and scannable are mutually exclusive: dragging seats around
     // while every cell shows a QR is a way to mis-seat a boy you cannot read.
     // (List mode has no arranging state, so this only ever bites in seating mode.)
-    var scanBtn=el("button","seat-modebtn"+(data.seatScanMode?" active":""), data.seatScanMode?"Hide codes":"⛶ Show codes");
-    scanBtn.title="Show each student's QR code, so the class can be scanned straight off the screen";
-    scanBtn.addEventListener("click", function(){
-      data.seatScanMode=!data.seatScanMode;
-      // Show codes and arranging still can't both be on — a QR in every cell
-      // while seats are draggable is a way to mis-seat a boy you cannot read.
+    // WHAT SITS IN EACH BOY'S CARD. This was an on/off "Show codes" button, and
+    // the thing it could not express is the reason it is now a select: turning
+    // codes on REPLACED the boy's face, so a rebbi scanning off the smartboard
+    // could not see who he was scanning. Same four values, same wording and the
+    // same order as the printed class sheet's own "Avatar:" select — one
+    // vocabulary for one setting, on the screen and on paper.
+    var modeWrap=el("label","seat-modesel");
+    modeWrap.appendChild(document.createTextNode("Avatar:"));
+    var modeSel=document.createElement("select");
+    [["qr","QR code"],["qrphoto","QR code + photo"],["photo","Student photo"],["none","None"]]
+      .forEach(function(o){
+        var op=document.createElement("option");
+        op.value=o[0]; op.textContent=o[1];
+        modeSel.appendChild(op);
+      });
+    // The STORED mode, not the effective one — arranging overrides the display
+    // (see effSeatCardMode) but must not look as though it changed his setting.
+    modeSel.value=data.seatCardMode;
+    modeSel.title='What sits in each boy\'s card, the same choices the printed class sheet offers. "QR code + photo" puts his picture and his code side by side, so you can recognise him and scan him from the one card.';
+    modeSel.addEventListener("change", function(){
+      setSeatCardMode(this.value);
+      // Codes and arranging still can't both be on — a QR in every cell while
+      // seats are draggable is a way to mis-seat a boy you cannot read.
       // Closes Setup with it, since Setup being open now MEANS arranging.
-      if(data.seatScanMode){ data.seatArranging=false; data.seatSetupOpen=false; }
+      if(seatPrintCodeKind(data.seatCardMode)==="qr"){ data.seatArranging=false; data.seatSetupOpen=false; }
       save(); renderTapPanel();
     });
-    toolbar.appendChild(scanBtn);
+    modeWrap.appendChild(modeSel);
+    toolbar.appendChild(modeWrap);
+
+    // Points, matching the sheet's own checkbox and independent of the card mode
+    // for the same reason it is there: showing codes used to take every boy's
+    // score off the chart along with his face, with no way to keep it.
+    var ptsBtn=el("button","seat-modebtn"+(data.seatShowPoints?" active":""),"Points");
+    ptsBtn.title="Show each boy's score on his card";
+    ptsBtn.addEventListener("click", function(){
+      data.seatShowPoints=!data.seatShowPoints;
+      save(); renderTapPanel();
+    });
+    toolbar.appendChild(ptsBtn);
 
     // Independent of Show codes — a rebbi may want the activity codes footer
     // (to arm an activity by tapping or scanning it) without also switching
@@ -7936,15 +8270,18 @@ function setupRoster() {
 
       var dims=el("div","seat-dims");
       dims.appendChild(document.createTextNode("Rows"));
-      var rowsIn=el("input"); rowsIn.type="number"; rowsIn.min="1"; rowsIn.max="12"; rowsIn.value=lay.rows;
+      var rowsIn=el("input"); rowsIn.type="number"; rowsIn.min="1"; rowsIn.max=String(SEAT_MAX_ROWS); rowsIn.value=lay.rows;
       dims.appendChild(rowsIn);
       dims.appendChild(document.createTextNode("Cols"));
-      var colsIn=el("input"); colsIn.type="number"; colsIn.min="1"; colsIn.max="12"; colsIn.value=lay.cols;
+      var colsIn=el("input"); colsIn.type="number"; colsIn.min="1"; colsIn.max=String(SEAT_MAX_COLS); colsIn.value=lay.cols;
       dims.appendChild(colsIn);
       function applyDims(){
         var r=parseInt(rowsIn.value,10), c=parseInt(colsIn.value,10);
-        if(isNaN(r)||r<1) r=1; if(r>12) r=12;
-        if(isNaN(c)||c<1) c=1; if(c>12) c=12;
+        if(isNaN(r)||r<1) r=1; if(r>SEAT_MAX_ROWS) r=SEAT_MAX_ROWS;
+        if(isNaN(c)||c<1) c=1; if(c>SEAT_MAX_COLS) c=SEAT_MAX_COLS;
+        // seatResize() may hand back MORE rows than r — it grows rather than
+        // unseat anyone — so renderTapPanel() below redraws the spinners from
+        // lay.rows and the rebbi sees the height that actually took effect.
         seatResize(lay, r, c); save(); renderTapPanel();
       }
       rowsIn.addEventListener("change", applyDims);
@@ -8026,28 +8363,23 @@ function setupRoster() {
       body.appendChild(fbNote);
     }
 
-    var listScanMode=!!data.seatScanMode;
+    // The same card mode the seating chart uses, for the same reason the printed
+    // sheet builds its List and its seat grid from one fillSeatPrintCard(): the
+    // two are the same class shown two ways, and one setting must not produce
+    // two different cards. List has no arranging, so the stored mode is always
+    // the effective one — effSeatCardMode() is read anyway rather than
+    // data.seatCardMode, so there is one answer to "what is in a card".
+    var listMode=effSeatCardMode();
+    var listScanMode=seatPrintCodeKind(listMode)==="qr";
+    var listShowPts=!!data.seatShowPoints;
     var grid=el("div","tap-grid");
     studs.forEach(function(s){
       var b=el("button","tap-btn"); b.dataset.sid=s.id;
       // The avatar / name / score used to be appended HERE as well as in the
       // else branch below, so every student in List mode rendered twice over
-      // (and once in scan mode, above his QR). One card per boy, built in
-      // exactly one of the two branches.
-      if(isFrozen(s.id)) b.appendChild(freezeBadgeEl(s.id));
-      if(listScanMode){
-        // Same payload as the seating chart's Show codes and the printed
-        // sheet — s.id, nothing else.
-        var qh=el("div","seat-qr"); qh.style.cssText="width:"+SEAT_QR_PX+"px;height:"+SEAT_QR_PX+"px;margin:0 auto 5px";
-        try{ new QRCode(qh,{text:s.id,width:SEAT_QR_PX,height:SEAT_QR_PX,correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ qh.textContent="QR?"; }
-        b.appendChild(qh);
-        b.appendChild(el("span",null,s.name));
-      } else {
-        b.appendChild(avatarEl(s, 30));
-        b.appendChild(el("span",null,s.name));
-        b.appendChild(coinScoreEl(s.id,"ts"));
-      }
+      // (and once in scan mode, above his QR). One card per boy — now built by
+      // the one shared builder rather than by two branches that could drift.
+      fillSeatLiveCard(b, s, listMode, listShowPts, 30);
       b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
@@ -8079,6 +8411,80 @@ function setupRoster() {
   // fine for the scanner in use but is the reason the name stays visible — if a
   // code will not read, the rebbi still has something to tap.
   var SEAT_QR_PX = 68;
+
+  /* THE LIVE CHART'S CARD MODE — the screen's half of the printed sheet's
+   * "Avatar:" select, and deliberately the SAME four values it uses:
+   * "qr" / "qrphoto" / "photo" / "none".
+   *
+   * It is read through seatPrintCodeKind() and seatPrintWantsPhoto() — the
+   * printed sheet's own readers, called rather than copied. Those two exist
+   * precisely so a combined value like "qrphoto" cannot be understood by one
+   * renderer and missed by another; a second copy here would reintroduce the
+   * asymmetry they were written to close.
+   *
+   * The sheet's two ACTIVITY modes are deliberately absent: a merged
+   * PA:<student>:<activity> code is for scanning down a printed grid with no
+   * arming step, and on the live chart the activity footer already arms by tap.
+   *
+   * data.seatScanMode is kept exactly in step below rather than deleted. It
+   * predates these four modes and is what every existing save and backup
+   * carries, and the boot-time disarm still reads it — but nothing should treat
+   * it as the source of truth any more.
+   */
+  function setSeatCardMode(m){
+    data.seatCardMode = m;
+    data.seatScanMode = seatPrintCodeKind(m)==="qr";
+  }
+  /* Arranging never shows codes, whatever the mode says: dragging boys around a
+   * grid where every cell is a QR you cannot read is how one ends up in the
+   * wrong seat. Same exclusion the old Show-codes button enforced by turning
+   * arranging off — expressed here as a display override so the rebbi's chosen
+   * mode is still waiting for him when he finishes arranging.
+   */
+  function effSeatCardMode(){
+    // "photo" for both code modes, not the boy's name alone: you are looking
+    // for faces while you drag boys into seats.
+    if(data.seatArranging && seatPrintCodeKind(data.seatCardMode)==="qr") return "photo";
+    return data.seatCardMode;
+  }
+
+  /* ONE LIVE CARD — the screen's answer to fillSeatPrintCard(), shared by the
+   * seating grid and List mode for the same reason the printed sheet shares one
+   * card between its seating and list layouts: a rebbi switching between them
+   * must not get two different cards out of one setting.
+   *
+   * `avatarPx` is the only thing the two callers disagree on — a seat cell is
+   * tighter than a List tile.
+   */
+  function fillSeatLiveCard(card, s, mode, showPts, avatarPx){
+    var kind=seatPrintCodeKind(mode), wantPhoto=seatPrintWantsPhoto(mode);
+    /* THE FLEX ROW EXISTS ONLY WHEN BOTH ARE SHOWN — same rule as the printed
+     * card. A code alone, or a face alone, keeps the exact DOM it has always
+     * had, so neither of the two modes that existed before this picker did
+     * renders one pixel differently. */
+    var both = (kind==="qr" && wantPhoto);
+    var host = both ? el("div","seat-live-pair") : card;
+    if(isFrozen(s.id)) card.appendChild(freezeBadgeEl(s.id));
+    // Face first, code second: you find the boy by looking, then scan him.
+    if(wantPhoto) host.appendChild(avatarEl(s, avatarPx));
+    if(kind==="qr"){
+      // Same payload the PRINTED sheet encodes — s.id, nothing else — so a
+      // code scanned off the screen is indistinguishable from one scanned off
+      // paper. There is deliberately no second code path here.
+      var qh=el("div","seat-qr");
+      // Sized here rather than in CSS for the reason noted at .seat-qr: the
+      // constraint is the cell's inner height, which is measured. A List tile
+      // is not a flex column, so without this the holder would run the full
+      // width of the tile and take the code with it.
+      qh.style.width=SEAT_QR_PX+"px"; qh.style.height=SEAT_QR_PX+"px";
+      try{ new QRCode(qh,{text:s.id,width:SEAT_QR_PX,height:SEAT_QR_PX,correctLevel:QRCode.CorrectLevel.M}); }
+      catch(e){ qh.textContent="QR?"; }
+      host.appendChild(qh);
+    }
+    if(both) card.appendChild(host);
+    card.appendChild(el("span","seat-name",s.name));
+    if(showPts) card.appendChild(coinScoreEl(s.id,"ts"));
+  }
 
   // Activity codes to arm, rendered below the grid whenever Show activities is
   // on — same source as the printed sheet and Avery labels (menuLabelItems(),
@@ -8257,7 +8663,12 @@ function setupRoster() {
     var unplaced=seatPruneAndFillUnplaced(lay, studs);
     var byId={}; studs.forEach(function(s){ byId[s.id]=s; });
     var arranging=!!data.seatArranging;
-    var scanMode=!!data.seatScanMode && !arranging;
+    var cardMode=effSeatCardMode();
+    // Still the one thing the rest of the chart asks: is there a QR in every
+    // cell? It drives the tighter .scan-seat card and whether the activity
+    // codes underneath are drawn scannable or as plain tappable pills.
+    var scanMode=seatPrintCodeKind(cardMode)==="qr";
+    var showPts=!!data.seatShowPoints;
     var activitiesMode=!!data.seatActivitiesMode;
 
     // "Front of room" sits above the grid in normal view; in Rebbi's view the
@@ -8288,21 +8699,14 @@ function setupRoster() {
       seat.dataset.idx=trueIdx;
       if(s){
         seat.dataset.sid=s.id;
-        if(scanMode){
-          // Same payload the PRINTED sheet encodes — s.id, nothing else — so a
-          // code scanned off the screen is indistinguishable from one scanned
-          // off paper. There is deliberately no second code path here.
-          var qh=el("div","seat-qr");
-          try{ new QRCode(qh,{text:s.id,width:SEAT_QR_PX,height:SEAT_QR_PX,correctLevel:QRCode.CorrectLevel.M}); }
-          catch(e){ qh.textContent="QR?"; }
-          seat.appendChild(qh);
-          seat.appendChild(el("span","seat-name",s.name));
-        } else {
-        seat.appendChild(avatarEl(s, 26));
-        seat.appendChild(el("span","seat-name",s.name));
-        seat.appendChild(coinScoreEl(s.id,"ts"));
-        if(isFrozen(s.id)) seat.appendChild(freezeBadgeEl(s.id));
-        }
+        /* BIGGER, not smaller, when it is sharing the cell with a code. The
+         * 26px avatar is a marker beside a name you are already reading; next
+         * to a QR it is the whole point of the mode — you are meant to
+         * recognise the boy and scan him off the one card, from across a room.
+         * 44 against a 68px code is roughly the printed sheet's 76-against-95
+         * proportion, and still leaves the pair side by side in a full-screen
+         * cell (it wraps in the narrow Dashboard panel, by design). */
+        fillSeatLiveCard(seat, s, cardMode, showPts, scanMode ? 44 : 26);
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
@@ -8901,6 +9305,13 @@ function setupRoster() {
     // arming it by code then scanning students marks homework for real.
     if(a.tracked && !reroutedActivity(a)){
       flash(false, "Not scannable here", "Use the Tracker tab", "“"+a.name+"” keeps its own record");
+      beep(false); return;
+    }
+    // A printed coin code in a class that has since switched back to points
+    // would otherwise arm a bare 192, with nothing on screen saying where that
+    // number came from. Says so instead of silently scoring.
+    if(!actInCurrentMode(a)){
+      flash(false, "Coin code", "Shulchani Mode is off", "“"+a.name+"” only scans while balances are coins");
       beep(false); return;
     }
     setArmed(a.name, a.pts);
@@ -14469,18 +14880,54 @@ nameLine
   });
 
   /* ---------- ACTIVITIES ---------- */
+  // The Add form's value field means two different things by mode: a raw point
+  // total in points mode, and a COUNT of the coin picked beside it in Shulchani.
+  // newActValuePrutot() is the one place that resolves which, so the unit
+  // readout and the Add handler can never disagree about what was typed.
+  function newActCoinAbbr(){
+    var sel=$("newActCoin");
+    return (sel && sel.value) ? sel.value : "M";
+  }
+  function newActValuePrutot(){
+    var n=parseInt($("newActPts").value,10); if(isNaN(n)) n=0;
+    return isShulchani() ? n*coinByAbbr(newActCoinAbbr()).prutot : n;
+  }
+  function syncNewActUnit(){
+    var unit=$("newActPtsUnit"); if(!unit) return;
+    unit.textContent = isShulchani() ? ("= "+newActValuePrutot()+" pr") : "pts";
+    var sel=$("newActCoin");
+    if(sel) sel.style.color=coinByAbbr(newActCoinAbbr()).color;
+  }
   function renderActivities(){
     var list=$("activityList"); list.innerHTML="";
     // Update the "Add" form labels for current mode
-    var lbl=$("newActPtsLabel"); if(lbl) lbl.textContent=isShulchani()?"Prutot":"Points";
-    var unit=$("newActPtsUnit"); if(unit) unit.textContent=isShulchani()?"prutot":"pts";
+    var lbl=$("newActPtsLabel"); if(lbl) lbl.textContent=isShulchani()?"Worth":"Points";
+    var coinSel=$("newActCoin");
+    if(coinSel){
+      // Built once, on first render, then only shown/hidden — rebuilding the
+      // options every render would throw away a half-finished choice each time
+      // anything else on the tab re-renders.
+      if(!coinSel.options.length){
+        COINS.forEach(function(c){ var o=el("option",null,c.name); o.value=c.abbr; coinSel.appendChild(o); });
+        coinSel.value="M";   // Maah — mid-scale, a sane everyday default
+        coinSel.addEventListener("change", syncNewActUnit);
+        $("newActPts").addEventListener("input", syncNewActUnit);
+      }
+      coinSel.style.display=isShulchani()?"":"none";
+    }
+    syncNewActUnit();
     var vt=$("actViewTitle"); if(vt) vt.textContent=isShulchani()?"Activities & coin values":"Activities & point values";
     var vn=$("actViewNote"); if(vn) vn.textContent=isShulchani()
-      ?"These are the buttons on the Scan screen. Values are in Prutot — tap +/– or type a number. Use a negative value for a deduction."
+      ?"These are the buttons on the Scan screen. Set a value by picking a coin and how many — the Prutot are worked out for you. Use a negative number for a deduction."
       :"These are the buttons on the Scan screen. Change a point value right here — tap the +/– or type a number. Use a negative value for a deduction.";
-    if(!data.activities.length){ list.appendChild(el("div","recent-empty","No activities yet.")); }
+    // Coin codes only appear in the mode they mean something in — the same rule
+    // actVisibleOnScreen() applies to the Scan screen. Editing a Dinar's value
+    // while balances are counted in points would be editing nothing a rebbi can
+    // see or scan, so the rows stay out rather than sitting there inert.
+    var editable=data.activities.filter(actInCurrentMode);
+    if(!editable.length){ list.appendChild(el("div","recent-empty","No activities yet.")); }
     var allGroups=groups();
-    data.activities.forEach(function(a){
+    editable.forEach(function(a){
       if(!Array.isArray(a.groups)) a.groups=[];
       var row=el("div","erow act-erow");
       // Universal "Show on screen" checklist — unchecking hides this activity
@@ -14502,11 +14949,22 @@ nameLine
         var trkBadge=el("span",null, freezeActivity(a) ? ("❄️ Freeze — "+fmtFreezeDuration(a.freezeSeconds)) : "Tracked (non-point)");
         trkBadge.style.cssText="font-size:.72rem;font-weight:700;color:#6b4d18;background:var(--brass-soft);border-radius:999px;padding:2px 9px;white-space:nowrap";
         row.appendChild(name); row.appendChild(trkBadge);
-        var delT=el("button","btn btn-sm btn-bad","Delete");
-        delT.addEventListener("click", function(){
-          data.activities=data.activities.filter(function(x){return x.id!==a.id;}); save(); renderActivities(); renderActButtons();
-        });
-        row.appendChild(delT);
+        // Homework, Attendance and Bathroom Pass are hideable, never deletable
+        // — see coreTrackedActivity(). The "Show" checkbox at the head of this
+        // same row is the whole replacement, so say so here rather than leaving
+        // a rebbi hunting for the missing button.
+        if(coreTrackedActivity(a)){
+          var lockNote=el("span",null,"Built in — uncheck Show to hide it");
+          lockNote.title="This one has its own tab and record. Deleting it would leave that tab with no way to record into it, so it can be hidden but not deleted.";
+          lockNote.style.cssText="font-size:.72rem;color:var(--muted);white-space:nowrap";
+          row.appendChild(lockNote);
+        } else {
+          var delT=el("button","btn btn-sm btn-bad","Delete");
+          delT.addEventListener("click", function(){
+            data.activities=data.activities.filter(function(x){return x.id!==a.id;}); save(); renderActivities(); renderActButtons();
+          });
+          row.appendChild(delT);
+        }
         list.appendChild(row);
         return;
       }
@@ -14525,7 +14983,14 @@ nameLine
         data.activities=data.activities.filter(function(x){return x.id!==a.id;}); save(); renderActivities(); renderActButtons();
       });
       var controls=el("div","act-controls");
-      controls.appendChild(name); controls.appendChild(stp); controls.appendChild(ptsLbl); controls.appendChild(del);
+      controls.appendChild(name);
+      // Same stored a.pts either way — Shulchani only changes how it is entered.
+      if(isShulchani()){
+        controls.appendChild(coinValueEditor(function(){ return a.pts; }, setpts));
+      } else {
+        controls.appendChild(stp); controls.appendChild(ptsLbl);
+      }
+      controls.appendChild(del);
       row.appendChild(controls);
       // Group checklist — "All groups" (unchecked = all, checked groups = restricted)
       if(allGroups.length>0){
@@ -14564,7 +15029,9 @@ nameLine
   function refreshArmed(a){ if(armed && armed.label===a.name){ setArmed(a.name, a.pts); } }
   $("addActivity").addEventListener("click", function(){
     var name=$("newActName").value.trim(); if(!name){ $("newActName").focus(); return; }
-    var pts=parseInt($("newActPts").value,10); if(isNaN(pts)) pts=0;
+    // In Shulchani the field is a COUNT of the coin picked beside it, so the
+    // stored value is that count × the denomination. Points mode is unchanged.
+    var pts=newActValuePrutot();
     data.activities.push({id:nextActId(), name:name, pts:pts});
     $("newActName").value=""; save(); renderActivities(); renderActButtons();
   });
@@ -14732,10 +15199,17 @@ nameLine
       // not follow `tracked`: it scores nothing, but it is unmistakably a
       // consequence, so it belongs with the deductions rather than with
       // Homework Checked and Attendance.
-      var defSection = freezeActivity(a) ? "neg"
-                     : tracked           ? "nav"
-                     : (a.pts<0)         ? "neg"
-                     :                     "pos";
+      // Coin codes start in their own section rather than being split across
+      // Positive and Negative by sign: on paper they are one strip a rebbi reads
+      // as a currency chart, and a Dinar filed away from its own deduction is
+      // the odd outcome. Still only a DEFAULT — dragging one splits the pair,
+      // and if the rebbi has deleted the Coins section printCodeSectionOf()
+      // falls them back to the first section rather than dropping them.
+      var defSection = coinActivity(a)    ? COIN_SECTION_KEY
+                     : freezeActivity(a)  ? "neg"
+                     : tracked            ? "nav"
+                     : (a.pts<0)          ? "neg"
+                     :                      "pos";
       // `tone` says what this code DOES to a score — pos / neg / trk — for any
       // surface that wants to colour it. Taken from a.pts directly and never
       // re-derived by reading `sub`: that string is fmtDelta's, which spells
@@ -15321,19 +15795,64 @@ nameLine
   // here is resized everywhere, and resizing still never moves a placed boy.
   function seatPrintSyncDims(){
     var lay=seatLayout();
-    if($("seatPrintRows")) $("seatPrintRows").value=lay.rows;
-    if($("seatPrintCols")) $("seatPrintCols").value=lay.cols;
+    // Re-apply the bounds from the constants, so the markup's max attributes
+    // can never fall out of step with the clamp below.
+    if($("seatPrintRows")){ $("seatPrintRows").max=String(SEAT_MAX_ROWS); $("seatPrintRows").value=lay.rows; }
+    if($("seatPrintCols")){ $("seatPrintCols").max=String(SEAT_MAX_COLS); $("seatPrintCols").value=lay.cols; }
   }
   function seatPrintApplyDims(){
     var lay=seatLayout();
     var r=parseInt($("seatPrintRows").value,10), c=parseInt($("seatPrintCols").value,10);
-    if(isNaN(r)||r<1) r=1; if(r>12) r=12;
-    if(isNaN(c)||c<1) c=1; if(c>12) c=12;
+    if(isNaN(r)||r<1) r=1; if(r>SEAT_MAX_ROWS) r=SEAT_MAX_ROWS;
+    if(isNaN(c)||c<1) c=1; if(c>SEAT_MAX_COLS) c=SEAT_MAX_COLS;
+    // May come back taller than r — see seatResize(). seatPrintSyncDims() just
+    // below re-reads lay.rows, so the spinner shows what really happened.
     seatResize(lay, r, c); save();
     seatPrintSyncDims(); renderTapPanel(); renderSeatChartPrint();
   }
   $("seatPrintRows").addEventListener("change", seatPrintApplyDims);
   $("seatPrintCols").addEventListener("change", seatPrintApplyDims);
+  /* A–Z and Shuffle. Both hand a full ordering of the class to seatReseatAll()
+   * and then redraw BOTH charts, exactly as dragging a seat does — the live
+   * Dashboard chart is the same seating, and must not go stale behind the
+   * rebbi while he rebuilds it here.
+   *
+   * The confirm text names the count and says plainly that nothing but seating
+   * moves. That second half matters: "reset" and "shuffle" both sound like they
+   * might touch scores on a page whose cards show points, and they don't.
+   */
+  function seatReseatWith(order, question){
+    var studs=activeStudents();
+    if(!studs.length){ alert("No students in this class yet."); return; }
+    if(!confirm(question(studs.length))) return;
+    seatReseatAll(order(studs));
+    seatPrintSyncDims(); renderTapPanel(); renderSeatChartPrint();
+  }
+  $("seatSortByName").addEventListener("click", function(){
+    seatReseatWith(function(studs){
+      // Same lastFirstKey() sort the List layout and the Students tab use, so
+      // "A–Z" means one thing in this app rather than three.
+      return studs.slice().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+    }, function(n){
+      return "Seat all "+n+" students alphabetically by last name?\n\nThis replaces the current seating chart and can't be undone. Only where each boy sits changes — no points, scans or history are touched.";
+    });
+  });
+  $("seatShuffle").addEventListener("click", function(){
+    seatReseatWith(function(studs){
+      // Fisher-Yates, so every arrangement is equally likely. A sort() with a
+      // random comparator is the usual shortcut here and is genuinely biased —
+      // it would keep handing back shuffles that look suspiciously like the
+      // roster order, which on a seating chart is the one visible failure.
+      var order=studs.slice();
+      for(var i=order.length-1;i>0;i--){
+        var j=Math.floor(Math.random()*(i+1));
+        var t=order[i]; order[i]=order[j]; order[j]=t;
+      }
+      return order;
+    }, function(n){
+      return "Shuffle all "+n+" students into random seats?\n\nThis replaces the current seating chart and can't be undone. Only where each boy sits changes — no points, scans or history are touched.";
+    });
+  });
   $("seatPrintShowPoints").addEventListener("change", function(){ data.seatPrintOpts.showPoints=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); seatPrintSyncActLayout(); renderSeatChartPrint(); });
@@ -15368,10 +15887,13 @@ nameLine
   /* Keeps the Seating chart / List switch and the controls that only make
    * sense under one of them in step.
    *
-   * Rows/Cols and Rebbi's view are hidden in List, not disabled: both describe
-   * a ROOM — how many desks across, and which end of it you are standing at —
-   * and a list has no room. Leaving them on screen would invite a rebbi to set
-   * a value that the sheet in his hand then ignores. Everything else (avatar
+   * Rows/Cols, Rebbi's view and A–Z/Shuffle are hidden in List, not disabled:
+   * all three describe a ROOM — how many desks across, which end of it you are
+   * standing at, and who sits where in it — and a list has no room. Leaving
+   * them on screen would invite a rebbi to set a value that the sheet in his
+   * hand then ignores; A–Z in particular would look like it sorted the list he
+   * is looking at, when the list is already sorted and the button would be
+   * silently rearranging the chart on the other tab. Everything else (avatar
    * mode, Points, the Activities footer, orientation) applies to both layouts
    * and stays exactly where it is.
    */
@@ -15382,6 +15904,7 @@ nameLine
     });
     var dims=$("seatPrintDims"); if(dims) dims.style.display = isList ? "none" : "";
     var rv=$("seatPrintRebbiViewRow"); if(rv) rv.style.display = isList ? "none" : "flex";
+    var ar=$("seatPrintArrangeRow"); if(ar) ar.style.display = isList ? "none" : "flex";
   }
   document.querySelectorAll("#seatPrintLayout button").forEach(function(btn){
     btn.addEventListener("click", function(){
@@ -15709,6 +16232,12 @@ nameLine
    * "pick an activity first" empty state all branch on Activity mode
    * separately, and a new value understood by four of those five prints PA:
    * codes for an activity nobody chose.
+   *
+   * THE LIVE CHART NOW READS ITS OWN MODE THROUGH THESE TOO (see
+   * setSeatCardMode / fillSeatLiveCard). Same four values on screen as on
+   * paper, so despite the seatPrint* names these are the app's one reader for
+   * one vocabulary — not the print page's private helpers. The screen simply
+   * never stores either activity value.
    */
   function seatPrintCodeKind(mode){
     if(mode==="qr" || mode==="qrphoto") return "qr";
@@ -15835,10 +16364,26 @@ nameLine
        * the Rows/Cols boxes, which are hidden in this layout — a list has no
        * rows to set, and letting the seating grid's dimensions leak in here
        * would print a list shaped like a room it is deliberately ignoring.
+       *
+       * COLUMNS ARE SIZED BY THE CARD, NOT COUNTED. This used to be a flat 4
+       * columns portrait / 6 landscape, which made a list tile ~177px wide
+       * holding a 60px code — so the identical card that measures ~116px on the
+       * seating chart (a 4x6 room, its default, is SIX columns across) came out
+       * half again as wide here, with all of that extra width spent as dead
+       * space around the code. The padding rule was the same in both; only the
+       * track width differed, and it read on paper as a list with far more
+       * padding than the chart.
+       *
+       * minmax(112px,1fr) lands on 6 columns portrait and 8 landscape at the
+       * true page width, i.e. a ~116px card either way — the same tile as the
+       * chart's, which is the point: switching layouts should rearrange the
+       * cards, not resize them. auto-FILL, never auto-fit: auto-fit collapses
+       * the empty tracks and would stretch a small class's cards back across
+       * the whole sheet, which is the exact bug this removes.
        */
       var listStuds=studs.slice().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
       var lgrid=el("div","seat-grid print-seat-grid");
-      lgrid.style.gridTemplateColumns="repeat("+(data.seatPrintOrient==="landscape"?6:4)+", 1fr)";
+      lgrid.style.gridTemplateColumns="repeat(auto-fill, minmax(112px, 1fr))";
       listStuds.forEach(function(s){
         var card=el("div","seat");
         card.dataset.sid=s.id;
@@ -16809,6 +17354,26 @@ nameLine
     // left showing QR codes instead of names is not the view anyone wants to
     // come back to on a smartboard.
     if(typeof data.seatScanMode!=="boolean") data.seatScanMode=false;
+    /* The four card modes that replaced that boolean — same values and same
+     * meaning as data.seatPrintOpts.avatarMode, minus the two activity ones.
+     *
+     * PURELY ADDITIVE, AND NOTHING CAN BE LOST: seatScanMode is still written
+     * and still backfilled above, it just stopped being what the chart reads.
+     * An old save arrives here with only the boolean, so the mode is derived
+     * from it — and since the boot-time disarm below turns a code mode back
+     * into "photo" anyway, every existing save opens on exactly the chart it
+     * opens on today: faces, names and scores.
+     */
+    if(["qr","qrphoto","photo","none"].indexOf(data.seatCardMode)<0){
+      data.seatCardMode = data.seatScanMode ? "qr" : "photo";
+    }
+    /* Scores on the live cards. Defaults ON because that is what every chart
+     * shows today in the state it boots into — the old code drew the score
+     * unconditionally whenever codes were off, and codes are always off at
+     * boot. The toggle exists because turning codes on used to take the scores
+     * away with no way to keep them; it must not now take them away by default.
+     */
+    if(typeof data.seatShowPoints!=="boolean") data.seatShowPoints=true;
     // Same armed-state contract as seatScanMode, independent flag: a rebbi can
     // show the activity codes footer with or without student QR codes showing.
     if(typeof data.seatActivitiesMode!=="boolean") data.seatActivitiesMode=false;
@@ -16871,6 +17436,13 @@ nameLine
     if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
     if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
     if(typeof data.shulchaniMode!=="boolean") data.shulchaniMode=false;
+    if(typeof data.shulchaniCoinsSeeded!=="boolean") data.shulchaniCoinsSeeded=false;
+    // A rebbi ALREADY in Shulchani Mode before coin codes existed never passes
+    // through the mode switch again, so he would never get them. Seed here too —
+    // but with revalueStarters false: he has been scanning with whatever his
+    // activities are worth, and a routine load is not the moment to change that
+    // under him. Additive either way; nothing existing is renamed or removed.
+    if(data.shulchaniMode && !data.shulchaniCoinsSeeded) seedShulchaniCoinCodes(false);
     if(typeof data.showPrutot!=="boolean") data.showPrutot=false;
     if(typeof data.snackSeconds!=="number" || data.snackSeconds<=0) data.snackSeconds=420;
     if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerExcluded={};
@@ -17434,14 +18006,23 @@ nameLine
   // what this used to do) meant "Show codes" fell off for the ordinary act of
   // looking something up and coming back.
   //
-  // Forced false regardless of what was saved, so a rebbi never reopens the app
-  // to a chart of QR codes where he expects names. The field still has to live
-  // in `data` — the seating chart re-renders constantly, and it must survive
+  // Disarmed regardless of what was saved, so a rebbi never reopens the app to
+  // a chart of QR codes where he expects names. The field still has to live in
+  // `data` — the seating chart re-renders constantly, and it must survive
   // every one of those renders, just not a restart.
   // save() as well as setting it, so the stored value can never disagree with
   // how the app is actually behaving — a backup that says true while the chart
   // shows names is a value that lies to whoever reads it next.
-  if(data.seatScanMode){ data.seatScanMode = false; save(); }
+  // Now expressed as the card mode, since that is what the chart reads. Both
+  // code modes fall back to "photo" — faces, names and scores — which is
+  // exactly the chart the old boolean left behind, and the one a rebbi expects
+  // to find in front of a room. "Student photo" and "None" carry no codes and
+  // so are left alone; they are a way of looking at the class, not an armed
+  // state. setSeatCardMode keeps seatScanMode in step, so the stored boolean
+  // still cannot disagree with how the app is behaving.
+  if(seatPrintCodeKind(data.seatCardMode)==="qr"){
+    setSeatCardMode("photo"); save();
+  } else if(data.seatScanMode){ data.seatScanMode = false; save(); }
   // Same contract, same reason — independent toggle, see seatActivitiesMode above.
   if(data.seatActivitiesMode){ data.seatActivitiesMode = false; save(); }
   // --- Device ID for snapshot scoping (Phase 1) ---
