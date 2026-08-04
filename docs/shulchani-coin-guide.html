@@ -170,12 +170,55 @@
     .worth{grid-column:2;text-align:left;margin-top:2px}
   }
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
-  /* The plate is a wall chart; paper wants no ground and no bench. */
+  /* ── The pocket card ───────────────────────────────────────────────────
+     3½in × 2in, the standard business-card size — which is also Avery 5911,
+     the sheet Menchmark already prints labels onto. Ten to a letter page
+     with a ½in margin and a ½in gutter: 2 × 3.5 + 0.5 = 7.5in across,
+     5 × 2 = 10in down. Those numbers are the whole point of the size; a card
+     cut off this sheet fits real card stock. */
+  .card-tools{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:18px}
+  .card-tools button{font-family:var(--sans);font-size:.85rem;font-weight:700;
+    color:var(--plate);background:var(--ink);border:1px solid var(--ink);
+    border-radius:4px;padding:9px 16px;cursor:pointer}
+  .card-tools button:hover{background:var(--ink-2);border-color:var(--ink-2)}
+  .card-tools span{font-size:.83rem;color:var(--ink-3)}
+  .pcard{width:3.5in;height:2in;padding:11px 14px;background:var(--plate);
+    border:1px solid var(--rule);display:flex;flex-direction:column;overflow:hidden}
+  .pcard-head{display:flex;align-items:baseline;justify-content:space-between;
+    border-bottom:1.5px solid var(--ink);padding-bottom:4px;margin-bottom:4px}
+  .pcard-head b{font-family:var(--serif);font-size:13px;font-weight:600}
+  .pcard-head span{font-size:7px;font-weight:700;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-3)}
+  .pcard table{width:100%;border-collapse:collapse;flex:1}
+  .pcard td{padding:1px 0;font-size:10px;line-height:1.15;vertical-align:middle}
+  .pcard .pc-d{width:19px}
+  .pcard .pc-dot{display:inline-block;width:15px;height:15px;line-height:15px;
+    border-radius:50%;color:#fff;text-align:center;font-size:7px;font-weight:800;
+    text-shadow:0 1px 1px var(--strike)}
+  .pcard .pc-n{font-family:var(--serif);font-size:11.5px;font-weight:600}
+  .pcard .pc-v{text-align:right;font-family:var(--mono);font-weight:700;
+    font-variant-numeric:tabular-nums;padding-right:9px;white-space:nowrap}
+  .pcard .pc-r{color:var(--ink-2);white-space:nowrap;font-size:9.5px}
+  .pcard-foot{border-top:1px solid var(--rule);padding-top:4px;font-size:8px;
+    color:var(--ink-3);text-align:center}
+  .card-preview{overflow-x:auto;padding-bottom:4px}
+  #cardsheet{display:none}
+
+  /* The plate is a wall chart; paper wants no ground and no bench. The page
+     margin is ½in in both modes, which is exactly what the card grid assumes. */
+  @page{size:letter;margin:0.5in}
   @media print{
     body{background:#fff}
     .plate{box-shadow:none;padding:0;max-width:none}
-    .bench,.presets{display:none}
+    .bench,.presets,.card-tools,.card-preview{display:none}
     .ex{break-inside:avoid}
+    /* Printing cards prints ONLY cards — a wall chart and a pocket card are
+       two different errands, and stapling them together serves neither. */
+    body.print-cards .plate{display:none}
+    body.print-cards #cardsheet{display:grid;grid-template-columns:repeat(2,3.5in);
+      grid-auto-rows:2in;column-gap:0.5in;row-gap:0}
+    body.print-cards .pcard{border:0.5pt dashed #c9ccd6}
+    .pcard{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   }
 </style>
 
@@ -233,11 +276,29 @@
     </div>
   </section>
 
+  <section>
+    <h2>The pocket card</h2>
+    <p class="sub">The same seven coins at business-card size, to live in a sefer or
+      taped inside a desk. Ten to a sheet, cut on the dashed lines &mdash; or load
+      Avery 5911 card stock, which this is laid out to fit.</p>
+    <div class="card-tools">
+      <button type="button" id="printCards">Print a sheet of 10</button>
+      <!-- Entity, not the literal character: this page is served without a
+           charset declaration of its own, so a raw ½ can arrive as mojibake. -->
+      <span>Letter paper &middot; margins &frac12;in &middot; scale 100%</span>
+    </div>
+    <div class="card-preview"><div class="pcard" id="cardPreview"></div></div>
+  </section>
+
   <footer>
     <span>Menchmark &middot; Shulchani Coin Guide</span>
     <span>Values are the app's own &mdash; 1 Prutah is the unit everything is stored in.</span>
   </footer>
 </div>
+
+<!-- The print-only card sheet. Kept outside .plate so printing cards can hide
+     the whole document in one rule rather than unpicking it section by section. -->
+<div id="cardsheet"></div>
 
 <script>
 (function(){
@@ -347,6 +408,43 @@
         }).join(", ")
       : '<span class="zero">0 Prutah</span>';
   }
+  /* The pocket card — the register condensed to 3½ × 2 inches. Built from the
+     same COINS table as everything else on the page, so a boy's card and the
+     board he is reading it against can never disagree. */
+  function cardHtml(){
+    var rows=COINS.map(function(c,i){
+      var next=COINS[i+1];
+      return '<tr>'
+        + '<td class="pc-d"><span class="pc-dot" style="background:var('+c.v+')">'
+        +   esc(c.abbr)+'</span></td>'
+        + '<td class="pc-n" style="color:var('+c.v+')">'+esc(c.name)+'</td>'
+        + '<td class="pc-v">'+num(c.prutot)+'</td>'
+        + '<td class="pc-r">'+(next ? '= '+(c.prutot/next.prutot)+' '+esc(next.name)
+                                    : 'the unit')+'</td>'
+        + '</tr>';
+    }).join("");
+    return '<div class="pcard-head"><b>Shulchani Coins</b><span>Prutot</span></div>'
+      + '<table>'+rows+'</table>'
+      + '<div class="pcard-foot">Biggest coin that fits comes first &middot; '
+      + '8 Prutah = 1 Isar</div>';
+  }
+  document.getElementById("cardPreview").innerHTML=cardHtml();
+
+  var sheet=document.getElementById("cardsheet");
+  sheet.innerHTML=Array.from({length:10},function(){
+    return '<div class="pcard">'+cardHtml()+'</div>';
+  }).join("");
+
+  document.getElementById("printCards").addEventListener("click",function(){
+    document.body.classList.add("print-cards");
+    window.print();
+  });
+  // Cleared on afterprint rather than in a timeout: the dialog can sit open for
+  // as long as the reader likes, and the page must not revert underneath it.
+  window.addEventListener("afterprint",function(){
+    document.body.classList.remove("print-cards");
+  });
+
   amt.addEventListener("input",update);
   document.getElementById("presets").addEventListener("click",function(e){
     var b=e.target.closest("button[data-n]");

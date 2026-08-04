@@ -3818,7 +3818,8 @@ function setupRoster() {
         <h3>🪙 Shulchani Coin Guide</h3>
         <div class="cg-sub">How the coins add up</div>
       </div>
-      <button class="btn btn-sm" id="coinGuidePrint" style="background:rgba(255,255,255,.15);color:#fff;border:none">🖨 Print</button>
+      <button class="btn btn-sm" id="coinGuidePrint" style="background:rgba(255,255,255,.15);color:#fff;border:none">🖨 Wall chart</button>
+      <button class="btn btn-sm" id="coinGuideCards" style="background:rgba(255,255,255,.15);color:#fff;border:none">🪪 Pocket cards</button>
       <button class="cg-x" id="coinGuideClose" aria-label="Close">✕</button>
     </div>
     <div class="cg-body" id="coinGuideBody"></div>
@@ -6751,8 +6752,77 @@ function setupRoster() {
       setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 300);
     }
   }
+  /* A sheet of ten identical pocket cards — one per talmid, to live in a
+   * sefer or taped inside a desk. The wall chart answers "what's a Maah?"
+   * for the room; this answers it for the boy who is looking at his own
+   * balance and does not want to ask.
+   *
+   * Geometry is LABEL_SPECS.avery5911 (business cards, 3.5in x 2in, 2 x 5,
+   * 0.5in margins and gutter) reproduced in the print window rather than
+   * routed through renderAverySheetGeneric() — that renderer lays out
+   * {qrText, line1, line2, line3} items, and a coin card is a table, not a
+   * label. Sharing the NUMBERS is what matters: a card cut off this sheet
+   * lands on real Avery 5911 stock, and on plain paper the cut guides are
+   * there to follow.
+   */
+  var CG_CARDS_PER_SHEET=10;
+  function coinCardHtml(){
+    var rows="";
+    COINS.forEach(function(c,i){
+      var next=COINS[i+1];
+      rows+='<tr>'
+        +'<td class="d"><span class="dot" style="background:'+c.color+'">'+c.abbr+'</span></td>'
+        +'<td class="nm" style="color:'+c.color+'">'+c.name+'</td>'
+        +'<td class="vl">'+cgNum(c.prutot)+'</td>'
+        +'<td class="rt">'+(next ? '= '+cgSameAs(i) : 'the unit')+'</td>'
+        +'</tr>';
+    });
+    return '<div class="card">'
+      + '<div class="ch"><b>Shulchani Coins</b><span>Prutot</span></div>'
+      + '<table>'+rows+'<\/table>'
+      + '<div class="cf">Biggest coin that fits comes first &middot; 8 Prutah = 1 Isar</div>'
+      + '<\/div>';
+  }
+  function printCoinCards(){
+    var cards="";
+    for(var i=0;i<CG_CARDS_PER_SHEET;i++) cards+=coinCardHtml();
+    var html='<!doctype html><html><head><meta charset="utf-8">'
+      +'<title>Shulchani Coin Cards</title><style>'
+      +'@page{size:letter;margin:0}'
+      // Browsers drop background colours when printing unless told otherwise,
+      // and the coloured dot is the only thing tying the card to the screen.
+      +'*{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box}'
+      +'body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1b2440}'
+      +'.sheet{width:8.5in;height:11in;padding:0.5in;display:grid;'
+      +'grid-template-columns:repeat(2,3.5in);grid-auto-rows:2in;column-gap:0.5in;row-gap:0}'
+      +'.card{width:3.5in;height:2in;padding:9pt 11pt;overflow:hidden;'
+      +'border:0.5pt dashed #c9ccd6;display:flex;flex-direction:column}'
+      +'.ch{display:flex;align-items:baseline;justify-content:space-between;'
+      +'border-bottom:1pt solid #1b2440;padding-bottom:3pt;margin-bottom:3pt}'
+      +'.ch b{font-family:Georgia,"Times New Roman",serif;font-size:10pt;font-weight:700}'
+      +'.ch span{font-size:5.5pt;font-weight:700;letter-spacing:.10em;'
+      +'text-transform:uppercase;color:#878ea6}'
+      +'table{width:100%;border-collapse:collapse;flex:1}'
+      +'td{padding:1.1pt 0;vertical-align:middle;font-size:7.5pt;line-height:1.1}'
+      +'.d{width:15pt}'
+      +'.dot{display:inline-block;width:12pt;height:12pt;line-height:12pt;border-radius:50%;'
+      +'color:#fff;text-align:center;font-size:5.5pt;font-weight:700}'
+      +'.nm{font-family:Georgia,"Times New Roman",serif;font-size:8.5pt;font-weight:700}'
+      +'.vl{text-align:right;font-family:ui-monospace,Consolas,monospace;font-weight:700;'
+      +'font-variant-numeric:tabular-nums;padding-right:7pt;white-space:nowrap}'
+      +'.rt{color:#5c6480;white-space:nowrap;font-size:7pt}'
+      +'.cf{border-top:0.5pt solid #d6dae4;padding-top:3pt;font-size:5.8pt;color:#878ea6;'
+      +'text-align:center}'
+      +'<\/style><\/head><body><div class="sheet">'+cards+'<\/div><\/body><\/html>';
+    var w=window.open("","_blank","width=820,height=900");
+    if(w){
+      w.document.open(); w.document.write(html); w.document.close();
+      setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 300);
+    }
+  }
   $("coinGuideClose").addEventListener("click", closeCoinGuide);
   $("coinGuidePrint").addEventListener("click", printCoinGuide);
+  $("coinGuideCards").addEventListener("click", printCoinCards);
   $("coinGuideModal").addEventListener("click", function(e){ if(e.target===this) closeCoinGuide(); });
   ["coinGuideBtnStand","coinGuideBtnStore","coinGuideBtnSettings"].forEach(function(id){
     var b=$(id); if(b) b.addEventListener("click", openCoinGuide);
