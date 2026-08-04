@@ -471,6 +471,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .spin-mode-btn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
   .seat-dims{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
   .seat-dims input{width:46px;padding:5px 6px;border:1px solid var(--line);border-radius:7px;text-align:center}
+  /* Code size stepper on the class-sheet toolbar. The readout is min-width'd so
+     the two buttons don't shuffle sideways as the number changes width. */
+  .seat-size{display:flex;align-items:center;gap:5px;font-size:.82rem;color:var(--muted)}
+  .seat-size .seat-size-val{min-width:74px;text-align:center;font-weight:700;color:var(--ink)}
   .seat-arrange-toggle{margin-left:auto}
   .spin-excluded{color:var(--muted);text-decoration:line-through;opacity:.5}
   .seat-print-shortcut{display:flex;align-items:center;gap:8px}
@@ -1368,7 +1372,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      popped in, and anything measuring the page in that window (the fit warning)
      read a sheet that looked like it fitted when it did not. A square box holds
      its height from the first layout, before the image exists. */
-  .seat-print-preview .seat-print-qr{width:100%;max-width:60px;aspect-ratio:1;margin-left:auto;margin-right:auto}
+  /* EVERY CAP ON THIS PAGE IS MULTIPLIED BY --seat-icon-scale. The four numbers
+     below (60 / 96 / 64 / 76px) are the sizes at 100%, unchanged; the variable is
+     set on #seatChartGrid by renderSeatChartPrint() and defaults to 1, so a sheet
+     nobody has resized prints exactly as it always did. Scaling by variable
+     rather than by rewriting the rules is what lets the auto-fit in List mode try
+     a size and re-measure without rebuilding the sheet — see seatPrintAutoFit().
+     The initials font-size scales with its box for the same reason the box has
+     aspect-ratio:1 — a boy with no photo must not overflow a shrunken card. */
+  .seat-print-preview .seat-print-qr{width:100%;max-width:calc(60px * var(--seat-icon-scale,1));aspect-ratio:1;margin-left:auto;margin-right:auto}
   .seat-print-preview .seat-print-qr img,.seat-print-preview .seat-print-qr canvas{width:100%;height:auto;display:block}
   /* A PRINTED SEAT PHOTO SCALES WITH ITS CARD. It used to be a flat 40px circle.
      0.42in sat in a card 1.25in wide and wasted most of it, and at that size a
@@ -1399,18 +1411,29 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      the letters spilling out of the box. This is also why the QR box above sets a
      percentage width and why the paired mode uses flex:1 1 0 — both need a
      definite size that does not come from their contents. */
-  .seat-print-preview .seat-print-photo{display:block;width:100%;max-width:96px;margin:0 auto 5px}
-  .seat-print-preview .seat-print-photo .avatar{width:100%!important;height:auto!important;aspect-ratio:1;border-radius:6px;font-size:32px!important}
+  .seat-print-preview .seat-print-photo{display:block;width:100%;max-width:calc(96px * var(--seat-icon-scale,1));margin:0 auto 5px}
+  .seat-print-preview .seat-print-photo .avatar{width:100%!important;height:auto!important;aspect-ratio:1;border-radius:6px;font-size:calc(32px * var(--seat-icon-scale,1))!important}
   /* PHOTO AND CODE IN THE SAME CARD — ACROSS, NOT STACKED.
      A seat card is about 1.25in wide with a 0.6in code centred in it, so close
      to half its width sits empty while its HEIGHT is the thing that runs the
      sheet off the page. Stacking the face above the code would spend the scarce
      dimension to save the plentiful one; putting them side by side spends the
-     empty width instead. That is the whole reason this is a flex row and not
-     another block above the name — do not "simplify" it back into a stack.
-     Both boxes flex from the same zero basis, so they split the card evenly and
-     grow together when the grid has few columns (fewer columns => bigger
-     picture, which is what the Avatar tooltip promises).
+     empty width instead. That is the whole reason this is a row and not another
+     block above the name — do not "simplify" it back into a stack.
+     Both boxes get half the card, so they split it evenly and grow together when
+     the grid has few columns (fewer columns => bigger picture, which is what the
+     Avatar tooltip promises).
+
+     TWO GRID TRACKS, NOT FLEX ITEMS, and that is load-bearing now that Code size
+     can move the two caps. Under flex — even at flex:0 1 50% — space freed by an
+     item that hits its max-width is handed back to the other one, so the moment
+     the code capped first the FACE GREW INTO THE SLACK and the row got TALLER as
+     the setting got smaller: a real 25-boy sheet measured 1052px at 100% and
+     1078px at 90%, i.e. pressing − made the page longer and tripped the
+     doesn't-fit warning. Two 1fr tracks cannot do that: a clamped box shrinks
+     inside its own track and the other track never sees the space, so the row's
+     height falls with the setting, every step, which is the entire contract of
+     the − button.
 
      WHAT THIS COSTS IN PAGE HEIGHT, honestly — the row is as tall as the TALLER
      of the two boxes, so it depends entirely on how many columns the chart has.
@@ -1445,9 +1468,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      was full size. That shipped in #188 and reached menchmark.app, because the
      test roster used to verify it gave every single boy a photo. A definite width
      makes the row the same size in every seat whatever it holds. */
-  .seat-print-preview .seat-print-pair{display:flex;align-items:center;justify-content:center;gap:5px;margin:0 auto 5px;width:100%}
-  .seat-print-preview .seat-print-pair>*{flex:1 1 0;min-width:0;margin:0}
-  .seat-print-preview .seat-print-pair .seat-print-qr{max-width:64px}
+  .seat-print-preview .seat-print-pair{display:grid;grid-template-columns:1fr 1fr;align-items:center;justify-items:center;gap:5px;margin:0 auto 5px;width:100%}
+  /* Half the card each, and neither can reach into the other's half — see the
+     two-tracks note above. width:100% so each box fills its track and is then
+     clamped by its own max-width (justify-items centres what is left over). */
+  .seat-print-preview .seat-print-pair>*{width:100%;min-width:0;margin:0}
+  .seat-print-preview .seat-print-pair .seat-print-qr{max-width:calc(64px * var(--seat-icon-scale,1))}
   /* The face is capped slightly larger than the code, and cropped SQUARE rather
      than round — as every printed seat photo now is (see the note above the
      photo-only rule). A circle throws away the corners of an already small photo,
@@ -1462,8 +1488,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      on its own and undo the reason this mode is a row.
      display:block so the avatar's own width:100% governs in both the preview
      and the print (.seat-print-photo is display:flex only in print). */
-  .seat-print-preview .seat-print-pair .seat-print-photo{display:block;max-width:76px}
-  .seat-print-preview .seat-print-pair .seat-print-photo .avatar{width:100%!important;height:auto!important;aspect-ratio:1;border-radius:6px;font-size:19px!important}
+  .seat-print-preview .seat-print-pair .seat-print-photo{display:block;max-width:calc(76px * var(--seat-icon-scale,1))}
+  .seat-print-preview .seat-print-pair .seat-print-photo .avatar{width:100%!important;height:auto!important;aspect-ratio:1;border-radius:6px;font-size:calc(19px * var(--seat-icon-scale,1))!important}
   .seat-print-preview .seat-name{font-weight:600;font-size:.82rem;display:block;overflow-wrap:break-word;word-wrap:break-word;white-space:normal;text-align:center;line-height:1.2}
   .seat-print-preview .seat-print-pts{font-size:.7rem;color:var(--muted);margin-top:2px;display:block}
   .seat-print-preview .seat-print-activities-footer{margin-top:9px;border-top:2px solid var(--line);padding-top:6px}
@@ -2558,6 +2584,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <option value="actphoto">Activity code + photo</option>
         </select>
       </label>
+      <span class="seat-size" id="seatPrintIconSizeRow" title="How big each boy's code and photo print. Smaller cards are shorter, so more rows fit — this is the control to reach for when a big class runs onto a second page. In List, sizing is automatic: the sheet shrinks itself to one page, and these buttons set the largest size it may use.">Code size
+        <button class="btn btn-sm" id="seatPrintIconSmaller" type="button">−</button>
+        <span class="seat-size-val" id="seatPrintIconSizeVal">100%</span>
+        <button class="btn btn-sm" id="seatPrintIconBigger" type="button">+</button>
+      </span>
       <label id="seatPrintActivityRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Every seat's code becomes that one activity, pre-applied to that student — scan straight down the grid with no arming step. One sheet per activity.">Activity:
         <select id="seatPrintActivityPicker" class="field" style="width:auto"></select>
       </label>
@@ -2592,7 +2623,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
          preview is drawn at true page size, so putting a screen-only tray in
          there would make the white box taller than the page it is meant to be. -->
     <div id="seatPrintUnplaced" class="no-print"></div>
-    <div id="seatPrintFitWarning" class="pill-note no-print" style="display:none;margin-top:10px;background:var(--bad-soft);color:#7c2d1c">This may not fit on one printed page with the current settings — try hiding photos, turning off the activities footer, or switching to Landscape.</div>
+    <div id="seatPrintFitWarning" class="pill-note no-print" style="display:none;margin-top:10px;background:var(--bad-soft);color:#7c2d1c">This may not fit on one printed page with the current settings — try making <b>Code size</b> smaller, hiding photos, turning off the activities footer, or switching to Landscape.</div>
   </section>
 
   <!-- ============ PRINT: STUDENTS (labels + personal pages) ============ -->
@@ -3899,7 +3930,7 @@ function setupRoster() {
     //
     // Discoverability is fixed by putting the checkbox on a page rebbeim
     // actually reach, not by flipping a setting under them.
-    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", actGrouped:true, actCols:2 }
+    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", actGrouped:true, actCols:2, iconScale:1 }
   };
 
   var SHOR_BANK = [
@@ -15655,6 +15686,132 @@ nameLine
    * seating" rule lives in one place, matching the load2fix backfill. */
   function seatPrintIsList(){ return data.seatPrintOpts.layout==="list"; }
 
+  /* HOW BIG THE CODES AND PHOTOS PRINT — one number, multiplying every icon cap
+   * on the sheet (see the note above .seat-print-qr in the stylesheet).
+   *
+   * It exists because a card's HEIGHT is what runs a class onto a second page,
+   * and the code is most of that height. A 25-boy chart carrying a photo AND a
+   * code in every seat, with the activity-code footer under it, does not fit a
+   * portrait page at 100% — and until now the only answers were "drop the
+   * photos", "drop the footer" or "print two pages", all of which give up
+   * something the sheet is for.
+   *
+   * Fixed steps rather than a free number: the sizes a rebbi would actually
+   * pick, each one still a size a scanner reads.
+   */
+  var SEAT_ICON_STEPS=[0.5,0.6,0.7,0.8,0.9,1,1.1,1.25,1.5];
+  /* Auto-fit will not go below this even to save a page. At 0.6 a printed code is
+     about 0.37in square, which a handheld scanner still takes comfortably; below
+     that it starts depending on the printer, and a sheet that fits on one page
+     but does not scan is worse than a sheet that runs to two. The − button will
+     still take a rebbi below it by hand — that is his call to make, on his own
+     printer, with the code in front of him. */
+  var SEAT_ICON_AUTO_FLOOR=0.6;
+  // The size the LAST render actually drew at. Differs from the stored setting
+  // only when auto-fit stepped down, and it is what the toolbar reads out — so a
+  // rebbi in List can see the size his sheet landed on rather than the ceiling he
+  // set. Not stored: it is a property of the sheet just drawn, and re-deriving it
+  // every render is what keeps it from going stale after a roster change.
+  var seatPrintFitScale=1;
+  function seatPrintIconScale(){
+    var v=parseFloat(data.seatPrintOpts.iconScale);
+    return (v>=0.5 && v<=1.5) ? v : 1;
+  }
+  function seatPrintNudgeIconScale(dir){
+    var cur=seatPrintIconScale(), i=0;
+    // NEAREST step, not indexOf. A value can arrive here from an older save or a
+    // restored backup without being one of the steps, and indexOf's -1 would
+    // silently drop such a sheet to the smallest size on the first click.
+    SEAT_ICON_STEPS.forEach(function(v,n){
+      if(Math.abs(v-cur) < Math.abs(SEAT_ICON_STEPS[i]-cur)) i=n;
+    });
+    i+=dir;
+    if(i<0) i=0;
+    if(i>SEAT_ICON_STEPS.length-1) i=SEAT_ICON_STEPS.length-1;
+    data.seatPrintOpts.iconScale=SEAT_ICON_STEPS[i];
+    save(); renderSeatChartPrint();
+  }
+  /* Measures the drawn sheet and, in List, shrinks the codes until it fits.
+   *
+   * LIST IS THE AUTOMATIC LAYOUT. It orders itself alphabetically, takes its
+   * column count from the paper, and has nothing on it to drag — so its size
+   * arranges itself too: it steps DOWN from whatever the rebbi set (never up past
+   * it) until the sheet is one page. The seating chart is the opposite kind of
+   * page — he laid that room out himself — so nothing there resizes behind his
+   * back and an existing chart paginates exactly as it did before this existed.
+   * The − / + buttons are how the chart gets smaller.
+   *
+   * Trying a size is CHEAP AND DOES NOT REBUILD THE SHEET: every cap on the page
+   * hangs off one CSS variable, so a try is a variable write plus a scrollHeight
+   * read, which forces the layout it needs. Reading it synchronously is correct
+   * for the same reason the fit check below documents at length — every box holds
+   * its height from aspect-ratio, before a single QR image has decoded.
+   *
+   * Returns whether the sheet fits at the size it ended on.
+   */
+  function seatPrintAutoFit(wrap, pagePx, canShrink){
+    var scale=seatPrintIconScale();
+    seatPrintFitScale=scale;
+    if(wrap.scrollHeight<=pagePx) return true;
+    if(!canShrink) return false;
+    for(var i=SEAT_ICON_STEPS.length-1;i>=0;i--){
+      var v=SEAT_ICON_STEPS[i];
+      if(v>=scale || v<SEAT_ICON_AUTO_FLOOR) continue;
+      wrap.style.setProperty("--seat-icon-scale", v);
+      seatPrintFitScale=v;
+      if(wrap.scrollHeight<=pagePx) return true;
+    }
+    // Nothing fitted. Put his own size back rather than leaving the sheet at the
+    // smallest one tried: two pages at the size he asked for is honest, whereas
+    // two pages of shrunken codes is just smaller and still two pages.
+    wrap.style.setProperty("--seat-icon-scale", scale);
+    seatPrintFitScale=scale;
+    return false;
+  }
+  // Keeps the stepper's readout and its two buttons honest. Called at the end of
+  // every render, so it always describes the sheet on screen.
+  function seatPrintSyncIconSize(){
+    var row=$("seatPrintIconSizeRow"); if(!row) return;
+    // Hidden when the cards carry neither a code nor a face — there is nothing
+    // left on them to size, and a stepper that does nothing is worse than none.
+    var mode=$("seatPrintAvatarMode") ? $("seatPrintAvatarMode").value : "qr";
+    row.style.display = (seatPrintCodeKind(mode)!=="none" || seatPrintWantsPhoto(mode)) ? "flex" : "none";
+    var set=seatPrintIconScale(), eff=seatPrintFitScale, val=$("seatPrintIconSizeVal");
+    if(val){
+      var shrunk = Math.abs(eff-set)>0.001;
+      val.textContent = shrunk ? ("auto "+Math.round(eff*100)+"%") : (Math.round(set*100)+"%");
+      val.title = shrunk
+        ? ("Shrunk from "+Math.round(set*100)+"% so the whole class fits one page.")
+        : "";
+    }
+    var sm=$("seatPrintIconSmaller"), bg=$("seatPrintIconBigger");
+    if(sm){ sm.disabled = set<=SEAT_ICON_STEPS[0]; sm.title="Smaller codes — shorter cards, more rows per page"; }
+    /* + IS DISABLED WHEN THE CARD, NOT THE SETTING, IS THE LIMIT.
+     *
+     * A cap only caps: on a 4-column chart with a face and a code side by side
+     * each box already fills its half of the card, so raising the cap changes
+     * nothing on the page. Left enabled, a rebbi presses + three times, watches
+     * an unmoved sheet and reasonably concludes the control is broken. Measured
+     * rather than predicted — compare what the box actually rendered against the
+     * max-width in force, which is true whatever is limiting it (column count,
+     * orientation, the pair split) without this having to know about any of them.
+     */
+    if(bg){
+      var box=$("seatChartGrid") ? $("seatChartGrid").querySelector(".seat-print-qr,.seat-print-photo") : null;
+      var capped=false;
+      if(box){
+        var mw=parseFloat(getComputedStyle(box).maxWidth);
+        if(mw>0) capped = box.getBoundingClientRect().width < mw-0.5;
+      }
+      bg.disabled = capped || set>=SEAT_ICON_STEPS[SEAT_ICON_STEPS.length-1];
+      bg.title = capped
+        ? "Already as big as the card allows. For bigger codes use fewer columns, or Landscape."
+        : "Bigger codes — easier to scan, fewer rows per page";
+    }
+  }
+  $("seatPrintIconSmaller").addEventListener("click", function(){ seatPrintNudgeIconScale(-1); });
+  $("seatPrintIconBigger").addEventListener("click", function(){ seatPrintNudgeIconScale(1); });
+
   /* WHAT GOES IN A CARD — read the one stored mode string through these two,
    * never by comparing it directly.
    *
@@ -15726,6 +15883,12 @@ nameLine
     // orientation — otherwise a rebbi setting up a landscape sheet lays it out
     // against a portrait page.
     wrap.classList.toggle("landscape", data.seatPrintOrient==="landscape");
+    // Set BEFORE anything is built, so the seats are laid out at their real size
+    // the first time rather than at 100% and then re-measured. Inline on the
+    // element the print rules also target, so the printed sheet is the size the
+    // preview shows — one number, both documents, same as every other measurement
+    // on this page.
+    wrap.style.setProperty("--seat-icon-scale", seatPrintIconScale());
     var isList=seatPrintIsList();
     var studs=activeStudents();
     // seatLayout() INVENTS AND STORES a 4x6 layout for any class it is asked
@@ -15745,6 +15908,8 @@ nameLine
         ? "Pick an activity above to print its seating chart."
         : "Add an activity first, on the Activities tab."));
       if($("seatPrintFitWarning")) $("seatPrintFitWarning").style.display="none";
+      seatPrintFitScale=seatPrintIconScale();
+      seatPrintSyncIconSize();
       return;
     }
     // Reuses the exact same .seat-front / .seat-grid / .seat card classes as the
@@ -15903,10 +16068,13 @@ nameLine
     // point because the QR boxes are square by CSS rather than sized by their
     // images (see .seat-print-qr) — the page's height is final before a single
     // code has decoded.
-    if(warnEl){
-      var pageIn = data.seatPrintOrient==="landscape" ? 8.5 : 11;
-      warnEl.style.display = (wrap.scrollHeight <= pageIn*96) ? "none" : "block";
-    }
+    // The measurement is now also what drives List's auto-fit — same reading,
+    // taken at up to a few sizes instead of one. See seatPrintAutoFit().
+    var pageIn = data.seatPrintOrient==="landscape" ? 8.5 : 11;
+    var fits = seatPrintAutoFit(wrap, pageIn*96, isList);
+    if(warnEl) warnEl.style.display = fits ? "none" : "block";
+    // Last, so the readout describes the size the sheet ACTUALLY ended on.
+    seatPrintSyncIconSize();
 
     /* THE ACTIVITY CODES GO AT THE BOTTOM, ALWAYS. Do not reorder them based on
      * whether the chart fits.
@@ -16559,6 +16727,15 @@ nameLine
     // Clamped with the same guard seatPrintActCols() applies, so a hand-edited
     // or corrupted value can never reach grid-template-columns.
     if(!(parseInt(data.seatPrintOpts.actCols,10)>=1 && parseInt(data.seatPrintOpts.actCols,10)<=3)) data.seatPrintOpts.actCols=2;
+    // How big the codes and photos print, as a multiplier. 1 = the size every
+    // sheet printed before this field existed, so a save without it comes out
+    // byte-identical on paper — nothing repaginates behind a rebbi. Clamped with
+    // the same 0.5–1.5 guard seatPrintIconScale() applies, because the value is
+    // multiplied straight into a CSS calc(): a stored 0, a negative or a string
+    // would collapse every code on the sheet to nothing, and the codes ARE the
+    // sheet. parseFloat, and compared with >=/<=, so NaN falls through to 1.
+    var seatIconScale=parseFloat(data.seatPrintOpts.iconScale);
+    if(!(seatIconScale>=0.5 && seatIconScale<=1.5)) data.seatPrintOpts.iconScale=1;
     // Page orientation for the class sheet. It was a module-level variable, so
     // it reset to portrait on every reload and a rebbi whose chart only fits
     // landscape had to re-pick it every single time.

@@ -402,6 +402,15 @@ if(typeof data.seatPrintOpts.actGrouped!=="boolean") data.seatPrintOpts.actGroup
 // Clamped with the same guard seatPrintActCols() applies, so a hand-edited
 // or corrupted value can never reach grid-template-columns.
 if(!(parseInt(data.seatPrintOpts.actCols,10)>=1 && parseInt(data.seatPrintOpts.actCols,10)<=3)) data.seatPrintOpts.actCols=2;
+// How big the codes and photos print, as a multiplier. 1 = the size every
+// sheet printed before this field existed, so a save without it comes out
+// byte-identical on paper — nothing repaginates behind a rebbi. Clamped with
+// the same 0.5–1.5 guard seatPrintIconScale() applies, because the value is
+// multiplied straight into a CSS calc(): a stored 0, a negative or a string
+// would collapse every code on the sheet to nothing, and the codes ARE the
+// sheet. parseFloat, and compared with >=/<=, so NaN falls through to 1.
+var seatIconScale=parseFloat(data.seatPrintOpts.iconScale);
+if(!(seatIconScale>=0.5 && seatIconScale<=1.5)) data.seatPrintOpts.iconScale=1;
 // Page orientation for the class sheet. It was a module-level variable, so
 // it reset to portrait on every reload and a rebbi whose chart only fits
 // landscape had to re-pick it every single time.
@@ -1868,6 +1877,20 @@ function runBuiltInTests() {
   var t16h = runMigration({ version:4, seatPrintOpts:{avatarMode:"activity"} });
   assert("sheet→a garbage/missing avatarMode value list still accepts 'activity'",
     t16h.seatPrintOpts.avatarMode==="activity", "got "+t16h.seatPrintOpts.avatarMode);
+  // Code size. The one that matters is the first: a save predating the field must
+  // land on 1, because 1 is the size every sheet already prints at — anything
+  // else silently repaginates a rebbi's Monday sheet. The rest keep a value that
+  // is multiplied into a CSS calc() from ever being 0, negative or a string.
+  assert("sheet→a save predating iconScale backfills to 1 (no sheet repaginates)",
+    t16d.seatPrintOpts.iconScale===1, "got "+JSON.stringify(t16d.seatPrintOpts.iconScale));
+  var t16i = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", iconScale:0.7} });
+  assert("sheet→a chosen code size survives a reload", t16i.seatPrintOpts.iconScale===0.7);
+  var t16j = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", iconScale:0} });
+  assert("sheet→a zero code size repairs to 1", t16j.seatPrintOpts.iconScale===1);
+  var t16k = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", iconScale:"huge"} });
+  assert("sheet→a string code size repairs to 1", t16k.seatPrintOpts.iconScale===1);
+  var t16m = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", iconScale:9} });
+  assert("sheet→an out-of-range code size repairs to 1", t16m.seatPrintOpts.iconScale===1);
 
   // --- Test 17: #117 printed-code selection ---
   assert("codes→printExcluded backfills to an object",
