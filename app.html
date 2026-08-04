@@ -8140,7 +8140,7 @@ function setupRoster() {
   //
   // trueIdx, never the display position: Rebbi's view reverses the DISPLAY
   // order only, so writing by display index would move the wrong boy.
-  function wireSeatArrange(seat, lay, trueIdx, hasStudent, redraw){
+  function wireSeatArrange(seat, lay, trueIdx, redraw){
     seat.draggable=true;
     seat.addEventListener("dragstart", function(ev){
       seat.classList.add("dragging");
@@ -8161,19 +8161,28 @@ function setupRoster() {
         lay.seats[toIdx]=lay.seats[fromIdx];
         lay.seats[fromIdx]=tmp;
       } else if(payload.sid){
-        // coming from the unplaced tray — only place into an empty seat
-        if(lay.seats[toIdx]) return;
+        // Coming from the unplaced tray. Dropping onto an OCCUPIED seat is
+        // allowed and displaces whoever was sitting there back to the tray —
+        // it can't swap, because a boy in the tray has no seat to swap into.
+        //
+        // Nothing has to be written to make that happen: the tray is derived,
+        // not stored. seatPruneAndFillUnplaced() returns every student whose id
+        // is not currently in lay.seats, so the displaced boy reappears in the
+        // tray on the redraw below. This used to bail out here instead, which
+        // read as a broken drag rather than a rule — the seat still lit up on
+        // dragover, and seat-to-seat drags swapped happily.
         lay.seats[toIdx]=payload.sid;
       } else return;
       save(); redraw();
     });
-    // tap-to-place fallback for touch devices: tap an empty seat, then tap an
-    // unplaced name (or the other way round).
-    if(!hasStudent){
-      seat.addEventListener("click", function(){
-        if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); redraw(); }
-      });
-    }
+    // Tap-to-place fallback for touch devices: tap a name then tap a seat (or
+    // the other way round). Wired on occupied seats too, so it matches what a
+    // drag now does — the sitting boy is displaced to the tray. The ✕ clear
+    // button inside an occupied seat calls stopPropagation(), so removing a boy
+    // never trips this.
+    seat.addEventListener("click", function(){
+      if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); redraw(); }
+    });
   }
   // "Not yet seated" tray, shared by the live chart and the class sheet for the
   // same reason wireSeatArrange() is: a boy with no seat has to be placeable
@@ -8181,7 +8190,7 @@ function setupRoster() {
   function renderUnplacedTray(body, unplaced, redraw){
     var trayWrap=el("div","seat-unplaced no-print");
     trayWrap.appendChild(el("div","seat-unplaced-label", unplaced.length
-      ? "Not yet seated — drag into an empty seat, or tap a name then tap an empty seat:"
+      ? "Not yet seated — drag into any seat, or tap a name then tap a seat. Drop onto a taken seat and that boy comes back here:"
       : "Everyone has a seat."));
     var tray=el("div","seat-tray");
     unplaced.forEach(function(s){
@@ -8263,7 +8272,7 @@ function setupRoster() {
       }
 
       if(arranging){
-        wireSeatArrange(seat, lay, trueIdx, !!s, renderTapPanel);
+        wireSeatArrange(seat, lay, trueIdx, renderTapPanel);
       } else if(s){
         seat.addEventListener("click", function(){ tapClick(s, seat); });
       }
@@ -15833,7 +15842,7 @@ nameLine
       // behind a switch so a stray touch on a smartboard mid-lesson can't move
       // a boy. This page is where you set the sheet up — there is no lesson
       // running on it, and making the mock-up the thing you edit is the point.
-      wireSeatArrange(seat, lay, trueIdx, !!s, seatRedraw);
+      wireSeatArrange(seat, lay, trueIdx, seatRedraw);
       grid.appendChild(seat);
     });
     wrap.appendChild(grid);
