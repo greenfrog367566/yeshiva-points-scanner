@@ -15,20 +15,15 @@ Menchmark is a free, open-source classroom assistant for Yeshiva and Jewish Day 
 | `app.html` | The Menchmark app (~13,800 lines of vanilla JS, all logic in one IIFE) |
 | `index.html` | Site front door — the scroll-driven GSAP brand-story intro, with Skip → `home.html` |
 | `home.html` | The landing/marketing page (Tailwind CDN) — was `index.html` before the intro swap |
-| `setup.html` | Onboarding wizard for first-time users |
 | `quick-start.html` | 15-minute zero-to-first-scan guide for beta rebbeim (linked from the app header) |
 | `beta.html` | Beta signup form → posts to `apps-script/beta-signup.gs` |
 | `test-migration.html` | Migration test harness — holds **copies** of `migrateData()`/`load2fix()` that must stay logically identical to app.html's (indentation differs: app.html's live inside the IIFE) |
-| `sw.js` + `manifest.webmanifest` | PWA shell — installable app, offline cache, persistent storage |
 | `library/` | Shared text library (`index.json` + per-parsha JSON/CSV) the Pesukim/Mishnayos tabs pull from — no runtime fetch, no AI |
 | `apps-script/beta-signup.gs` | Apps Script backend for beta signups (deploy instructions in the file header) |
 | `docs/ai-proxy-worker.js` | Cloudflare Worker that holds the Gemini key for the optional AI text-import (`AI_PROXY_URL` in app.html) |
-| `docs/user-guide.md`, `docs/scanner-setup.md` | Teacher-facing documentation |
 | `docs/*_Spec.md`, `docs/Menchmark_*.md`, `docs/Positioning.md` | The settled design record — see DECISION RECORD below |
-| `branding/`, `icons/`, `favicon.svg` | Menchmark mark, PWA icons, tab favicon |
 | `samples/`, `sample-backup.json` | Safe demo data — the only data allowed in this repo |
 
-**Local repo path:** `C:\Dev\yeshiva-points-scanner`
 **Live site:** `menchmark.app`, served by a **Cloudflare Pages project** built from
 `main` — *not* GitHub Pages. GitHub Pages is still enabled and also builds from
 `main`, so `greenfrog367566.github.io/yeshiva-points-scanner` resolves and serves
@@ -36,34 +31,12 @@ the same content, but it is **not** what rebbeim use. GitHub Pages has no custom
 domain configured (`cname: null`, and there is no `CNAME` file in the repo); the
 domain resolves straight to Cloudflare.
 
-**Deployment:** merging to `main` reaches `menchmark.app` on its own — **treat
-anything merged as live in classrooms.** It takes **about a minute**: measured on
-the #155 merge, GitHub Pages rebuilt 38 seconds after the merge commit and
-`menchmark.app` was serving the new content inside two minutes. Fast, but *not*
-instant — don't promise a rebbi a fix has landed until you have loaded the page
-and seen it.
-
-**The deploy has failed silently before, and this is the thing to actually worry
-about.** The Cloudflare project was once disconnected from the repo and kept
-serving its last build for days — `main` was healthy, GitHub Pages was current,
-every check was green, and rebbeim were running a build from 13 merges earlier.
-Nothing in this repo reports that state. **After a merge that matters, verify
-against the live site rather than assuming**, e.g.:
-
-```bash
-# does the deployed app actually contain the thing you just merged?
-# grep -c, never grep -o: -c prints a number either way, so a miss is a visible
-# 0. -o prints nothing at all on a miss, and silent failure reads as success.
-curl -s https://menchmark.app/app.html | grep -c 'someIdentifierFromYourChange'
-```
-
-**WAIT A MINUTE FIRST, AND RE-RUN BEFORE CONCLUDING ANYTHING.** A `0` from that
-command is ambiguous three ways — *not deployed yet*, *deploy stalled*, and
-*you checked too fast* all look identical, and the last one is the common case.
-This has already caught someone: a check run about a minute after the #155 merge
-returned `0`, and the same command a minute later returned `10`. The result only
-means something read against the merge timestamp, so get that first
-(`gh pr view <n> --json mergedAt`) and give it a minute before believing a zero.
+**Deployment:** merging to `main` reaches `menchmark.app` on its own in about a
+minute — **treat anything merged as live in classrooms.** Fast, but *not*
+instant, and **the deploy has failed silently before** (Cloudflare once served a
+13-merge-old build for days while every check was green). Never promise a rebbi
+a fix has landed on the strength of a green merge. To check the live site, use
+the `verify-deploy` skill — it has the procedure and the ways a check misreads.
 
 `sw.js` serves HTML network-first, so once a deploy is out it reaches installed
 users immediately; bump `CACHE_VERSION` in `sw.js` on a release to purge the
@@ -138,22 +111,10 @@ worktree per change means there is never a stale branch to resume.
 
 Merged worktrees accumulate and are worth clearing — but this repo runs several
 Claude sessions at once, and **removing a worktree out from under a live session
-breaks it.** So this is a look-then-ask step, never an automatic cleanup:
-
-```bash
-git worktree list --porcelain | grep -E '^(worktree|branch|locked)'
-```
-
-A worktree is safe to propose for removal only when **all** of these hold:
-- its PR is `MERGED` (check both names — the local branch may still be
-  `worktree-feat+x` while the PR is `feat/x`; match on the directory name too)
-- it is **not** `locked` — the lock reads `claude session … (pid N)` and means a
-  session is live in it right now
-- `git -C <path> status --porcelain` is empty
-- no session has written to it recently
-
-**List the candidates and ask before removing any.** Deleting is a stop-and-ask
-action (see Confirmation policy).
+breaks it.** This is a look-then-ask step, never an automatic cleanup: **list
+the candidates and ask before removing any.** Deleting is a stop-and-ask action
+(see Confirmation policy). The `worktree-audit` skill has the safe-to-remove
+criteria.
 
 ### Every session must end with:
 ```bash
@@ -182,13 +143,10 @@ healthy.
 
 It is deliberately timid: it only acts when the shared checkout is on `main`
 with nothing uncommitted. Parked on a branch, or holding uncommitted work, it
-fast-forwards nothing and only prints how far behind the folder has fallen.
-
-**This is exactly why the worktree rule above says the shared checkout stays on
-`main`.** The two work together: keep that folder on `main` and the hook
-silently keeps it current, so opening `app.html` there always shows what
-rebbeim have. Park a branch there and the hook goes mute — which is the state
-that once let the folder sit 31 commits stale while every merge looked healthy.
+fast-forwards nothing and only prints how far behind the folder has fallen —
+**which is exactly why the worktree rule above says that folder stays on
+`main`.** Keep it there and the hook silently keeps it current, so opening
+`app.html` there always shows what rebbeim have.
 
 ## Critical rules — read before writing any code
 
@@ -304,7 +262,7 @@ Still stop and explicitly ask Ben before:
 These docs in `docs/` are the settled design. They answer most "should we..." questions — check them before asking the maintainer:
 
 - **Menchmark_UI_Redesign_Summary.md** — the 5-group tab structure and every per-tab decision (SHIPPED in Phase 1), the Gradebook/Tracked-Items consolidation, Chavrusa spec, Shulchani Coin Deposit/Withdraw.
-- **Menchmark_Phased_Build_Plan.md** — the build order (Phase 0→8). Don't build a phase whose dependencies aren't in yet. Status as of v0.9.0 + Unreleased: **Phase 0 and Phase 1 DONE**; **Phase 6a (the Library) partially in** — `library/index.json` exists with Vayelech at `status: "partial"`; **Phase 2 (the Gradebook engine / Tracked Items) IN PROGRESS — 2a SHIPPED** (merged to `main` 2026-07-28 via PR #107): `data.trackedItems` / `data.trackedData` and the `TRACKED_METHODS` registry are in, purely additive, with the presets seeded and the old `data.attendance` / `data.hw` / `data.trackerLog` / `data.passes` stores untouched and still driving their existing tabs. **2b (the Gradebook UI) is next** — the data shell exists but nothing reads it yet, so Phases 5, 6-chart-fold, and the Gradebook consolidation stay blocked until 2b lands. Note that 2a was a *reset, not a conversion* — pre-2a records were never forward-ported, and that decision comes due in 2c. Much of the recent work (seating picker, Homework/Bathroom Pass as Record-tab tiles, PWA, live-view refresh) is Phase 3-flavored polish landing ahead of Phase 2.
+- **Menchmark_Phased_Build_Plan.md** — the build order (Phase 0→8) and the current per-phase status. **Don't build a phase whose dependencies aren't in yet.** Where things stand: Phases 0 and 1 DONE, Phase 6a (the Library) partially in, **Phase 2 in progress — 2a shipped, 2b (the Gradebook UI) is next.** The 2a data shell exists but nothing reads it yet, so Phases 5, 6-chart-fold, and the Gradebook consolidation stay blocked until 2b lands. 2a was a *reset, not a conversion* — that decision comes due in 2c. Read the doc for the detail, and `docs/NOW.md` for what is in flight right now.
 - **Library_Review_Wizard_Spec.md** — the shared text library, per-pasuk Review Wizard, reviewed-version callback. Share-back deliberately deferred.
 - **Print_Wizard_Spec.md** — the Print Wizard, six print components, Shulchani coin cards, the Tera-barcode constraint.
 - **Offline_NoComputer_Secretary_Spec.md** — Offline Mode, Batch Import parser (spec'd against real scanner data), Secretary Mode.
@@ -347,17 +305,17 @@ The app file is large (~13,800 lines / ~800 KB) — never read it whole.
 - Don't "improve" or refactor code you weren't asked to touch
 - Don't add npm dependencies or build steps
 - Don't change the data format without explicit instruction and a migration function
-- Don't assume two Claude sessions are working from the same file — always verify
 
 ## 🔁 SESSION SHAPE (when working a whole phase)
 
-1. `EnterWorktree`, then `git branch -m <type>/<name>` — see BRANCH RULES.
-2. Read the relevant spec doc(s) + the Phased Build Plan for that phase.
-3. Work in surgical edits; validate after each (`node --check`).
-4. If the data model changed: sync + run `test-migration.html`.
-5. Update CHANGELOG under `[Unreleased]`.
-6. Commit and push the branch; report what changed, the key diffs, and anything waiting in a PROPOSE-FIRST bucket.
-7. Stop at the phase boundary — don't roll into the next phase's dependencies without checking they're wanted next.
+The per-session mechanics are already above — worktree + rename (BRANCH RULES),
+the `validate` skill (rule 2), `test-migration.html` on data-model changes
+(rule 1), CHANGELOG (rule 5), commit and push the renamed branch. Two things
+apply only to phase work:
+
+- **Read the relevant spec doc(s) + the Phased Build Plan for that phase first.**
+- **Stop at the phase boundary** — don't roll into the next phase's dependencies
+  without checking they're wanted next.
 
 ## Maintainers
 
