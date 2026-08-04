@@ -16701,6 +16701,20 @@ nameLine
         // second, wrong-shaped count item — exactly the duplication this guard
         // exists to prevent.
         if(a.name==="Homework Checked" || a.name===PASS_ACT_NAME || a.name===ATT_ACT_NAME) return;
+        // Freeze is skipped for a DIFFERENT reason than the three above. They
+        // each already have their own preset, so a count item would duplicate
+        // them. Freeze should have no tracked item AT ALL: a count item here
+        // is a per-boy tally of how many times he was frozen — a record nobody
+        // asked for, which arrived only as a side effect of Freeze being built
+        // like the other tracked activities. docs/NOW.md is explicit that this
+        // is not to be built by accident ("a recorded warning implies a count,
+        // a count implies rungs, and rungs are the ladder" — #114).
+        //
+        // Matched by the freezeSeconds MARKER, never by name: there can be
+        // more than one freeze at different durations and a rebbi may rename
+        // his, so a name test would miss exactly the cases that matter. Same
+        // rule freezeActivity() states for the rest of the feature.
+        if(freezeActivity(a)) return;
         seedItems.push({ id:"ti-act-"+a.id, name:a.name, method:"count", config:{ step:1 } });
       });
       seedItems.push({ id:"ti-pass", name:PASS_ACT_NAME, method:"limited", config:{ cap:1 } });
@@ -16709,6 +16723,34 @@ nameLine
       var haveTi={}; data.trackedItems.forEach(function(it){ if(it && it.id) haveTi[it.id]=1; });
       seedItems.forEach(function(it){ if(!haveTi[it.id]) data.trackedItems.push(it); });
       data.trackedItemsSeeded=true;
+    }
+
+    // Every save that seeded BEFORE the freeze skip above existed already has
+    // the stray count item — which is every rebbi now running the app, so the
+    // skip on its own would fix this only for people who do not have it yet.
+    // This drops it where it actually sits.
+    //
+    // ONE-SHOT, and it only ever drops an item with NOTHING recorded against
+    // it. Today that is all of them: the sole writer of data.trackedData is
+    // the 2c attendance conversion below, under "ti-attendance". But the
+    // emptiness CHECK is what makes this safe, not that reasoning — a restored
+    // backup carrying real counts keeps every one of them, and a rebbi who
+    // deliberately re-creates a freeze count item later keeps that too,
+    // because the flag stops this running a second time.
+    if(!data.freezeCountItemsDropped){
+      var freezeTiIds={};
+      data.activities.forEach(function(a){
+        if(a && a.id && freezeActivity(a)) freezeTiIds["ti-act-"+a.id]=1;
+      });
+      data.trackedItems=data.trackedItems.filter(function(it){
+        if(!it || !it.id || !freezeTiIds[it.id]) return true;
+        var per=data.trackedData[it.id];
+        if(!per || typeof per!=="object" || Array.isArray(per)) return false;
+        return Object.keys(per).some(function(sid){
+          return Array.isArray(per[sid]) && per[sid].length>0;
+        });
+      });
+      data.freezeCountItemsDropped=true;
     }
 
     // Shape guards. An item whose method we do not recognise is left strictly
