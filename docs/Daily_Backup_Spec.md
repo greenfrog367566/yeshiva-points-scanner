@@ -1,6 +1,13 @@
 # Daily Backup — automatic, or nagged into happening
 
-**Status: PROPOSAL. Nothing here is settled.** Raised by a beta rebbi, who noticed
+**Status (2026-08-04): PR A has SHIPPED; PR B is still a proposal.** The staleness
+nudge below is live — `data.lastBackupAt` and `data.backupNudgeSince` are in
+`defaults`, so the app can now tell a rebbi how long it has been. **PR B (the File
+System Access folder backup) is unbuilt**, and its one open sequencing question —
+before or after the Firebase cutover — is still open in
+`docs/Firebase_Rebuild_Scope.md`.
+
+Originally raised by a beta rebbi, who noticed
 that the Firebase rebuild retires Google Sheets and asked what replaces the
 automatic backup before that happens. Read alongside
 `docs/Firebase_Rebuild_Scope.md` — the File System Access section there is the
@@ -168,8 +175,9 @@ Grounded in the actual code. Two PRs, in this order — **A ships alone and is
 useful alone**; B depends on A's timestamp field.
 
 **Two corrections found while planning:**
-- `CLAUDE.md` says `DATA_VERSION` is `4`. It is **`5`** (`app.html:3890`). Worth
-  fixing in `CLAUDE.md` separately.
+- ~~`CLAUDE.md` says `DATA_VERSION` is `4`. It is **`5`**.~~ **Fixed in CLAUDE.md
+  on 2026-08-04.** (The line reference given here, `app.html:3890`, has itself
+  drifted — the declaration is now around `app.html:4165`.)
 - The app uses **no IndexedDB at all** today (zero occurrences). Layer B has to
   introduce it, because a `FileSystemDirectoryHandle` is not JSON-serializable
   and therefore cannot live in `localStorage`.
