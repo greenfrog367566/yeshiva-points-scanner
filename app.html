@@ -2563,6 +2563,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <input type="number" id="seatPrintRows" min="1" max="12">Cols
         <input type="number" id="seatPrintCols" min="1" max="12">
       </span>
+      <!-- Re-seat the whole class in one go. Everything else on this page moves
+           ONE boy at a time (drag a seat, ✕ to empty one), which is right for
+           tuning a chart and hopeless for building one from scratch or for
+           breaking up a room that has settled into cliques. Both confirm first:
+           they overwrite an arrangement the rebbi may have built by hand, and
+           there is no undo for a seating chart. -->
+      <span id="seatPrintArrangeRow" style="display:flex;gap:6px">
+        <button class="btn btn-sm" id="seatSortByName" title="Seat the whole class alphabetically by last name, filling the desks left to right, front to back. Only where each boy sits changes.">A&ndash;Z by name</button>
+        <button class="btn btn-sm" id="seatShuffle" title="Deal the whole class into random desks. Only where each boy sits changes.">🎲 Shuffle</button>
+      </span>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="What sits in each boy's card. The two &quot;+ photo&quot; options print his picture and his code SIDE BY SIDE, which costs no extra height on the page — so you can recognise a boy and scan him from the same card. Fewer columns, or Landscape, makes the pictures bigger.">Avatar:
         <select id="seatPrintAvatarMode" class="field" style="width:auto">
           <option value="qr">QR code</option>
@@ -7841,6 +7851,46 @@ function setupRoster() {
     }
     save();
     return n;
+  }
+  /* Re-seats the ENTIRE class in a given order — the engine behind the print
+   * page's "A–Z by name" and "Shuffle" buttons.
+   *
+   * The deliberate opposite of seatAutoPlaceUnplaced() above, which exists
+   * precisely NOT to move anyone. This one is asked for by name and rebuilds
+   * the arrangement from scratch, so it clears every seat first: leaving the
+   * already-placed alone would make "A–Z" produce something that is not in
+   * alphabetical order, which is worse than doing nothing.
+   *
+   * IT ONLY EVER WRITES lay.seats — where each boy sits. No score, scan, log
+   * entry or anything else is read or touched, so the worst case is a rebbi
+   * re-dragging a chart, never lost data. There is no undo for it, which is
+   * why both callers confirm first.
+   *
+   * Stale ids can't survive: the seat array is rebuilt from the students passed
+   * in, so anyone deleted or moved to another class simply isn't in it — no
+   * separate prune needed.
+   *
+   * GRID SHAPE follows the same rules as the auto-placer, and for the same
+   * reasons: a room the rebbi has arranged keeps its shape (grow if the roster
+   * no longer fits, never shrink — seatResize truncates, which would drop boys
+   * off the end), while a chart nobody has touched gets sized roughly square to
+   * the roster rather than keeping seatLayout()'s invented 4x6 and printing a
+   * small class inside a page of "Empty seat" boxes (#116).
+   */
+  function seatReseatAll(order){
+    var lay=seatLayout();
+    var need=order.length;
+    var anyPlaced=lay.seats.some(function(sid){ return !!sid; });
+    if(!anyPlaced){
+      var cols=Math.max(1, Math.ceil(Math.sqrt(need)));
+      seatResize(lay, Math.max(1, Math.ceil(need/cols)), cols);
+    } else if(lay.seats.length<need){
+      seatResize(lay, Math.max(lay.rows, Math.ceil(need/lay.cols)), lay.cols);
+    }
+    var seats=lay.seats.map(function(){ return null; });
+    order.forEach(function(s,i){ seats[i]=s.id; });
+    lay.seats=seats;
+    save();
   }
   // drop any seat ids that no longer belong to the active roster (deleted / moved classes)
   function seatPruneAndFillUnplaced(lay, studs){
@@ -15561,6 +15611,47 @@ nameLine
   }
   $("seatPrintRows").addEventListener("change", seatPrintApplyDims);
   $("seatPrintCols").addEventListener("change", seatPrintApplyDims);
+  /* A–Z and Shuffle. Both hand a full ordering of the class to seatReseatAll()
+   * and then redraw BOTH charts, exactly as dragging a seat does — the live
+   * Dashboard chart is the same seating, and must not go stale behind the
+   * rebbi while he rebuilds it here.
+   *
+   * The confirm text names the count and says plainly that nothing but seating
+   * moves. That second half matters: "reset" and "shuffle" both sound like they
+   * might touch scores on a page whose cards show points, and they don't.
+   */
+  function seatReseatWith(order, question){
+    var studs=activeStudents();
+    if(!studs.length){ alert("No students in this class yet."); return; }
+    if(!confirm(question(studs.length))) return;
+    seatReseatAll(order(studs));
+    seatPrintSyncDims(); renderTapPanel(); renderSeatChartPrint();
+  }
+  $("seatSortByName").addEventListener("click", function(){
+    seatReseatWith(function(studs){
+      // Same lastFirstKey() sort the List layout and the Students tab use, so
+      // "A–Z" means one thing in this app rather than three.
+      return studs.slice().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+    }, function(n){
+      return "Seat all "+n+" students alphabetically by last name?\n\nThis replaces the current seating chart and can't be undone. Only where each boy sits changes — no points, scans or history are touched.";
+    });
+  });
+  $("seatShuffle").addEventListener("click", function(){
+    seatReseatWith(function(studs){
+      // Fisher-Yates, so every arrangement is equally likely. A sort() with a
+      // random comparator is the usual shortcut here and is genuinely biased —
+      // it would keep handing back shuffles that look suspiciously like the
+      // roster order, which on a seating chart is the one visible failure.
+      var order=studs.slice();
+      for(var i=order.length-1;i>0;i--){
+        var j=Math.floor(Math.random()*(i+1));
+        var t=order[i]; order[i]=order[j]; order[j]=t;
+      }
+      return order;
+    }, function(n){
+      return "Shuffle all "+n+" students into random seats?\n\nThis replaces the current seating chart and can't be undone. Only where each boy sits changes — no points, scans or history are touched.";
+    });
+  });
   $("seatPrintShowPoints").addEventListener("change", function(){ data.seatPrintOpts.showPoints=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); renderSeatChartPrint(); });
   $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); seatPrintSyncActLayout(); renderSeatChartPrint(); });
@@ -15595,10 +15686,13 @@ nameLine
   /* Keeps the Seating chart / List switch and the controls that only make
    * sense under one of them in step.
    *
-   * Rows/Cols and Rebbi's view are hidden in List, not disabled: both describe
-   * a ROOM — how many desks across, and which end of it you are standing at —
-   * and a list has no room. Leaving them on screen would invite a rebbi to set
-   * a value that the sheet in his hand then ignores. Everything else (avatar
+   * Rows/Cols, Rebbi's view and A–Z/Shuffle are hidden in List, not disabled:
+   * all three describe a ROOM — how many desks across, which end of it you are
+   * standing at, and who sits where in it — and a list has no room. Leaving
+   * them on screen would invite a rebbi to set a value that the sheet in his
+   * hand then ignores; A–Z in particular would look like it sorted the list he
+   * is looking at, when the list is already sorted and the button would be
+   * silently rearranging the chart on the other tab. Everything else (avatar
    * mode, Points, the Activities footer, orientation) applies to both layouts
    * and stays exactly where it is.
    */
@@ -15609,6 +15703,7 @@ nameLine
     });
     var dims=$("seatPrintDims"); if(dims) dims.style.display = isList ? "none" : "";
     var rv=$("seatPrintRebbiViewRow"); if(rv) rv.style.display = isList ? "none" : "flex";
+    var ar=$("seatPrintArrangeRow"); if(ar) ar.style.display = isList ? "none" : "flex";
   }
   document.querySelectorAll("#seatPrintLayout button").forEach(function(btn){
     btn.addEventListener("click", function(){
@@ -16062,10 +16157,26 @@ nameLine
        * the Rows/Cols boxes, which are hidden in this layout — a list has no
        * rows to set, and letting the seating grid's dimensions leak in here
        * would print a list shaped like a room it is deliberately ignoring.
+       *
+       * COLUMNS ARE SIZED BY THE CARD, NOT COUNTED. This used to be a flat 4
+       * columns portrait / 6 landscape, which made a list tile ~177px wide
+       * holding a 60px code — so the identical card that measures ~116px on the
+       * seating chart (a 4x6 room, its default, is SIX columns across) came out
+       * half again as wide here, with all of that extra width spent as dead
+       * space around the code. The padding rule was the same in both; only the
+       * track width differed, and it read on paper as a list with far more
+       * padding than the chart.
+       *
+       * minmax(112px,1fr) lands on 6 columns portrait and 8 landscape at the
+       * true page width, i.e. a ~116px card either way — the same tile as the
+       * chart's, which is the point: switching layouts should rearrange the
+       * cards, not resize them. auto-FILL, never auto-fit: auto-fit collapses
+       * the empty tracks and would stretch a small class's cards back across
+       * the whole sheet, which is the exact bug this removes.
        */
       var listStuds=studs.slice().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
       var lgrid=el("div","seat-grid print-seat-grid");
-      lgrid.style.gridTemplateColumns="repeat("+(data.seatPrintOrient==="landscape"?6:4)+", 1fr)";
+      lgrid.style.gridTemplateColumns="repeat(auto-fill, minmax(112px, 1fr))";
       listStuds.forEach(function(s){
         var card=el("div","seat");
         card.dataset.sid=s.id;
