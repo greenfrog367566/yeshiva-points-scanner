@@ -12,7 +12,7 @@ Menchmark is a free, open-source classroom assistant for Yeshiva and Jewish Day 
 
 | File | Purpose |
 |---|---|
-| `app.html` | The Menchmark app (~13,800 lines of vanilla JS, all logic in one IIFE) |
+| `app.html` | The Menchmark app (~19,750 lines of vanilla JS, all logic in one IIFE) |
 | `index.html` | Site front door — the scroll-driven GSAP brand-story intro, with Skip → `home.html` |
 | `home.html` | The landing/marketing page (Tailwind CDN) — was `index.html` before the intro swap |
 | `setup.html` | Onboarding wizard for first-time users |
@@ -20,11 +20,14 @@ Menchmark is a free, open-source classroom assistant for Yeshiva and Jewish Day 
 | `beta.html` | Beta signup form → posts to `apps-script/beta-signup.gs` |
 | `test-migration.html` | Migration test harness — holds **copies** of `migrateData()`/`load2fix()` that must stay logically identical to app.html's (indentation differs: app.html's live inside the IIFE) |
 | `sw.js` + `manifest.webmanifest` | PWA shell — installable app, offline cache, persistent storage |
-| `library/` | Shared text library (`index.json` + per-parsha JSON/CSV) the Pesukim/Mishnayos tabs pull from — no runtime fetch, no AI |
+| `library/` | Shared text library (`index.json` + per-parsha JSON/CSV). **Shipped as data only — nothing in `app.html` references it yet (#187).** The Pesukim/Mishnayos tabs still source from the AI proxy or manual entry; the "browse & load" picker is Phase 6a's unbuilt half |
 | `apps-script/beta-signup.gs` | Apps Script backend for beta signups (deploy instructions in the file header) |
 | `docs/ai-proxy-worker.js` | Cloudflare Worker that holds the Gemini key for the optional AI text-import (`AI_PROXY_URL` in app.html) |
 | `docs/user-guide.md`, `docs/scanner-setup.md` | Teacher-facing documentation |
+| `docs/shulchani-coin-guide.html` | Printable Coin Guide for the class wall — standalone page, not part of the app |
+| `docs/NOW.md` | The current working queue — read at the start of every session (see top of this file) |
 | `docs/*_Spec.md`, `docs/Menchmark_*.md`, `docs/Positioning.md` | The settled design record — see DECISION RECORD below |
+| `.github/workflows/validate.yml` | CI runs the `validate` skill's checks on every push — they are no longer only a local pre-commit habit |
 | `branding/`, `icons/`, `favicon.svg` | Menchmark mark, PWA icons, tab favicon |
 | `samples/`, `sample-backup.json` | Safe demo data — the only data allowed in this repo |
 
@@ -244,7 +247,7 @@ Every teacher's roster, scores, and history live in their browser's `localStorag
   if (!Array.isArray(data.myNewList)) data.myNewList = [];
   ```
 - `migrateData()` runs on every load, before anything else touches `data`. Preserve this pattern.
-- **`DATA_VERSION` is currently `4`** (`app.html` ~line 3114). A purely additive field needs only a `load2fix()` backfill — **no version bump**. Bump `DATA_VERSION` and add an `if(data.version===N)` branch only when existing saved values must be *converted*.
+- **`DATA_VERSION` is currently `5`** (`app.html` ~line 4165). A purely additive field needs only a `load2fix()` backfill — **no version bump**. Bump `DATA_VERSION` and add an `if(data.version===N)` branch only when existing saved values must be *converted*.
 - **Guard with `typeof` / `Array.isArray`, never bare falsiness.** `if(!data.raffle)` let a truthy non-object through and bricked startup under `"use strict"` (fixed in #97). Match the `adjust`/`removed` guards' form.
 - The `load()`/`load2fix()` dual-migration pattern has caused bugs before (Attendance/Tracker/Homework not initializing on real saved data). Be extra careful with any migration changes.
 - **Run `test-migration.html` after any change to `migrateData()`/`load2fix()`**, and keep its copies of those functions in sync with app.html.
@@ -345,12 +348,13 @@ Still stop and explicitly ask Ben before:
 These docs in `docs/` are the settled design. They answer most "should we..." questions — check them before asking the maintainer:
 
 - **Menchmark_UI_Redesign_Summary.md** — the 5-group tab structure and every per-tab decision (SHIPPED in Phase 1), the Gradebook/Tracked-Items consolidation, Chavrusa spec, Shulchani Coin Deposit/Withdraw.
-- **Menchmark_Phased_Build_Plan.md** — the build order (Phase 0→8). Don't build a phase whose dependencies aren't in yet. Status as of v0.9.0 + Unreleased: **Phase 0 and Phase 1 DONE**; **Phase 6a (the Library) partially in** — `library/index.json` exists with Vayelech at `status: "partial"`; **Phase 2 (the Gradebook engine / Tracked Items) IN PROGRESS — 2a SHIPPED** (merged to `main` 2026-07-28 via PR #107): `data.trackedItems` / `data.trackedData` and the `TRACKED_METHODS` registry are in, purely additive, with the presets seeded and the old `data.attendance` / `data.hw` / `data.trackerLog` / `data.passes` stores untouched and still driving their existing tabs. **2b (the Gradebook UI) is next** — the data shell exists but nothing reads it yet, so Phases 5, 6-chart-fold, and the Gradebook consolidation stay blocked until 2b lands. Note that 2a was a *reset, not a conversion* — pre-2a records were never forward-ported, and that decision comes due in 2c. Much of the recent work (seating picker, Homework/Bathroom Pass as Record-tab tiles, PWA, live-view refresh) is Phase 3-flavored polish landing ahead of Phase 2.
+- **Menchmark_Phased_Build_Plan.md** — the build order (Phase 0→8). Don't build a phase whose dependencies aren't in yet. **That doc is the authority on phase status** — it carries a dated status stamp per phase; read those rather than relying on a summary here, which is how this paragraph went two phases stale. As of the 2026-08-04 reconciliation: **Phase 0 and 1 DONE**; **Phase 2 — 2a (#107) and 2b (#115) SHIPPED, 2c PARTIAL** (only `data.attendance` converted, PR #138; `data.hw` resets and `data.trackerLog` / `data.passes` are TBD, remainder in #122), **2d NOT STARTED (#123) and next**. **The Gradebook tab is hidden until 2d lands (#185)** — nothing writes `data.trackedData` in normal use, so the grid froze at the migration; **Contest is hidden too** pending #133. 2d also gates Phase 5 and the Firebase rebuild's data model, which is why it is sequenced ahead of that rebuild. **Phase 6a is data-only and orphaned (#187)**; 6b was never built. Phase 3 is 1-of-5, Phase 4 is 0-of-3.
 - **Library_Review_Wizard_Spec.md** — the shared text library, per-pasuk Review Wizard, reviewed-version callback. Share-back deliberately deferred.
 - **Print_Wizard_Spec.md** — the Print Wizard, six print components, Shulchani coin cards, the Tera-barcode constraint.
 - **Offline_NoComputer_Secretary_Spec.md** — Offline Mode, Batch Import parser (spec'd against real scanner data), Secretary Mode.
 - **Positioning.md** — settled copy decisions: the canonical self-description, "classroom economy" rejected as positioning (with its one permitted exception), "rebbeim" not "teachers", no licensing/free-forever language in user-facing copy, no AI framing. **Check it before writing or editing any user-facing copy.**
-- **Firebase_Rebuild_Scope.md** — the settled scope for the upcoming Firebase/Firestore rebuild: real accounts, Firestore replacing localStorage-as-database, three tiers (rebbi/admin/superadmin), the incremental-write data model (not one JSON blob per class), the converter tool, what retires (file:// offline copy, Sheets-as-database, Apps Script), and the 8-step build order. **Not started — build order step 1 (data model design session) hasn't begun.** Read before touching anything auth/sync/data-model shaped, and before assuming the current localStorage-only architecture described elsewhere in this file is the long-term plan.
+- **Firebase_Rebuild_Scope.md** — the settled scope for the upcoming Firebase/Firestore rebuild: real accounts, Firestore replacing localStorage-as-database, three tiers (rebbi/admin/superadmin), the incremental-write data model (not one JSON blob per class), the converter tool, what retires (file:// offline copy, Sheets-as-database, Apps Script), and the 8-step build order. **Not started — build order step 1 (data model design session) hasn't begun**, and **Phase 2d is locked to run before it.** Read before touching anything auth/sync/data-model shaped, and before assuming the current localStorage-only architecture described elsewhere in this file is the long-term plan. Its phase mapping was reconciled against the code on 2026-08-04; it now carries an **"Open questions for step 1"** list that has to be worked before the data-model session starts.
+  - ⚠️ **Open conflict, unresolved by design — decide before step 1.** That rebuild needs the Firebase SDK, which cannot coexist with **rule 3 above** (single file, no build step) untouched: the modular SDK is ESM-for-bundlers, so it is either a forbidden CDN `<script src>` or a vendored compat bundle inlined into an already ~1.2 MB file. Neither rule wins by default. Per the conflict rule below, CLAUDE.md wins until a human decides otherwise — so **rule 3 stands, and the rebuild cannot start step 1 until this is settled.** The trade-offs are written up in the rebuild doc's open question 1; note that the back button and app security do *not* depend on this choice, though earlier drafts implied they did.
 
 If a spec and this CLAUDE.md ever conflict, **CLAUDE.md wins**; flag the conflict to the maintainer.
 
@@ -366,7 +370,7 @@ The Google Sheet backup remains the ultimate safety net — PWA persistent stora
 
 ## Code patterns to know
 
-- **Tab navigation** is data-driven from `TAB_GROUPS`/`TAB_LABELS` (`app.html` ~line 3408) — new tabs register automatically. The dissolved print views are reached via 🖨 buttons on their data-owner tabs, not the nav.
+- **Tab navigation** is data-driven from `TAB_GROUPS`/`TAB_LABELS` (`app.html` ~line 4493) — new tabs register automatically. The dissolved print views are reached via 🖨 buttons on their data-owner tabs, not the nav.
 - **The 5 R's:** the five groups display as **Record · Recognize · Reward · Review · Run** (order from `GROUP_ORDER`). Their **internal keys are still the old names** — `scan` / `standings` / `rewards` / `learn` / `manage` — because those keys are persisted in saved state. Never rename a key to match its label. Each group also carries an `icon` string: the inner markup of a 16×16 monochrome line SVG that `renderGroupTabs()` wraps.
 - **Tracked activities never award points.** The Tracker keeps its own log and Homework Checked / Bathroom Pass their own records. They are excluded from every arming surface (Record-tab buttons, floating scan panel, `ACT:` codes, printed Activity Menu) — with one deliberate exception: the seating-chart scan bar's dropdown keeps Homework Checked, because an armed Homework Checked is rerouted to the real homework record from any tab. Preserve that asymmetry; it's intentional, not an oversight.
 - **`refreshLiveViews()`** is the single hook that re-renders whichever live/aggregate view is open (raffle wheel, standings, trends, history, contest) after any scan, tap, or undo. Call it rather than re-rendering ad hoc — and it deliberately never fires mid-spin.
@@ -381,7 +385,7 @@ The Google Sheet backup remains the ultimate safety net — PWA persistent stora
 
 ## File navigation tips
 
-The app file is large (~13,800 lines / ~800 KB) — never read it whole.
+The app file is large (~19,750 lines / ~1.2 MB) — never read it whole.
 
 ## What NOT to do
 
