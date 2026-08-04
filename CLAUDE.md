@@ -190,6 +190,47 @@ silently keeps it current, so opening `app.html` there always shows what
 rebbeim have. Park a branch there and the hook goes mute — which is the state
 that once let the folder sit 31 commits stale while every merge looked healthy.
 
+### Preview servers get reaped automatically — don't hand-kill node
+
+Serving the repo over http to look at `app.html` (or to run `test-migration.html`,
+which needs `fetch` and so cannot be opened over `file://`) leaves a node server
+listening. Sessions never stopped them, and they piled up: thirteen at once on
+2026-08-03, five of them a day old and already hung, twelve belonging to sessions
+that no longer existed.
+
+`.claude/hooks/reap-dev-servers.ps1` now handles it, wired to both session hooks:
+**SessionStart** kills servers whose session is gone, **SessionEnd** kills the
+ones this session started. Both layers are needed — SessionEnd never runs when a
+session is force-quit, which is how they accumulated in the first place.
+
+**So start preview servers freely and don't clean up after them.** What you must
+*not* do is reach for `taskkill //IM node.exe` or `pkill node` when a port is
+stuck — that kills the MCP servers and any sibling session's work along with it.
+The reaper exists precisely so nobody needs the blunt instrument; run it by hand
+instead, and look before you leap:
+
+```bash
+# what would it kill right now? (kills nothing)
+powershell -ExecutionPolicy Bypass -File .claude/hooks/reap-dev-servers.ps1 -Mode Orphans -DryRun
+```
+
+It is deliberately conservative and will under-kill rather than risk a live
+session: node only, must be listening on TCP (this is what protects the
+stdio-based MCP servers), must look like a dev server, must be on a dev port or
+name this repo, and never with a live `claude.exe` up its parent chain. A
+30-minute grace period keeps a browser tab you still have open from being pulled
+out from under you. Every kill lands in `.claude/reap-dev-servers.log`
+(gitignored) with port, age and command line.
+
+**One caveat worth knowing:** a server *you* started from your own terminal has
+no Claude session above it, so the orphan sweep cannot tell it from an abandoned
+one and will take it after the grace period. Pin its port and it is left alone
+for good:
+
+```bash
+export MENCHMARK_REAP_SKIP_PORTS=8080,9000   # or -SkipPorts 8080,9000
+```
+
 ## Critical rules — read before writing any code
 
 ### 1. Never break saved data
