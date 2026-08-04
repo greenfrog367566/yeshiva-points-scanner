@@ -1549,7 +1549,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .cg-overlay.open{display:block}
   .cg-card{background:var(--card);max-width:920px;margin:0 auto;border-radius:16px;
     box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden}
-  .cg-head{display:flex;align-items:center;gap:10px;padding:14px 18px;background:var(--ink);color:#fff}
+  .cg-head{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:14px 18px;background:var(--ink);color:#fff}
+  /* The sheet picker sits on the dark header, so it needs its own colours —
+     and the option list needs them set back, or it renders white on white. */
+  .cg-fmt{background:rgba(255,255,255,.13);color:#fff;border:1px solid rgba(255,255,255,.26);
+    border-radius:8px;padding:5px 8px;font-size:.8rem;max-width:250px}
+  .cg-fmt option{color:var(--ink);background:#fff}
+  .cg-hint{padding:9px 18px;background:var(--brass-soft);border-bottom:1px solid var(--line);
+    font-size:.82rem;line-height:1.5;color:var(--ink)}
   .cg-head h3{font-family:var(--serif);margin:0;font-size:1.3rem}
   .cg-sub{font-size:.8rem;color:rgba(255,255,255,.7);margin-top:2px}
   .cg-x{background:none;border:none;color:#fff;font-size:1.4rem;line-height:1;padding:4px 8px}
@@ -3819,9 +3826,11 @@ function setupRoster() {
         <div class="cg-sub">How the coins add up</div>
       </div>
       <button class="btn btn-sm" id="coinGuidePrint" style="background:rgba(255,255,255,.15);color:#fff;border:none">🖨 Wall chart</button>
-      <button class="btn btn-sm" id="coinGuideCards" style="background:rgba(255,255,255,.15);color:#fff;border:none">🪪 Pocket cards</button>
+      <select id="coinCardFormat" class="cg-fmt" aria-label="Card sheet format"></select>
+      <button class="btn btn-sm" id="coinGuideCards" style="background:rgba(255,255,255,.15);color:#fff;border:none">🪪 Print cards</button>
       <button class="cg-x" id="coinGuideClose" aria-label="Close">✕</button>
     </div>
+    <div class="cg-hint" id="coinCardHint"></div>
     <div class="cg-body" id="coinGuideBody"></div>
   </div>
 </div>
@@ -6697,7 +6706,15 @@ function setupRoster() {
     out.innerHTML='<span>'+formatCoinsHtml(v)
       +' <span style="color:var(--muted);font-weight:600;font-size:.85rem">&nbsp;('+cgNum(v)+' '+cgUnit(v)+')</span></span>';
   }
-  function openCoinGuide(){ renderCoinGuide(); $("coinGuideModal").classList.add("open"); }
+  function openCoinGuide(){
+    // Both of these read LABEL_SPECS, so they can only run from here — by the
+    // time anything is clicked the whole IIFE has executed.
+    fillCoinCardFormats();
+    var sel=$("coinCardFormat"); if(sel) sel.value=cgCardFormat();
+    renderCoinCardHint();
+    renderCoinGuide();
+    $("coinGuideModal").classList.add("open");
+  }
   function closeCoinGuide(){ $("coinGuideModal").classList.remove("open"); }
   // The Leader Board and Store buttons only mean anything in Shulchani Mode —
   // in points mode there is nothing to convert. The Settings button is always
@@ -6765,7 +6782,47 @@ function setupRoster() {
    * lands on real Avery 5911 stock, and on plain paper the cut guides are
    * there to follow.
    */
-  var CG_CARDS_PER_SHEET=10;
+  /* The three sheets a coin card can come off. The two Avery entries are
+   * looked up in LABEL_SPECS rather than restated, so the guide and the
+   * student labels can never disagree about where a card sits on the page.
+   *
+   * LABEL_SPECS is assigned further down this same IIFE, well after this
+   * point, so nothing here may read it at load time — the lookup happens
+   * inside openCoinGuide() and the print handler, both of which only ever
+   * run on a click. */
+  var CG_CARD_FORMATS=["avery5911","avery5163","cut"];
+  /* Plain paper keeps the business-card footprint, because it is a good
+   * layout on any stock. The difference that actually matters is the cut
+   * guides: ruling lines onto real Avery stock draws them across the cards,
+   * so the guides appear only when there is nothing pre-cut to follow. */
+  var CG_CUT_SPEC={name:"Cut out (plain paper) — 3½\"×2\" — 10/sheet",
+    cols:2, rows:5, w:3.5, h:2, padT:0.5, padS:0.5, colGap:0.5, rowGap:0};
+  function cgCardFormat(){
+    return CG_CARD_FORMATS.indexOf(data.coinCardFormat)>=0 ? data.coinCardFormat : "avery5911";
+  }
+  function cgCardSpec(fmt){
+    return fmt==="cut" ? CG_CUT_SPEC : LABEL_SPECS[fmt];
+  }
+  function fillCoinCardFormats(){
+    var sel=$("coinCardFormat"); if(!sel || sel.options.length) return;
+    CG_CARD_FORMATS.forEach(function(k){
+      var o=el("option", null, k==="cut" ? CG_CUT_SPEC.name : LABEL_SPECS[k].name);
+      o.value=k; sel.appendChild(o);
+    });
+  }
+  function renderCoinCardHint(){
+    var box=$("coinCardHint"); if(!box) return;
+    var fmt=cgCardFormat(), spec=cgCardSpec(fmt);
+    var per=spec.cols*spec.rows;
+    // spec.name is a constant from this file, never user input.
+    box.innerHTML = fmt==="cut"
+      ? '<b>'+per+' cards per sheet</b> on plain paper — cut along the dashed guides. '
+        + 'In the print dialog choose <b>Letter</b> paper and <b>Scale: 100%</b>.'
+      : 'Load <b>'+spec.name.split(" — ")[0]+'</b> sheets — <b>'+per+' cards per sheet</b>. '
+        + 'In the print dialog choose <b>Letter</b> paper, set <b>Margins: None</b> and '
+        + '<b>Scale: 100%</b> (turn off "Fit to page"). Do a plain-paper test first and hold '
+        + 'it over a sheet to check alignment.';
+  }
   function coinCardHtml(){
     var rows="";
     COINS.forEach(function(c,i){
@@ -6784,8 +6841,9 @@ function setupRoster() {
       + '<\/div>';
   }
   function printCoinCards(){
-    var cards="";
-    for(var i=0;i<CG_CARDS_PER_SHEET;i++) cards+=coinCardHtml();
+    var fmt=cgCardFormat(), spec=cgCardSpec(fmt), cut=(fmt==="cut");
+    var cards="", per=spec.cols*spec.rows;
+    for(var i=0;i<per;i++) cards+=coinCardHtml();
     var html='<!doctype html><html><head><meta charset="utf-8">'
       +'<title>Shulchani Coin Cards</title><style>'
       +'@page{size:letter;margin:0}'
@@ -6793,10 +6851,11 @@ function setupRoster() {
       // and the coloured dot is the only thing tying the card to the screen.
       +'*{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box}'
       +'body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1b2440}'
-      +'.sheet{width:8.5in;height:11in;padding:0.5in;display:grid;'
-      +'grid-template-columns:repeat(2,3.5in);grid-auto-rows:2in;column-gap:0.5in;row-gap:0}'
-      +'.card{width:3.5in;height:2in;padding:9pt 11pt;overflow:hidden;'
-      +'border:0.5pt dashed #c9ccd6;display:flex;flex-direction:column}'
+      +'.sheet{width:8.5in;height:11in;padding:'+spec.padT+'in '+spec.padS+'in;display:grid;'
+      +'grid-template-columns:repeat('+spec.cols+','+spec.w+'in);grid-auto-rows:'+spec.h+'in;'
+      +'column-gap:'+spec.colGap+'in;row-gap:'+spec.rowGap+'in}'
+      +'.card{width:'+spec.w+'in;height:'+spec.h+'in;padding:9pt 11pt;overflow:hidden;'
+      +'border:'+(cut?"0.5pt dashed #c9ccd6":"0")+';display:flex;flex-direction:column}'
       +'.ch{display:flex;align-items:baseline;justify-content:space-between;'
       +'border-bottom:1pt solid #1b2440;padding-bottom:3pt;margin-bottom:3pt}'
       +'.ch b{font-family:Georgia,"Times New Roman",serif;font-size:10pt;font-weight:700}'
@@ -6823,6 +6882,9 @@ function setupRoster() {
   $("coinGuideClose").addEventListener("click", closeCoinGuide);
   $("coinGuidePrint").addEventListener("click", printCoinGuide);
   $("coinGuideCards").addEventListener("click", printCoinCards);
+  $("coinCardFormat").addEventListener("change", function(){
+    data.coinCardFormat=this.value; save(); renderCoinCardHint();
+  });
   $("coinGuideModal").addEventListener("click", function(e){ if(e.target===this) closeCoinGuide(); });
   ["coinGuideBtnStand","coinGuideBtnStore","coinGuideBtnSettings"].forEach(function(id){
     var b=$(id); if(b) b.addEventListener("click", openCoinGuide);
@@ -16966,6 +17028,7 @@ nameLine
     if(typeof data.fpCompact!=="boolean") data.fpCompact=false;
     if(typeof data.currentClass!=="string") data.currentClass="";
     if(typeof data.labelFormat!=="string") data.labelFormat="avery5160";
+    if(typeof data.coinCardFormat!=="string") data.coinCardFormat="avery5911";
     if(typeof data.promptStyle!=="string") data.promptStyle="";
     if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
     if(!data.seating||typeof data.seating!=="object") data.seating={};

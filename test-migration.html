@@ -340,6 +340,7 @@ Object.keys(data.passes.used).forEach(function(sid){
 if(typeof data.fpCompact!=="boolean") data.fpCompact=false;
 if(typeof data.currentClass!=="string") data.currentClass="";
 if(typeof data.labelFormat!=="string") data.labelFormat="avery5160";
+if(typeof data.coinCardFormat!=="string") data.coinCardFormat="avery5911";
 if(typeof data.promptStyle!=="string") data.promptStyle="";
 if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
 if(!data.seating||typeof data.seating!=="object") data.seating={};
@@ -1865,6 +1866,17 @@ function runBuiltInTests() {
   var t16X = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", layout:"nonsense"} });
   assert("layout→a garbage layout repairs to seating, not List",
     t16X.seatPrintOpts.layout==="seating", "got "+t16X.seatPrintOpts.layout);
+  // The Coin Guide's card sheet is remembered the same way the student-label
+  // sheet is. It is a preference, not data — but a save that predates it must
+  // still open on business cards rather than on undefined.
+  assert("coin cards→a save with no choice defaults to Avery 5911",
+    runMigration({ version:4 }).coinCardFormat==="avery5911");
+  var t16C = runMigration({ version:4, coinCardFormat:"avery5163" });
+  assert("coin cards→a saved sheet choice survives a reload",
+    t16C.coinCardFormat==="avery5163", "got "+t16C.coinCardFormat);
+  var t16Cx = runMigration({ version:4, coinCardFormat:{bad:true} });
+  assert("coin cards→a garbage value repairs to Avery 5911",
+    t16Cx.coinCardFormat==="avery5911", "got "+JSON.stringify(t16Cx.coinCardFormat));
   // Orientation is now remembered rather than resetting to portrait each load.
   assert("sheet→orientation defaults to portrait", t16d.seatPrintOrient==="portrait");
   var t16e = runMigration({ version:4, seatPrintOrient:"landscape" });
