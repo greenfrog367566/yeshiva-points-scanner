@@ -119,6 +119,7 @@ Once both are folded in, this document is the single source for the rebuild and 
 - **Chromium-only (Chrome, Edge) — no Safari, no Firefox.** This happens to line up exactly with the fragile-storage audience already at the center of this build: Chromebooks run Chrome. Not a generic nice-to-have, a targeted fit.
 - **A third layer, not a replacement.** Firestore stays the real source of truth. CSV export stays the "I can open and read this myself" option. This becomes a quiet local safety net underneath both — a real file on the rebbi's own disk regardless of what the cloud is doing.
 - **Sequencing:** after the core rebuild (steps 1–8 below), not part of it. Small, self-contained addition once accounts and sync exist.
+- **Challenged by `docs/Daily_Backup_Spec.md` (proposal, not settled).** A beta rebbi pointed out that retiring Sheets removes the only *automatic* backup the app has (the 30-second snapshot push), and that the named replacement on line 72 — a CSV export button — is manual. That spec argues for pulling this section forward to *before* the cutover, since it has no dependency on accounts or Firestore, and adds a browser-universal staleness nudge underneath it. Decide the sequencing question before step 1.
 
 ### Navigation
 

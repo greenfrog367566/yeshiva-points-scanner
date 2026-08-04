@@ -168,6 +168,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* ---- Preview-mode banner ---- */
   #saveWarn{display:none;background:var(--bad-soft);color:#7c2d1c;border:1px solid #e3bdb5;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem}
   #saveWarn b{color:#5e1f12}
+  /* Backup staleness nudge. Shares #saveWarn's slot at the top of <main> so it
+     shows on whichever tab is open, but amber rather than red — nothing is
+     broken, it is a reminder. Hidden by default; shown only by maybeShowBackupNudge(). */
+  #backupNudge{display:none;background:#fdf6e3;color:#6b4d09;border:1px solid #ecd9a4;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem;align-items:center;gap:12px;flex-wrap:wrap}
+  #backupNudge.show{display:flex}
+  #backupNudge b{color:#4d3706}
+  #backupNudge .bn-spacer{flex:1 1 auto}
 
   /* ======= SCAN VIEW ======= */
   .scan-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start}
@@ -211,6 +218,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      still be reached by scrolling a few pixels instead of being silently
      clipped and invisible, which is strictly worse. --- */
   #seatsBody .seat-toolbar{flex:0 0 auto}
+  #seatsBody .seat-moderow{flex:0 0 auto}
   #seatsBody .seat-front{flex:0 0 auto}
   #seatsBody #tapCard{display:flex; flex-direction:column; height:100%; min-height:0}
   #seatsBody .seat-grid{flex:1; min-height:0}
@@ -252,6 +260,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #view-seats.seats-shrinking #tapCard .board-head{ padding:7px 14px }
   #view-seats.seats-fullscreen .seat-toolbar,
   #view-seats.seats-shrinking .seat-toolbar{ padding:6px 14px 0 }
+  #view-seats.seats-fullscreen .seat-moderow,
+  #view-seats.seats-shrinking .seat-moderow{ padding:6px 14px 0 }
+  #view-seats.seats-fullscreen .seat-segbtn,
+  #view-seats.seats-shrinking .seat-segbtn{ padding:5px 16px; font-size:.85rem }
   #view-seats.seats-fullscreen .seat-front,
   #view-seats.seats-shrinking .seat-front{ margin:4px 14px 0; padding-bottom:4px }
   /* While the seating-chart pop-out is open, the scan bar must stack ABOVE
@@ -437,9 +449,32 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .tile-freeze-badge.paused{background:var(--muted)}
 
   /* ---- Seating chart mode ---- */
+  /* Brief ring on the sheet after "⚙ Rearrange seats" scrolls to it, so it is
+     obvious what the button moved to. Cleared on a 1.2s timer, and explicitly
+     suppressed for print below — a rebbi who hits Print inside that window must
+     not get a gold ring baked onto the paper. */
+  .seat-jump-flash{box-shadow:0 0 0 3px var(--gold,#e8b321);transition:box-shadow .3s ease;border-radius:10px}
+  @media print{ .seat-jump-flash{box-shadow:none!important} }
   .seat-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 0}
   .seat-modebtn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:6px 12px;font-size:.85rem;font-weight:600}
   .seat-modebtn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  /* The view switch — List / Seating chart — on its own row above the toolbar.
+     It used to be the first two of six buttons in one wrapped strip, which put
+     the control deciding WHAT YOU ARE LOOKING AT on the same footing as the
+     ones that only decorate it. As a segmented pair it reads as one control
+     with two states rather than two buttons that happen to sit together. */
+  .seat-moderow{padding:12px 14px 0}
+  .seat-segmented{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seat-segbtn{border:0;border-radius:0;background:#fff;color:var(--muted);padding:8px 20px;font-size:.9rem;font-weight:600;cursor:pointer}
+  .seat-segbtn+.seat-segbtn{border-left:1px solid var(--line)}
+  .seat-segbtn.active{background:var(--ink);color:#fff}
+  /* The toolbar is now options WITHIN the chosen mode, so it sits closer under
+     the switch than a full row's padding would put it. */
+  .seat-moderow+.seat-toolbar{padding-top:10px}
+  /* Shown only when a rebbi set to Seating chart lands on a class that has no
+     chart yet and gets the list instead. Carries the way back in, so the
+     fallback can never make an unarranged chart unreachable. */
+  .seat-fallback-note{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px 0;font-size:.82rem;color:var(--muted);font-weight:600}
   .spin-mode-btn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
   .seat-dims{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
   .seat-dims input{width:46px;padding:5px 6px;border:1px solid var(--line);border-radius:7px;text-align:center}
@@ -1200,7 +1235,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* print */
   @media print{
     @page{size:letter;margin:0}
-    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.fab-btn,.view-note,.toolbar,.no-print,#saveWarn,.pill-note,#globalScanBar{display:none!important}
+    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.fab-btn,.view-note,.toolbar,.no-print,#saveWarn,#backupNudge,.pill-note,#globalScanBar{display:none!important}
     body{background:#fff}
     main{max-width:none;padding:0}
     .view{display:none!important}
@@ -1342,7 +1377,100 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      its height from the first layout, before the image exists. */
   .seat-print-preview .seat-print-qr{width:100%;max-width:60px;aspect-ratio:1;margin-left:auto;margin-right:auto}
   .seat-print-preview .seat-print-qr img,.seat-print-preview .seat-print-qr canvas{width:100%;height:auto;display:block}
-  .seat-print-preview .seat-print-photo .avatar{width:40px!important;height:40px!important;font-size:15px!important}
+  /* A PRINTED SEAT PHOTO SCALES WITH ITS CARD. It used to be a flat 40px circle.
+     0.42in sat in a card 1.25in wide and wasted most of it, and at that size a
+     printed face is not reliably a face — it is the one thing on the card you are
+     meant to recognise a boy by, and it came out smaller than his name. It now
+     fills the card up to a 1in cap, and is cropped square for the same reason the
+     paired photo is (see the note below).
+
+     THIS MAKES AN EXISTING PHOTO-ONLY SHEET TALLER, deliberately and on the
+     maintainer's say-so, having been flagged first. That is the trade for a
+     picture worth printing, and the fit warning under the preview is what
+     announces it. QR, None and both paired modes are untouched, so this changes
+     the page height of exactly the one mode it is about.
+
+     It SCALES rather than jumping to a fixed 96px so that a many-column chart
+     shrinks the picture instead of overflowing the card — the same mechanism the
+     paired photo uses, so the two modes cannot drift into behaving differently.
+     aspect-ratio:1 for the same fit-check reason as every other box on this page:
+     the height must be final before the image decodes.
+
+     width:100% ON THE WRAPPER IS NOT REDUNDANT — leave it. A .seat is a centred
+     flex column, so a plain block child shrink-wraps to its CONTENT rather than
+     filling the card, and a percentage width on the avatar inside it then has
+     nothing definite to resolve against. Without this the size silently depended
+     on what the avatar happened to contain: a photo measured its image's
+     intrinsic width (capped to 96px, which looked correct and hid the bug) while
+     a boy with NO photo measured his two initials of text and came out 36px, with
+     the letters spilling out of the box. This is also why the QR box above sets a
+     percentage width and why the paired mode uses flex:1 1 0 — both need a
+     definite size that does not come from their contents. */
+  .seat-print-preview .seat-print-photo{display:block;width:100%;max-width:96px;margin:0 auto 5px}
+  .seat-print-preview .seat-print-photo .avatar{width:100%!important;height:auto!important;aspect-ratio:1;border-radius:6px;font-size:32px!important}
+  /* PHOTO AND CODE IN THE SAME CARD — ACROSS, NOT STACKED.
+     A seat card is about 1.25in wide with a 0.6in code centred in it, so close
+     to half its width sits empty while its HEIGHT is the thing that runs the
+     sheet off the page. Stacking the face above the code would spend the scarce
+     dimension to save the plentiful one; putting them side by side spends the
+     empty width instead. That is the whole reason this is a flex row and not
+     another block above the name — do not "simplify" it back into a stack.
+     Both boxes flex from the same zero basis, so they split the card evenly and
+     grow together when the grid has few columns (fewer columns => bigger
+     picture, which is what the Avatar tooltip promises).
+
+     WHAT THIS COSTS IN PAGE HEIGHT, honestly — the row is as tall as the TALLER
+     of the two boxes, so it depends entirely on how many columns the chart has.
+     Measured in the preview, portrait, seat height code-only vs code+photo:
+
+       4 cols  87 -> 113px  (+26px/row)  photo 76px, at its cap
+       5 cols  87 -> 100px  (+13px/row)  photo 63px
+       6 cols  87 ->  88px  (+1px/row)   photo 50px
+       7 cols  the photo row is SHORTER than the code-only one
+
+     So on a 6-column-or-narrower chart the picture is effectively free, and it
+     is only the wide cards — 4 and 5 columns, where the photo hits its cap while
+     the code is still at 64px — that pay about a quarter inch per row. That is
+     the right trade in exactly those cases: the cards are wide there and a
+     recognisable face is the whole point of the mode. The photo's max-width
+     below is the single number that governs this, and the fit warning under the
+     preview is what catches a sheet that stops fitting because of it (verified:
+     a 48-boy 12x4 sheet warns in both modes, 1270px vs 1582px against 1056).
+
+     Each box keeps aspect-ratio:1. That is load-bearing, for the same reason it
+     is on .seat-print-qr above: the fit check reads scrollHeight synchronously,
+     before any QR or photo has decoded, and a row sized by its images would be
+     measured collapsed and report a sheet that fits when it does not (#142). */
+  /* width:100% IS LOAD-BEARING — do not drop it as redundant on a flex row.
+     A .seat is a centred flex column, so this row is itself a flex item and
+     without a definite width it shrink-wraps to its own max-content. Its
+     children use flex:1 1 0, so that max-content came from what they happened to
+     CONTAIN, and the whole row therefore changed size per boy: a seat holding a
+     photo measured the image's intrinsic width and came out 145px, while a boy
+     with NO photo measured his two initials of text and came out 93px — which
+     shrank his QR CODE from 64px to 44px, on a sheet where every other boy's code
+     was full size. That shipped in #188 and reached menchmark.app, because the
+     test roster used to verify it gave every single boy a photo. A definite width
+     makes the row the same size in every seat whatever it holds. */
+  .seat-print-preview .seat-print-pair{display:flex;align-items:center;justify-content:center;gap:5px;margin:0 auto 5px;width:100%}
+  .seat-print-preview .seat-print-pair>*{flex:1 1 0;min-width:0;margin:0}
+  .seat-print-preview .seat-print-pair .seat-print-qr{max-width:64px}
+  /* The face is capped slightly larger than the code, and cropped SQUARE rather
+     than round — as every printed seat photo now is (see the note above the
+     photo-only rule). A circle throws away the corners of an already small photo,
+     which at this size is most of a boy's hair and chin, and "which boy is this"
+     is the entire job of printing the picture. Round avatars stay everywhere else
+     in the app; on paper the crop is buying something.
+     76px, not more: this cap is the one number that decides how much taller
+     than a code-only sheet a photo sheet gets (see the row-height note above),
+     so raising it is a pagination change, not a cosmetic one. It is deliberately
+     BELOW the photo-only cap of 96px, because here the width is shared with a
+     code — a photo that grew to 96px beside a 64px code would set the row height
+     on its own and undo the reason this mode is a row.
+     display:block so the avatar's own width:100% governs in both the preview
+     and the print (.seat-print-photo is display:flex only in print). */
+  .seat-print-preview .seat-print-pair .seat-print-photo{display:block;max-width:76px}
+  .seat-print-preview .seat-print-pair .seat-print-photo .avatar{width:100%!important;height:auto!important;aspect-ratio:1;border-radius:6px;font-size:19px!important}
   .seat-print-preview .seat-name{font-weight:600;font-size:.82rem;display:block;overflow-wrap:break-word;word-wrap:break-word;white-space:normal;text-align:center;line-height:1.2}
   .seat-print-preview .seat-print-pts{font-size:.7rem;color:var(--muted);margin-top:2px;display:block}
   .seat-print-preview .seat-print-activities-footer{margin-top:9px;border-top:2px solid var(--line);padding-top:6px}
@@ -1561,6 +1689,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div id="saveWarn">
     <b>Preview mode — scores won't be saved here.</b> You're viewing this inside a browser that blocks local saving.
     To use it for real, download this file and open it in Chrome on your own computer; everything will then save automatically.
+  </div>
+
+  <div id="backupNudge">
+    <span id="backupNudgeText"></span>
+    <span class="bn-spacer"></span>
+    <button class="btn btn-sm btn-primary" id="backupNudgeGo">Back up now</button>
+    <button class="btn btn-sm" id="backupNudgeLater">Not now</button>
   </div>
 
   <!-- ============ SCAN ============ -->
@@ -2403,14 +2538,23 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
   <!-- ============ PRINT: CLASS SHEET (seating chart + activity codes) ============ -->
   <section id="view-printSeats" class="view">
-    <h2 class="view-title">Print my class sheet</h2>
-    <p class="view-note no-print"><b>This is the one page you need to start scanning.</b> Every student's code sitting in his own seat, with the codes for your activities underneath. Print it, keep it on your desk or clipboard, and scan an activity code then a student — that's a whole scoring action in two scans.</p>
-    <div class="pill-note no-print" id="seatAutoPlaceNote" style="display:none;margin-bottom:10px"></div>
+    <h2 class="view-title">Seating chart &amp; print</h2>
+    <p class="view-note no-print"><b>This is the one page you need to start scanning.</b> Arrange your room here, then print it. Every student's code sitting in his own seat, with the codes for your activities underneath. Print it, keep it on your desk or clipboard, and scan an activity code then a student — that's a whole scoring action in two scans.</p>
+    <!-- Was a paragraph saying how many boys were auto-seated and then sending
+         the rebbi to the Dashboard to rearrange them. Both halves were wrong to
+         keep: the count is not something he has to act on, and the directions
+         pointed AWAY from the one page where seats actually drag. A button that
+         takes him to the chart replaces the prose. -->
+    <div class="no-print" id="seatAutoPlaceNote" style="display:none;margin-bottom:10px"></div>
     <!-- The seating editor that used to sit here, above the preview, is gone.
          It and the preview were two boxes showing the same chart, and you
          arranged in one while looking at the other. The preview IS the editor
          now: seats drag, ✕ empties one, and the codes underneath drag too. -->
     <div class="toolbar no-print">
+      <span class="seg" id="seatPrintLayout" title="Seating chart prints every boy in his own desk, laid out as the room is. List prints the whole class alphabetically by last name — useful before you have arranged anyone, or when the sheet is just for reading names off.">
+        <button data-layout="seating" class="active">Seating chart</button>
+        <button data-layout="list">List (A&ndash;Z)</button>
+      </span>
       <span class="seg" id="seatPrintOrient">
         <button data-orient="portrait" class="active">Portrait (vertical)</button>
         <button data-orient="landscape">Landscape (horizontal)</button>
@@ -2419,19 +2563,21 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <input type="number" id="seatPrintRows" min="1" max="12">Cols
         <input type="number" id="seatPrintCols" min="1" max="12">
       </span>
-      <label style="display:flex;align-items:center;gap:5px;font-size:.9rem">Avatar:
+      <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="What sits in each boy's card. The two &quot;+ photo&quot; options print his picture and his code SIDE BY SIDE, which costs no extra height on the page — so you can recognise a boy and scan him from the same card. Fewer columns, or Landscape, makes the pictures bigger.">Avatar:
         <select id="seatPrintAvatarMode" class="field" style="width:auto">
           <option value="qr">QR code</option>
+          <option value="qrphoto">QR code + photo</option>
           <option value="photo">Student photo</option>
           <option value="none">None</option>
           <option value="activity">Activity code</option>
+          <option value="actphoto">Activity code + photo</option>
         </select>
       </label>
       <label id="seatPrintActivityRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Every seat's code becomes that one activity, pre-applied to that student — scan straight down the grid with no arming step. One sheet per activity.">Activity:
         <select id="seatPrintActivityPicker" class="field" style="width:auto"></select>
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem"><input type="checkbox" id="seatPrintShowPoints"> Points</label>
-      <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Flips the chart 180° — front of room at the bottom, left/right mirrored — matching what you actually see facing the class. Names stay right-side-up and readable."><input type="checkbox" id="seatPrintRebbiView"> Rebbi's view</label>
+      <label id="seatPrintRebbiViewRow" style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Flips the chart 180° — front of room at the bottom, left/right mirrored — matching what you actually see facing the class. Names stay right-side-up and readable."><input type="checkbox" id="seatPrintRebbiView"> Rebbi's view</label>
       <label id="seatPrintShowActivitiesRow" style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Adds a compact row of activity QR codes at the bottom of the page, for a one-page classroom reference."><input type="checkbox" id="seatPrintShowActivities"> Activities footer</label>
       <span id="seatPrintActLayoutRow" style="display:none;gap:6px">
         <button class="btn btn-sm" id="seatPrintActGrouped"></button>
@@ -3555,6 +3701,8 @@ function setupRoster() {
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Scan Tab — Tap Panel</h3>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setTapBreakdown"> Tapping a student shows their points breakdown instead of giving points</label>
       <p class="view-note" style="margin:8px 0 0">Off by default. When on, tapping a name in the list or seating chart on the Scan tab pops up that student's points breakdown (same as the "▾ Breakdown" panel on the Students tab) instead of scoring them — handy if you want to use the Tap Panel to check on a student mid-class without accidentally giving or taking points. Scanning a QR code still always scores normally, even while this is on.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-top:12px"><input type="checkbox" id="setSeatListFallback"> Show the class list when a class has no seating chart yet</label>
+      <p class="view-note" style="margin:8px 0 0">On by default. List / Seating chart is one setting shared by all your classes, but each class has its own chart. So if you arrange one class and leave the panel on Seating chart, switching to a class you haven't arranged yet would otherwise show a grid of empty seats with none of your students in it. With this on, that class shows your class list — alphabetically by last name — with a button to set its chart up when you're ready. The class you did arrange still opens straight to its chart, and nothing about any chart is changed or deleted either way.</p>
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
@@ -3758,6 +3906,20 @@ function setupRoster() {
     // Timer/Picker), keyed "scan"/"timer"/"picker". Empty means "use the
     // CSS-stacked bottom-right default" — see applyFabPositions().
     fabPos: {},
+    // Backup staleness tracking. Nothing in the app ever recorded that a backup
+    // happened, so it could not tell a rebbi he was weeks stale.
+    //
+    // TWO fields, deliberately. `lastBackupAt` alone would read 0 for every
+    // existing save, and the nudge would fire the instant an existing rebbi
+    // loaded this update — a warning he did nothing to earn, which is the
+    // fastest way to teach someone to dismiss the bar forever. He may well have
+    // been backing up by hand for months; the app simply cannot see files saved
+    // before this existed. `backupNudgeSince` stamps "now" at the load2fix
+    // backfill, so the countdown starts fresh on upgrade and the first nudge is
+    // a full week out. On a brand-new install both start at 0 / now and behave
+    // identically.
+    lastBackupAt: 0,
+    backupNudgeSince: 0,
     // Class-sheet print options. Present HERE, in defaults, purely so a
     // brand-new install can be told apart from an existing save — which is the
     // only way to give new rebbeim the activities footer without silently
@@ -3770,7 +3932,7 @@ function setupRoster() {
     //
     // Discoverability is fixed by putting the checkbox on a page rebbeim
     // actually reach, not by flipping a setting under them.
-    seatPrintOpts: { avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", actGrouped:true, actCols:2 }
+    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", actGrouped:true, actCols:2 }
   };
 
   var SHOR_BANK = [
@@ -4209,10 +4371,15 @@ function setupRoster() {
     passes:"Passes", attendance:"Attendance", tracker:"Tracker", homework:"Homework", gradebook:"Gradebook",
     backup:"Backup & Restore", settings:"Settings",
     "learn-text":"Text", "learn-chart":"Chart", "learn-pesukim":"Pesukim", "learn-mishnayos":"Mishnayos", "learn-shorashim":"Shorashim",
-    // printSeats is navigable and named for what it GIVES the rebbi, not for the
-    // mechanism. "Seating chart" described how it is laid out; nobody looking for
-    // "how do I start scanning" would ever click it.
-    printSeats:"Print class sheet",
+    // printSeats is navigable, and its name has to carry BOTH jobs this page
+    // does. It was called "Print class sheet" alone, on the reasoning that
+    // nobody hunting for "how do I start scanning" would click something named
+    // for a mechanism — which is still true, so "print" stays in the name. But
+    // this is also the only place a rebbi arranges his room (the preview IS the
+    // seat editor — see the note above #seatAutoPlaceNote), and naming it for
+    // printing alone meant a rebbi looking for his seating chart had no reason
+    // to click the one tab that holds it.
+    printSeats:"Seating chart & print",
     // The other three print views are not navigable — reached via 🖨 buttons on
     // their data-owner tabs.
     printStudents:"Students", printActivities:"Activities", printPoints:"Points"
@@ -4398,6 +4565,7 @@ function setupRoster() {
       $("seatPrintShowActivities").checked = data.seatPrintOpts.showActivities;
       seatPrintSyncActivityRow();
       seatPrintSyncDims();
+      seatPrintSyncLayout();
       // A rebbi who has only imported a roster has no seat layout, and this page
       // used to hand him 24 boxes reading "Empty seat" with no student codes at
       // all — a sheet that looks real and is useless. Seat whoever has no seat
@@ -4406,18 +4574,16 @@ function setupRoster() {
       // idempotent, so the very next re-render places nobody and would blank the
       // note straight back out — leaving a rebbi whose chart silently filled
       // itself with no explanation of why.
-      var placed=seatAutoPlaceUnplaced();
-      if(placed) seatAutoPlacedCount+=placed;
-      var apNote=$("seatAutoPlaceNote");
-      if(apNote){
-        if(seatAutoPlacedCount){
-          apNote.textContent="Seated "+seatAutoPlacedCount+" student"+(seatAutoPlacedCount===1?"":"s")+" for you, in roster order, so this sheet is ready to print. "
-            +"Anyone you had already placed stayed exactly where you put them. Rearrange any time on the Dashboard — Class list → Seating chart → ⚙ Setup.";
-          apNote.style.display="block";
-        } else {
-          apNote.style.display="none";
-        }
+      // Skipped entirely in List: opening a page to print a name list is not a
+      // reason to write a seating chart for a class that has none.
+      if(!seatPrintIsList()){
+        var placed=seatAutoPlaceUnplaced();
+        if(placed) seatAutoPlacedCount+=placed;
       }
+      // Draws the ⚙ Rearrange seats button (or hides it). Lives in
+      // seatPrintSyncAutoPlaceNote() rather than inline here so the layout
+      // switch can call it too — see there.
+      seatPrintSyncAutoPlaceNote();
       seatPrintOrient=data.seatPrintOrient;
       document.querySelectorAll("#seatPrintOrient button").forEach(function(b){
         b.classList.toggle("active", b.dataset.orient===seatPrintOrient);
@@ -5848,6 +6014,7 @@ function setupRoster() {
     $("setShulchani").checked = !!data.shulchaniMode;
     renderShulchaniStatus();
     $("setTapBreakdown").checked = !!data.tapShowsBreakdown;
+    $("setSeatListFallback").checked = data.seatListFallback!==false;
     $("setHeaderShortcuts").checked = data.showHeaderShortcuts!==false;
     $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setFullWidth").checked = !!data.fullWidth;
@@ -5899,6 +6066,9 @@ function setupRoster() {
     var mb=$("muteBtn"); if(mb) mb.textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   });
   $("setTapBreakdown").addEventListener("change", function(){ data.tapShowsBreakdown=this.checked; save(); });
+  // Redraws the panel: turning this off has to put the empty grid back straight
+  // away, or the setting reads as doing nothing until the next render.
+  $("setSeatListFallback").addEventListener("change", function(){ data.seatListFallback=this.checked; save(); renderTapPanel(); });
   $("setHeaderShortcuts").addEventListener("change", function(){ data.showHeaderShortcuts=this.checked; save(); applyHeaderShortcutsVisibility(); });
   $("setHebrewDate").addEventListener("change", function(){ data.showHebrewDate=this.checked; save(); showDate(); });
   $("setFullWidth").addEventListener("change", function(){ data.fullWidth=this.checked; save(); applyFullWidth(); });
@@ -6407,6 +6577,7 @@ function setupRoster() {
       // Restore from a backup. Reuses the exact same export logic as the
       // manual "Download backup file" button.
       download("points-backup-before-shulchani-switch-" + stamp() + ".json", JSON.stringify(data, null, 2), "application/json");
+      markBackedUp();
       data.scores={}; data.log=[];
     }
     data.shulchaniMode=newMode;
@@ -6485,6 +6656,7 @@ function setupRoster() {
     var blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
     var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
     a.download="points-backup-before-mode-switch.json"; a.click();
+    markBackedUp();
   });
 
   /* ---------- SCAN ---------- */
@@ -6602,6 +6774,18 @@ function setupRoster() {
         flash(true, s.name, "Pass used", "that's their one for this week");
         beep(true);
       }
+      // setPass() writes a real data.log entry ("Bathroom pass used"), so this
+      // branch DOES have something new for the Recent scans panel and the
+      // global scan bar's strip — unlike the homework/attendance branches
+      // above and below, which keep their own stores and touch no log. Without
+      // this repaint the entry sat in data.log invisible until some unrelated
+      // event happened to redraw the strip, so a rebbi marking passes off the
+      // full-screen seating chart saw nothing at all, then watched every pass
+      // appear at once the moment he closed the chart (activateTab("scan")
+      // repaints on the way out). renderRecent() is the right call rather than
+      // renderSeatsScanBar() directly: the Recent scans panel reads the same
+      // log and was equally stale, and renderRecent() ends by calling the bar.
+      renderRecent();
       if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
       return true;
     }
@@ -7641,6 +7825,42 @@ function setupRoster() {
     return studs.filter(function(s){ return !seen[s.id]; });
   }
 
+  /* Has the CURRENT class had anyone seated yet?
+   *
+   * Deliberately does NOT go through seatLayout(): that invents a 4x6 layout
+   * and writes it into data.seating for any class it is asked about, so merely
+   * *checking* a class would leave a 24-null layout behind for it. This only
+   * reads. It also ignores seats holding students who have since been deleted
+   * or moved class — a chart whose every occupant is gone is an empty chart,
+   * which is the same rule seatAutoPlaceUnplaced() applies after pruning.
+   */
+  function seatChartIsEmpty(){
+    var lay=data.seating[seatKey()];
+    if(!lay || !Array.isArray(lay.seats)) return true;
+    var valid={}; activeStudents().forEach(function(s){ valid[s.id]=1; });
+    return !lay.seats.some(function(sid){ return sid && valid[sid]; });
+  }
+
+  /* Switch to the seating chart AND open arranging in one step.
+   *
+   * This is the only way into a chart that hasn't been built yet, because the
+   * list fallback below hides an all-empty chart on sight. Arranging is what
+   * turns the fallback off (see seatFallback in renderTapPanelInto), so a rebbi
+   * who clicks in gets the grid and the "Not yet seated" tray straight away
+   * rather than clicking "Seating chart" and watching nothing happen.
+   *
+   * Mirrors setSeatSetup()'s exclusions — Rebbi's view and Show codes both
+   * fight arranging, for the reasons documented at their own toggles.
+   */
+  function enterSeatingSetup(){
+    data.tapViewMode="seating";
+    data.seatSetupOpen=true;
+    data.seatArranging=true;
+    data.seatLiveRebbiView=false;
+    data.seatScanMode=false;
+    save(); renderTapPanel();
+  }
+
   // Renders the Tap Panel (List/Seating chart) into a specific container —
   // called once for each place it lives (the Seats tab, and Dashboard's
   // "Class list" panel), so both stay in sync automatically: they read the
@@ -7671,15 +7891,59 @@ function setupRoster() {
     // Seating chart not shown in Teach / Shorashim context
     var allowSeating=true; // teachTapPanelBody/shorTapPanelBody no longer exist; all remaining tap panels allow seating view
     var effViewMode=opts.forceSeating ? "seating" : (allowSeating ? data.tapViewMode : "list");
+    /* THE LIST FALLBACK. data.tapViewMode is one global setting but data.seating
+     * is keyed per class, so a rebbi who arranged Shiur A and left the panel on
+     * "Seating chart" used to switch to a freshly-imported class and get a grid
+     * of "Empty seat" boxes with not one student in it — renderSeatGrid only
+     * draws the "Not yet seated" tray while arranging is on, so there was
+     * nobody to tap and nothing on screen saying why. Show him his class
+     * instead, alphabetically, which is what he actually needs in front of a
+     * room.
+     *
+     * NOTHING IS WRITTEN. data.tapViewMode keeps saying "seating", so switching
+     * back to the class he did arrange still opens straight into its chart —
+     * this only changes what is drawn for a class that has no chart.
+     *
+     * Off while arranging: that state IS the rebbi building the chart, and
+     * hiding the grid he is dragging boys into would make it unusable. It also
+     * self-heals — the moment one boy is seated the class stops being empty,
+     * so "Done arranging" leaves him on the chart he just built.
+     */
+    var seatFallback = !opts.forceSeating && allowSeating
+                       && data.seatListFallback!==false
+                       && data.tapViewMode==="seating"
+                       && !data.seatArranging
+                       && seatChartIsEmpty();
+    if(seatFallback) effViewMode="list";
+    /* The view switch gets its OWN ROW, above the toolbar — it is the mode, and
+     * everything left in the toolbar (Show codes, Show activities, Rebbi's
+     * view, the layout controls) is an option that applies within whichever
+     * mode is picked. All six used to share one wrapped strip, so the switch
+     * looked like two more buttons rather than the thing the rest hangs off.
+     * Built here, appended at both of the two body.appendChild(toolbar) sites
+     * below, so the seating and list branches cannot drift apart.
+     */
+    var modeRow=null;
     if(!opts.forceSeating){
-      var listBtn=el("button","seat-modebtn"+(effViewMode!=="seating"?" active":""),"List");
+      modeRow=el("div","seat-moderow");
+      var seg=el("div","seat-segmented");
+      var listBtn=el("button","seat-segbtn"+(effViewMode!=="seating"?" active":""),"List");
+      listBtn.title="Show the class as a list, alphabetically by last name";
       listBtn.addEventListener("click", function(){ data.tapViewMode="list"; save(); renderTapPanel(); });
-      toolbar.appendChild(listBtn);
+      seg.appendChild(listBtn);
       if(allowSeating){
-        var seatBtn=el("button","seat-modebtn"+(effViewMode==="seating"?" active":""),"Seating chart");
-        seatBtn.addEventListener("click", function(){ data.tapViewMode="seating"; save(); renderTapPanel(); });
-        toolbar.appendChild(seatBtn);
+        var seatBtn=el("button","seat-segbtn"+(effViewMode==="seating"?" active":""),"Seating chart");
+        seatBtn.title="Show the class in their seats, laid out as the room is";
+        seatBtn.addEventListener("click", function(){
+          // On a class with no chart, plain "seating" would be swallowed by the
+          // fallback above and the click would look broken. Take him into
+          // arranging instead — the one thing there is to do with an empty chart.
+          if(seatChartIsEmpty()){ enterSeatingSetup(); return; }
+          data.tapViewMode="seating"; save(); renderTapPanel();
+        });
+        seg.appendChild(seatBtn);
       }
+      modeRow.appendChild(seg);
     }
     // Scannable mode lives in the ALWAYS-VISIBLE toolbar, beside List / Seating
     // chart — not in the ⚙ Setup panel, where it started. Setup is collapsed by
@@ -7865,9 +8129,11 @@ function setupRoster() {
 
       setupToggle.addEventListener("click", function(){ setSeatSetup(!data.seatSetupOpen); });
 
+      if(modeRow) body.appendChild(modeRow);
       body.appendChild(toolbar);
       body.appendChild(setupRow);
     } else {
+      if(modeRow) body.appendChild(modeRow);
       body.appendChild(toolbar);
     }
 
@@ -7875,13 +8141,27 @@ function setupRoster() {
 
     if(effViewMode==="seating"){ renderSeatGrid(body, studs); return; }
 
+    // Says why this is a list when the toolbar was set to Seating chart, and
+    // carries the only way in. Shown ONLY on the fallback — a rebbi who chose
+    // List is not nagged about a chart he never asked for.
+    if(seatFallback){
+      var fbNote=el("div","seat-fallback-note no-print");
+      fbNote.appendChild(el("span",null,"No seating chart for this class yet — showing the class list."));
+      var fbBtn=el("button","btn btn-sm","⚙ Set up seating chart");
+      fbBtn.title="Open the seating chart for this class and start placing students";
+      fbBtn.addEventListener("click", enterSeatingSetup);
+      fbNote.appendChild(fbBtn);
+      body.appendChild(fbNote);
+    }
+
     var listScanMode=!!data.seatScanMode;
     var grid=el("div","tap-grid");
     studs.forEach(function(s){
       var b=el("button","tap-btn"); b.dataset.sid=s.id;
-      b.appendChild(avatarEl(s, 30));
-      b.appendChild(el("span",null,s.name));
-      b.appendChild(coinScoreEl(s.id,"ts"));
+      // The avatar / name / score used to be appended HERE as well as in the
+      // else branch below, so every student in List mode rendered twice over
+      // (and once in scan mode, above his QR). One card per boy, built in
+      // exactly one of the two branches.
       if(isFrozen(s.id)) b.appendChild(freezeBadgeEl(s.id));
       if(listScanMode){
         // Same payload as the seating chart's Show codes and the printed
@@ -8030,7 +8310,7 @@ function setupRoster() {
   //
   // trueIdx, never the display position: Rebbi's view reverses the DISPLAY
   // order only, so writing by display index would move the wrong boy.
-  function wireSeatArrange(seat, lay, trueIdx, hasStudent, redraw){
+  function wireSeatArrange(seat, lay, trueIdx, redraw){
     seat.draggable=true;
     seat.addEventListener("dragstart", function(ev){
       seat.classList.add("dragging");
@@ -8051,19 +8331,28 @@ function setupRoster() {
         lay.seats[toIdx]=lay.seats[fromIdx];
         lay.seats[fromIdx]=tmp;
       } else if(payload.sid){
-        // coming from the unplaced tray — only place into an empty seat
-        if(lay.seats[toIdx]) return;
+        // Coming from the unplaced tray. Dropping onto an OCCUPIED seat is
+        // allowed and displaces whoever was sitting there back to the tray —
+        // it can't swap, because a boy in the tray has no seat to swap into.
+        //
+        // Nothing has to be written to make that happen: the tray is derived,
+        // not stored. seatPruneAndFillUnplaced() returns every student whose id
+        // is not currently in lay.seats, so the displaced boy reappears in the
+        // tray on the redraw below. This used to bail out here instead, which
+        // read as a broken drag rather than a rule — the seat still lit up on
+        // dragover, and seat-to-seat drags swapped happily.
         lay.seats[toIdx]=payload.sid;
       } else return;
       save(); redraw();
     });
-    // tap-to-place fallback for touch devices: tap an empty seat, then tap an
-    // unplaced name (or the other way round).
-    if(!hasStudent){
-      seat.addEventListener("click", function(){
-        if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); redraw(); }
-      });
-    }
+    // Tap-to-place fallback for touch devices: tap a name then tap a seat (or
+    // the other way round). Wired on occupied seats too, so it matches what a
+    // drag now does — the sitting boy is displaced to the tray. The ✕ clear
+    // button inside an occupied seat calls stopPropagation(), so removing a boy
+    // never trips this.
+    seat.addEventListener("click", function(){
+      if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); redraw(); }
+    });
   }
   // "Not yet seated" tray, shared by the live chart and the class sheet for the
   // same reason wireSeatArrange() is: a boy with no seat has to be placeable
@@ -8071,7 +8360,7 @@ function setupRoster() {
   function renderUnplacedTray(body, unplaced, redraw){
     var trayWrap=el("div","seat-unplaced no-print");
     trayWrap.appendChild(el("div","seat-unplaced-label", unplaced.length
-      ? "Not yet seated — drag into an empty seat, or tap a name then tap an empty seat:"
+      ? "Not yet seated — drag into any seat, or tap a name then tap a seat. Drop onto a taken seat and that boy comes back here:"
       : "Everyone has a seat."));
     var tray=el("div","seat-tray");
     unplaced.forEach(function(s){
@@ -8153,7 +8442,7 @@ function setupRoster() {
       }
 
       if(arranging){
-        wireSeatArrange(seat, lay, trueIdx, !!s, renderTapPanel);
+        wireSeatArrange(seat, lay, trueIdx, renderTapPanel);
       } else if(s){
         seat.addEventListener("click", function(){ tapClick(s, seat); });
       }
@@ -15241,7 +15530,7 @@ nameLine
   // actually being printed; a layout control for something not on the page is
   // noise, and this toolbar is already crowded.
   function seatPrintSyncActLayout(){
-    var show = data.seatPrintOpts.showActivities && $("seatPrintAvatarMode").value!=="activity";
+    var show = data.seatPrintOpts.showActivities && seatPrintCodeKind($("seatPrintAvatarMode").value)!=="activity";
     $("seatPrintActLayoutRow").style.display = show ? "inline-flex" : "none";
     var grouped=seatPrintActGrouped();
     var gb=$("seatPrintActGrouped");
@@ -15263,13 +15552,76 @@ nameLine
     data.seatPrintOpts.actCols = seatPrintActCols()>=3 ? 1 : seatPrintActCols()+1;
     save(); seatPrintSyncActLayout(); renderSeatChartPrint();
   });
+  /* Keeps the Seating chart / List switch and the controls that only make
+   * sense under one of them in step.
+   *
+   * Rows/Cols and Rebbi's view are hidden in List, not disabled: both describe
+   * a ROOM — how many desks across, and which end of it you are standing at —
+   * and a list has no room. Leaving them on screen would invite a rebbi to set
+   * a value that the sheet in his hand then ignores. Everything else (avatar
+   * mode, Points, the Activities footer, orientation) applies to both layouts
+   * and stays exactly where it is.
+   */
+  function seatPrintSyncLayout(){
+    var isList=seatPrintIsList();
+    document.querySelectorAll("#seatPrintLayout button").forEach(function(b){
+      b.classList.toggle("active", (b.dataset.layout==="list")===isList);
+    });
+    var dims=$("seatPrintDims"); if(dims) dims.style.display = isList ? "none" : "";
+    var rv=$("seatPrintRebbiViewRow"); if(rv) rv.style.display = isList ? "none" : "flex";
+  }
+  document.querySelectorAll("#seatPrintLayout button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      data.seatPrintOpts.layout = (btn.dataset.layout==="list") ? "list" : "seating";
+      // Switching BACK to the chart has to seat anyone still unplaced, exactly
+      // as opening this tab does — otherwise a rebbi who arrived in List, then
+      // switched to Seating chart, would get the page of "Empty seat" boxes the
+      // auto-placer exists to prevent, because it only ever ran on tab open.
+      if(!seatPrintIsList()){
+        var placed=seatAutoPlaceUnplaced();
+        if(placed) seatAutoPlacedCount+=placed;
+      }
+      save(); seatPrintSyncLayout(); seatPrintSyncAutoPlaceNote(); renderSeatChartPrint();
+    });
+  });
+  /* The ⚙ Rearrange seats button that appears once boys have been auto-seated.
+   *
+   * Extracted from activateTab so the layout switch can refresh it too. It is
+   * additionally hidden in List: the button scrolls to the seat grid and rings
+   * it, and in List there is no seat grid to scroll to — the sheet is a plain
+   * alphabetical list with nothing to rearrange.
+   */
+  function seatPrintSyncAutoPlaceNote(){
+    var apNote=$("seatAutoPlaceNote"); if(!apNote) return;
+    apNote.innerHTML="";
+    if(!seatAutoPlacedCount || seatPrintIsList()){ apNote.style.display="none"; return; }
+    /* A button, not a paragraph. This used to explain that N boys had been
+       auto-seated and then give directions to the Dashboard to rearrange them —
+       directions that led away from this page, which is the only place seats
+       actually drag. The rebbi does not have to do anything about the count, so
+       it is gone; what he might want is to get to the chart, which on a full
+       class sits below the fold. */
+    var goBtn=el("button","btn btn-sm","⚙ Rearrange seats");
+    goBtn.title="Jump to the chart — drag a boy into a different desk, or ✕ to empty his seat";
+    goBtn.addEventListener("click", function(){
+      var grid=$("seatChartGrid");
+      if(!grid) return;
+      grid.scrollIntoView({behavior:"smooth", block:"center"});
+      // Brief highlight, so it is obvious WHICH thing the button moved to
+      // on a page that is mostly controls above a large sheet.
+      grid.classList.add("seat-jump-flash");
+      setTimeout(function(){ grid.classList.remove("seat-jump-flash"); }, 1200);
+    });
+    apNote.appendChild(goBtn);
+    apNote.style.display="block";
+  }
   // Shows the activity picker (and hides the now-redundant Activities-footer
   // checkbox, since a merged PA: code already carries the activity — no
   // separate arming code needed) only in Activity mode, and keeps the
   // picker's options in sync with the same armable/visible filter every
   // other arming surface uses (armableActivities() + actVisibleInCurrentClass).
   function seatPrintSyncActivityRow(){
-    var isActivity = $("seatPrintAvatarMode").value==="activity";
+    var isActivity = seatPrintCodeKind($("seatPrintAvatarMode").value)==="activity";
     $("seatPrintActivityRow").style.display = isActivity ? "flex" : "none";
     $("seatPrintShowActivitiesRow").style.display = isActivity ? "none" : "flex";
     var sel=$("seatPrintActivityPicker"), cur=sel.value || data.seatPrintOpts.activityId;
@@ -15527,22 +15879,96 @@ nameLine
     if(!gs.length && data.className) return data.className;
     return "All Classes";
   }
+  /* Is the class sheet set to print the alphabetical list rather than the
+   * seat grid? Read through a function so the "anything not 'list' means
+   * seating" rule lives in one place, matching the load2fix backfill. */
+  function seatPrintIsList(){ return data.seatPrintOpts.layout==="list"; }
+
+  /* WHAT GOES IN A CARD — read the one stored mode string through these two,
+   * never by comparing it directly.
+   *
+   * It stays a single string because that is what old saves carry, but two of
+   * its values now mean "a code AND a face": "qrphoto" and "actphoto". Every
+   * place that used to test avatarMode against "qr" / "activity" / "photo" asks
+   * these instead, so a combined value cannot be understood by the renderer and
+   * missed by something else. That asymmetry is not hypothetical — the activity
+   * picker, the Activities-footer checkbox, the footer itself and the
+   * "pick an activity first" empty state all branch on Activity mode
+   * separately, and a new value understood by four of those five prints PA:
+   * codes for an activity nobody chose.
+   */
+  function seatPrintCodeKind(mode){
+    if(mode==="qr" || mode==="qrphoto") return "qr";
+    if(mode==="activity" || mode==="actphoto") return "activity";
+    return "none";
+  }
+  function seatPrintWantsPhoto(mode){
+    return mode==="photo" || mode==="qrphoto" || mode==="actphoto";
+  }
+
+  /* ONE STUDENT'S PRINTED CARD — shared by both layouts on this page.
+   *
+   * Extracted rather than copied. The two layouts must carry an identical card
+   * (same QR payload, same photo size, same name, same points) or a rebbi who
+   * switches between them gets two different sheets from one setting; that is
+   * the same "the sheet and the chart must never disagree" rule the code
+   * picker already follows. Fills `seat` in place and returns nothing.
+   */
+  function fillSeatPrintCard(seat, s, avatarMode, act, showPts, hasQR){
+    var kind=seatPrintCodeKind(avatarMode), wantPhoto=seatPrintWantsPhoto(avatarMode);
+    /* THE FLEX ROW EXISTS ONLY WHEN BOTH ARE PRINTED. A code alone, or a face
+     * alone, keeps the exact DOM it has always had, and therefore the exact
+     * printed height — a rebbi who has a one-page sheet set up today must not
+     * find it paginating differently because a mode he does not use was added.
+     * The side-by-side sizing lives in .seat-print-pair (see the stylesheet). */
+    var both = (kind!=="none" && wantPhoto);
+    var host = both ? el("div","seat-print-pair") : seat;
+    // Face first, code second: you find the boy by looking, then scan him.
+    if(wantPhoto){
+      var pw=el("div","seat-print-photo");
+      pw.appendChild(avatarEl(s, 76));
+      host.appendChild(pw);
+    }
+    if(kind!=="none"){
+      var qrw=el("div","seat-print-qr");
+      if(hasQR){
+        var holder=el("div"); qrw.appendChild(holder);
+        // Same PA:<student>:<activity> merged code renderPersonalPages()
+        // prints per student, just laid out in the grid instead — one scan
+        // applies this exact activity to this exact student.
+        var qrText = (kind==="activity") ? ("PA:"+s.id+":"+act.id) : s.id;
+        try{ new QRCode(holder,{text:qrText,width:95,height:95,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ qrw.appendChild(document.createTextNode("QR?")); }
+      } else {
+        qrw.appendChild(document.createTextNode("(offline)"));
+      }
+      host.appendChild(qrw);
+    }
+    if(both) seat.appendChild(host);
+    seat.appendChild(el("span","seat-name",s.name));
+    if(showPts) seat.appendChild(el("span","seat-print-pts", fmtScore(s.id)));
+  }
+
   function renderSeatChartPrint(){
     var wrap=$("seatChartGrid"); wrap.innerHTML="";
     // The preview is drawn at the real page size, so it has to follow the real
     // orientation — otherwise a rebbi setting up a landscape sheet lays it out
     // against a portrait page.
     wrap.classList.toggle("landscape", data.seatPrintOrient==="landscape");
-    var lay=seatLayout();
+    var isList=seatPrintIsList();
     var studs=activeStudents();
-    var unplaced=seatPruneAndFillUnplaced(lay, studs);
+    // seatLayout() INVENTS AND STORES a 4x6 layout for any class it is asked
+    // about, so List mode must not call it — printing a name list is not a
+    // reason to write a seating chart for a class that has none.
+    var lay = isList ? null : seatLayout();
+    var unplaced = isList ? [] : seatPruneAndFillUnplaced(lay, studs);
     var byId={}; studs.forEach(function(s){ byId[s.id]=s; });
     var hasQR=(typeof QRCode!=="undefined");
     var avatarMode = $("seatPrintAvatarMode") ? $("seatPrintAvatarMode").value : "qr";
     var showPts = $("seatPrintShowPoints") ? $("seatPrintShowPoints").checked : false;
     var rebbiView = $("seatPrintRebbiView") ? $("seatPrintRebbiView").checked : false;
-    var act = (avatarMode==="activity") ? actById(data.seatPrintOpts.activityId) : null;
-    if(avatarMode==="activity" && !act){
+    var act = (seatPrintCodeKind(avatarMode)==="activity") ? actById(data.seatPrintOpts.activityId) : null;
+    if(seatPrintCodeKind(avatarMode)==="activity" && !act){
       wrap.appendChild(el("div","seat-print-title", seatPrintTitle()));
       wrap.appendChild(el("div","empty-state", data.activities.length
         ? "Pick an activity above to print its seating chart."
@@ -15571,6 +15997,44 @@ nameLine
       badgeWrap.appendChild(badge);
       wrap.appendChild(badgeWrap);
     }
+    // Redraws both charts: this one because it is what the rebbi is looking at,
+    // the live one because it is the same seating and must not go stale behind
+    // him. Same function the seating editor that used to sit above this page
+    // called — there is one seat model, and now one place to edit it.
+    // Declared ahead of the layout branch because the unplaced tray in the tail
+    // below still needs it.
+    function seatRedraw(){ renderTapPanel(); renderSeatChartPrint(); }
+
+    if(isList){
+      /* LIST — the whole class alphabetically by last name, no seats at all.
+       *
+       * Sorted with the same lastFirstKey() every other student list in the app
+       * uses, so this sheet, the Dashboard's List mode and the Students tab all
+       * agree on the order rather than inventing a third one.
+       *
+       * The CARD is identical to the seating layout's (fillSeatPrintCard) — same
+       * QR payload, same photo, same points — so a code scanned off the list is
+       * indistinguishable from the same code scanned off the chart. Only the
+       * arrangement differs, which is the whole point of the switch.
+       *
+       * No Front of room, no empty seats, no drag handles and no ✕: none of
+       * them mean anything without a room. Columns follow the paper rather than
+       * the Rows/Cols boxes, which are hidden in this layout — a list has no
+       * rows to set, and letting the seating grid's dimensions leak in here
+       * would print a list shaped like a room it is deliberately ignoring.
+       */
+      var listStuds=studs.slice().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+      var lgrid=el("div","seat-grid print-seat-grid");
+      lgrid.style.gridTemplateColumns="repeat("+(data.seatPrintOrient==="landscape"?6:4)+", 1fr)";
+      listStuds.forEach(function(s){
+        var card=el("div","seat");
+        card.dataset.sid=s.id;
+        fillSeatPrintCard(card, s, avatarMode, act, showPts, hasQR);
+        lgrid.appendChild(card);
+      });
+      wrap.appendChild(lgrid);
+      if(!listStuds.length) wrap.appendChild(el("div","empty-state","No students in this class yet."));
+    } else {
     // "Rebbi's view": standing at the front facing the class is the exact
     // opposite orientation of the normal chart (which reads like a map, front
     // at the top). Reversing the whole flat seat list gives a true 180°
@@ -15586,38 +16050,13 @@ nameLine
     if(!rebbiView) wrap.appendChild(el("div","seat-front","Front of room"));
     var grid=el("div","seat-grid print-seat-grid arranging");
     grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
-    // Redraws both charts: this one because it is what the rebbi is looking at,
-    // the live one because it is the same seating and must not go stale behind
-    // him. Same function the seating editor that used to sit above this page
-    // called — there is one seat model, and now one place to edit it.
-    function seatRedraw(){ renderTapPanel(); renderSeatChartPrint(); }
     displayOrder.forEach(function(item){
       var sid=item.sid, trueIdx=item.trueIdx;
       var s = sid ? byId[sid] : null;
       var seat=el("div","seat"+(s?"":" empty"));
       seat.dataset.idx=trueIdx;
       if(s){
-        if(avatarMode==="qr" || avatarMode==="activity"){
-          var qrw=el("div","seat-print-qr");
-          if(hasQR){
-            var holder=el("div"); qrw.appendChild(holder);
-            // Same PA:<student>:<activity> merged code renderPersonalPages()
-            // prints per student, just laid out in the seat grid instead —
-            // one scan applies this exact activity to this exact seat.
-            var qrText = (avatarMode==="activity") ? ("PA:"+s.id+":"+act.id) : s.id;
-            try{ new QRCode(holder,{text:qrText,width:95,height:95,correctLevel:QRCode.CorrectLevel.M}); }
-            catch(e){ qrw.appendChild(document.createTextNode("QR?")); }
-          } else {
-            qrw.appendChild(document.createTextNode("(offline)"));
-          }
-          seat.appendChild(qrw);
-        } else if(avatarMode==="photo"){
-          var pw=el("div","seat-print-photo");
-          pw.appendChild(avatarEl(s, 76));
-          seat.appendChild(pw);
-        }
-        seat.appendChild(el("span","seat-name",s.name));
-        if(showPts) seat.appendChild(el("span","seat-print-pts", fmtScore(s.id)));
+        fillSeatPrintCard(seat, s, avatarMode, act, showPts, hasQR);
         var clearBtn=el("button","seat-clear no-print","✕");
         clearBtn.type="button";
         clearBtn.title="Empty this seat — he moves to the tray below";
@@ -15632,21 +16071,25 @@ nameLine
       // behind a switch so a stray touch on a smartboard mid-lesson can't move
       // a boy. This page is where you set the sheet up — there is no lesson
       // running on it, and making the mock-up the thing you edit is the point.
-      wireSeatArrange(seat, lay, trueIdx, !!s, seatRedraw);
+      wireSeatArrange(seat, lay, trueIdx, seatRedraw);
       grid.appendChild(seat);
     });
     wrap.appendChild(grid);
     if(rebbiView) wrap.appendChild(el("div","seat-front","Front of room"));
+    }
     // The footer arms an activity code to scan-then-scan-student; a merged
     // PA: code already carries the activity, so it would be redundant here
     // (and the checkbox that controls it is hidden in Activity mode too).
-    if(data.seatPrintOpts.showActivities && avatarMode!=="activity"){
+    if(data.seatPrintOpts.showActivities && seatPrintCodeKind(avatarMode)!=="activity"){
       renderSeatPrintActivitiesFooter(wrap);
     }
     var unplacedBox=$("seatPrintUnplaced");
     if(unplacedBox){
       unplacedBox.innerHTML="";
-      renderUnplacedTray(unplacedBox, unplaced, seatRedraw);
+      // No "not yet seated" tray in List: every student in the class is already
+      // on the sheet, so a tray would be offering to place boys who are printed
+      // three inches above it.
+      if(!isList) renderUnplacedTray(unplacedBox, unplaced, seatRedraw);
     }
     /* Non-blocking fit check.
      *
@@ -16007,8 +16450,78 @@ nameLine
   function stamp(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
   $("pushSnapshotBtn").addEventListener("click", function(){ pushSnapshot(false); });
   $("pullSnapshotBtn").addEventListener("click", function(){ pullSnapshot(); });
-  $("exportJson").addEventListener("click", function(){
+  function downloadBackupFile(){
     download("points-backup-"+stamp()+".json", JSON.stringify(data,null,2), "application/json");
+    markBackedUp();
+  }
+  $("exportJson").addEventListener("click", downloadBackupFile);
+
+  /* ---------- BACKUP STALENESS NUDGE ---------- */
+  // Nothing in the app ever recorded that a backup happened, so it could never
+  // tell a rebbi he was weeks stale. This is the whole of that: a stamp on every
+  // path that writes a real backup file, and one amber bar when the stamp gets
+  // old. No new browser APIs, so it works everywhere including iPad Safari.
+  var BACKUP_NUDGE_DAYS = 7;
+  var NUDGE_DISMISS_KEY = "menchmark-backup-nudge-dismissed";
+
+  // Stamped by every path that writes a backup file the rebbi actually keeps —
+  // the Download button and the two automatic pre-destructive-switch safety
+  // downloads. Deliberately NOT stamped by the standings CSV or the Log CSV:
+  // those are reports, not restorable backups. Rebuilding from a Log CSV is a
+  // salvage path, and treating it as a backup would silence the nudge for
+  // someone who has no way back.
+  function markBackedUp(){
+    data.lastBackupAt = Date.now();
+    save();
+    hideBackupNudge();
+  }
+
+  function daysSinceBackup(){
+    // backupNudgeSince is the floor, so an existing rebbi upgrading into this
+    // feature is measured from his first load rather than from epoch 0.
+    var since = Math.max(data.lastBackupAt||0, data.backupNudgeSince||0);
+    if(!since) return 0;
+    return Math.floor((Date.now()-since)/86400000);
+  }
+
+  function hideBackupNudge(){
+    var bar = $("backupNudge");
+    if(bar) bar.classList.remove("show");
+  }
+
+  function maybeShowBackupNudge(){
+    var bar = $("backupNudge"), txt = $("backupNudgeText");
+    if(!bar || !txt) return;
+    // Preview mode: save() is a no-op, so a backup stamp would not survive the
+    // reload anyway and the bar would return every single time. Stay silent.
+    if(!canSave) return;
+    // Never nag over an empty roster — a fresh install has nothing to lose yet,
+    // and the first thing a rebbi should see is not a warning.
+    if(!data.students || !data.students.length) return;
+    // Dismissal lives in sessionStorage, never in `data`. It should not sync to
+    // the Sheet, should not travel in a backup file, and should come back
+    // tomorrow — it silences the bar for this sitting, not permanently.
+    try{ if(sessionStorage.getItem(NUDGE_DISMISS_KEY)) return; }catch(e){}
+    var days = daysSinceBackup();
+    if(days < BACKUP_NUDGE_DAYS) return;
+    if(data.lastBackupAt){
+      txt.innerHTML = "<b>Your last backup was "+days+" days ago.</b> "
+        + "Your scores live in this browser — a backup file is what gets them back.";
+    } else {
+      // Honest wording. The app cannot see files saved before this existed, so
+      // "never" would be a lie to a rebbi who has been backing up by hand.
+      txt.innerHTML = "<b>Menchmark has no record of a backup on this device.</b> "
+        + "If you already keep your own, one more takes a second.";
+    }
+    bar.classList.add("show");
+  }
+
+  $("backupNudgeGo").addEventListener("click", function(){
+    downloadBackupFile(); // stamps and hides the bar
+  });
+  $("backupNudgeLater").addEventListener("click", function(){
+    try{ sessionStorage.setItem(NUDGE_DISMISS_KEY, "1"); }catch(e){}
+    hideBackupNudge();
   });
   // Builds a fully self-contained offline copy of the app:
   //  1. Gets this page's own current HTML — preferably by re-fetching it
@@ -16279,11 +16792,29 @@ nameLine
     if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
     if(!data.seating||typeof data.seating!=="object") data.seating={};
     if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
+    // Show the class list for a class with no seating chart yet. Additive
+    // boolean, defaults ON for existing saves as well as new ones: the state it
+    // replaces (a grid of empty seats holding none of your students) is a dead
+    // end, never something a rebbi chose, so there is nothing to preserve.
+    // Reads data.seating and writes nothing to it.
+    if(typeof data.seatListFallback!=="boolean") data.seatListFallback=true;
     if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
     if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
     // Dropped position per floating launcher FAB. Additive/empty-safe — an
     // existing save without it just keeps every FAB at its default corner spot.
     if(!data.fabPos || typeof data.fabPos!=="object" || Array.isArray(data.fabPos)) data.fabPos={};
+    // Backup staleness. Both purely additive — no DATA_VERSION bump, nothing
+    // converted, nothing read destructively. See the `defaults` entry for why
+    // there are two fields rather than one.
+    //
+    // `backupNudgeSince` backfills to NOW rather than 0, and this line is the
+    // whole point: reaching it proves the save predates the feature, so the
+    // countdown starts from this load instead of from an epoch the rebbi never
+    // agreed to. Guarded with typeof + isFinite, never bare falsiness — 0 is a
+    // legitimate stored value for lastBackupAt and `!data.lastBackupAt` would
+    // silently rewrite it on every single load.
+    if(typeof data.lastBackupAt!=="number" || !isFinite(data.lastBackupAt)) data.lastBackupAt=0;
+    if(typeof data.backupNudgeSince!=="number" || !isFinite(data.backupNudgeSince) || data.backupNudgeSince<=0) data.backupNudgeSince=Date.now();
     if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
     if(typeof data.fullWidth!=="boolean") data.fullWidth=false;
     if(typeof data.sixSeven!=="boolean") data.sixSeven=false;
@@ -16301,8 +16832,20 @@ nameLine
     if(typeof data.seatPrintOpts.avatarMode!=="string"){
       data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
     }
-    if(["qr","photo","none","activity"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
+    // "qrphoto"/"actphoto" (code + face side by side) are additive VALUES of a
+    // field that already existed, so there is nothing to convert and no version
+    // bump: every value an existing save can hold is still in this list and
+    // still means exactly what it meant. The list is the whitelist the renderer
+    // trusts, so a value missing from it silently reverts a rebbi's setting to
+    // QR — add here whenever a mode is added to seatPrintCodeKind().
+    if(["qr","qrphoto","photo","none","activity","actphoto"].indexOf(data.seatPrintOpts.avatarMode)<0) data.seatPrintOpts.avatarMode="qr";
     delete data.seatPrintOpts.showQR;
+    // Which layout the class sheet prints in. Anything that isn't exactly
+    // "list" becomes "seating" — so a save predating the field, and a corrupt
+    // value, both land on the layout every existing sheet already prints.
+    // load2fix must NEVER switch an existing rebbi's sheet to List by itself,
+    // for the same reason it never turns the Activities footer on by itself.
+    if(data.seatPrintOpts.layout!=="list") data.seatPrintOpts.layout="seating";
     if(typeof data.seatPrintOpts.showPoints!=="boolean") data.seatPrintOpts.showPoints=false;
     if(typeof data.seatPrintOpts.rebbiView!=="boolean") data.seatPrintOpts.rebbiView=false;
     // NEW installs get the activities footer on, via `defaults` above. Reaching
@@ -16490,6 +17033,27 @@ nameLine
       data.navHidden.tabs.contest=true;
       data.contestHiddenSeeded=true;
     }
+    // Hide the Gradebook (#185). WHY: it reads data.trackedData, which only the
+    // one-shot Phase 2c attendance conversion below ever writes, so the grid
+    // freezes at the migration and every day since is silently missing.
+    // Unhiding is gated on #123 (Phase 2d) landing, not on anything cosmetic.
+    //
+    // Same one-shot shape as contestHiddenSeeded above, and deliberately NOT in
+    // `defaults`: the flag is absent from a new install AND from every existing
+    // save, so both are hidden on the next load. That is the opposite of #121's
+    // three-state seam on purpose — Lean mode must not take a working tab away
+    // from a rebbi who never asked, whereas this tab is showing wrong numbers
+    // and everyone should stop seeing it. A rebbi who switches it back on in
+    // Settings keeps it on, because the flag is set here and never re-checked.
+    //
+    // HIDDEN, NOT REMOVED. No Gradebook code is deleted and no tracked-item
+    // data is touched: data.trackedItems and data.trackedData are not read,
+    // written or reshaped here, so 2a's byte-identity guarantee still holds and
+    // 2d inherits the finished 2b UI intact.
+    if(!data.gradebookHiddenSeeded){
+      data.navHidden.tabs.gradebook=true;
+      data.gradebookHiddenSeeded=true;
+    }
     if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
     if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
     if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
@@ -16598,6 +17162,20 @@ nameLine
         // second, wrong-shaped count item — exactly the duplication this guard
         // exists to prevent.
         if(a.name==="Homework Checked" || a.name===PASS_ACT_NAME || a.name===ATT_ACT_NAME) return;
+        // Freeze is skipped for a DIFFERENT reason than the three above. They
+        // each already have their own preset, so a count item would duplicate
+        // them. Freeze should have no tracked item AT ALL: a count item here
+        // is a per-boy tally of how many times he was frozen — a record nobody
+        // asked for, which arrived only as a side effect of Freeze being built
+        // like the other tracked activities. docs/NOW.md is explicit that this
+        // is not to be built by accident ("a recorded warning implies a count,
+        // a count implies rungs, and rungs are the ladder" — #114).
+        //
+        // Matched by the freezeSeconds MARKER, never by name: there can be
+        // more than one freeze at different durations and a rebbi may rename
+        // his, so a name test would miss exactly the cases that matter. Same
+        // rule freezeActivity() states for the rest of the feature.
+        if(freezeActivity(a)) return;
         seedItems.push({ id:"ti-act-"+a.id, name:a.name, method:"count", config:{ step:1 } });
       });
       seedItems.push({ id:"ti-pass", name:PASS_ACT_NAME, method:"limited", config:{ cap:1 } });
@@ -16606,6 +17184,34 @@ nameLine
       var haveTi={}; data.trackedItems.forEach(function(it){ if(it && it.id) haveTi[it.id]=1; });
       seedItems.forEach(function(it){ if(!haveTi[it.id]) data.trackedItems.push(it); });
       data.trackedItemsSeeded=true;
+    }
+
+    // Every save that seeded BEFORE the freeze skip above existed already has
+    // the stray count item — which is every rebbi now running the app, so the
+    // skip on its own would fix this only for people who do not have it yet.
+    // This drops it where it actually sits.
+    //
+    // ONE-SHOT, and it only ever drops an item with NOTHING recorded against
+    // it. Today that is all of them: the sole writer of data.trackedData is
+    // the 2c attendance conversion below, under "ti-attendance". But the
+    // emptiness CHECK is what makes this safe, not that reasoning — a restored
+    // backup carrying real counts keeps every one of them, and a rebbi who
+    // deliberately re-creates a freeze count item later keeps that too,
+    // because the flag stops this running a second time.
+    if(!data.freezeCountItemsDropped){
+      var freezeTiIds={};
+      data.activities.forEach(function(a){
+        if(a && a.id && freezeActivity(a)) freezeTiIds["ti-act-"+a.id]=1;
+      });
+      data.trackedItems=data.trackedItems.filter(function(it){
+        if(!it || !it.id || !freezeTiIds[it.id]) return true;
+        var per=data.trackedData[it.id];
+        if(!per || typeof per!=="object" || Array.isArray(per)) return false;
+        return Object.keys(per).some(function(sid){
+          return Array.isArray(per[sid]) && per[sid].length>0;
+        });
+      });
+      data.freezeCountItemsDropped=true;
     }
 
     // Shape guards. An item whose method we do not recognise is left strictly
@@ -16821,6 +17427,14 @@ nameLine
     if (!rawSetup && !pendingBackup && !sheetFromImport) return;
 
     var changed = false;
+    /* True when this boot is restoring an existing classroom rather than
+       setting up a new one. It matters because the wizard writes its
+       in-progress blob on EVERY screen change — including simply opening the
+       Restore screen — so `menchmark_setup` existing is not by itself proof
+       that anybody went through Quick Setup. Anything below that imposes a
+       fresh-install default has to check this first, or it would impose that
+       default on a rebbi's restored data. */
+    var restoring = false;
 
     /* 1. Full backup import — highest priority */
     if (pendingBackup) {
@@ -16837,6 +17451,7 @@ nameLine
               clearStaleTicketPools();
             });
             changed = true;
+            restoring = true;
           }
         }
       } catch(e) {}
@@ -16845,6 +17460,10 @@ nameLine
 
     /* 2. Sheet URL — only fills if app has none yet */
     if (sheetFromImport) {
+      // setup.html's Sheet path writes the restored snapshot straight into
+      // KEY before handing off, so by the time this runs `data` is already the
+      // restored classroom.
+      restoring = true;
       if (typeof data.sheetUrl !== "string" || !data.sheetUrl.trim()) {
         data.sheetUrl = sheetFromImport;
         changed = true;
@@ -16858,7 +17477,9 @@ nameLine
         var s = JSON.parse(rawSetup);
         if (s.className)  { data.className = s.className; changed = true; }
         if (s.schoolName) { data.school = s.schoolName; changed = true; }
-        if (s.grade)      { data.grade  = s.grade;      changed = true; }
+        // (There was a `s.grade` read here. The wizard has never collected a
+        //  grade, so it could only ever be undefined — removed rather than
+        //  left as a field that looks supported and isn't.)
 
         if (s.features && typeof s.features === "object") {
           /* Shulchani Mode — route through the same safety check used by
@@ -16877,43 +17498,73 @@ nameLine
               data.shulchaniMode = s.features.shulchani; // nothing to protect — safe to set directly
             }
           }
-          /* Store other feature flags for subsystems to read */
           if (!data.features || typeof data.features !== "object") data.features = {};
-          if (s.features && s.features.learning === true && s.learning && s.learning.type) {
-            data.features.learningType = s.learning.type;
-            if (s.learning.parshaLabel || s.learning.mesechtaLabel) {
-              data.wizardLearning = s.learning;
-            }
-          }
 
           /* Nav visibility — reversible via Settings */
           if (!data.navHidden || typeof data.navHidden !== "object") data.navHidden = {groups:{},tabs:{}};
           if (!data.navHidden.groups) data.navHidden.groups = {};
           if (!data.navHidden.tabs)   data.navHidden.tabs   = {};
-          // Only `learning` is still emitted by the wizard, and `learn` is a real
-          // group key. The `teams` -> groups.leaderboard and `qr` -> tabs.labels
-          // lines that used to sit here were vestigial from the pre-redesign
-          // wizard: it no longer emits either flag, so both tested
-          // `undefined === false` and never ran — and both named keys that do
-          // not exist anyway (the group is `standings`, and there is no `labels`
-          // tab). Removed rather than corrected, since there is nothing left to
-          // drive them. Lean mode (#121) will sit on this path, so it should
-          // start from keys that are known-good.
-          if (s.features.learning === false) data.navHidden.groups.learn = true;
-          changed = true;
-        }
-
-        /* Serial scanner */
-        if (s.hardware && s.hardware.scanner === true) {
-          data.serialAutoConnect = true;
-          if ([9600,19200,38400,57600,115200].indexOf(s.hardware.baud) >= 0) {
-            data.serialBaud = s.hardware.baud;
+          // Review (the `learn` group) starts HIDDEN on a fresh setup. The
+          // wizard no longer asks about texts at all, so nothing here can
+          // depend on an answer — a new rebbi gets the smaller app, and turns
+          // Review on in Settings → the group checkbox when he wants it.
+          //
+          // This only ever runs for a setup that came through the wizard, so
+          // an existing rebbi's saved data is never touched and nobody loses a
+          // group they were already using.
+          //
+          // NOTE for Lean mode (#121): this is a one-time WRITE at first-run,
+          // not a live preset, which is why it doesn't break the "derive,
+          // don't write" rule that Lean has to follow. Lean must still derive
+          // its own hiding — if it ever also writes here, a rebbi's own
+          // un-hiding of Review would be indistinguishable from the default
+          // and would get stomped.
+          //
+          // Skipped entirely when restoring: a rebbi coming back from a backup
+          // or his Sheet already has his own answer to this, saved in the very
+          // data being restored, and a fresh-install default must not overrule
+          // it. He would have had to go find the Settings checkbox to undo a
+          // hide he never asked for.
+          if (!restoring) {
+            data.navHidden.groups.learn = true;
+            changed = true;
           }
+        }
+
+        /* (The Serial/COM scanner branch lived here. The wizard no longer asks
+           about hardware — a keyboard-wedge scanner needs no configuration at
+           all, and Serial mode is still fully available in Settings, which is
+           where the one-time "Connect scanner" tap has to happen anyway.) */
+
+        /* Activities from wizard.
+           MERGE, never replace: by the time this runs, load() -> load2fix()
+           has already seeded the tracked system activities (Homework Checked,
+           Bathroom Pass, Attendance, Freeze). Those are `tracked:true`, award
+           no points, and each backs a tab with its own data store — dropping
+           them would strand those tabs. So only the point-earning activities
+           are swapped out, and anything tracked is carried across untouched. */
+        if (Array.isArray(s.activities)) {
+          var kept = (data.activities || []).filter(function(a){ return a && a.tracked; });
+          var fromWizard = [];
+          s.activities.forEach(function(a) {
+            var nm = (a && a.name || "").trim();
+            if (!nm) return;                       // blank row the rebbi never filled in
+            var n = parseInt(a.pts, 10);
+            fromWizard.push({ id:"", name:nm, pts:isNaN(n) ? 0 : n });
+          });
+          data.activities = fromWizard.concat(kept);
+          // Re-id only the wizard's entries, after the merge, so a generated id
+          // can't collide with one a tracked activity already holds.
+          data.activities.forEach(function(a){ if (!a.id) a.id = nextActId(); });
           changed = true;
         }
 
-        /* Students from wizard — add any that aren't already in the roster */
+        /* Students from wizard — add any that aren't already in the roster.
+           Every boy goes into the class named on the wizard's first screen:
+           the rebbi named his class once, and typing it again per student was
+           the only thing the old "Name, Group" column bought. */
         if (Array.isArray(s.students) && s.students.length) {
+          var wizardClass = (s.className || "").trim();
           var existingNames = {};
           (data.students || []).forEach(function(st) {
             existingNames[st.name.toLowerCase()] = true;
@@ -16924,10 +17575,33 @@ nameLine
             data.students.push({
               id: nextStudentId ? nextStudentId() : ('w' + Date.now() + Math.random()),
               name: p.name,
-              group: p.grp || ''
+              group: wizardClass
             });
             existingNames[p.name.toLowerCase()] = true;
           });
+          /* Select that class too, rather than leaving the header on "All
+             classes". Seating is stored per selected class (seatKey() is
+             data.currentClass||""), so if the rebbi arranged his chart under
+             "All classes" and later picked his own class from the dropdown —
+             which now has a real entry in it because of the line above — he'd
+             land on an empty chart and lose the arrangement. Selecting it up
+             front means one key from the very first sheet. */
+          if (wizardClass) { data.currentClass = wizardClass; }
+          /* Size the seating grid to the roster. The default is 4x6 = 24 and
+             the print page deliberately never changes the column count, so a
+             class of 30 would otherwise print 24 boys seated and the rest
+             listed as unplaced on their very first sheet. */
+          if (data.seating && typeof data.seating === "object") {
+            var roster = (data.students || []).length;
+            var key = wizardClass || "";
+            if (!data.seating[key] || typeof data.seating[key] !== "object") {
+              data.seating[key] = {rows:4, cols:6, seats:[]};
+            }
+            var lay = data.seating[key];
+            if (roster > lay.rows * lay.cols) {
+              lay.rows = Math.ceil(roster / lay.cols);
+            }
+          }
           changed = true;
         }
       } catch(e) {}
@@ -17001,6 +17675,15 @@ nameLine
   renderClassSel();
   renderGroupTabs("scan"); renderSubTabs("scan","scan"); activeGroupName="scan"; activeTabName="scan";
   applyGlobalScanBarVisibility("scan");
+  // The setup wizard finishes by sending the rebbi here, so his first sight of
+  // the app is the sheet he is about to print rather than a dashboard he has
+  // no data in yet. Deliberately opens the page and stops — it does NOT call
+  // print(), because a print dialog appearing by itself on first launch reads
+  // as the app doing something to you. `printSeats` lives in the Run group,
+  // which can never be hidden, so this always has somewhere to land.
+  try {
+    if (location.search.indexOf("tab=printSeats") >= 0) activateTab("printSeats");
+  } catch(e) {}
   if(typeof serialTryAutoReconnect==="function") serialTryAutoReconnect();
   if(typeof window._refreshSnackBtn==="function") window._refreshSnackBtn();
   // Auto-generate text set from wizard learning selection — runs once, async,
@@ -17008,6 +17691,13 @@ nameLine
   // Auto-generate only if teacher opted in (default: true)
   if (data.wizardLearning && data.wizardLearning.autoGenerate !== false) setTimeout(function(){ autoGenerateWizardTextSet(); }, 1500);
   setTimeout(function(){ $("scanInput").focus(); },80);
+  // Backup staleness check. Deferred so it never competes with first paint, and
+  // wrapped like its neighbours — a nudge failing must never stop the app from
+  // starting. Runs once per load; the bar is otherwise only touched by its own
+  // two buttons and by markBackedUp().
+  setTimeout(function(){
+    try{ maybeShowBackupNudge(); }catch(e){}
+  }, 1200);
 })();
 
   /* ---------- help modal ---------- */
@@ -17562,6 +18252,12 @@ Print → Seating chart prints your current class's seating chart full-page, lai
 
 
 - Choose what appears in each seat: a QR code (scan straight off the printed page), a Student photo (uses the photo from the Students tab, or initials if none is set), or None.
+
+
+- **Student photo prints about an inch across**, filling the card, so you can actually recognise a boy from the page — it shrinks only if your chart has a lot of columns. Note that photos make the sheet taller than codes do, so a chart that just fitted one page as QR codes may want two as photos; the warning under the preview will tell you, and switching back to QR code (or QR code + photo) restores the shorter sheet.
+
+
+- **QR code + photo** puts both in the same card, side by side — so you can recognise a boy by his face and scan him from that same card, without printing two sheets. Side by side rather than one above the other on purpose: it spends the empty width either one leaves behind instead of making every card taller. On a 6-column chart the picture comes out about half an inch; with 4 or 5 columns, or in Landscape, it grows to around three-quarters of an inch. (**Activity code + photo** does the same for a one-activity sheet.) If the sheet stops fitting on one page, the warning under the preview will say so.
 
 
 - Optionally show each student's current points on their seat.
