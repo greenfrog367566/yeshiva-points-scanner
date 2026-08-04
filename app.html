@@ -491,6 +491,26 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat.scan-seat{padding:5px 4px;gap:2px;justify-content:flex-start}
   .seat.scan-seat .seat-name{font-size:.66rem;line-height:1.1;overflow:hidden;
     display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;word-break:break-word}
+  /* Beside a 1-line clamped name, the normal .74rem score reads bigger than the
+     name it belongs to. */
+  .seat.scan-seat .ts{font-size:.62rem;margin-top:1px}
+  /* Photo AND code in one card — the live chart's copy of the printed sheet's
+     .seat-print-pair. Side by side rather than stacked, so showing the face
+     costs the cell no extra height. It WRAPS rather than clipping: .seat is
+     overflow:hidden, and a half-clipped QR is a code that silently won't scan,
+     which is worse than a taller cell. */
+  .seat-live-pair{display:flex;align-items:center;justify-content:center;gap:6px;
+    flex-wrap:wrap;width:100%}
+  .seat-live-pair .avatar,.seat-live-pair .seat-qr{margin:0}
+  /* A List tile is a plain block, not the seat's flex column, so the code and
+     the face need their own centring there. */
+  .tap-btn .seat-qr{margin:0 auto 5px}
+  /* The card-mode picker, matching the printed sheet's Avatar select rather
+     than inventing a second vocabulary for the same four choices. */
+  .seat-modesel{display:flex;align-items:center;gap:6px;font-size:.85rem;
+    color:var(--muted);font-weight:600}
+  .seat-modesel select{border:1px solid var(--line);background:#fff;color:var(--ink);
+    border-radius:8px;padding:6px 8px;font-size:.85rem;font-weight:600;font-family:inherit}
   /* Activity codes under the chart — the same set the printed sheet carries. */
   .seat-scan-codes{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
     padding:10px 14px 14px;border-top:2px solid var(--line);margin-top:6px}
@@ -7928,15 +7948,19 @@ function setupRoster() {
    * who clicks in gets the grid and the "Not yet seated" tray straight away
    * rather than clicking "Seating chart" and watching nothing happen.
    *
-   * Mirrors setSeatSetup()'s exclusions — Rebbi's view and Show codes both
-   * fight arranging, for the reasons documented at their own toggles.
+   * Mirrors setSeatSetup()'s exclusions — Rebbi's view and the two code-bearing
+   * card modes both fight arranging, for the reasons documented at their own
+   * controls.
    */
   function enterSeatingSetup(){
     data.tapViewMode="seating";
     data.seatSetupOpen=true;
     data.seatArranging=true;
     data.seatLiveRebbiView=false;
-    data.seatScanMode=false;
+    // Codes off for arranging — see effSeatCardMode(). Written through the
+    // setter rather than by poking seatScanMode, so the mode the picker shows
+    // and the legacy flag can never disagree.
+    if(seatPrintCodeKind(data.seatCardMode)==="qr") setSeatCardMode("photo");
     save(); renderTapPanel();
   }
 
@@ -7995,7 +8019,7 @@ function setupRoster() {
                        && seatChartIsEmpty();
     if(seatFallback) effViewMode="list";
     /* The view switch gets its OWN ROW, above the toolbar — it is the mode, and
-     * everything left in the toolbar (Show codes, Show activities, Rebbi's
+     * everything left in the toolbar (Avatar, Points, Show activities, Rebbi's
      * view, the layout controls) is an option that applies within whichever
      * mode is picked. All six used to share one wrapped strip, so the switch
      * looked like two more buttons rather than the thing the rest hangs off.
@@ -8034,17 +8058,46 @@ function setupRoster() {
     // Arranging and scannable are mutually exclusive: dragging seats around
     // while every cell shows a QR is a way to mis-seat a boy you cannot read.
     // (List mode has no arranging state, so this only ever bites in seating mode.)
-    var scanBtn=el("button","seat-modebtn"+(data.seatScanMode?" active":""), data.seatScanMode?"Hide codes":"⛶ Show codes");
-    scanBtn.title="Show each student's QR code, so the class can be scanned straight off the screen";
-    scanBtn.addEventListener("click", function(){
-      data.seatScanMode=!data.seatScanMode;
-      // Show codes and arranging still can't both be on — a QR in every cell
-      // while seats are draggable is a way to mis-seat a boy you cannot read.
+    // WHAT SITS IN EACH BOY'S CARD. This was an on/off "Show codes" button, and
+    // the thing it could not express is the reason it is now a select: turning
+    // codes on REPLACED the boy's face, so a rebbi scanning off the smartboard
+    // could not see who he was scanning. Same four values, same wording and the
+    // same order as the printed class sheet's own "Avatar:" select — one
+    // vocabulary for one setting, on the screen and on paper.
+    var modeWrap=el("label","seat-modesel");
+    modeWrap.appendChild(document.createTextNode("Avatar:"));
+    var modeSel=document.createElement("select");
+    [["qr","QR code"],["qrphoto","QR code + photo"],["photo","Student photo"],["none","None"]]
+      .forEach(function(o){
+        var op=document.createElement("option");
+        op.value=o[0]; op.textContent=o[1];
+        modeSel.appendChild(op);
+      });
+    // The STORED mode, not the effective one — arranging overrides the display
+    // (see effSeatCardMode) but must not look as though it changed his setting.
+    modeSel.value=data.seatCardMode;
+    modeSel.title='What sits in each boy\'s card, the same choices the printed class sheet offers. "QR code + photo" puts his picture and his code side by side, so you can recognise him and scan him from the one card.';
+    modeSel.addEventListener("change", function(){
+      setSeatCardMode(this.value);
+      // Codes and arranging still can't both be on — a QR in every cell while
+      // seats are draggable is a way to mis-seat a boy you cannot read.
       // Closes Setup with it, since Setup being open now MEANS arranging.
-      if(data.seatScanMode){ data.seatArranging=false; data.seatSetupOpen=false; }
+      if(seatPrintCodeKind(data.seatCardMode)==="qr"){ data.seatArranging=false; data.seatSetupOpen=false; }
       save(); renderTapPanel();
     });
-    toolbar.appendChild(scanBtn);
+    modeWrap.appendChild(modeSel);
+    toolbar.appendChild(modeWrap);
+
+    // Points, matching the sheet's own checkbox and independent of the card mode
+    // for the same reason it is there: showing codes used to take every boy's
+    // score off the chart along with his face, with no way to keep it.
+    var ptsBtn=el("button","seat-modebtn"+(data.seatShowPoints?" active":""),"Points");
+    ptsBtn.title="Show each boy's score on his card";
+    ptsBtn.addEventListener("click", function(){
+      data.seatShowPoints=!data.seatShowPoints;
+      save(); renderTapPanel();
+    });
+    toolbar.appendChild(ptsBtn);
 
     // Independent of Show codes — a rebbi may want the activity codes footer
     // (to arm an activity by tapping or scanning it) without also switching
@@ -8233,28 +8286,23 @@ function setupRoster() {
       body.appendChild(fbNote);
     }
 
-    var listScanMode=!!data.seatScanMode;
+    // The same card mode the seating chart uses, for the same reason the printed
+    // sheet builds its List and its seat grid from one fillSeatPrintCard(): the
+    // two are the same class shown two ways, and one setting must not produce
+    // two different cards. List has no arranging, so the stored mode is always
+    // the effective one — effSeatCardMode() is read anyway rather than
+    // data.seatCardMode, so there is one answer to "what is in a card".
+    var listMode=effSeatCardMode();
+    var listScanMode=seatPrintCodeKind(listMode)==="qr";
+    var listShowPts=!!data.seatShowPoints;
     var grid=el("div","tap-grid");
     studs.forEach(function(s){
       var b=el("button","tap-btn"); b.dataset.sid=s.id;
       // The avatar / name / score used to be appended HERE as well as in the
       // else branch below, so every student in List mode rendered twice over
-      // (and once in scan mode, above his QR). One card per boy, built in
-      // exactly one of the two branches.
-      if(isFrozen(s.id)) b.appendChild(freezeBadgeEl(s.id));
-      if(listScanMode){
-        // Same payload as the seating chart's Show codes and the printed
-        // sheet — s.id, nothing else.
-        var qh=el("div","seat-qr"); qh.style.cssText="width:"+SEAT_QR_PX+"px;height:"+SEAT_QR_PX+"px;margin:0 auto 5px";
-        try{ new QRCode(qh,{text:s.id,width:SEAT_QR_PX,height:SEAT_QR_PX,correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ qh.textContent="QR?"; }
-        b.appendChild(qh);
-        b.appendChild(el("span",null,s.name));
-      } else {
-        b.appendChild(avatarEl(s, 30));
-        b.appendChild(el("span",null,s.name));
-        b.appendChild(coinScoreEl(s.id,"ts"));
-      }
+      // (and once in scan mode, above his QR). One card per boy — now built by
+      // the one shared builder rather than by two branches that could drift.
+      fillSeatLiveCard(b, s, listMode, listShowPts, 30);
       b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
@@ -8286,6 +8334,80 @@ function setupRoster() {
   // fine for the scanner in use but is the reason the name stays visible — if a
   // code will not read, the rebbi still has something to tap.
   var SEAT_QR_PX = 68;
+
+  /* THE LIVE CHART'S CARD MODE — the screen's half of the printed sheet's
+   * "Avatar:" select, and deliberately the SAME four values it uses:
+   * "qr" / "qrphoto" / "photo" / "none".
+   *
+   * It is read through seatPrintCodeKind() and seatPrintWantsPhoto() — the
+   * printed sheet's own readers, called rather than copied. Those two exist
+   * precisely so a combined value like "qrphoto" cannot be understood by one
+   * renderer and missed by another; a second copy here would reintroduce the
+   * asymmetry they were written to close.
+   *
+   * The sheet's two ACTIVITY modes are deliberately absent: a merged
+   * PA:<student>:<activity> code is for scanning down a printed grid with no
+   * arming step, and on the live chart the activity footer already arms by tap.
+   *
+   * data.seatScanMode is kept exactly in step below rather than deleted. It
+   * predates these four modes and is what every existing save and backup
+   * carries, and the boot-time disarm still reads it — but nothing should treat
+   * it as the source of truth any more.
+   */
+  function setSeatCardMode(m){
+    data.seatCardMode = m;
+    data.seatScanMode = seatPrintCodeKind(m)==="qr";
+  }
+  /* Arranging never shows codes, whatever the mode says: dragging boys around a
+   * grid where every cell is a QR you cannot read is how one ends up in the
+   * wrong seat. Same exclusion the old Show-codes button enforced by turning
+   * arranging off — expressed here as a display override so the rebbi's chosen
+   * mode is still waiting for him when he finishes arranging.
+   */
+  function effSeatCardMode(){
+    // "photo" for both code modes, not the boy's name alone: you are looking
+    // for faces while you drag boys into seats.
+    if(data.seatArranging && seatPrintCodeKind(data.seatCardMode)==="qr") return "photo";
+    return data.seatCardMode;
+  }
+
+  /* ONE LIVE CARD — the screen's answer to fillSeatPrintCard(), shared by the
+   * seating grid and List mode for the same reason the printed sheet shares one
+   * card between its seating and list layouts: a rebbi switching between them
+   * must not get two different cards out of one setting.
+   *
+   * `avatarPx` is the only thing the two callers disagree on — a seat cell is
+   * tighter than a List tile.
+   */
+  function fillSeatLiveCard(card, s, mode, showPts, avatarPx){
+    var kind=seatPrintCodeKind(mode), wantPhoto=seatPrintWantsPhoto(mode);
+    /* THE FLEX ROW EXISTS ONLY WHEN BOTH ARE SHOWN — same rule as the printed
+     * card. A code alone, or a face alone, keeps the exact DOM it has always
+     * had, so neither of the two modes that existed before this picker did
+     * renders one pixel differently. */
+    var both = (kind==="qr" && wantPhoto);
+    var host = both ? el("div","seat-live-pair") : card;
+    if(isFrozen(s.id)) card.appendChild(freezeBadgeEl(s.id));
+    // Face first, code second: you find the boy by looking, then scan him.
+    if(wantPhoto) host.appendChild(avatarEl(s, avatarPx));
+    if(kind==="qr"){
+      // Same payload the PRINTED sheet encodes — s.id, nothing else — so a
+      // code scanned off the screen is indistinguishable from one scanned off
+      // paper. There is deliberately no second code path here.
+      var qh=el("div","seat-qr");
+      // Sized here rather than in CSS for the reason noted at .seat-qr: the
+      // constraint is the cell's inner height, which is measured. A List tile
+      // is not a flex column, so without this the holder would run the full
+      // width of the tile and take the code with it.
+      qh.style.width=SEAT_QR_PX+"px"; qh.style.height=SEAT_QR_PX+"px";
+      try{ new QRCode(qh,{text:s.id,width:SEAT_QR_PX,height:SEAT_QR_PX,correctLevel:QRCode.CorrectLevel.M}); }
+      catch(e){ qh.textContent="QR?"; }
+      host.appendChild(qh);
+    }
+    if(both) card.appendChild(host);
+    card.appendChild(el("span","seat-name",s.name));
+    if(showPts) card.appendChild(coinScoreEl(s.id,"ts"));
+  }
 
   // Activity codes to arm, rendered below the grid whenever Show activities is
   // on — same source as the printed sheet and Avery labels (menuLabelItems(),
@@ -8464,7 +8586,12 @@ function setupRoster() {
     var unplaced=seatPruneAndFillUnplaced(lay, studs);
     var byId={}; studs.forEach(function(s){ byId[s.id]=s; });
     var arranging=!!data.seatArranging;
-    var scanMode=!!data.seatScanMode && !arranging;
+    var cardMode=effSeatCardMode();
+    // Still the one thing the rest of the chart asks: is there a QR in every
+    // cell? It drives the tighter .scan-seat card and whether the activity
+    // codes underneath are drawn scannable or as plain tappable pills.
+    var scanMode=seatPrintCodeKind(cardMode)==="qr";
+    var showPts=!!data.seatShowPoints;
     var activitiesMode=!!data.seatActivitiesMode;
 
     // "Front of room" sits above the grid in normal view; in Rebbi's view the
@@ -8495,21 +8622,14 @@ function setupRoster() {
       seat.dataset.idx=trueIdx;
       if(s){
         seat.dataset.sid=s.id;
-        if(scanMode){
-          // Same payload the PRINTED sheet encodes — s.id, nothing else — so a
-          // code scanned off the screen is indistinguishable from one scanned
-          // off paper. There is deliberately no second code path here.
-          var qh=el("div","seat-qr");
-          try{ new QRCode(qh,{text:s.id,width:SEAT_QR_PX,height:SEAT_QR_PX,correctLevel:QRCode.CorrectLevel.M}); }
-          catch(e){ qh.textContent="QR?"; }
-          seat.appendChild(qh);
-          seat.appendChild(el("span","seat-name",s.name));
-        } else {
-        seat.appendChild(avatarEl(s, 26));
-        seat.appendChild(el("span","seat-name",s.name));
-        seat.appendChild(coinScoreEl(s.id,"ts"));
-        if(isFrozen(s.id)) seat.appendChild(freezeBadgeEl(s.id));
-        }
+        /* BIGGER, not smaller, when it is sharing the cell with a code. The
+         * 26px avatar is a marker beside a name you are already reading; next
+         * to a QR it is the whole point of the mode — you are meant to
+         * recognise the boy and scan him off the one card, from across a room.
+         * 44 against a 68px code is roughly the printed sheet's 76-against-95
+         * proportion, and still leaves the pair side by side in a full-screen
+         * cell (it wraps in the narrow Dashboard panel, by design). */
+        fillSeatLiveCard(seat, s, cardMode, showPts, scanMode ? 44 : 26);
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
@@ -16031,6 +16151,12 @@ nameLine
    * "pick an activity first" empty state all branch on Activity mode
    * separately, and a new value understood by four of those five prints PA:
    * codes for an activity nobody chose.
+   *
+   * THE LIVE CHART NOW READS ITS OWN MODE THROUGH THESE TOO (see
+   * setSeatCardMode / fillSeatLiveCard). Same four values on screen as on
+   * paper, so despite the seatPrint* names these are the app's one reader for
+   * one vocabulary — not the print page's private helpers. The screen simply
+   * never stores either activity value.
    */
   function seatPrintCodeKind(mode){
     if(mode==="qr" || mode==="qrphoto") return "qr";
@@ -17147,6 +17273,26 @@ nameLine
     // left showing QR codes instead of names is not the view anyone wants to
     // come back to on a smartboard.
     if(typeof data.seatScanMode!=="boolean") data.seatScanMode=false;
+    /* The four card modes that replaced that boolean — same values and same
+     * meaning as data.seatPrintOpts.avatarMode, minus the two activity ones.
+     *
+     * PURELY ADDITIVE, AND NOTHING CAN BE LOST: seatScanMode is still written
+     * and still backfilled above, it just stopped being what the chart reads.
+     * An old save arrives here with only the boolean, so the mode is derived
+     * from it — and since the boot-time disarm below turns a code mode back
+     * into "photo" anyway, every existing save opens on exactly the chart it
+     * opens on today: faces, names and scores.
+     */
+    if(["qr","qrphoto","photo","none"].indexOf(data.seatCardMode)<0){
+      data.seatCardMode = data.seatScanMode ? "qr" : "photo";
+    }
+    /* Scores on the live cards. Defaults ON because that is what every chart
+     * shows today in the state it boots into — the old code drew the score
+     * unconditionally whenever codes were off, and codes are always off at
+     * boot. The toggle exists because turning codes on used to take the scores
+     * away with no way to keep them; it must not now take them away by default.
+     */
+    if(typeof data.seatShowPoints!=="boolean") data.seatShowPoints=true;
     // Same armed-state contract as seatScanMode, independent flag: a rebbi can
     // show the activity codes footer with or without student QR codes showing.
     if(typeof data.seatActivitiesMode!=="boolean") data.seatActivitiesMode=false;
@@ -17779,14 +17925,23 @@ nameLine
   // what this used to do) meant "Show codes" fell off for the ordinary act of
   // looking something up and coming back.
   //
-  // Forced false regardless of what was saved, so a rebbi never reopens the app
-  // to a chart of QR codes where he expects names. The field still has to live
-  // in `data` — the seating chart re-renders constantly, and it must survive
+  // Disarmed regardless of what was saved, so a rebbi never reopens the app to
+  // a chart of QR codes where he expects names. The field still has to live in
+  // `data` — the seating chart re-renders constantly, and it must survive
   // every one of those renders, just not a restart.
   // save() as well as setting it, so the stored value can never disagree with
   // how the app is actually behaving — a backup that says true while the chart
   // shows names is a value that lies to whoever reads it next.
-  if(data.seatScanMode){ data.seatScanMode = false; save(); }
+  // Now expressed as the card mode, since that is what the chart reads. Both
+  // code modes fall back to "photo" — faces, names and scores — which is
+  // exactly the chart the old boolean left behind, and the one a rebbi expects
+  // to find in front of a room. "Student photo" and "None" carry no codes and
+  // so are left alone; they are a way of looking at the class, not an armed
+  // state. setSeatCardMode keeps seatScanMode in step, so the stored boolean
+  // still cannot disagree with how the app is behaving.
+  if(seatPrintCodeKind(data.seatCardMode)==="qr"){
+    setSeatCardMode("photo"); save();
+  } else if(data.seatScanMode){ data.seatScanMode = false; save(); }
   // Same contract, same reason — independent toggle, see seatActivitiesMode above.
   if(data.seatActivitiesMode){ data.seatActivitiesMode = false; save(); }
   // --- Device ID for snapshot scoping (Phase 1) ---
