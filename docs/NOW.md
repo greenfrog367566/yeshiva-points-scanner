@@ -8,7 +8,7 @@ The current working queue. Read this at the start of a session.
 
 ## Doing now
 
-Nothing in flight. Next item is Lean mode.
+Nothing in flight. Next item is Offline resync.
 
 **On the horizon:** the Firebase/Firestore rebuild is fully scoped in `docs/Firebase_Rebuild_Scope.md` — real accounts, Firestore replacing localStorage, three tiers, incremental-write data model, converter tool, 8-step build order. Not started; step 1 (data model design session) hasn't begun.
 
@@ -18,23 +18,12 @@ Its phase mapping was reconciled against the code on 2026-08-04 and it now carri
 
 ## Next, in order
 
-**1. Lean mode (#121)**
-One toggle in Settings. Assignment and mechanism already decided:
-
-- LEAN: `scan`, `standings`, `raffle`, `printSeats`, `students`, `activities`, `attendance`, `homework`, `passes`, `backup`, `settings`
-- ADVANCED: everything else
-- **Derive, don't write.** `isTabVisible()` becomes `t==="settings" || t==="scan" || (!navHidden().tabs[t] && !leanHidesTab(t))`. Writing Lean's hides into `navHidden` would make the rebbi's own hides indistinguishable from the preset.
-- **Three-state via the `defaults` seam** (the pattern from #141): put the field in `defaults` so reaching the `load2fix` backfill line proves the save predates it. New installs Lean, existing saves unchanged.
-- Contest stays hidden in **both** modes until #133.
-- Homework and Passes are in LEAN because hiding them strands the pass-refusal message, whose only correction path is the Passes tab.
-- The Settings toggle must be self-explanatory to an **existing** rebbi who never asked for it. Existing rebbeim are the ones most likely to want Lean and will never get it as a default, so the toggle has to sell itself. Say plainly what it hides and that nothing is deleted.
-
-**2. Offline resync** — read-only investigation first, then PROPOSE FIRST
+**1. Offline resync** — read-only investigation first, then PROPOSE FIRST
 The snapshot recovers after being offline; logged scans do not unless "resync all scans" is pressed. Want it automatic on reconnect and periodically.
 **Retry safety differs per tab.** The Log dedups by ID so re-pushing is safe. The Attendance Log has no dedup, so a retry duplicates rows. Confirm per tab before proposing.
 **In the Firestore era this asymmetry dissolves** — see the rebuild doc's open question 3 (deterministic client-generated write ids make every retry idempotent). That does not answer the question here; the localStorage/Apps Script investigation is still owed as written.
 
-**3. Warning flash, and the sticky raffle removal**
+**2. Warning flash, and the sticky raffle removal**
 What is left of the old "small standalone features" item once Freeze and the raffle note shipped. **Not the behavior ladder** — no marks store, no rung counting, no reset periods. Those stay in `docs/Behavior_Ladder_Spec.md`.
 - Warning flash: reuses the minus flash, **records nothing**. A recorded warning implies a count, a count implies rungs, and rungs are the ladder. Verified not started — nothing in `app.html` matches.
 - The raffle removal *note* shipped (`renderRaffleAdjustNote()`, "N students removed … from past wins"). What did **not** ship is the question it was filed with: report how a removal could clear itself after the next draw rather than staying sticky. Still open, still a report before a change.
@@ -51,6 +40,7 @@ What is left of the old "small standalone features" item once Freeze and the raf
 
 ## Standing rules that keep coming up
 
+- **Hide what isn't ready — don't build a mode around it.** A feature showing wrong numbers or with no path forward gets a one-shot `navHidden` seed in `load2fix()`, hidden but never removed (Contest #133, Gradebook #185). **Lean/Simple mode is not the model.** It was built and merged (#121 / PR #150) and reverted the same day — correct logic, but with one visible tab per group the subtab row rendered empty and the header wasted a second row. Decided 2026-08-05: not coming back. It leaves the onboarding half of #121 unsolved on purpose — a new rebbi still opens on 4 groups and ~18 tabs, 11 of them in Run.
 - **Browser-verify before merging anything that touches data.** A Node stub run is not a browser pass. Serve over http or the harness drift check goes amber.
 - **Additive fields only** where possible: `load2fix()` backfill, no `DATA_VERSION` bump.
 - **PROPOSE FIRST** for anything that reshapes a store holding real records.
