@@ -1,8 +1,12 @@
 # Onboarding Video Scripts
 
-Two short videos for beta rebbeim, requested in `docs/NOW.md` ("Onboarding video A
-(setup from scratch), then C (using it in a class)"). Grounded in the app's real
-UI (`setup.html`, `quick-start.html`, live `app.html`), not generic description.
+Two short videos for beta rebbeim, requested in `docs/NOW.md`. Grounded in the
+app's real UI (`setup.html`, `quick-start.html`, live `app.html`), not generic
+description.
+
+**Status:** **Video A is filmed and shipped (2026-08-05).** Video B is still a
+script. Note the naming: the beta tally called the classroom video **C** — it is
+Video B here, and there is no third video.
 
 Audience: a rebbi who is **not tech-savvy** and has never seen the app. Both
 scripts are written to answer that person's real anxieties, not just to
@@ -10,7 +14,15 @@ demonstrate buttons — see the FAQ at the bottom.
 
 ---
 
-## Video A — Setup From Scratch
+## Video A — Setup From Scratch — ✅ SHIPPED 2026-08-05
+
+**As filmed, it is wider than the script below:** getting started *and* the whole
+Record group, not just the single first-scan beat (#11). Treat the table as the
+plan it was made from, not a description of the finished video.
+
+**Still open:** the video is not linked anywhere. `quick-start.html`,
+`home.html`, and the app all have no pointer to it, so the rebbeim it was made
+for cannot find it. Tracked in `docs/NOW.md`.
 
 **Goal:** get a rebbi from "never opened this" to "printed sheet in hand,
 scanner connected" in one sitting. Wizard-first — `setup.html` is the real
@@ -42,7 +54,7 @@ needs it, turn it on first in Settings → Review.
 
 ---
 
-## Video B — A Real Teaching Day
+## Video B — A Real Teaching Day — script only, not filmed
 
 **Goal:** prove this fits inside real teaching, not that it replaces or
 interrupts it. Structured as a cold open on an authentic classroom moment,
@@ -69,6 +81,11 @@ not a tab tour.
 Short, individually-filmable clips (5–15 sec each), grouped by setup so you
 don't have to keep re-arranging the room. ~18 clips, roughly 20–25 minutes of
 raw footage for both videos combined.
+
+**What is left:** Video A is filmed, so the screen-recording block (6–10) is
+done and covers more of Record than listed. What remains is the classroom
+block (11–18) for Video B, plus any physical shots (1–5) it needs its own
+takes of.
 
 **Consent note:** if any clip leaves your own device — posted publicly, sent
 to other rebbeim — check it against your camp's photo/media policy before

@@ -126,6 +126,17 @@ function nextTrackedValue(item, current){
 // needs it too or the copy below throws instead of testing anything.
 function freezeActivity(a){ return !!a && a.tracked && typeof a.freezeSeconds==="number" && a.freezeSeconds>0; }
 
+// Same deal: load2fix()'s Phase 2d tiId stamp only stamps an activity whose
+// tracked item actually exists, so the harness needs this lookup or that block
+// throws instead of testing anything.
+function trackedItemById(id){
+  if(!id) return null;
+  for(var i=0;i<data.trackedItems.length;i++){
+    if(data.trackedItems[i] && data.trackedItems[i].id===id) return data.trackedItems[i];
+  }
+  return null;
+}
+
 function migrateData(d){
   if(!d.version) d.version = 1;
   if(d.version===1){
@@ -736,6 +747,11 @@ if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerEx
 if(!Array.isArray(data.spinnerSavedLists)) data.spinnerSavedLists=[];
 // Attendance / Tracker / Homework tools
 if(!data.attendance||typeof data.attendance!=="object") data.attendance={};
+// Which way round attendance is taken. Anything that isn't the string
+// "presence" means absence-first, so an existing save, a new install and a
+// hand-mangled value all land on the behaviour the app has always had —
+// nobody's attendance changes meaning because of an update.
+if(data.attMode!=="presence") data.attMode="absence";
 if(!data.hw||typeof data.hw!=="object") data.hw={};
 if(!Array.isArray(data.trackerLog)) data.trackerLog=[];
 if(typeof data.trackerActId!=="string") data.trackerActId="";
@@ -872,6 +888,39 @@ if(!data.freezeCountItemsDropped){
     });
   });
   data.freezeCountItemsDropped=true;
+}
+
+/* ----- Phase 2d: stamp each tracked activity with its item id ---------
+ * THE END OF NAME-MATCHING (#123). Until now "Homework Checked", the
+ * Bathroom Pass and Attendance were found by comparing a.name against a
+ * string literal every single time a scan needed routing — so renaming one
+ * on the Activities tab quietly turned it back into a plain 0-point
+ * activity, a hazard PASS_ACT_NAME's own comment concedes.
+ *
+ * The name tests run HERE, ONCE, and never again: from now on the activity
+ * carries a.tiId and every caller reads that. A rebbi may rename his
+ * activities freely afterwards.
+ *
+ * Purely additive — a new field on activities that already exist, no
+ * DATA_VERSION bump. An activity is stamped only when its item actually
+ * exists; anything else is left unstamped on purpose and gets an item
+ * minted by ensureTrackedItemFor() the first time it is armed, which is
+ * also what covers tracked activities created after 2a's one-shot seeding.
+ *
+ * Freeze is skipped for the same reason it is skipped everywhere else: it
+ * has no tracked item by design (#114).
+ */
+if(!data.trackedActIdsStamped){
+  data.activities.forEach(function(a){
+    if(!a || a.tracked!==true || freezeActivity(a)) return;
+    if(typeof a.tiId==="string" && a.tiId) return;
+    var tid = a.name==="Homework Checked" ? "ti-homework"
+            : a.name===PASS_ACT_NAME     ? "ti-pass"
+            : a.name===ATT_ACT_NAME      ? "ti-attendance"
+            : "ti-act-"+a.id;
+    if(trackedItemById(tid)) a.tiId=tid;
+  });
+  data.trackedActIdsStamped=true;
 }
 
 // Shape guards. An item whose method we do not recognise is left strictly
@@ -1444,6 +1493,48 @@ function runBuiltInTests() {
   assert("2a→corrupt per-student entry list repaired", Array.isArray(t9j.trackedData["ti-x"].s1));
   assert("2a→valid entry history preserved",
     t9j.trackedData["ti-x"].s2.length===1 && t9j.trackedData["ti-x"].s2[0].value==="present");
+
+  // 9k. Phase 2d — the tiId stamp. This is the migration half of retiring
+  //     name-matching: the name tests run once, here, and the activity carries
+  //     the answer afterwards.
+  var t9k = runMigration({ version:4, hwActivitySeeded:true, passActivitySeeded:true,
+    attActivitySeeded:true,
+    students:[{id:"s1",name:"Dovid",group:""}],
+    activities:[
+      {id:"a1",name:"On time",pts:1},
+      {id:"a2",name:"Chazan",pts:0,tracked:true},
+      {id:"a4",name:"Homework Checked",pts:0,tracked:true},
+      {id:"a5",name:PASS_ACT_NAME,pts:0,tracked:true},
+      {id:"a6",name:ATT_ACT_NAME,pts:0,tracked:true},
+      {id:"a7",name:"❄️ Freeze 1 min",pts:0,tracked:true,freezeSeconds:60}
+    ] });
+  var byId9k={}; t9k.activities.forEach(function(a){ byId9k[a.id]=a; });
+  assert("2d→Homework Checked stamped with ti-homework", byId9k.a4.tiId==="ti-homework", "got "+byId9k.a4.tiId);
+  assert("2d→Bathroom Pass stamped with ti-pass", byId9k.a5.tiId==="ti-pass", "got "+byId9k.a5.tiId);
+  assert("2d→Attendance stamped with ti-attendance", byId9k.a6.tiId==="ti-attendance", "got "+byId9k.a6.tiId);
+  assert("2d→a tracker activity stamped with its own count item", byId9k.a2.tiId==="ti-act-a2", "got "+byId9k.a2.tiId);
+  // Freeze must stay itemless — a per-boy tally of freezes is the behavior
+  // ladder arriving by accident (#114).
+  assert("2d→freeze is NOT stamped", !byId9k.a7.tiId, "got "+byId9k.a7.tiId);
+  assert("2d→an untracked activity is NOT stamped", !byId9k.a1.tiId, "got "+byId9k.a1.tiId);
+  // The point of the stamp: a rename must no longer break the routing.
+  var renamed9k = JSON.parse(JSON.stringify(t9k));
+  renamed9k.activities.forEach(function(a){ if(a.id==="a5") a.name="Hall Pass"; });
+  var t9l = runMigration(renamed9k);
+  var pass9l = t9l.activities.filter(function(a){ return a.id==="a5"; })[0];
+  assert("2d→renaming a preset does not lose its item id", pass9l.tiId==="ti-pass", "got "+pass9l.tiId);
+  // One-shot, and it never overwrites an id that is already there.
+  var handSet = JSON.parse(JSON.stringify(t9k));
+  handSet.activities.forEach(function(a){ if(a.id==="a2") a.tiId="ti-x9"; });
+  var t9m = runMigration(handSet);
+  assert("2d→re-run leaves an existing tiId alone",
+    t9m.activities.filter(function(a){return a.id==="a2";})[0].tiId==="ti-x9");
+  // An activity whose item does not exist is deliberately left unstamped —
+  // ensureTrackedItemFor() mints one when it is first armed, rather than the
+  // stamp inventing a dangling id here.
+  var t9n = runMigration({ version:4, trackedItemsSeeded:true, trackedItems:[],
+    activities:[{id:"a1",name:"Chazan",pts:0,tracked:true}] });
+  assert("2d→no item to point at means no stamp", !t9n.activities[0].tiId, "got "+t9n.activities[0].tiId);
 
   // --- Test 10: THE ONE THAT MATTERS — old stores are untouched ---
   // Phase 2a parks data.attendance / data.hw / data.trackerLog / data.passes.
