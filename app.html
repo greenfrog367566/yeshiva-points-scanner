@@ -10632,6 +10632,35 @@ function setupRoster() {
   // the main score at all.
   function pointsInRange(sid, range, label){
     if(range==="contest"){
+      /* A MINI CONTEST OWNS THIS RANGE WHENEVER ONE IS RUNNING, and it answers
+       * from c.totals — the stored copy — not from the log. That is the whole
+       * point of #210: the log is capped at 500 entries and wipeable, so a
+       * contest read out of it decays to a label with no scores behind it.
+       *
+       * This is why the range button was hidden for a mini contest until now.
+       * It is not that a mini contest has no standings — it has the only
+       * complete ones in the app — it is that the READING here was the wrong
+       * one. Reading the stored totals instead is what lets the board show
+       * them on the projector, which is where a contest is actually watched.
+       */
+      var mc=miniContestLive();
+      if(mc){
+        // An activity filter has nothing to read in a stored total — totals
+        // are per student, not per activity. Fall back to the log for that
+        // one case, which is the same scan-by-scan detail the Contest tab
+        // offers and carries the same 500-entry limit; the unfiltered number
+        // above it stays complete either way.
+        if(label){
+          var lsum=0;
+          data.log.forEach(function(e){
+            if(e.mcId!==mc.id || e.sid!==sid || e.undone || e.kind==="correction") return;
+            if(e.label!==label) return;
+            lsum+=e.delta||0;
+          });
+          return lsum;
+        }
+        return mc.totals[sid]||0;
+      }
       if(!data.contest) return 0;
       var csum=0;
       data.log.forEach(function(e){
@@ -10646,6 +10675,20 @@ function setupRoster() {
       if(e.sid!==sid || e.undone || e.kind==="correction") return;
       if(e.ts<cut.from || e.ts>cut.to) return;
       if(label && e.label!==label) return;
+      // HELD CONTEST POINTS ARE NOT IN ANYONE'S SCORE, so they are not in a
+      // date-ranged total either. Without this test the Leader Board answered
+      // the same question two ways: "All" reads data.scores and correctly
+      // showed nothing, while "Today"/"Week" summed the log — which still gets
+      // an entry for every contest scan — and showed points the boy does not
+      // have. One board, two ranges, contradicting each other while a banner
+      // above them said nobody's score was moving.
+      //
+      // mcMerged is the test rather than mcId, because Merge grants the totals
+      // onto data.scores and stamps every one of that contest's entries — so a
+      // merged contest's points DO belong in these totals, at the timestamps
+      // they were actually scanned. A dumped contest never gets the stamp and
+      // stays out for good, which is what dumping means.
+      if(e.mcId && !e.mcMerged) return;
       sum+=e.delta||0;
     });
     return sum;
@@ -10663,9 +10706,17 @@ function setupRoster() {
     sel.value = earnedLabels.indexOf(cur)>=0 ? cur : "";
     data.standingsActivity=sel.value;
     var sum=$("standActivitySummary");
+    // The contest case is called out because it is the one where the number
+    // can be INCOMPLETE: a per-activity figure has to come from the scan log,
+    // which is capped, while the unfiltered contest total is stored and always
+    // complete. Saying "(all-time)" over it would have been wrong twice.
     sum.textContent = data.standingsActivity
-      ? ("Showing points from: "+data.standingsActivity+(standRange==="week"?" (this week)":" (all-time)"))
-      : "Showing total points from all activities.";
+      ? ("Showing points from: "+data.standingsActivity
+         + (standRange==="contest" ? " (this contest, from the scan history — older scans may have rolled out)"
+            : standRange==="week" ? " (this week)" : " (all-time)"))
+      : (standRange==="contest" && miniContestLive()
+          ? "Showing each boy's stored contest total — complete, and not in his score yet."
+          : "Showing total points from all activities.");
   }
   function renderStandings(){
     renderContestBanner();
@@ -10924,13 +10975,16 @@ function setupRoster() {
     var has=!!mc || legacy;
     $("contestInactive").style.display = has ? "none" : "flex";
     $("contestActiveWrap").style.display = has ? "flex" : "none";
-    // The Leader Board's "🏆 Contest" range sums data.log for a contestId, so
-    // it belongs to the OLD contest and only to it. A mini contest's standings
-    // come from its stored totals and live on the Contest tab — pointing this
-    // button at one would reintroduce the derived-from-log reading it exists
-    // to replace.
-    $("standRangeContestBtn").style.display = legacy ? "" : "none";
-    if(!legacy && standRange==="contest") standRange="all";
+    // The "🏆 Contest" range now serves BOTH. For a mini contest it reads the
+    // stored totals (see pointsInRange) rather than summing the log, which is
+    // what makes it safe to point at one — the old objection was the reading,
+    // not the contest. For the legacy contest it sums by contestId exactly as
+    // before. Shown whenever either is running, so the standings a class
+    // watches on the projector are the contest's while a contest is on.
+    $("standRangeContestBtn").style.display = has ? "" : "none";
+    // A contest that has ended (or been dumped) leaves the board stuck on a
+    // range with nothing behind it, so hand it back to all-time.
+    if(!has && standRange==="contest") standRange="all";
     // Keeps Raffle's "Current contest" ticket-source option live as contest
     // state changes, even while the Raffle tab isn't the active view — this
     // runs regardless of `has` since both "no contest at all" and "contest
