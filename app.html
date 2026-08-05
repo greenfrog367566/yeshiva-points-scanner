@@ -16665,12 +16665,24 @@ nameLine
   // set. Not stored: it is a property of the sheet just drawn, and re-deriving it
   // every render is what keeps it from going stale after a roster change.
   var seatPrintFitScale=1;
+  /* THE BIGGEST SETTING THAT STILL CHANGES THE SHEET — null when the setting is
+     the only thing limiting the size. Measured, not predicted, in
+     seatPrintSyncIconSize() at the end of every render; see the long note there
+     for why it exists and what went wrong without it. */
+  var seatPrintCapStep=null;
   function seatPrintIconScale(){
     var v=parseFloat(data.seatPrintOpts.iconScale);
     return (v>=0.5 && v<=1.5) ? v : 1;
   }
   function seatPrintNudgeIconScale(dir){
     var cur=seatPrintIconScale(), i=0;
+    /* STEP FROM THE SIZE THE SHEET IS DRAWN AT, not from a setting parked above
+       the card's own ceiling. On a chart whose cards cap the picture (see
+       seatPrintCapStep), every setting from the cap upwards draws the SAME
+       sheet, so − from 100% moved a number and nothing else — and the rebbi had
+       to press it four or five times before the page changed at all. Clamping
+       first makes one press of − one visible step, in every mode. */
+    if(seatPrintCapStep!==null && cur>seatPrintCapStep) cur=seatPrintCapStep;
     // NEAREST step, not indexOf. A value can arrive here from an older save or a
     // restored backup without being one of the steps, and indexOf's -1 would
     // silently drop such a sheet to the smallest size on the first click.
@@ -16729,36 +16741,81 @@ nameLine
     var mode=$("seatPrintAvatarMode") ? $("seatPrintAvatarMode").value : "qr";
     row.style.display = (seatPrintCodeKind(mode)!=="none" || seatPrintWantsPhoto(mode)) ? "flex" : "none";
     var set=seatPrintIconScale(), eff=seatPrintFitScale, val=$("seatPrintIconSizeVal");
+    var shrunk = Math.abs(eff-set)>0.001;
+    /* WHERE THE CARD, NOT THE SETTING, BECOMES THE LIMIT.
+     *
+     * A cap only caps: once a box already fills its share of the card, raising
+     * the cap changes nothing on the page. Measured rather than predicted —
+     * compare what the box actually rendered against the max-width in force,
+     * which is true whatever is doing the limiting (column count, orientation,
+     * the pair split) without this having to know about any of them.
+     *
+     * WHAT THIS REPLACED, AND WHY A PLAIN "capped -> DISABLE +" WAS A TRAP.
+     * That is what shipped, and it made the stepper one-way for anyone printing
+     * faces. Measured in the preview, 24 boys, 6 columns portrait, Avatar =
+     * "QR code + photo": the photo draws 51px against its 76px cap, so every
+     * setting from 70% up prints the SAME sheet and + was disabled across that
+     * whole range. Pressing − from 100% therefore moved a number three times
+     * with nothing changing on the page (51px at 100/90/80%), and only at 60%
+     * did the picture finally shrink — at which point + walked back exactly one
+     * step, to 70%, and went dead again. His 100% was unreachable, from a
+     * control that had done nothing wrong.
+     *
+     * So the ceiling is worked out as a STEP rather than a yes/no: the smallest
+     * step whose cap the card can still fill. Everything above it is one
+     * position — the readout shows it, + stops there, and − steps down from it —
+     * so the range stays fully reversible while + still never sits there looking
+     * broken. Only when nothing was auto-shrunk: in List the sheet is already
+     * fitting itself and the setting is a ceiling for it to shrink FROM, so
+     * clamping the ceiling to the sheet it produced would fight that.
+     */
+    var capStep=null;
+    if(!shrunk){
+      var box=$("seatChartGrid") ? $("seatChartGrid").querySelector(".seat-print-qr,.seat-print-photo") : null;
+      if(box){
+        var mw=parseFloat(getComputedStyle(box).maxWidth), drawn=box.getBoundingClientRect().width;
+        // drawn>0 or the measurement is meaningless, not "capped to nothing":
+        // triggerSeatChartPrint() renders this sheet BEFORE it makes the print
+        // view active, so a chart printed from the live seating chart's 🖨
+        // shortcut measures every box at zero width inside a display:none view.
+        if(mw>0 && drawn>0 && drawn<mw-0.5){
+          // The cap and the scale are proportional (every cap is calc(Npx *
+          // --seat-icon-scale)), so the scale at which the cap would exactly
+          // meet the card is eff * drawn / mw — no rule needs to know N.
+          var capScale=eff*drawn/mw;
+          capStep=SEAT_ICON_STEPS[SEAT_ICON_STEPS.length-1];
+          for(var ci=0;ci<SEAT_ICON_STEPS.length;ci++){
+            if(SEAT_ICON_STEPS[ci]>=capScale-0.001){ capStep=SEAT_ICON_STEPS[ci]; break; }
+          }
+        }
+      }
+    }
+    seatPrintCapStep=capStep;
+    var top = capStep===null ? SEAT_ICON_STEPS[SEAT_ICON_STEPS.length-1] : capStep;
+    // What the sheet is effectively set to: a stored value above the ceiling
+    // prints as the ceiling, so that is the honest number to show and to step
+    // from. Same principle as the "auto" readout below — describe the sheet on
+    // screen, not the setting behind it.
+    var shown = Math.min(set, top);
+    var capMsg = "Already as big as the cards allow. For bigger codes use fewer columns, or Landscape.";
     if(val){
-      var shrunk = Math.abs(eff-set)>0.001;
-      val.textContent = shrunk ? ("auto "+Math.round(eff*100)+"%") : (Math.round(set*100)+"%");
+      val.textContent = shrunk ? ("auto "+Math.round(eff*100)+"%") : (Math.round(shown*100)+"%");
       val.title = shrunk
         ? ("Shrunk from "+Math.round(set*100)+"% so the whole class fits one page.")
-        : "";
+        : (shown<set-0.001
+            ? ("The cards are full at "+Math.round(shown*100)+"% — anything larger prints the same sheet.")
+            : "");
     }
     var sm=$("seatPrintIconSmaller"), bg=$("seatPrintIconBigger");
-    if(sm){ sm.disabled = set<=SEAT_ICON_STEPS[0]; sm.title="Smaller codes — shorter cards, more rows per page"; }
-    /* + IS DISABLED WHEN THE CARD, NOT THE SETTING, IS THE LIMIT.
-     *
-     * A cap only caps: on a 4-column chart with a face and a code side by side
-     * each box already fills its half of the card, so raising the cap changes
-     * nothing on the page. Left enabled, a rebbi presses + three times, watches
-     * an unmoved sheet and reasonably concludes the control is broken. Measured
-     * rather than predicted — compare what the box actually rendered against the
-     * max-width in force, which is true whatever is limiting it (column count,
-     * orientation, the pair split) without this having to know about any of them.
-     */
+    if(sm){
+      sm.disabled = shown<=SEAT_ICON_STEPS[0]+0.001;
+      // Both ends disabled means the cards are too narrow for any size to show —
+      // say so, rather than leaving two dead buttons and no reason.
+      sm.title = (sm.disabled && capStep!==null) ? capMsg : "Smaller codes — shorter cards, more rows per page";
+    }
     if(bg){
-      var box=$("seatChartGrid") ? $("seatChartGrid").querySelector(".seat-print-qr,.seat-print-photo") : null;
-      var capped=false;
-      if(box){
-        var mw=parseFloat(getComputedStyle(box).maxWidth);
-        if(mw>0) capped = box.getBoundingClientRect().width < mw-0.5;
-      }
-      bg.disabled = capped || set>=SEAT_ICON_STEPS[SEAT_ICON_STEPS.length-1];
-      bg.title = capped
-        ? "Already as big as the card allows. For bigger codes use fewer columns, or Landscape."
-        : "Bigger codes — easier to scan, fewer rows per page";
+      bg.disabled = shown>=top-0.001;
+      bg.title = (bg.disabled && capStep!==null) ? capMsg : "Bigger codes — easier to scan, fewer rows per page";
     }
   }
   $("seatPrintIconSmaller").addEventListener("click", function(){ seatPrintNudgeIconScale(-1); });
