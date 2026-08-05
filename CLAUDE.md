@@ -158,14 +158,64 @@ A worktree is safe to propose for removal only when **all** of these hold:
 **List the candidates and ask before removing any.** Deleting is a stop-and-ask
 action (see Confirmation policy).
 
+### 🔴 EVERY PR TARGETS `main`. NEVER STACK ONE PR ON ANOTHER.
+
+**A PR's base is always `main`.** Not another feature branch, not "the branch
+this depends on." If work genuinely depends on unmerged work, either put it in
+the same PR or wait for the other one to land.
+
+**This has already cost a merge.** #211 was based on `feat/mini-contest` because
+its changes only compiled against #210's code, and the merge order given was
+"#210, then #211" — which is exactly backwards for a stack. #210 merged
+`feat/mini-contest` into `main` first, so when #211 was merged afterwards it
+landed in a branch that had *already delivered*. Its content went nowhere:
+`main` had none of it, and the PR read as merged. It had to be re-opened
+against `main` as #212. Nothing warned about any of this.
+
+**The retarget everyone expects does not happen by default.** GitHub only
+re-points a stacked PR at `main` when the base branch is **deleted** on merge.
+Left undeleted, the PR quietly merges into the stale base instead.
+
+**And a PR into a feature branch runs NO CI AT ALL.** `.github/workflows/validate.yml`
+triggers on PRs targeting `main`, so a stacked PR has no gate whatsoever — #211
+merged with zero checks having run. This alone is reason enough never to stack.
+
+### PRs open as DRAFT
+
+**Open every PR as a draft** (`gh pr create --draft`), and mark it ready only
+once the browser pass is done and CI is green. GitHub refuses to merge a draft,
+so "merged too early" stops depending on anyone remembering the state of it.
+
+Say plainly, in the message that reports the branch, what is still owed before
+it should be marked ready.
+
+### Repo settings that enforce this
+
+These are **maintainer-only** settings; Claude cannot change them and should not
+try. If a merge went wrong and one of these is off, say so rather than adding a
+convention on top of a missing guard:
+
+- **Require the `validate` status check on `main`.** Settings → Branches → rule
+  for `main` → *Require status checks to pass* → `validate`. **The single
+  highest-value one** — a missing or red check then blocks the button, which is
+  precisely what did not happen with #211.
+- **Automatically delete head branches.** Settings → General. Also makes
+  GitHub retarget correctly in the case above, and stops dead branches piling up
+  (`feat/mini-contest` outlived its own PR carrying a content-dead merge commit).
+
 ### Every session must end with:
 ```bash
 git add <changed files>
 git commit -m "description of what changed"
 git push -u origin feat/short-description   # the RENAMED branch, never worktree-*
-# Then tell Rabbi Steinerman: "Pushed to <branch>. Ready for a PR into main
-# when you confirm it works."
+gh pr create --draft --base main --head feat/short-description   # DRAFT, always, base main
+# Then tell Rabbi Steinerman: "Pushed to <branch>, draft PR #N into main.
+# Ready to mark for review once you confirm it works."
 ```
+
+Claude opens the PR **as a draft against `main`** and stops there. Marking it
+ready for review and merging are both the maintainer's actions — the draft is
+what keeps those two decisions his rather than a side effect of the PR existing.
 
 ### Never:
 - Commit to `main`, push to `main`, or force-push to `main`
@@ -173,6 +223,7 @@ git push -u origin feat/short-description   # the RENAMED branch, never worktree
 - Push a `worktree-*` branch name; rename it at step 2 instead
 - Remove a worktree that is `locked`, dirty, or in use by another session
 - Merge a PR (that's the maintainer's explicit action)
+- **Open a PR against anything but `main`**, or open one that isn't a draft
 - Assume two Claude sessions are working from the same file — always verify
 
 ### The shared checkout now self-syncs (but don't lean on it)
