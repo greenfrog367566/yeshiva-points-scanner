@@ -3369,7 +3369,50 @@ function setupRoster() {
   <!-- ============ CONTEST ============ -->
   <section id="view-contest" class="view">
     <h2 class="view-title">Contest</h2>
-    <p class="view-note">Run a point contest for a set window of time, with its own history — separate from the regular Standings/Trends view.</p>
+    <p class="view-note">Run a contest for as long as you like. While it runs, the points you scan are <strong>held on the contest</strong> instead of going into each boy&rsquo;s score. When you finish, you choose — in two separate steps — whether to add them to everyone&rsquo;s real score or let them go.</p>
+
+    <div id="mcInactive" class="card pad" style="text-align:center;margin-bottom:16px">
+      <p style="margin:0 0 6px;font-size:1.05rem">🏆 No contest running right now.</p>
+      <p style="margin:0 0 14px;font-size:.9rem;color:var(--muted);line-height:1.5">Scanning works exactly as it always does until you start one.</p>
+      <button class="btn btn-primary" id="mcStartBtn">Start a contest…</button>
+    </div>
+
+    <div id="mcActive" style="display:none">
+      <div class="card pad" style="margin-bottom:16px">
+        <div class="toolbar" style="margin:0">
+          <div>
+            <div id="mcName" style="font-family:var(--serif);font-weight:800;font-size:1.3rem"></div>
+            <div id="mcMeta" style="color:var(--muted);font-size:.9rem;margin-top:2px"></div>
+          </div>
+          <span class="grow"></span>
+          <span id="mcTotals" style="font-weight:700;color:var(--muted);white-space:nowrap"></span>
+        </div>
+        <p id="mcHeldNote" style="margin:12px 0 0;padding:10px 12px;border-radius:8px;background:#fff8e1;border:1px solid #f0d68a;font-size:.9rem;line-height:1.5"></p>
+      </div>
+
+      <div class="toolbar" style="margin-bottom:16px">
+        <button class="btn btn-sm btn-primary" id="mcMergeBtn">Add the points & finish…</button>
+        <button class="btn btn-sm btn-bad" id="mcDumpBtn">Finish without adding points…</button>
+      </div>
+
+      <div class="card pad"><div id="mcStandingsList" class="row-list"></div></div>
+    </div>
+
+    <div id="mcPastSection" style="margin-top:28px;display:none">
+      <div class="toolbar" style="margin-bottom:10px">
+        <h3 style="font-family:var(--serif);font-size:1.1rem;margin:0">Finished contests</h3>
+      </div>
+      <div id="mcPastList"></div>
+    </div>
+
+    <!-- The ORIGINAL contest feature, kept read-only. It is hidden entirely
+         unless this device actually has old contest data, so a rebbi who never
+         ran one never sees it. Its start button is gone (see renderContestTab)
+         — the old lifecycle is what #133 exists to rework, and nothing should
+         be able to begin a new one. No old contest code is deleted. -->
+    <div id="legacyContestWrap" style="display:none;margin-top:34px;padding-top:20px;border-top:1px solid var(--line)">
+      <h3 style="font-family:var(--serif);font-size:1.1rem;margin:0 0 4px">Earlier contests</h3>
+      <p class="view-note" id="legacyContestNote" style="margin-top:0"></p>
 
     <div id="contestTabInactive" class="card pad" style="text-align:center;margin-bottom:16px">
       <p style="margin:0 0 14px;font-size:1.05rem">🏆 No contest running right now.</p>
@@ -3436,6 +3479,7 @@ function setupRoster() {
         <span id="pastContestsEmpty" style="font-size:.85rem;color:var(--muted)"></span>
       </div>
       <div id="pastContestsList"></div>
+    </div>
     </div>
   </section>
 
@@ -4163,7 +4207,15 @@ function setupRoster() {
     //
     // Discoverability is fixed by putting the checkbox on a page rebbeim
     // actually reach, not by flipping a setting under them.
-    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", actGrouped:true, actCols:2, iconScale:1 }
+    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", actGrouped:true, actCols:2, iconScale:1 },
+    // Mini Contest — the contest whose totals are stored rather than derived.
+    // See the MINI CONTEST block above award() for why that distinction is the
+    // whole feature. null = nothing running; [] = no contests have closed yet.
+    //
+    // Its own store, NOT a reshape of data.contest/data.pastContests: those
+    // still hold real records on real devices, and the old code reads them.
+    miniContest: null,
+    miniContestPast: []
   };
 
   var SHOR_BANK = [
@@ -7551,6 +7603,198 @@ function setupRoster() {
     var contestOnly = c.mode==="contestOnly";
     return {scoreToMain: !contestOnly, contestId:c.id, contestOnly:contestOnly};
   }
+
+  /* ======================= MINI CONTEST =======================
+     A contest whose totals are STORED, not derived.
+
+     The original Contest (everything above and below with `contest` in the
+     name) computed every number it showed by walking data.log. data.log is
+     capped at 500 entries in addLogEntry() and emptied outright by
+     resetAllScores(), so a contest's results decayed as the class kept
+     scanning and vanished entirely on a reset — "saving" a contest saved a
+     label with nothing behind it (#131, #133, #134). That feature is hidden
+     pending its rework.
+
+     THE ONE RULE HERE: data.miniContest.totals is the only copy of a
+     contest's results, and it is written at scan time. Nothing in this
+     feature ever recomputes a total by walking data.log. If you find
+     yourself writing `data.log.forEach` to answer "how many points does this
+     boy have in the contest", you are rebuilding the bug.
+
+     What the log IS still used for: the scan-by-scan breakdown (nice to have,
+     allowed to age out) and, via `mcId`/`mcMerged` on each entry, letting
+     Undo know whether an entry's points ever reached data.scores. Neither of
+     those can corrupt a total.
+
+     Deliberately DISJOINT from data.contest / data.pastContests. Those still
+     hold real records on real devices and the old merge path reads
+     contestId/contestOnly/merged; writing into them would half-wake the
+     hidden feature and risk double-merging a boy's points. Nothing here
+     touches them.
+
+     Held-aside semantics: while a contest runs, its scans do NOT reach
+     data.scores. Merge grants them; Dump discards them. That is what makes
+     the two closing actions symmetric, and it is why they are two buttons
+     with two confirmations rather than one OK that did both (the old
+     end-contest flow bundled "keep the history" and "wipe the log" onto a
+     single OK — the exact shape of the #134 data loss).
+  */
+
+  // The live contest, or null. A record with an endTs is closed and lives in
+  // data.miniContestPast; data.miniContest only ever holds a running one.
+  function miniContestLive(){
+    var c=data.miniContest;
+    return (c && typeof c==="object" && !c.endTs) ? c : null;
+  }
+  // Which contest, if any, the CURRENT scan is held for. The mini-contest
+  // equivalent of contestTagForScan() — deliberately a separate function so
+  // the two systems never share a decision.
+  function mcTagForScan(){
+    var c=miniContestLive();
+    return c ? c.id : null;
+  }
+  // THE ONLY WRITER of a contest total. Everything that changes a number goes
+  // through here so the guard against a non-finite value landing in `totals`
+  // exists in exactly one place — these numbers are added straight onto
+  // data.scores at Merge, so a NaN here would poison a real score.
+  //
+  // scanDelta is separate from delta because an EDIT changes a value without
+  // changing how many scans happened; only a scan (+1) or an undo (-1) moves
+  // the count.
+  function mcWrite(sid, delta, contestId, scanDelta){
+    var c=miniContestLive();
+    if(!c || c.id!==contestId) return false;
+    if(!sid || typeof delta!=="number" || !isFinite(delta)) return false;
+    var v=(c.totals[sid]||0)+delta;
+    // Drop the key rather than storing a 0 — an undone-to-nothing student is
+    // not "a student with zero contest points", he is a student who is not in
+    // the contest, and the standings should say so.
+    if(v===0) delete c.totals[sid]; else c.totals[sid]=v;
+    c.scans=Math.max(0, (c.scans||0)+scanDelta);
+    return true;
+  }
+  function mcAdd(sid, delta, contestId){ return mcWrite(sid, delta, contestId, 1); }
+  function mcRevert(sid, delta, contestId){ return mcWrite(sid, -delta, contestId, -1); }
+  function mcAdjust(sid, diff, contestId){ return mcWrite(sid, diff, contestId, 0); }
+
+  // Shape-guard for one contest record, live or closed. Run from load2fix() on
+  // every load. Harder than most guards in this file on purpose: `totals` is
+  // the only copy of the results AND its values flow into data.scores, so
+  // every value is proved to be a finite number before it can get there. A
+  // corrupted entry is dropped rather than coerced — a wrong number a rebbi
+  // cannot see is worse than a missing one he can.
+  function fixMiniContestRecord(c){
+    if(!c || typeof c!=="object") return;
+    if(typeof c.id!=="string" || !c.id) c.id=newId();
+    if(typeof c.name!=="string" || !c.name) c.name="Contest";
+    if(typeof c.startTs!=="number" || !isFinite(c.startTs)) c.startTs=Date.now();
+    if(!c.totals || typeof c.totals!=="object" || Array.isArray(c.totals)) c.totals={};
+    Object.keys(c.totals).forEach(function(sid){
+      var v=c.totals[sid];
+      if(typeof v!=="number" || !isFinite(v) || v===0) delete c.totals[sid];
+    });
+    if(typeof c.scans!=="number" || !isFinite(c.scans) || c.scans<0) c.scans=0;
+    // Closed records only. An endTs that isn't a number means "not closed",
+    // which is the safe reading — it keeps the record visible and editable
+    // rather than freezing it as a result nobody can question.
+    if(c.endTs!==undefined && (typeof c.endTs!=="number" || !isFinite(c.endTs))) delete c.endTs;
+    if(c.endTs && ["merged","dumped"].indexOf(c.outcome)<0) c.outcome="dumped";
+    if(typeof c.granted!=="number" || !isFinite(c.granted)) c.granted=0;
+  }
+
+  // How many students are on the board, and the total held. Reads `totals`
+  // only — never the log.
+  function mcSummary(c){
+    var sids=c ? Object.keys(c.totals) : [];
+    var pts=0;
+    sids.forEach(function(sid){ pts+=c.totals[sid]; });
+    return {students:sids.length, points:pts};
+  }
+  // Contest standings, highest first. Students with no contest scans are
+  // simply absent — see the delete-on-zero note in mcWrite().
+  function mcStandings(c){
+    if(!c) return [];
+    return Object.keys(c.totals).map(function(sid){
+      var s=studentById(sid);
+      return {sid:sid, name:s?s.name:sid, group:s?(s.group||""):"", pts:c.totals[sid], gone:!s};
+    }).sort(function(a,b){ return b.pts-a.pts || a.name.localeCompare(b.name); });
+  }
+
+  // fmtScore() for a loose number rather than a student's balance — contest
+  // totals are held aside, so they are never in data.scores to be read from.
+  function mcFmtPts(n){
+    n = (typeof n==="number" && isFinite(n)) ? n : 0;
+    return isShulchani() ? formatCoins(n,{abbr:false}) : n+" pts";
+  }
+  // The scan flash for a HELD scan. Returns "" when no contest is running, so
+  // callers can `mcScanNote(...) || <the normal line>` and the ordinary flash
+  // is untouched.
+  //
+  // It deliberately does NOT say "now <score>": the score did not change, and
+  // showing an unchanged total after a scan is how a rebbi concludes the scan
+  // failed. It shows the contest total and says plainly that the points are
+  // not in the boy's score yet.
+  function mcScanNote(s, label, mcId){
+    if(!mcId) return "";
+    var c=miniContestLive(); if(!c) return "";
+    return label+" · 🏆 "+mcFmtPts(c.totals[s.id]||0)+" in “"+c.name+"” · not in his score yet";
+  }
+
+  function mcStart(name){
+    data.miniContest = { id:newId(), name:name, startTs:Date.now(), totals:{}, scans:0 };
+    save();
+    return data.miniContest;
+  }
+  // MERGE: grant every held total onto the real score, then close.
+  //
+  // Reads c.totals, NOT the log — that is the entire fix. The old merge walked
+  // data.log for both the amounts and the per-activity Trends labels, so a
+  // contest that outlived the 500-entry cap merged only the surviving tail and
+  // reported success.
+  //
+  // Trends gets ONE entry per student, labelled with the contest name, instead
+  // of a per-activity breakdown. That breakdown could only come from the log,
+  // and making Trends accurate at the cost of making the merge log-dependent
+  // is the wrong trade — the points are what must be right.
+  function mcMergeAndClose(){
+    var c=miniContestLive(); if(!c) return null;
+    var granted=0, students=0;
+    Object.keys(c.totals).forEach(function(sid){
+      var v=c.totals[sid];
+      if(typeof v!=="number" || !isFinite(v) || v===0) return;
+      data.scores[sid]=score(sid)+v;
+      if(v>0) recordEarn(sid, "Contest: "+c.name, v);
+      granted+=v; students++;
+    });
+    // Stamp the held entries so Undo knows their points DID reach the main
+    // score. Best-effort by design: an entry that has already rolled off the
+    // 500-cap simply cannot be undone, which is true of every old scan in the
+    // app and does not affect a single total.
+    data.log.forEach(function(e){ if(e.mcId===c.id) e.mcMerged=true; });
+    return mcArchive(c, "merged", granted, students);
+  }
+  // DUMP: close without granting anything. data.scores is not touched, which
+  // is already true of every held scan — so this is genuinely a no-op against
+  // the roster, not a reversal.
+  function mcDumpAndClose(){
+    var c=miniContestLive(); if(!c) return null;
+    return mcArchive(c, "dumped", 0, 0);
+  }
+  // Both closings land here. The record moves to history rather than being
+  // deleted: after a Merge it is the only receipt explaining why a boy's score
+  // jumped, and after a Dump it is the only record that the contest happened
+  // at all. Deliberately UNCAPPED — a cap on a results store is the bug this
+  // feature exists to avoid, and a contest record is a few hundred bytes.
+  function mcArchive(c, outcome, granted, students){
+    c.endTs=Date.now();
+    c.outcome=outcome;
+    c.granted=granted;
+    data.miniContestPast.unshift(c);
+    data.miniContest=null;
+    save();
+    return {outcome:outcome, granted:granted, students:students, name:c.name};
+  }
+
   /* ---------- the armed-item scan mechanic (Phase 2d) -------------------
    * DUAL-WRITE, on purpose, and this is the part to understand before changing
    * anything here.
@@ -7719,13 +7963,21 @@ function setupRoster() {
   function applyScore(s, label, delta, opts){
     opts = opts || {};
     var tag = opts.noContest ? {scoreToMain:true, contestId:null, contestOnly:false} : contestTagForScan();
+    // MINI CONTEST holds points aside. While one runs, the scan increments that
+    // contest's own stored total and deliberately does NOT reach data.scores,
+    // recordEarn or the 6-7 celebration — Merge is what grants them later.
+    // `noContest` opts out of both contest systems, which is what corrections
+    // need. Written BEFORE the scoreToMain branches so there is one place where
+    // "this point is held" is decided.
+    var mcId = opts.noContest ? null : mcTagForScan();
+    if(mcId){ mcAdd(s.id, delta, mcId); tag.scoreToMain=false; }
     if(tag.scoreToMain) data.scores[s.id]=score(s.id)+delta;
     if(delta>0 && tag.scoreToMain && !opts.skipEarn) recordEarn(s.id, label, delta);
     if(tag.scoreToMain) maybeSixSeven(s);
-    var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly});
+    var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly, mcId:mcId||undefined});
     save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
-    flash(delta>=0, s.name, fmtDeltaBare(delta), label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
+    flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
     beep(delta>=0);
     renderRecent();
     renderScanBoard();
@@ -7891,14 +8143,19 @@ function setupRoster() {
       return false;
     }
     var tag=contestTagForScan();
+    // Same held-aside branch as applyScore(). A batch award of 25 boys during a
+    // contest is 25 held scans, not 25 points — the two paths must agree or the
+    // Students-tab batch button would quietly bypass the contest.
+    var mcId=mcTagForScan();
+    if(mcId){ mcAdd(s.id, delta, mcId); tag.scoreToMain=false; }
     if(tag.scoreToMain) data.scores[s.id]=score(s.id)+delta;
     if(delta>0 && tag.scoreToMain) recordEarn(s.id, label, delta);
     if(tag.scoreToMain && !quiet) maybeSixSeven(s);
-    var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly});
+    var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly, mcId:mcId||undefined});
     save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
     if(!quiet){
-      flash(delta>=0, s.name, fmtDeltaBare(delta), label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
+      flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
       beep(delta>=0);
       renderRecent(); renderScanBoard(); refreshLiveViews();
     }
@@ -8083,10 +8340,18 @@ function setupRoster() {
     }
     var cBadge=$("contestCBadge");
     if(cBadge){
+      // A running MINI contest owns this badge. It is the only thing on the
+      // scan bar that explains why scores are not moving, so it shows whenever
+      // one is live — it is an indicator here, not the old pause toggle (the
+      // click handler routes to the Contest tab instead).
+      var mcLive=miniContestLive();
       var c=data.contest;
-      var showC = !!(c && !c.ended);
+      var showC = !!mcLive || !!(c && !c.ended);
       cBadge.style.display = showC ? "flex" : "none";
-      if(showC){
+      if(mcLive){
+        cBadge.classList.remove("paused");
+        cBadge.title = "Contest “"+mcLive.name+"” is running — these points are being held for it and are not going into anyone’s score. Tap to open the Contest tab.";
+      } else if(showC){
         cBadge.classList.toggle("paused", !c.counting);
         cBadge.title = c.counting
           ? "Contest “"+c.name+"” is counting these scans. Tap to pause without ending the contest."
@@ -8221,6 +8486,10 @@ function setupRoster() {
   });
   $("contestCBadge").addEventListener("click", function(e){
     e.stopPropagation();
+    // For a mini contest the badge is an indicator, not a switch — there is no
+    // pause to toggle, and a tap on the scan bar is not a safe place to change
+    // where points go. Open the tab that explains it instead.
+    if(miniContestLive()){ activateTab("contest"); return; }
     if(!data.contest || data.contest.ended) return;
     data.contest.counting = !data.contest.counting;
     save();
@@ -8355,8 +8624,19 @@ function setupRoster() {
     // affected it (a normal scan, a "both" mode contest scan, or a contestOnly
     // one that's since been merged).
     var affectedMain = !entry.contestOnly || entry.merged;
+    // MINI CONTEST. A held entry never reached data.scores, so undoing it must
+    // not "give back" points the boy never had — unless the contest has since
+    // been Merged, which is exactly what mcMerged records.
+    if(entry.mcId) affectedMain = !!entry.mcMerged;
+    // Take it back out of the contest's stored total. mcRevert() no-ops unless
+    // this entry belongs to the contest that is still RUNNING: a closed
+    // contest's totals are a receipt, and a receipt that changes after the fact
+    // is not a receipt. Undoing a scan from a finished contest still corrects
+    // the main score (above) and still writes the correction entry (below) —
+    // it just cannot rewrite history that a rebbi already acted on.
+    if(entry.mcId) mcRevert(entry.sid, entry.delta, entry.mcId);
     if(affectedMain) data.scores[entry.sid]=score(entry.sid)-entry.delta;
-    var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Undo: "+entry.label, delta:-entry.delta, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false});
+    var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Undo: "+entry.label, delta:-entry.delta, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false, mcId:entry.mcId||undefined, mcMerged:entry.mcMerged||undefined});
     save(); renderRecent(); renderScanBoard();
     // Same live-refresh path a scan uses, so undoing from the global scan bar
     // updates whatever aggregate view is open (standings, history, contest,
@@ -8552,9 +8832,19 @@ function setupRoster() {
     // the old value and installs the new one in a single net adjustment.
     var diff=newDelta-entry.delta;
     entry.undone=true;
-    data.scores[entry.sid]=score(entry.sid)-entry.delta; // reverse old
-    data.scores[entry.sid]=score(entry.sid)+newDelta;    // apply new
-    var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Edit: "+entry.label, delta:diff, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false});
+    // MINI CONTEST. A held entry's points live on the contest record, not in
+    // data.scores — so an edit moves the CONTEST total and leaves the boy's
+    // score alone. Once the contest has been Merged (mcMerged) the points are
+    // in data.scores like any other, and the ordinary branch below is right.
+    // mcAdjust() moves the value without moving the scan COUNT: editing a scan
+    // does not make it two scans, or none.
+    var mcHeld = !!entry.mcId && !entry.mcMerged;
+    if(entry.mcId && !entry.mcMerged) mcAdjust(entry.sid, diff, entry.mcId);
+    if(!mcHeld){
+      data.scores[entry.sid]=score(entry.sid)-entry.delta; // reverse old
+      data.scores[entry.sid]=score(entry.sid)+newDelta;    // apply new
+    }
+    var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Edit: "+entry.label, delta:diff, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false, mcId:entry.mcId||undefined, mcMerged:entry.mcMerged||undefined});
     save(); renderRecent(); renderScanBoard();
     if($("view-standings").classList.contains("active")) renderStandings();
     renderHistoryTab();
@@ -10629,16 +10919,35 @@ function setupRoster() {
       return;
     }
     if(card) card.style.display="";
-    var has=!!(data.contest && data.contest.startTs);
+    var mc=miniContestLive();
+    var legacy=!!(data.contest && data.contest.startTs);
+    var has=!!mc || legacy;
     $("contestInactive").style.display = has ? "none" : "flex";
     $("contestActiveWrap").style.display = has ? "flex" : "none";
-    $("standRangeContestBtn").style.display = has ? "" : "none";
+    // The Leader Board's "🏆 Contest" range sums data.log for a contestId, so
+    // it belongs to the OLD contest and only to it. A mini contest's standings
+    // come from its stored totals and live on the Contest tab — pointing this
+    // button at one would reintroduce the derived-from-log reading it exists
+    // to replace.
+    $("standRangeContestBtn").style.display = legacy ? "" : "none";
+    if(!legacy && standRange==="contest") standRange="all";
     // Keeps Raffle's "Current contest" ticket-source option live as contest
     // state changes, even while the Raffle tab isn't the active view — this
     // runs regardless of `has` since both "no contest at all" and "contest
     // just ended" mean the same thing for that option's availability.
     updateRaffleSourceModeAvailability();
     if(!has) return;
+    // A mini contest owns the banner whenever one is running. Its line says the
+    // thing a rebbi standing at the projector needs to know — that the points
+    // he is scanning are not landing in anyone's score yet.
+    if(mc){
+      var msum=mcSummary(mc);
+      var mdays=Math.max(1, Math.round((Date.now()-mc.startTs)/86400000));
+      $("contestName").textContent = "🏆 "+mc.name;
+      $("contestCountdown").textContent = "Day "+mdays+" · "+mcFmtPts(msum.points)+" held for "
+        + msum.students+" student"+(msum.students===1?"":"s")+" — not in their scores yet";
+      return;
+    }
     $("contestName").textContent = "🏆 "+data.contest.name;
     var now=Date.now(), start=data.contest.startTs, end=data.contest.endTs;
     var msg;
@@ -10655,8 +10964,15 @@ function setupRoster() {
     }
     $("contestCountdown").textContent=msg;
   }
-  $("startContestBtn").addEventListener("click", showStartContestModal);
-  $("viewContestBtn").addEventListener("click", function(){ standRange="contest"; renderStandings(); });
+  // All three banner buttons now lead to the Contest tab rather than starting
+  // or ending anything from the Leader Board. Starting a contest changes where
+  // every scanned point goes, so it belongs on the page that explains that, not
+  // behind a button on the most-projected screen in the app.
+  $("startContestBtn").addEventListener("click", function(){ activateTab("contest"); });
+  $("viewContestBtn").addEventListener("click", function(){
+    if(miniContestLive()){ activateTab("contest"); return; }
+    standRange="contest"; renderStandings();
+  });
   // Shared by the Standings banner's End button and the Contest tab's own —
   // one real implementation, so the confirm wording and the actual effects
   // can never drift apart between the two entry points.
@@ -10696,7 +11012,13 @@ function setupRoster() {
     if($("view-standings").classList.contains("active")) renderStandings();
     if(typeof renderContestTab==="function") renderContestTab();
   }
-  $("endContestBtn").addEventListener("click", endContestFlow);
+  // Finishing a mini contest is a two-way decision (add the points, or don't),
+  // so it is never a single banner button — it sends the rebbi to the tab where
+  // both choices sit side by side with what each one does spelled out.
+  $("endContestBtn").addEventListener("click", function(){
+    if(miniContestLive()){ activateTab("contest"); return; }
+    endContestFlow();
+  });
   setInterval(function(){
     if($("view-standings").classList.contains("active")) renderContestBanner();
     if($("view-contest") && $("view-contest").classList.contains("active") && typeof renderContestTab==="function") renderContestTab();
@@ -10938,12 +11260,197 @@ function setupRoster() {
     renderContestByStudentView();
   });
 
-  function renderContestTab(){
-    var has=!!(data.contest && data.contest.startTs);
-    $("contestTabInactive").style.display = has ? "none" : "block";
-    $("contestTabActive").style.display   = has ? "block" : "none";
+  /* ---------- Mini Contest rendering ---------- */
+  var mcExpanded={};   // sid -> bool, standings breakdown toggle
 
-    if(has){
+  // Scan-by-scan detail for one student. DISPLAY ONLY. This walks data.log and
+  // is therefore allowed to come back short or empty as the 500-entry cap rolls
+  // past — which is precisely why no TOTAL is ever computed from it. When it is
+  // short, renderMiniContest() says so out loud rather than letting a partial
+  // list read as complete.
+  function mcEntriesFor(contestId, sid){
+    var out=[];
+    data.log.forEach(function(e){
+      if(e.mcId!==contestId || e.kind==="correction") return;
+      if(sid && e.sid!==sid) return;
+      out.push(e);
+    });
+    return out;
+  }
+  function renderMiniContest(){
+    var c=miniContestLive();
+    $("mcInactive").style.display = c ? "none" : "block";
+    $("mcActive").style.display   = c ? "block" : "none";
+    if(!c) return;
+
+    var sum=mcSummary(c);
+    $("mcName").textContent="🏆 "+c.name;
+    var days=Math.max(1, Math.round((Date.now()-c.startTs)/86400000));
+    $("mcMeta").textContent="Started "+new Date(c.startTs).toLocaleDateString()
+      +"  ·  day "+days+"  ·  "+c.scans+" scan"+(c.scans===1?"":"s");
+    $("mcTotals").textContent=sum.students+" student"+(sum.students===1?"":"s")
+      +"  ·  "+mcFmtPts(sum.points)+" held";
+
+    // The single most important sentence on this tab: a rebbi mid-contest is
+    // scanning and watching nobody's score move. If he doesn't know why, he
+    // concludes the app is broken.
+    var note="Points scanned now are held for this contest — nobody’s score is going up while it runs. Finish the contest to decide what happens to them.";
+    // Honesty about the breakdown lists below, which DO come from the capped
+    // scan log. The totals are complete either way; say which is which.
+    // Non-undone only, to match what c.scans counts (mcAdd +1, mcRevert -1).
+    // An undone entry stays in the log, so counting it here could make the
+    // detail look MORE complete than the contest is.
+    var detail=mcEntriesFor(c.id, null).filter(function(e){ return !e.undone; }).length;
+    if(detail<c.scans){
+      note+="  (The totals here are complete. The scan-by-scan lists below only go back "
+        +detail+" of "+c.scans+" scans — older detail has rolled out of the 500-scan history.)";
+    }
+    $("mcHeldNote").textContent=note;
+
+    var list=$("mcStandingsList"); list.innerHTML="";
+    var rows=mcStandings(c);
+    if(!rows.length){
+      list.appendChild(el("div","recent-empty","No points have been scanned into this contest yet. Scan exactly as you normally do — they’ll appear here."));
+      return;
+    }
+    rows.forEach(function(r, i){
+      var row=el("div","erow");
+      var rank=el("span",null,String(i+1)+".");
+      rank.style.cssText="font-weight:800;color:var(--muted);min-width:26px";
+      row.appendChild(rank);
+      var name=el("span","grow");
+      name.appendChild(document.createTextNode(r.name+"  "));
+      if(r.group) name.appendChild(el("span","grp-tag",r.group));
+      // A boy removed from the roster mid-contest still holds points. Show him
+      // rather than dropping him — a total that quietly shrinks is the bug.
+      if(r.gone){ var g=el("span","grp-tag","removed from roster"); g.style.opacity=".7"; name.appendChild(g); }
+      row.appendChild(name);
+      var pts=el("span",null,isShulchani()?formatCoins(r.pts,{signed:true}):fmt(r.pts)+" pts");
+      pts.style.cssText="font-weight:800;color:"+(r.pts<0?"var(--bad)":"var(--ink)")+";margin-right:8px";
+      row.appendChild(pts);
+      var open=!!mcExpanded[r.sid];
+      var bd=el("button","btn btn-sm", open?"▴ Scans":"▾ Scans");
+      bd.addEventListener("click", function(){ mcExpanded[r.sid]=!mcExpanded[r.sid]; renderMiniContest(); });
+      row.appendChild(bd);
+      list.appendChild(row);
+      if(open){
+        var wrap=el("div"); wrap.style.cssText="padding:4px 0 10px 14px";
+        var entries=mcEntriesFor(c.id, r.sid);
+        if(!entries.length){
+          wrap.appendChild(el("div","recent-empty","No scan detail left for this student — his total above is still correct."));
+        }
+        entries.forEach(function(e){
+          var det = e.undone ? el("span","rd undo","Undone · "+e.label)
+                             : el("span","rd "+(e.delta<0?"neg":"pos"), fmt(e.delta)+"  "+e.label);
+          wrap.appendChild(breakdownRow(
+            new Date(e.ts).toLocaleDateString(undefined,{month:"short",day:"numeric"}),
+            fmtClockTime(e.ts), det,
+            e.undone ? null : function(){ undoEntryById(e.id); renderMiniContest(); }
+          ));
+        });
+        list.appendChild(wrap);
+      }
+    });
+  }
+  // Finished contests. Every one is kept: after a merge this card is the only
+  // thing that explains why a boy's score jumped, and after a dump it is the
+  // only record the contest happened at all.
+  function renderMiniContestPast(){
+    var past=data.miniContestPast||[];
+    $("mcPastSection").style.display = past.length ? "block" : "none";
+    var wrap=$("mcPastList"); if(!wrap) return;
+    wrap.innerHTML="";
+    past.forEach(function(pc, idx){
+      var card=el("div","card pad"); card.style.marginBottom="10px";
+      var head=el("div","toolbar"); head.style.margin="0";
+      var ttl=el("div");
+      var nm=el("div",null,"🏆 "+pc.name);
+      nm.style.cssText="font-family:var(--serif);font-weight:700;font-size:1.05rem";
+      ttl.appendChild(nm);
+      var sum=mcSummary(pc);
+      var when=new Date(pc.startTs).toLocaleDateString()+" – "+new Date(pc.endTs).toLocaleDateString();
+      var sub=el("div",null, when+"  ·  "+sum.students+" student"+(sum.students===1?"":"s")
+        +"  ·  "+pc.scans+" scan"+(pc.scans===1?"":"s"));
+      sub.style.cssText="color:var(--muted);font-size:.85rem;margin-top:2px";
+      ttl.appendChild(sub);
+      head.appendChild(ttl);
+      head.appendChild(el("span","grow"));
+      var badge=el("span",null, pc.outcome==="merged"
+        ? "Points added · "+mcFmtPts(pc.granted)
+        : "Points not added");
+      badge.style.cssText="font-weight:700;font-size:.85rem;padding:4px 10px;border-radius:999px;"
+        +(pc.outcome==="merged" ? "background:#e6f6ec;color:#0f6e3f" : "background:#eef0f6;color:var(--muted)");
+      head.appendChild(badge);
+      card.appendChild(head);
+
+      var rows=mcStandings(pc);
+      if(!rows.length){
+        card.appendChild(el("div","recent-empty","No points were scored in this contest."));
+      } else {
+        var body=el("div","row-list"); body.style.marginTop="10px";
+        rows.forEach(function(r,i){
+          var row=el("div","erow");
+          var rk=el("span",null,String(i+1)+"."); rk.style.cssText="font-weight:800;color:var(--muted);min-width:26px";
+          row.appendChild(rk);
+          row.appendChild(el("span","grow", r.name));
+          var p=el("span",null,isShulchani()?formatCoins(r.pts,{signed:true}):fmt(r.pts)+" pts");
+          p.style.cssText="font-weight:800;color:"+(r.pts<0?"var(--bad)":"var(--ink)");
+          row.appendChild(p);
+          body.appendChild(row);
+        });
+        card.appendChild(body);
+      }
+
+      var foot=el("div","toolbar"); foot.style.marginTop="10px";
+      foot.appendChild(el("span","grow"));
+      var del=el("button","btn btn-sm btn-bad","Remove from history");
+      del.addEventListener("click", function(){
+        var pc2=data.miniContestPast[idx]; if(!pc2) return;
+        var warn="Remove “"+pc2.name+"” from this list?\n\n";
+        warn += pc2.outcome==="merged"
+          ? "The points it added to everyone’s scores STAY — this only removes the record explaining where they came from."
+          : "Its points were never added to anyone’s score, so this deletes the only record that this contest happened.";
+        warn += "\n\nThis cannot be undone.";
+        if(!confirm(warn)) return;
+        data.miniContestPast.splice(idx,1);
+        save(); renderMiniContestPast();
+      });
+      foot.appendChild(del);
+      card.appendChild(foot);
+      wrap.appendChild(card);
+    });
+  }
+
+  function renderContestTab(){
+    renderMiniContest();
+    renderMiniContestPast();
+
+    // ---- The ORIGINAL contest, read-only. Hidden entirely unless this device
+    // has data for it, so a rebbi who never ran one never sees the section.
+    var legacyActive = !!(data.contest && data.contest.startTs);
+    var legacyPast   = ((data.pastContests||[]).length > 0);
+    var show = legacyActive || legacyPast;
+    $("legacyContestWrap").style.display = show ? "block" : "none";
+    $("pastContestsSection").style.display = legacyPast ? "block" : "none";
+    // The old start button is deliberately unreachable — the old lifecycle is
+    // what #133 reworks, and nothing should be able to begin a new one.
+    $("contestTabInactive").style.display = "none";
+    $("contestTabActive").style.display   = legacyActive ? "block" : "none";
+    if(!show){ renderPastContests(); return; }
+
+    // A legacy contest left un-ended is still being consulted by
+    // contestTagForScan() on every scan, and in "contest only" mode that means
+    // points are quietly not landing. Say so, and leave the rebbi its own End
+    // button (below) to stop it. Deliberately NOT auto-ended here: silently
+    // mutating a rebbi's saved record is exactly the move this whole feature
+    // exists to avoid.
+    var stillCounting = legacyActive && !data.contest.ended && data.contest.counting
+                        && Date.now()>=data.contest.startTs && Date.now()<=data.contest.endTs;
+    $("legacyContestNote").textContent = stillCounting
+      ? "⚠ An older contest is still running on this device and is still affecting your scans. Use “End contest” below to stop it."
+      : "From the older contest system, kept here so nothing is lost. You can still read the results and merge points in; new contests use the panel above.";
+
+    if(legacyActive){
       var c=data.contest;
       $("contestTabName").textContent = "\uD83C\uDFC6 "+c.name;
       $("contestCountingToggle").checked  = !!c.counting;
@@ -11111,6 +11618,55 @@ function setupRoster() {
       wrap.appendChild(card);
     });
   }
+
+  /* ---- Mini Contest controls ----
+     The two finishing actions are TWO buttons with TWO confirmations that do
+     exactly one thing each. The original feature put "keep the contest's
+     history" and "reset every score, deleting the log those totals came from"
+     behind a single OK, and its dialog promised the history would survive
+     while the code deleted it (#134). Neither button here destroys anything:
+     Merge adds points, Dump adds none, and both keep the full record.
+  */
+  $("mcStartBtn").addEventListener("click", function(){
+    if(miniContestLive()) return;
+    var name=prompt("Name this contest — the boys will see it on the Contest tab.\n\nWhile it runs, the points you scan are held for the contest instead of going into anyone's score.", "Class Contest");
+    if(name===null) return;                       // cancelled
+    name=(name||"").trim();
+    if(!name){ alert("A contest needs a name."); return; }
+    mcStart(name);
+    renderContestTab();
+    renderContestBanner();
+    renderScanBoard();
+    refreshLiveViews();
+  });
+  $("mcMergeBtn").addEventListener("click", function(){
+    var c=miniContestLive(); if(!c) return;
+    var sum=mcSummary(c);
+    if(!sum.students){ alert("Nothing has been scanned into “"+c.name+"” yet, so there are no points to add. Use “Finish without adding points” to close it."); return; }
+    if(!confirm(
+      "Add “"+c.name+"” points to everyone’s scores and finish?\n\n"
+      + sum.students+" student"+(sum.students===1?"":"s")+" · "+mcFmtPts(sum.points)+" will be added to their real scores now.\n\n"
+      + "The contest and its full results move to “Finished contests” below, so you can always see who earned what. Nothing is deleted.\n\n"
+      + "This can’t be undone in one step."
+    )) return;
+    var res=mcMergeAndClose();
+    renderContestTab(); renderContestBanner(); renderScanBoard(); renderRecent(); refreshLiveViews();
+    alert("“"+res.name+"” finished. "+mcFmtPts(res.granted)+" added across "+res.students+" student"+(res.students===1?"":"s")+".");
+  });
+  $("mcDumpBtn").addEventListener("click", function(){
+    var c=miniContestLive(); if(!c) return;
+    var sum=mcSummary(c);
+    if(!confirm(
+      "Finish “"+c.name+"” WITHOUT adding its points?\n\n"
+      + mcFmtPts(sum.points)+" held across "+sum.students+" student"+(sum.students===1?"":"s")
+      + " will NOT be added. Nobody’s score changes.\n\n"
+      + "The contest and its full results are still kept in “Finished contests” below, so you can see who earned what.\n\n"
+      + "This can’t be undone."
+    )) return;
+    var res=mcDumpAndClose();
+    renderContestTab(); renderContestBanner(); renderScanBoard(); renderRecent(); refreshLiveViews();
+    alert("“"+res.name+"” finished. No points were added to anyone’s score.");
+  });
 
   $("contestTabStartBtn").addEventListener("click", showStartContestModal);
   $("contestTabEndBtn").addEventListener("click", endContestFlow);
@@ -11286,7 +11842,12 @@ function setupRoster() {
         // contest modes ("both" and "contestOnly", the latter never touching
         // data.scores at all), so it must be checked first and used directly
         // rather than falling through to score()/pointsForActivity().
-        if(data.raffleSourceMode==="contest" && data.contest && !data.contest.ended){
+        // A running mini contest is the live contest, so it answers first — and
+        // it answers from its STORED total, not by summing the log.
+        var mcR = data.raffleSourceMode==="contest" ? miniContestLive() : null;
+        if(mcR){
+          t = mcR.totals[s.id]||0;
+        } else if(data.raffleSourceMode==="contest" && data.contest && !data.contest.ended){
           t = contestScoreFor(s.id, data.contest.id);
         } else if(data.raffleSourceMode==="activity" && act){
           t = pointsForActivity(s.id, act, "all");
@@ -11323,9 +11884,13 @@ function setupRoster() {
     // contest can be started while the feature is hidden. The existing
     // fall-back below still runs, so a raffle left on "contest" mode drops to
     // all-time points rather than stranding on a source that no longer exists.
+    // Un-hiding the Contest tab makes contestFeatureVisible() true for
+    // everyone, so this option would otherwise appear permanently greyed out —
+    // an advertised control that can never be reached. A running mini contest
+    // is what makes it live now.
     var featureOn = contestFeatureVisible();
     contestBtn.style.display = featureOn ? "" : "none";
-    var hasActiveContest = featureOn && !!(data.contest && data.contest.startTs && !data.contest.ended);
+    var hasActiveContest = featureOn && (!!miniContestLive() || !!(data.contest && data.contest.startTs && !data.contest.ended));
     contestBtn.disabled = !hasActiveContest;
     contestBtn.title = hasActiveContest ? "" : "No contest is currently running.";
     if(!hasActiveContest && data.raffleSourceMode==="contest"){
@@ -18360,6 +18925,23 @@ nameLine
       if(typeof data.contest.ended!=="boolean") data.contest.ended=false;
       if(typeof data.contest.merged!=="boolean") data.contest.merged=false;
     }
+    // ---- Mini Contest. PURELY ADDITIVE: two brand-new keys, no DATA_VERSION
+    // bump. Nothing existing is read, converted, renamed or removed — a save
+    // that predates this takes null/[] and behaves exactly as it does today,
+    // gaining only "no contest is running". data.contest and data.pastContests
+    // above are deliberately untouched by all of this.
+    //
+    // Same !==null-first shape as the data.contest guard above, because
+    // typeof null === "object". Array.isArray is checked too: an array would
+    // pass the typeof test and then silently fail every totals lookup.
+    if(data.miniContest!==null && (typeof data.miniContest!=="object" ||
+       Array.isArray(data.miniContest) || !data.miniContest.startTs)) data.miniContest=null;
+    if(data.miniContest) fixMiniContestRecord(data.miniContest);
+    if(!Array.isArray(data.miniContestPast)) data.miniContestPast=[];
+    data.miniContestPast = data.miniContestPast.filter(function(pc){
+      return pc && typeof pc==="object" && !Array.isArray(pc) && pc.startTs;
+    });
+    data.miniContestPast.forEach(fixMiniContestRecord);
     if(typeof data.standCustomFrom!=="string") data.standCustomFrom="";
     if(typeof data.standCustomTo!=="string") data.standCustomTo="";
     // Remembers the Leader Board's last-picked range across reloads. "contest"
@@ -18448,6 +19030,24 @@ nameLine
     if(!data.contestHiddenSeeded){
       data.navHidden.tabs.contest=true;
       data.contestHiddenSeeded=true;
+    }
+    // ...and un-hide it again, now that the reason for hiding is gone. The tab
+    // was hidden because every number it showed was recomputed by walking
+    // data.log, so a saved contest decayed to a label with no scores behind it
+    // as the 500-entry cap rolled past (#131/#133/#134). The Mini Contest that
+    // now drives this tab stores its totals at scan time and never derives one
+    // from the log.
+    //
+    // ONE-SHOT, the same shape as the hide it reverses: it un-hides once and
+    // then never touches the setting again, so a rebbi who decides to hide
+    // Contest himself in Settings keeps it hidden through every later load.
+    //
+    // This does NOT resurrect the old lifecycle. The original contest's panels
+    // stay gated on this device actually having old contest data, and its
+    // "Start a contest" button is unreachable — see renderContestTab().
+    if(!data.miniContestUnhidden){
+      data.navHidden.tabs.contest=false;
+      data.miniContestUnhidden=true;
     }
     // Hide the Gradebook (#185). WHY: it reads data.trackedData, which only the
     // one-shot Phase 2c attendance conversion below ever writes, so the grid
