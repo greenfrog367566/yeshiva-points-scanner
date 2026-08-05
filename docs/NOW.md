@@ -8,7 +8,11 @@ The current working queue. Read this at the start of a session.
 
 ## Doing now
 
-Nothing in flight. Next item is Offline resync.
+**Phase 2d — the armed-item scan mechanic (#123).** Started 2026-08-05.
+
+It is the critical path, per `Menchmark_Phased_Build_Plan.md`: the last slice of the keystone, and the gate on three separate things — un-hiding the Gradebook (#185), Phase 5's grade storage, and the Firebase rebuild's step 1. It was missing from this queue entirely while smaller items sat above it; that is the discrepancy this entry fixes.
+
+It also decides the **count value shape**, which nothing has ever written. 2b's `gbCountOf()` carries a guess to cover it — the only place in the Gradebook that guesses at data rather than reading it — and that fallback collapses once 2d chooses. Same question: whether `config.step` is baked into the stored value or applied on read. **PROPOSE FIRST on the shape**, even though the writes themselves are expected to be additive.
 
 **On the horizon:** the Firebase/Firestore rebuild is fully scoped in `docs/Firebase_Rebuild_Scope.md` — real accounts, Firestore replacing localStorage, three tiers, incremental-write data model, converter tool, 8-step build order. Not started; step 1 (data model design session) hasn't begun.
 
@@ -18,7 +22,7 @@ Its phase mapping was reconciled against the code on 2026-08-04 and it now carri
 
 ## Next, in order
 
-**1. Offline resync** — read-only investigation first, then PROPOSE FIRST
+**1. Offline resync** — read-only investigation first, then PROPOSE FIRST (after 2d)
 The snapshot recovers after being offline; logged scans do not unless "resync all scans" is pressed. Want it automatic on reconnect and periodically.
 **Retry safety differs per tab.** The Log dedups by ID so re-pushing is safe. The Attendance Log has no dedup, so a retry duplicates rows. Confirm per tab before proposing.
 **In the Firestore era this asymmetry dissolves** — see the rebuild doc's open question 3 (deterministic client-generated write ids make every retry idempotent). That does not answer the question here; the localStorage/Apps Script investigation is still owed as written.
@@ -52,7 +56,7 @@ What is left of the old "small standalone features" item once Freeze and the raf
 
 ## Phase 2 status
 
-2a and 2b shipped. **2c is partial** — only `data.attendance` was converted (#138); `data.hw` resets, `data.trackerLog` and `data.passes` are still TBD, and all four old tabs are still visible. The remainder is re-scoped in #122. **2d** (armed-item scan mechanic) is the last slice and is not started. It also pins down the count value shape, which is still undefined — the 2b gradebook carries a guess that should collapse when 2d lands.
+2a and 2b shipped. **2c is partial** — only `data.attendance` was converted (#138); `data.hw` resets, `data.trackerLog` and `data.passes` are still TBD, and all four old tabs are still visible. The remainder is re-scoped in #122. **2d** (armed-item scan mechanic) is the last slice and is **in flight as of 2026-08-05** — see "Doing now". It also pins down the count value shape, which is still undefined — the 2b gradebook carries a guess that should collapse when 2d lands.
 
 **2d now runs ahead of the Firebase rebuild** (locked 2026-08-04): the rebuild's data-model session has to model `trackedData`, and modelling it against 2b's guess means doing it twice.
 
