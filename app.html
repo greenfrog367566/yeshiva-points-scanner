@@ -1012,6 +1012,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      read as a plain left-aligned name, not a control. */
   .att-name-cycle{background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
   .att-name-cycle:hover{text-decoration:underline}
+  /* Presence-first only: a boy nobody has marked yet. Dimmed rather than
+     hidden or badged, so the rows still left to do are obvious at a glance
+     without the list turning into a wall of warnings. */
+  .erow.att-unmarked .att-name-cycle{color:var(--muted)}
   .gb-scroll{overflow-x:auto;overflow-y:hidden}
   .gb-tbl{width:100%;border-collapse:collapse;font-size:.85rem}
   .gb-tbl th,.gb-tbl td{border:1px solid var(--line);padding:5px 7px;text-align:center;white-space:nowrap}
@@ -3500,12 +3504,22 @@ function setupRoster() {
   <!-- ============ ATTENDANCE ============ -->
   <section id="view-attendance" class="view">
     <h2 class="view-title">Attendance</h2>
-    <p class="view-note">Everyone defaults to Present — tap a student to mark them Absent or Late instead. Each change is time-stamped and synced to your Google Sheet if connected.</p>
+    <p class="view-note" id="attModeNote"></p>
 
     <div class="toolbar" style="margin-bottom:12px">
       <span class="seg mini" id="attViewMode">
         <button data-avm="date" class="active">By Date</button>
         <button data-avm="student">By Student</button>
+      </span>
+      <span class="grow"></span>
+      <!-- Which way round attendance is taken. It lives here rather than in
+           Settings because this is the screen where the difference is visible,
+           and a rebbi who wants the other way round is looking at this page
+           when he decides that. Switching changes nothing already recorded. -->
+      <span style="color:var(--muted);font-size:.85rem">I mark</span>
+      <span class="seg mini" id="attModeSel">
+        <button data-attmode="absence" title="Everyone counts as present; you tap only the boys who are absent or late">who's away</button>
+        <button data-attmode="presence" title="Nobody counts until you mark him; you mark the boys who are here">who's here</button>
       </span>
     </div>
 
@@ -4003,6 +4017,9 @@ function setupRoster() {
     log: [],        // {ts, sid, label, delta}
     sheetUrl: "",
     autoSheet: true,
+    // Absence-first: unmarked means present. The mode a new install starts in,
+    // and what every existing save backfills to — see attPresenceFirst().
+    attMode: "absence",
     raffle: { mode:"auto", entries:{}, winners:[] },
     pasukSet: { label:"", ref:"", from:1, to:1 },
     pesukimDone: {},
@@ -5011,17 +5028,66 @@ function setupRoster() {
    * renderAttendance auto-fills it — so the cycle starts from where everyone
    * already is, and one scan means "this boy is an exception".
    */
-  var ATT_CYCLE = ["present","absent","late"];
+  /* WHICH WAY ROUND a rebbi takes attendance. Two real styles, one data model
+   * and one set of records — this changes what an UNMARKED boy means, nothing
+   * about what is stored.
+   *
+   *   "absence"  (the default, and everything the app has ever done)
+   *              unmarked means present; the rebbi taps the exceptions.
+   *   "presence" unmarked means NOT YET TAKEN; the rebbi marks whoever is
+   *              here, and an unmarked boy is nobody's guess until he says so.
+   *
+   * App-level rather than per class: a rebbi has a style, not a style per
+   * class. Existing saves and new installs both get "absence", so nobody's
+   * attendance changes meaning underneath him.
+   */
+  function attPresenceFirst(){ return data.attMode==="presence"; }
+  /* The cycle a tap or a scan walks.
+   *
+   * Absence-first starts from present, because an unmarked boy already counts
+   * as present — so the cycle starts where everyone already is and one tap
+   * means "this boy is an exception".
+   *
+   * Presence-first starts from NOTHING, so the very first tap means "he is
+   * here", which is the entire point of taking it that way round. Late sits
+   * second because "here, but late" is the common correction to a present.
+   *
+   * Both WRAP: a mis-tap self-corrects by tapping the same boy again rather
+   * than going hunting for a fix.
+   */
+  var ATT_CYCLE_ABSENCE  = ["present","absent","late"];
+  var ATT_CYCLE_PRESENCE = ["present","late","absent"];
+  function attCycleOrder(){ return attPresenceFirst() ? ATT_CYCLE_PRESENCE : ATT_CYCLE_ABSENCE; }
+  // Kept as the absence-mode order under its old name: other code and the
+  // harness read it, and it is still exactly what that mode cycles through.
+  var ATT_CYCLE = ATT_CYCLE_ABSENCE;
+  /* The record for a boy on a day IF SOMEONE ACTUALLY MARKED HIM — null for a
+   * default nobody has touched. Same numeric-ts test attDayTaken() uses: a real
+   * observation is stamped by setAttendance(), while renderAttendance()'s
+   * auto-fill writes ts:null precisely so the two stay tellable apart.
+   */
+  function attMarkedRec(dateKey, sid){
+    var day=data.attendance[dateKey], rec=day && day[sid];
+    return (rec && typeof rec.status==="string" && typeof rec.ts==="number") ? rec : null;
+  }
   function attStatusOn(dateKey, sid){
-    var day=data.attendance[dateKey];
-    var rec=day && day[sid];
-    return (rec && typeof rec.status==="string") ? rec.status : "present";
+    var rec=attMarkedRec(dateKey, sid);
+    if(rec) return rec.status;
+    // Unmarked. Absence-first says he is present. Presence-first says nobody has
+    // looked yet — "" rather than a status, so attNextStatus lands on the FIRST
+    // step of the cycle instead of the second.
+    if(attPresenceFirst()) return "";
+    var day=data.attendance[dateKey], any=day && day[sid];
+    return (any && typeof any.status==="string") ? any.status : "present";
   }
   function attNextStatus(cur){
-    var i=ATT_CYCLE.indexOf(cur);
+    var cyc=attCycleOrder();
+    var i=cyc.indexOf(cur);
     // An unrecognised status (hand-edited, or from a newer version) lands on the
-    // first step rather than being left stuck outside the cycle.
-    return ATT_CYCLE[(i<0 ? 0 : i+1) % ATT_CYCLE.length];
+    // first step rather than being left stuck outside the cycle. In
+    // presence-first, "" is that case by design and is how a first tap means
+    // "he is here".
+    return cyc[(i<0 ? 0 : i+1) % cyc.length];
   }
   /* Writes one student's status for one day.
    *
@@ -5101,9 +5167,29 @@ function setupRoster() {
      */
     if(!attDayTaken(attDate) && studs.length){
       var ok=confirm("Nobody has been marked for "+attDate+" yet.\n\n"+
-        "Sending now will record all "+studs.length+" students as Present for this day.\n\n"+
-        "If that's right, click OK. If you haven't taken attendance yet, click Cancel.");
-      if(!ok){ $("attSendStatus").textContent="Not sent — nobody has been marked for this day yet."; return; }
+        (attPresenceFirst()
+          ? "There is nothing to send for this day."
+          : "Sending now will record all "+studs.length+" students as Present for this day.\n\n"+
+            "If that's right, click OK. If you haven't taken attendance yet, click Cancel."));
+      if(attPresenceFirst() || !ok){
+        $("attSendStatus").textContent="Not sent — nobody has been marked for this day yet."; return;
+      }
+    }
+    /* PRESENCE-FIRST SENDS ONLY WHO WAS MARKED. An unmarked boy there is not a
+     * present boy, he is one nobody has looked at — so he gets no row rather
+     * than a manufactured one, which is the same rule as the gate above applied
+     * per student instead of per day. The rebbi is told the count first,
+     * because a partial roll arriving at an office should be a choice.
+     */
+    var unmarkedNow=0;
+    if(attPresenceFirst()){
+      studs.forEach(function(s){ if(!attMarkedRec(attDate, s.id)) unmarkedNow++; });
+      if(unmarkedNow){
+        var ok2=confirm(unmarkedNow+" of "+studs.length+" students have not been marked for "+attDate+".\n\n"+
+          "They will NOT be included — only the "+(studs.length-unmarkedNow)+" you marked will be sent.\n\n"+
+          "To account for everyone, click Cancel and use “Mark the rest Absent” first.");
+        if(!ok2){ $("attSendStatus").textContent="Not sent — "+unmarkedNow+" students still unmarked."; return; }
+      }
     }
     // Only send students whose record is newer than the last successful send
     // for this day — on the very first send (prevSentAt is 0) everyone
@@ -5128,6 +5214,10 @@ function setupRoster() {
     // means exactly one row.
     var rows=[];
     studs.forEach(function(s){
+      // Presence-first: an unmarked boy is skipped outright — no record
+      // invented, no row. Absence-first keeps the original behaviour, which the
+      // gate above has now made a deliberate statement rather than a default.
+      if(attPresenceFirst() && !attMarkedRec(attDate, s.id)) return;
       var rec=day[s.id]||{status:"present",ts:null};
       if(!rec.ts) rec.ts=Date.now();
       day[s.id]=rec;
@@ -5218,6 +5308,12 @@ function setupRoster() {
     dates.forEach(function(dk){
       var rec=data.attendance[dk][sid];
       if(!rec) return;
+      // A day NOBODY marked is not a day this boy was present — it is a day
+      // attendance was never taken, and counting its auto-filled default here
+      // inflated his present tally with days that never happened. Same numeric-ts
+      // test the rest of this feature reads; a day the rebbi did take still
+      // counts its unmarked boys as present, because there that is his statement.
+      if(!attDayTaken(dk)) return;
       counts[rec.status]=(counts[rec.status]||0)+1;
       rows.push({dateKey:dk, rec:rec});
     });
@@ -5245,35 +5341,63 @@ function setupRoster() {
   $("attStudentNext").addEventListener("click", function(){ stepSelect("attStudentSel", 1); });
   function renderAttendance(){
     $("attDateInput").value=attDate;
+    document.querySelectorAll("#attModeSel button").forEach(function(b){
+      b.classList.toggle("active", (b.dataset.attmode==="presence")===attPresenceFirst());
+    });
+    $("attModeNote").textContent = attPresenceFirst()
+      ? "Nobody counts until you mark him — mark or scan the boys who are here, then “Mark the rest Absent”. Each change is time-stamped and synced to your Google Sheet if connected."
+      : "Everyone defaults to Present — tap a student to mark them Absent or Late instead. Each change is time-stamped and synced to your Google Sheet if connected.";
     var day=attDayRecord(attDate);
     var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
     // Auto-initialize any student with no record yet for this date as Present,
     // so a teacher only needs to tap the exceptions (absent/late).
+    //
+    // ABSENCE-FIRST ONLY. In presence-first an unmarked boy means "not taken
+    // yet", so pre-filling him as present would state the one thing that mode
+    // exists to stop the app stating on the rebbi's behalf.
     var initialized=false;
-    studs.forEach(function(s){
-      if(!day[s.id]){ day[s.id]={status:"present", ts:null}; initialized=true; }
-    });
+    if(!attPresenceFirst()){
+      studs.forEach(function(s){
+        if(!day[s.id]){ day[s.id]={status:"present", ts:null}; initialized=true; }
+      });
+    }
     if(initialized) save();
-    var counts={present:0,absent:0,late:0};
-    studs.forEach(function(s){ var st=day[s.id]&&day[s.id].status; if(st) counts[st]=(counts[st]||0)+1; });
+    var counts={present:0,absent:0,late:0,unmarked:0};
+    studs.forEach(function(s){
+      var st=attMarkedRec(attDate, s.id) ? day[s.id].status
+           : (attPresenceFirst() ? null : (day[s.id] && day[s.id].status));
+      if(st) counts[st]=(counts[st]||0)+1; else counts.unmarked++;
+    });
     // Says so on screen when the numbers are only defaults. Without this the
     // one state a rebbi most needs to notice — "I haven't done this yet" —
     // looks exactly like a perfect attendance day.
     var taken=attDayTaken(attDate);
+    // Presence-first counts the unmarked out loud, because there they are the
+    // work still to do rather than a silent default.
     $("attSummary").textContent = studs.length
-      ? (counts.present+" present, "+counts.absent+" absent, "+counts.late+" late"+(taken?"":" — not marked yet"))
+      ? (counts.present+" present, "+counts.absent+" absent, "+counts.late+" late"
+         + (attPresenceFirst()
+              ? (counts.unmarked ? ", "+counts.unmarked+" not marked" : "")
+              : (taken ? "" : " — not marked yet")))
       : "";
     var list=$("attList"); list.innerHTML="";
     if(!studs.length){ list.appendChild(el("div","recent-empty","Add students on the Students tab first.")); return; }
+    var cycleTip="Tap to cycle: "+attCycleOrder().join(" → ");
     studs.forEach(function(s){
+      var marked=attMarkedRec(attDate, s.id);
       var rec=day[s.id]||{status:"present",ts:null};
-      var row=el("div","erow");
+      // In presence-first, an unmarked boy has NO highlighted state — the row
+      // shows three untaken buttons, which is what "nobody has looked at him
+      // yet" is supposed to look like. In absence-first he reads as present,
+      // exactly as before.
+      var shown=marked ? marked.status : (attPresenceFirst() ? "" : rec.status);
+      var row=el("div","erow"+(attPresenceFirst() && !marked ? " att-unmarked" : ""));
       // Tapping the NAME walks the same cycle a scan does, so the screen and the
       // scanner can never disagree about what one input means. The three buttons
       // stay for setting a state directly — this adds a way in, it removes none.
       var name=el("button","grow att-name-cycle");
       name.appendChild(document.createTextNode(s.name+"  ")); if(s.group) name.appendChild(el("span","grp-tag",s.group));
-      name.title="Tap to cycle: present → absent → late";
+      name.title=cycleTip;
       name.addEventListener("click", function(){ attCycle(s.id, attDate); renderAttendance(); });
       row.appendChild(name);
       if(rec.ts){
@@ -5284,7 +5408,7 @@ function setupRoster() {
       var seg=el("span","seg mini");
       ["present","late","absent"].forEach(function(st){
         var lbl={present:"Present",late:"Late",absent:"Absent"}[st];
-        var b=el("button", rec.status===st?"active":null, lbl);
+        var b=el("button", shown===st?"active":null, lbl);
         b.addEventListener("click", function(){ setAttendance(s.id, st); renderAttendance(); });
         seg.appendChild(b);
       });
@@ -5299,10 +5423,30 @@ function setupRoster() {
          (typeof day._lastSendCount==="number" ? (" ("+day._lastSendCount+(day._lastSendCount===1?" student":" students")+" sent)") : "")+
          ". Any change you make now syncs automatically.")
       : (studs.length
-          ? (taken ? "Not sent yet."
-                   : "Not sent yet — and nobody has been marked for this day. Use “Mark the rest Present” if everyone is here.")
+          ? (attPresenceFirst()
+              ? (counts.unmarked
+                  ? (counts.unmarked+" not marked yet. Sending covers only the "+(studs.length-counts.unmarked)+" you marked — use “Mark the rest Absent” to account for the rest.")
+                  : "Not sent yet.")
+              : (taken ? "Not sent yet."
+                       : "Not sent yet — and nobody has been marked for this day. Use “Mark the rest Present” if everyone is here."))
           : "");
+    // The fill-in button says which way it fills, because in presence-first the
+    // useful sweep is the opposite one: the rebbi has marked everyone who is
+    // here, and what is left over is the absences.
+    $("attMarkAllPresent").textContent = attPresenceFirst() ? "Mark the rest Absent" : "Mark the rest Present";
+    $("attMarkAllPresent").title = attPresenceFirst()
+      ? "Marks every student you haven't marked yet as absent — anyone you already marked is left alone"
+      : "Marks every student who hasn't been marked yet — anyone you already set to absent or late is left alone";
   }
+  // Switching the mode NEVER rewrites a record — it changes what an unmarked
+  // boy means from here on. A day already marked reads the same in both, which
+  // is why this is safe to flip mid-year to see which way a rebbi prefers.
+  $("attModeSel").addEventListener("click", function(e){
+    var b=e.target.closest("button[data-attmode]"); if(!b) return;
+    data.attMode = b.dataset.attmode==="presence" ? "presence" : "absence";
+    save();
+    if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
+  });
   $("attPrevDay").addEventListener("click", function(){ var d=new Date(attDate+"T00:00:00"); d.setDate(d.getDate()-1); attDate=d.toISOString().slice(0,10); renderAttendance(); });
   $("attNextDay").addEventListener("click", function(){ var d=new Date(attDate+"T00:00:00"); d.setDate(d.getDate()+1); attDate=d.toISOString().slice(0,10); renderAttendance(); });
   $("attToday").addEventListener("click", function(){ attDate=todayKey(); renderAttendance(); });
@@ -5313,11 +5457,12 @@ function setupRoster() {
   // reading as a clean full house. Anyone carrying a real timestamp has been
   // marked deliberately and is left exactly as he is.
   $("attMarkAllPresent").addEventListener("click", function(){
-    var day=attDayRecord(attDate);
+    // Presence-first fills the leftovers as ABSENT: there the rebbi has marked
+    // everyone who is here, so what is left over is precisely who isn't.
+    var fill=attPresenceFirst() ? "absent" : "present";
     activeStudents().forEach(function(s){
-      var rec=day[s.id];
-      if(rec && typeof rec.ts==="number") return;
-      setAttendance(s.id, "present", attDate);
+      if(attMarkedRec(attDate, s.id)) return;
+      setAttendance(s.id, fill, attDate);
     });
     renderAttendance();
   });
@@ -18081,6 +18226,11 @@ nameLine
     if(!Array.isArray(data.spinnerSavedLists)) data.spinnerSavedLists=[];
     // Attendance / Tracker / Homework tools
     if(!data.attendance||typeof data.attendance!=="object") data.attendance={};
+    // Which way round attendance is taken. Anything that isn't the string
+    // "presence" means absence-first, so an existing save, a new install and a
+    // hand-mangled value all land on the behaviour the app has always had —
+    // nobody's attendance changes meaning because of an update.
+    if(data.attMode!=="presence") data.attMode="absence";
     if(!data.hw||typeof data.hw!=="object") data.hw={};
     if(!Array.isArray(data.trackerLog)) data.trackerLog=[];
     if(typeof data.trackerActId!=="string") data.trackerActId="";
