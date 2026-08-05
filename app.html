@@ -3517,7 +3517,12 @@ function setupRoster() {
         <button class="btn btn-sm" id="attToday">Today</button>
         <span class="grow"></span>
         <span id="attSummary" style="font-weight:700;color:var(--muted)"></span>
-        <button class="btn btn-sm btn-primary" id="attMarkAllPresent">Mark all Present</button>
+        <!-- "the rest", not "all": this fills only the students nobody has
+             marked yet, so the absences a rebbi just recorded survive it. It
+             also doubles as the deliberate way to say "I took attendance and
+             everyone is here", which is what tells a never-touched day apart
+             from a genuinely full one. -->
+        <button class="btn btn-sm btn-primary" id="attMarkAllPresent" title="Marks every student who hasn't been marked yet — anyone you already set to absent or late is left alone">Mark the rest Present</button>
       </div>
 
       <div class="card pad"><div id="attList" class="row-list"></div></div>
@@ -4974,6 +4979,27 @@ function setupRoster() {
   // and pushed to the Sheet immediately on its own, without needing another
   // manual send.
   function attDaySent(dateKey){ return !!(data.attendance[dateKey] && data.attendance[dateKey]._sentAt); }
+  /* Has anyone actually been MARKED on this day, or is the screen just showing
+   * defaults?
+   *
+   * This is the difference between "everyone was here" and "I never took
+   * attendance", and until now the app could not tell them apart — both are a
+   * day with no marks, and a day with no marks displays as a full present roll.
+   *
+   * The seam it reads already existed: renderAttendance() auto-fills an
+   * unmarked student as {status:"present", ts:null}, while setAttendance()
+   * stamps a real ts for anything a rebbi actually did. So a NUMERIC ts is an
+   * observation and a null one is a default nobody has touched. The reserved
+   * "_"-prefixed meta keys (_sentAt, _lastSendCount) are skipped the same way
+   * the rest of this file skips them.
+   */
+  function attDayTaken(dateKey){
+    var day=data.attendance[dateKey];
+    if(!day) return false;
+    return Object.keys(day).some(function(k){
+      return k.charAt(0)!=="_" && day[k] && typeof day[k].ts==="number";
+    });
+  }
   /* The cycle a scan (or a tap) walks a student through.
    *
    *   present (the unmarked default) -> absent -> late -> present
@@ -5057,6 +5083,28 @@ function setupRoster() {
     if(!url){ $("attSendStatus").textContent="No Google Sheet connected \u2014 add one on Backup & Sheets first."; return; }
     var day=attDayRecord(attDate);
     var studs=activeStudents();
+    /* A DAY NOBODY MARKED IS NOT A FULL PRESENT ROLL, and this is the gate that
+     * stops the app claiming it is.
+     *
+     * The loop below stamps a real timestamp onto every unmarked student so the
+     * send diff has something to compare. On a day the rebbi actually took, that
+     * is right: he marked the exceptions and "present" for the rest is his
+     * actual statement. On a day he never touched, it manufactures an
+     * observation nobody made — and it used to do that silently, writing a full
+     * present roll to the Sheet with fresh timestamps, indistinguishable from a
+     * real one. Once that leaves the app it is somebody's official record.
+     *
+     * Confirming is not a formality: the confirmation IS the observation, which
+     * is what makes stamping honest afterwards. "Mark the rest present" says the
+     * same thing deliberately and leaves a record of it on the day itself, which
+     * is why it is offered here by name.
+     */
+    if(!attDayTaken(attDate) && studs.length){
+      var ok=confirm("Nobody has been marked for "+attDate+" yet.\n\n"+
+        "Sending now will record all "+studs.length+" students as Present for this day.\n\n"+
+        "If that's right, click OK. If you haven't taken attendance yet, click Cancel.");
+      if(!ok){ $("attSendStatus").textContent="Not sent — nobody has been marked for this day yet."; return; }
+    }
     // Only send students whose record is newer than the last successful send
     // for this day — on the very first send (prevSentAt is 0) everyone
     // qualifies; after that, only actual changes (or anyone who was somehow
@@ -5208,7 +5256,13 @@ function setupRoster() {
     if(initialized) save();
     var counts={present:0,absent:0,late:0};
     studs.forEach(function(s){ var st=day[s.id]&&day[s.id].status; if(st) counts[st]=(counts[st]||0)+1; });
-    $("attSummary").textContent = studs.length ? (counts.present+" present, "+counts.absent+" absent, "+counts.late+" late") : "";
+    // Says so on screen when the numbers are only defaults. Without this the
+    // one state a rebbi most needs to notice — "I haven't done this yet" —
+    // looks exactly like a perfect attendance day.
+    var taken=attDayTaken(attDate);
+    $("attSummary").textContent = studs.length
+      ? (counts.present+" present, "+counts.absent+" absent, "+counts.late+" late"+(taken?"":" — not marked yet"))
+      : "";
     var list=$("attList"); list.innerHTML="";
     if(!studs.length){ list.appendChild(el("div","recent-empty","Add students on the Students tab first.")); return; }
     studs.forEach(function(s){
@@ -5244,14 +5298,27 @@ function setupRoster() {
       ? ("Sent at "+fmtClockTime(sentAt)+
          (typeof day._lastSendCount==="number" ? (" ("+day._lastSendCount+(day._lastSendCount===1?" student":" students")+" sent)") : "")+
          ". Any change you make now syncs automatically.")
-      : (studs.length ? "Not sent yet." : "");
+      : (studs.length
+          ? (taken ? "Not sent yet."
+                   : "Not sent yet — and nobody has been marked for this day. Use “Mark the rest Present” if everyone is here.")
+          : "");
   }
   $("attPrevDay").addEventListener("click", function(){ var d=new Date(attDate+"T00:00:00"); d.setDate(d.getDate()-1); attDate=d.toISOString().slice(0,10); renderAttendance(); });
   $("attNextDay").addEventListener("click", function(){ var d=new Date(attDate+"T00:00:00"); d.setDate(d.getDate()+1); attDate=d.toISOString().slice(0,10); renderAttendance(); });
   $("attToday").addEventListener("click", function(){ attDate=todayKey(); renderAttendance(); });
   $("attDateInput").addEventListener("change", function(){ if(this.value) attDate=this.value; renderAttendance(); });
+  // Fills the UNMARKED students only. It used to write "present" over every
+  // active student, so a rebbi who marked three boys absent and then reached for
+  // this button lost all three — silently, with no undo, and with the day then
+  // reading as a clean full house. Anyone carrying a real timestamp has been
+  // marked deliberately and is left exactly as he is.
   $("attMarkAllPresent").addEventListener("click", function(){
-    activeStudents().forEach(function(s){ setAttendance(s.id, "present"); });
+    var day=attDayRecord(attDate);
+    activeStudents().forEach(function(s){
+      var rec=day[s.id];
+      if(rec && typeof rec.ts==="number") return;
+      setAttendance(s.id, "present", attDate);
+    });
     renderAttendance();
   });
   $("attSendBtn").addEventListener("click", sendAttendance);
