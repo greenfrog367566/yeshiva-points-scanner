@@ -80,6 +80,25 @@ var ATT_ACT_NAME = "Attendance";
 
 function newId(){ return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
 
+// Mini Contest shape-guard, copied from app.html alongside the two migration
+// functions (load2fix calls it). Not covered by the drift check — that compares
+// migrateData() and load2fix() only — so keep this in step by hand.
+function fixMiniContestRecord(c){
+  if(!c || typeof c!=="object") return;
+  if(typeof c.id!=="string" || !c.id) c.id=newId();
+  if(typeof c.name!=="string" || !c.name) c.name="Contest";
+  if(typeof c.startTs!=="number" || !isFinite(c.startTs)) c.startTs=Date.now();
+  if(!c.totals || typeof c.totals!=="object" || Array.isArray(c.totals)) c.totals={};
+  Object.keys(c.totals).forEach(function(sid){
+    var v=c.totals[sid];
+    if(typeof v!=="number" || !isFinite(v) || v===0) delete c.totals[sid];
+  });
+  if(typeof c.scans!=="number" || !isFinite(c.scans) || c.scans<0) c.scans=0;
+  if(c.endTs!==undefined && (typeof c.endTs!=="number" || !isFinite(c.endTs))) delete c.endTs;
+  if(c.endTs && ["merged","dumped"].indexOf(c.outcome)<0) c.outcome="dumped";
+  if(typeof c.granted!=="number" || !isFinite(c.granted)) c.granted=0;
+}
+
 // Tracked Items support (copied from app.html alongside the two migration
 // functions). Not covered by the drift check — that compares migrateData() and
 // load2fix() only — so keep this in step by hand when app.html's copy changes.
@@ -558,6 +577,23 @@ if(data.contest){
   if(typeof data.contest.ended!=="boolean") data.contest.ended=false;
   if(typeof data.contest.merged!=="boolean") data.contest.merged=false;
 }
+// ---- Mini Contest. PURELY ADDITIVE: two brand-new keys, no DATA_VERSION
+// bump. Nothing existing is read, converted, renamed or removed — a save
+// that predates this takes null/[] and behaves exactly as it does today,
+// gaining only "no contest is running". data.contest and data.pastContests
+// above are deliberately untouched by all of this.
+//
+// Same !==null-first shape as the data.contest guard above, because
+// typeof null === "object". Array.isArray is checked too: an array would
+// pass the typeof test and then silently fail every totals lookup.
+if(data.miniContest!==null && (typeof data.miniContest!=="object" ||
+   Array.isArray(data.miniContest) || !data.miniContest.startTs)) data.miniContest=null;
+if(data.miniContest) fixMiniContestRecord(data.miniContest);
+if(!Array.isArray(data.miniContestPast)) data.miniContestPast=[];
+data.miniContestPast = data.miniContestPast.filter(function(pc){
+  return pc && typeof pc==="object" && !Array.isArray(pc) && pc.startTs;
+});
+data.miniContestPast.forEach(fixMiniContestRecord);
 if(typeof data.standCustomFrom!=="string") data.standCustomFrom="";
 if(typeof data.standCustomTo!=="string") data.standCustomTo="";
 if(["today","week","month","custom","all"].indexOf(data.standRange)<0) data.standRange="all";
@@ -643,6 +679,24 @@ delete data.navHidden.tabs.seats;
 if(!data.contestHiddenSeeded){
   data.navHidden.tabs.contest=true;
   data.contestHiddenSeeded=true;
+}
+// ...and un-hide it again, now that the reason for hiding is gone. The tab
+// was hidden because every number it showed was recomputed by walking
+// data.log, so a saved contest decayed to a label with no scores behind it
+// as the 500-entry cap rolled past (#131/#133/#134). The Mini Contest that
+// now drives this tab stores its totals at scan time and never derives one
+// from the log.
+//
+// ONE-SHOT, the same shape as the hide it reverses: it un-hides once and
+// then never touches the setting again, so a rebbi who decides to hide
+// Contest himself in Settings keeps it hidden through every later load.
+//
+// This does NOT resurrect the old lifecycle. The original contest's panels
+// stay gated on this device actually having old contest data, and its
+// "Start a contest" button is unreachable — see renderContestTab().
+if(!data.miniContestUnhidden){
+  data.navHidden.tabs.contest=false;
+  data.miniContestUnhidden=true;
 }
 // Hide the Gradebook (#185). WHY: it reads data.trackedData, which only the
 // one-shot Phase 2c attendance conversion below ever writes, so the grid
@@ -1579,20 +1633,26 @@ function runBuiltInTests() {
     && JSON.stringify(t10.trackerLog)===snapBefore.trackerLog
     && JSON.stringify(t10.passes)===snapBefore.passes);
 
-  // --- Test 14: Contest hidden (not removed) ---
-  assert("hide→contest tab hidden on a new save", d1.navHidden.tabs.contest===true);
-  assert("hide→one-shot flag set", d1.contestHiddenSeeded===true);
-  // The whole point of the one-shot: a rebbi who turns it back on keeps it on.
-  var t14=runMigration({ version:4, contestHiddenSeeded:true,
-    navHidden:{groups:{}, tabs:{}} });
-  assert("hide→a deliberate un-hide is NOT re-hidden on the next load",
-    t14.navHidden.tabs.contest===undefined, "got "+JSON.stringify(t14.navHidden.tabs));
-  // An existing save that has never seen this gets hidden exactly once.
-  var t14b=runMigration({ version:4, navHidden:{groups:{}, tabs:{trends:true}} });
-  assert("hide→existing save gets contest hidden", t14b.navHidden.tabs.contest===true);
-  assert("hide→other hidden tabs are left alone", t14b.navHidden.tabs.trends===true);
-  assert("hide→flag stamped so it only happens once", t14b.contestHiddenSeeded===true);
-  // Hiding is a NAV setting only — no contest data may be touched by it.
+  // --- Test 14: Contest hidden, then UN-hidden by Mini Contest ---
+  // The hide (#133) and the un-hide are two one-shots that run in that order.
+  // A save arriving today therefore ends up VISIBLE: the reason for hiding —
+  // totals derived from a capped, wipeable log — is what Mini Contest fixes.
+  assert("unhide→contest tab visible on a new save", d1.navHidden.tabs.contest===false);
+  assert("hide→one-shot flag still stamped", d1.contestHiddenSeeded===true);
+  assert("unhide→one-shot flag stamped", d1.miniContestUnhidden===true);
+  // An existing save that was hidden by #133 gets the tab back exactly once.
+  var t14b=runMigration({ version:4, contestHiddenSeeded:true,
+    navHidden:{groups:{}, tabs:{contest:true, trends:true}} });
+  assert("unhide→a save hidden by #133 gets Contest back", t14b.navHidden.tabs.contest===false);
+  assert("unhide→other hidden tabs are left alone", t14b.navHidden.tabs.trends===true);
+  assert("unhide→flag stamped so it only happens once", t14b.miniContestUnhidden===true);
+  // The point of THIS one-shot: once it has run, a rebbi who hides Contest
+  // himself in Settings keeps it hidden through every later load.
+  var t14=runMigration({ version:4, contestHiddenSeeded:true, miniContestUnhidden:true,
+    navHidden:{groups:{}, tabs:{contest:true}} });
+  assert("unhide→a deliberate re-hide is NOT undone on the next load",
+    t14.navHidden.tabs.contest===true, "got "+JSON.stringify(t14.navHidden.tabs));
+  // Hiding/un-hiding is a NAV setting only — no contest data may be touched.
   var contestSrc={ version:4,
     contest:{id:"c1", name:"Live one", startTs:1, endTs:9, mode:"contestOnly", counting:true, ended:false, merged:false},
     pastContests:[{id:"c0", name:"Old", startTs:1, endTs:2, mode:"both", totals:{s1:7}, entryCount:3, savedTs:5}],
@@ -1609,6 +1669,75 @@ function runBuiltInTests() {
   assert("hide→contest-tagged log entries untouched",
     t14c.log.length===1 && t14c.log[0].contestId==="c0" && t14c.log[0].delta===7);
   assert("hide→save reaches current DATA_VERSION (5); hiding added no bump", t14c.version===DATA_VERSION && DATA_VERSION===5);
+  // The un-hide must not wake the OLD contest's data either.
+  assert("unhide→data.contest still untouched", JSON.stringify(t14c.contest)===beforeContest);
+
+  // --- Test 14c: Mini Contest — the contest whose totals are STORED ---
+  // Purely additive. A save predating this comes back with two inert keys and
+  // nothing else changed.
+  assert("mc→new save has no contest running", d1.miniContest===null);
+  assert("mc→new save has an empty finished list",
+    Array.isArray(d1.miniContestPast) && d1.miniContestPast.length===0);
+  var mcOld=runMigration({ version:4, scores:{s1:10},
+    log:[{id:"L1",ts:1,sid:"s1",label:"x",delta:3}] });
+  assert("mc→existing save gains an inert store",
+    mcOld.miniContest===null && mcOld.miniContestPast.length===0);
+  assert("mc→existing scores untouched", mcOld.scores.s1===10);
+  assert("mc→existing log untouched", mcOld.log.length===1 && mcOld.log[0].delta===3);
+  assert("mc→no DATA_VERSION bump", mcOld.version===DATA_VERSION && DATA_VERSION===5);
+
+  // THE POINT OF THE WHOLE FEATURE: totals survive with an EMPTY log. The old
+  // contest recomputed them by walking data.log, so this case returned zeros.
+  var mcLive=runMigration({ version:4, log:[],
+    miniContest:{id:"m1", name:"Chanukah", startTs:1000, totals:{s1:12, s2:7}, scans:9} });
+  assert("mc→live contest survives a reload", !!mcLive.miniContest && mcLive.miniContest.id==="m1");
+  assert("mc→totals survive with an EMPTY log",
+    mcLive.miniContest.totals.s1===12 && mcLive.miniContest.totals.s2===7,
+    "got "+JSON.stringify(mcLive.miniContest.totals));
+  assert("mc→scan count survives", mcLive.miniContest.scans===9);
+
+  // A finished contest keeps its results as read-only history.
+  var mcPast=runMigration({ version:4, log:[],
+    miniContestPast:[{id:"p1", name:"Sukkos", startTs:1, endTs:2, totals:{s1:20}, scans:4,
+                      outcome:"merged", granted:20}] });
+  assert("mc→finished contest kept", mcPast.miniContestPast.length===1);
+  assert("mc→finished totals kept with an empty log", mcPast.miniContestPast[0].totals.s1===20);
+  assert("mc→outcome kept", mcPast.miniContestPast[0].outcome==="merged");
+  // An unrecognised outcome must not read as "points were added".
+  var mcOut=runMigration({ version:4,
+    miniContestPast:[{id:"p2", name:"Odd", startTs:1, endTs:2, totals:{}, outcome:"banana"}] });
+  assert("mc→unknown outcome falls back to 'not added', never 'merged'",
+    mcOut.miniContestPast[0].outcome==="dumped");
+
+  // Corruption is REPAIRED, not coerced — every one of these numbers is added
+  // straight onto a real score at Merge. (NaN/Infinity cannot survive the JSON
+  // round-trip a real save makes, so those are checked against the guard
+  // directly, below.)
+  var mcBad=runMigration({ version:4,
+    miniContest:{id:"m2", name:"Bad", startTs:1,
+                 totals:{good:5, str:"7", nul:null, zero:0}, scans:-3} });
+  assert("mc→finite totals kept", mcBad.miniContest.totals.good===5);
+  assert("mc→string total dropped", !("str" in mcBad.miniContest.totals));
+  assert("mc→null total dropped", !("nul" in mcBad.miniContest.totals));
+  assert("mc→zero total dropped", !("zero" in mcBad.miniContest.totals));
+  assert("mc→negative scan count repaired", mcBad.miniContest.scans===0);
+  var mcNaN={id:"m3", name:"N", startTs:1, totals:{a:NaN, b:Infinity, c:4}, scans:NaN};
+  fixMiniContestRecord(mcNaN);
+  assert("mc→NaN total dropped", !("a" in mcNaN.totals));
+  assert("mc→Infinity total dropped", !("b" in mcNaN.totals));
+  assert("mc→good total beside them survives", mcNaN.totals.c===4);
+  assert("mc→NaN scan count repaired", mcNaN.scans===0);
+
+  // Wrong-shaped stores must repair rather than throw.
+  var mcShape=runMigration({ version:4, miniContest:[1,2,3], miniContestPast:"nope" });
+  assert("mc→array miniContest repaired to null", mcShape.miniContest===null);
+  assert("mc→string miniContestPast repaired to []",
+    Array.isArray(mcShape.miniContestPast) && mcShape.miniContestPast.length===0);
+  var mcJunk=runMigration({ version:4, miniContest:{name:"no start time"},
+    miniContestPast:[null, 5, {id:"ok", name:"Real", startTs:1, endTs:2, totals:{s1:1}}] });
+  assert("mc→contest with no startTs discarded", mcJunk.miniContest===null);
+  assert("mc→junk entries filtered, real one kept",
+    mcJunk.miniContestPast.length===1 && mcJunk.miniContestPast[0].id==="ok");
 
   // --- Test 14b: Gradebook hidden (not removed) — #185 ---
   // Same one-shot shape as Contest above. The difference that matters is that
