@@ -34,7 +34,7 @@ What is left of the old "small standalone features" item once Freeze and the raf
 
 - **Physical workflow write-up.** Where codes actually live in a room: Avery labels on index cards, one per boy, boys take them out at the start; rebbi holds a clipboard with the seating chart and activity codes; arm an activity then scan the boy; homework code on the folder. A beta rebbi asked and nothing in the app or docs answers it.
 - **Onboarding video A** (setup from scratch), then **C** (using it in a class). Beta tally across 8 replies: C four, A three, B two. A first because two rebbeim are stuck before they can start.
-- **Announce Lean mode to existing rebbeim** when it ships, alongside the print fix and the Apps Script redeploy instruction.
+- **Announce the print fix and the Apps Script redeploy instruction** to existing rebbeim. This used to be bundled with a Lean mode announcement; Lean is retired, so the other two still need sending on their own.
 
 ---
 
