@@ -435,6 +435,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .tap-btn:hover{border-color:var(--ink)}
   .tap-btn:active{transform:scale(.97)}
   .tap-btn .ts{display:block;font-size:.74rem;color:var(--muted);font-weight:700;margin-top:3px}
+  /* Held contest points, under the real score while a contest runs. Styled for
+     BOTH tile surfaces because one builder (fillSeatLiveCard) fills both — the
+     Dashboard's class list and the seating chart. Brass rather than the score's
+     muted grey so the two can never be read as one number, or as a score that
+     has already moved. */
+  .tap-btn .ts-mc,.seat .ts-mc{display:block;font-size:.72rem;color:#6b4d18;font-weight:800;margin-top:1px;white-space:nowrap}
   .tap-btn .avatar,.seat .avatar{margin:0 auto 5px}
   .tap-btn.awarded{border-color:var(--good);background:var(--good-soft)}
   .tap-btn.awarded-bad{border-color:var(--bad);background:var(--bad-soft)}
@@ -7724,7 +7730,11 @@ function setupRoster() {
   // totals are held aside, so they are never in data.scores to be read from.
   function mcFmtPts(n){
     n = (typeof n==="number" && isFinite(n)) ? n : 0;
-    return isShulchani() ? formatCoins(n,{abbr:false}) : n+" pts";
+    // "1 pt", not "1 pts". Every contest number in the app comes through here —
+    // the banner, the scan flash, the tile line, the Contest tab — so getting
+    // it right once gets it right in all of them. Shulchani has its own
+    // formatter and its own words, so it is untouched.
+    return isShulchani() ? formatCoins(n,{abbr:false}) : n+" pt"+(Math.abs(n)===1?"":"s");
   }
   // The scan flash for a HELD scan. Returns "" when no contest is running, so
   // callers can `mcScanNote(...) || <the normal line>` and the ordinary flash
@@ -7986,18 +7996,51 @@ function setupRoster() {
     // +/- number effect that tapping the tile already has. There can be two
     // matching tiles now (Dashboard's Class list panel and the Seats tab both
     // show the same student), so every match gets updated, not just the first.
-    if(data.tapPanelOpen!==false){
-      document.querySelectorAll('.tap-btn[data-sid="'+s.id+'"], .seat[data-sid="'+s.id+'"]').forEach(function(tb){
-        var t=tb.querySelector(".ts"); if(t){ if(isShulchani()){ t.innerHTML=formatCoinsHtml(score(s.id),{abbr:true})+(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+score(s.id)+' pr)</span>':""); t.title=fmtScoreFull(s.id); } else { t.textContent=score(s.id)+" pts"; } }
-        flashTapTile(tb, delta);
-      });
-    }
+    refreshStudentTiles(s.id, delta);
     refreshLiveViews();
     return true;
   }
   // Shared flash + floating "+N"/"-N" effect for a tap-panel tile (list button
   // or seating-chart seat) — used whenever that student is scored, whether by
   // tapping the tile itself or by scanning their QR code from anywhere.
+  /* Bring every tile showing this boy back in line with the store, without a
+   * full panel rebuild. There can be two (the Dashboard's Class list panel and
+   * the seating chart show the same student), so every match is updated, not
+   * just the first.
+   *
+   * `flashDelta` is optional: pass it for a scan, to get the flash and the
+   * floating +/- number that tapping a tile already gives. An UNDO passes
+   * nothing — it corrects the number in silence, because the award animation
+   * would read as another award.
+   *
+   * WHY UNDO CALLS THIS AT ALL: it did not before, and the tile kept the old
+   * number after an undo — score corrected in the store, "11 pts" still on the
+   * chart until something unrelated happened to rebuild the panel. That was
+   * true before contests existed; the held line below simply inherited it.
+   */
+  function refreshStudentTiles(sid, flashDelta){
+    if(data.tapPanelOpen===false) return;
+    document.querySelectorAll('.tap-btn[data-sid="'+sid+'"], .seat[data-sid="'+sid+'"]').forEach(function(tb){
+      var t=tb.querySelector(".ts");
+      if(t){
+        if(isShulchani()){
+          t.innerHTML=formatCoinsHtml(score(sid),{abbr:true})+(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+score(sid)+' pr)</span>':"");
+          t.title=fmtScoreFull(sid);
+        } else { t.textContent=score(sid)+" pts"; }
+      }
+      // During a contest the held line is the ONLY thing on this tile that
+      // moves — the score above it is deliberately frozen — so this is what
+      // makes a scan visibly land on the chart the rebbi is watching. Created
+      // on the first scan that gives a boy something to hold, and removed again
+      // when he goes back to nothing, so no tile keeps a stale "held" line.
+      var held=mcHeldFor(sid), h=tb.querySelector(".ts-mc");
+      if(held){
+        if(!h){ h=el("span","ts-mc"); tb.appendChild(h); }
+        h.textContent=held;
+      } else if(h && h.parentNode){ h.parentNode.removeChild(h); }
+      if(typeof flashDelta==="number") flashTapTile(tb, flashDelta);
+    });
+  }
   function flashTapTile(tb, delta){
     var pos = delta>=0;
     tb.classList.remove("awarded","awarded-bad");
@@ -8638,6 +8681,11 @@ function setupRoster() {
     if(affectedMain) data.scores[entry.sid]=score(entry.sid)-entry.delta;
     var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Undo: "+entry.label, delta:-entry.delta, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false, mcId:entry.mcId||undefined, mcMerged:entry.mcMerged||undefined});
     save(); renderRecent(); renderScanBoard();
+    // The boy's own tile, on both surfaces. Without this an undo corrected the
+    // score in the store and left the old number sitting on the seating chart
+    // and the class list until something else rebuilt the panel — and, during a
+    // contest, left a held line saying he still holds points he no longer does.
+    refreshStudentTiles(entry.sid);
     // Same live-refresh path a scan uses, so undoing from the global scan bar
     // updates whatever aggregate view is open (standings, history, contest,
     // trends, raffle) instead of only the three that were special-cased here.
@@ -9596,7 +9644,32 @@ function setupRoster() {
     }
     if(both) card.appendChild(host);
     card.appendChild(el("span","seat-name",s.name));
-    if(showPts) card.appendChild(coinScoreEl(s.id,"ts"));
+    if(showPts){
+      card.appendChild(coinScoreEl(s.id,"ts"));
+      /* HELD CONTEST POINTS, on the surface a rebbi is actually looking at.
+       *
+       * While a contest runs, data.scores does not move — by design — so the
+       * number above this line is frozen and every scan appears to do nothing
+       * on the one screen he is watching while he scans. The contest total was
+       * only ever visible on the Contest tab, which means leaving the chart.
+       *
+       * Shown BESIDE the score, never instead of it: the real score is still
+       * the boy's score, and these points are still held. A boy with nothing
+       * in the contest gets no line at all, so the chart stays quiet until
+       * there is something to say.
+       */
+      var mcHeld=mcHeldFor(s.id);
+      if(mcHeld) card.appendChild(el("span","ts-mc", mcHeld));
+    }
+  }
+  // The held total for one boy, already formatted, or "" when there is nothing
+  // to show. Kept next to the card rather than inside coinScoreEl() because
+  // that function answers "what is his score" and this is deliberately a
+  // different question with a different answer.
+  function mcHeldFor(sid){
+    var c=miniContestLive(); if(!c) return "";
+    var v=c.totals[sid]||0; if(!v) return "";
+    return "🏆 "+mcFmtPts(v)+" held";
   }
 
   // Activity codes to arm, rendered below the grid whenever Show activities is
