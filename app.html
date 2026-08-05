@@ -3970,6 +3970,68 @@ function setupRoster() {
     return opts[(opts.indexOf(current) + 1) % opts.length];
   }
 
+  /* ---------- Tracked Items — the write path (Phase 2d) ----------------
+   * ONE append, for every method. Before this, nothing in the app had ever
+   * written data.trackedData in normal use except 2c's one-shot attendance
+   * conversion, which is why the Gradebook froze at the migration (#185).
+   *
+   * THE COUNT VALUE SHAPE, decided here (it was genuinely open — 2a declared
+   * {value, ts} but 2d is the first writer): a count entry stores THE STEP IT
+   * CONTRIBUTED, so a total is a plain sum. config.step is baked in at write
+   * time, never applied on read. The alternative — a bare entry with the step
+   * applied when reading — means changing an item's step retroactively rewrites
+   * every total it ever had, and an entry that doesn't say what it contributed
+   * can't be undone without re-deriving it from config that may since have
+   * changed. gbCountOf()'s guess collapses to a sum on the back of this.
+   *
+   * Never overwrites. Every method appends, because "earlier entries are
+   * history that is never overwritten" is the whole reason this store replaced
+   * four stores that each only kept "now".
+   */
+  function trackedItemById(id){
+    if(!id) return null;
+    for(var i=0;i<data.trackedItems.length;i++){
+      if(data.trackedItems[i] && data.trackedItems[i].id===id) return data.trackedItems[i];
+    }
+    return null;
+  }
+  // A tracked-item id that is not derived from anything that can be reused.
+  // Seeded count items are "ti-act-"+a.id, and nextActId() fills the LOWEST
+  // free slot — so deleting activity a5 and adding another hands "a5" out
+  // again, and "ti-act-a5" would then point its history at a different
+  // activity. Items minted from here can't collide that way (#123).
+  function newTrackedItemId(){
+    var used={}, n=1;
+    data.trackedItems.forEach(function(it){ if(it && it.id) used[it.id]=1; });
+    while(used["ti-x"+n]) n++;
+    return "ti-x"+n;
+  }
+  // Append one entry for a student. `opts.value` overrides the value the method
+  // would pick, which is how a legacy store's own write decides what gets
+  // mirrored rather than this cycling a second time and drifting from it.
+  //
+  // An UNRECOGNISED method is written only when the caller supplies an explicit
+  // value — the 2a rule that an unknown shape is never guessed at, applied to
+  // the write side.
+  function recordTracked(item, sid, opts){
+    opts = opts || {};
+    if(!item || !item.id || !sid) return null;
+    var per = data.trackedData[item.id];
+    if(!per || typeof per!=="object" || Array.isArray(per)) per = data.trackedData[item.id] = {};
+    var list = per[sid];
+    if(!Array.isArray(list)) list = per[sid] = [];
+    var hasGiven = Object.prototype.hasOwnProperty.call(opts, "value");
+    var v;
+    if(hasGiven) v = opts.value;
+    else if(item.method==="preselect") v = nextTrackedValue(item, list.length ? list[list.length-1].value : undefined);
+    else if(item.method==="count")     v = (item.config && typeof item.config.step==="number") ? item.config.step : 1;
+    else if(item.method==="limited")   v = 1;
+    else return null;
+    var entry = {value:v, ts:(typeof opts.ts==="number" ? opts.ts : Date.now())};
+    list.push(entry);
+    return entry;
+  }
+
   /* ---------- first-run: route new users through setup wizard ---------- */
   try {
     if (!localStorage.getItem(KEY) &&
@@ -4466,7 +4528,20 @@ function setupRoster() {
   // Each entry: {kind:'activity', label, delta, id, ts}
   var stripActLog = [];
   var stripActLogNextId = 1;
-  function setArmed(label, delta){
+  // WHICH activity is armed, by identity where the arming surface knew it.
+  // The name+points fallback is what every caller did inline before 2d; it is
+  // kept for the surfaces that arm something with no activity behind it at all
+  // (Custom), and it is the reason armed.actId is preferred rather than
+  // required — a null actId means "not an activity", not "look harder".
+  function armedActivity(){
+    if(!armed) return null;
+    if(armed.actId){
+      for(var i=0;i<data.activities.length;i++){ if(data.activities[i].id===armed.actId) return data.activities[i]; }
+      return null;
+    }
+    return data.activities.filter(function(a){ return a.name===armed.label && a.pts===armed.delta; })[0] || null;
+  }
+  function setArmed(label, delta, act){
     // Record activity changes so the scan strip can display them inline.
     // Skip the very first silent init arm (armed is still null then).
     if(armed !== null && (armed.label !== label || armed.delta !== delta)){
@@ -4474,11 +4549,12 @@ function setupRoster() {
         id:'act-'+(stripActLogNextId++), ts:Date.now()});
       if(stripActLog.length > 20) stripActLog.length = 20;
     }
-    armed = {label:label, delta:delta};
+    armed = {label:label, delta:delta, actId:(act && act.id) || null};
     var pill=$("armedPill");
     // Homework Checked earns no points, so the "Now scoring" pill shows the name
-    // alone — appending its 0 would read as "this scan is worth nothing".
-    var armedIsHw = data.activities.some(function(a){ return reroutedActivity(a) && a.name===label; });
+    // alone — appending its 0 would read as "this scan is worth nothing". True
+    // of every rerouted activity, which since 2d is every tracked one.
+    var armedIsHw = reroutedActivity(armedActivity());
     pill.textContent = armedIsHw ? label : (label + "  " + fmtDeltaBare(delta));
     pill.classList.toggle("neg", delta<0);
     // highlight matching activity button
@@ -5312,11 +5388,36 @@ function setupRoster() {
   // reroutes them to applyFreeze() instead of the points path; see there and
   // isFrozen()/data.freezes for the rest of the feature.
   function freezeActivity(a){ return !!a && a.tracked && typeof a.freezeSeconds==="number" && a.freezeSeconds>0; }
-  // Tracked activities that award() REROUTES to their own store instead of the
-  // points path, and are therefore safe to arm anywhere. Tracker activities are
-  // not on this list — they have no reroute, so arming one would write points.
-  // Anything added here must have a matching branch in award().
-  function reroutedActivity(a){ return homeworkActivity(a) || passActivity(a) || attendanceActivity(a) || freezeActivity(a); }
+  // THE handle from an activity to its tracked item, and the end of the
+  // name-matching (#123). a.tiId is stamped ONCE in load2fix() using the name
+  // and marker tests just above, then read forever after — so renaming
+  // "Homework Checked" or the Bathroom Pass no longer quietly turns it back
+  // into a plain 0-point activity, which is the hazard PASS_ACT_NAME's own
+  // comment concedes.
+  function trackedItemForActivity(a){ return (a && a.tiId) ? trackedItemById(a.tiId) : null; }
+  // Every tracked activity must have somewhere to write before it can be armed.
+  // 2a's seeding is one-shot, so a tracked activity CREATED AFTER that seed has
+  // no item at all — without this, arming one would flash success and write
+  // nothing, which is precisely the pre-#100 bug 2d exists to make impossible.
+  // Freeze stays itemless on purpose: a per-boy tally of how often he was
+  // frozen is the behavior ladder arriving by accident (#114).
+  function ensureTrackedItemFor(a){
+    if(!a || a.tracked!==true || freezeActivity(a)) return null;
+    var it = trackedItemForActivity(a);
+    if(it) return it;
+    it = { id:newTrackedItemId(), name:a.name, method:"count", config:{ step:1 } };
+    data.trackedItems.push(it);
+    a.tiId = it.id;
+    return it;
+  }
+  // Tracked activities that award() REROUTES away from the points path, and are
+  // therefore safe to arm anywhere. Since 2d that is EVERY tracked activity, so
+  // this is now just the flag: the armed-item mechanic records to whichever
+  // item the activity points at (minting one if it has none), and freeze keeps
+  // its own reroute to applyFreeze() and no item at all. Nothing tracked can
+  // fall through to the points path any more, which is what the four hand-built
+  // branches in award() used to be guarding against one name at a time.
+  function reroutedActivity(a){ return !!a && a.tracked===true; }
   // A coin activity is one of the seeded Shulchani denomination codes: it
   // carries a.coin = the COINS abbreviation it was minted from ("Di", "S", …).
   // The flag is what makes them mode-scoped — they only mean anything while
@@ -5333,8 +5434,31 @@ function setupRoster() {
   // Wording for the rerouted activities on printed cards, where a point value
   // would be wrong. Kept next to the predicates so a future rerouted activity
   // gets its wording here rather than in three separate print call sites.
-  function personalActionSub(a){ return homeworkActivity(a) ? "marks homework checked" : attendanceActivity(a) ? "cycles their attendance" : freezeActivity(a) ? "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze" : "uses their weekly pass"; }
-  function personalActionVerb(a){ return homeworkActivity(a) ? "mark homework checked" : attendanceActivity(a) ? "cycle their attendance" : freezeActivity(a) ? "start a "+fmtFreezeDuration(a.freezeSeconds)+" freeze" : "use the weekly bathroom pass"; }
+  // The three presets keep their hand-written wording — "cycles their
+  // attendance" says more than any generic phrasing could. Everything else
+  // since 2d is worded from its tracked item's METHOD, so a rebbi's own tracked
+  // activity reads properly on a printed card instead of inheriting the pass
+  // wording, which is what the old else-branch would have handed it.
+  function trackedActionPhrase(a, third){
+    var it=trackedItemForActivity(a), nm=(it&&it.name)||(a&&a.name)||"this";
+    if(it && it.method==="preselect") return third ? ("cycles their "+nm) : ("cycle their "+nm);
+    if(it && it.method==="limited")   return third ? ("uses their "+nm)   : ("use their "+nm);
+    return third ? ("records "+nm) : ("record "+nm);
+  }
+  function personalActionSub(a){
+    if(homeworkActivity(a)) return "marks homework checked";
+    if(attendanceActivity(a)) return "cycles their attendance";
+    if(freezeActivity(a)) return "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze";
+    if(passActivity(a)) return "uses their weekly pass";
+    return trackedActionPhrase(a, true);
+  }
+  function personalActionVerb(a){
+    if(homeworkActivity(a)) return "mark homework checked";
+    if(attendanceActivity(a)) return "cycle their attendance";
+    if(freezeActivity(a)) return "start a "+fmtFreezeDuration(a.freezeSeconds)+" freeze";
+    if(passActivity(a)) return "use the weekly bathroom pass";
+    return trackedActionPhrase(a, false);
+  }
   // Deterministic id->hue so an activity's seating-chart sheet always prints
   // the same color, letting a rebbi tell a stack of sheets apart at a glance
   // without a stored color field on the activity itself.
@@ -5354,15 +5478,24 @@ function setupRoster() {
     else sel.value=acts[0].id;
     data.trackerActId=sel.value;
   }
-  function trackerAward(s){
-    var actId=$("trackerActSel").value;
-    var a=actById(actId);
-    if(!a){ flash(false,"No tracked activity","","Add one first"); beep(false); return; }
+  // Extracted verbatim from trackerAward() so a caller that ALREADY KNOWS which
+  // activity is armed can log against it without going through the Tracker
+  // tab's own <select>. Reading that dropdown from the armed path would log
+  // whatever the Tracker tab happened to be showing — the same "day on screen"
+  // trap the attendance and homework reroutes each document at length.
+  function trackerLogAdd(s, a){
     var entry={id:newId(), ts:Date.now(), sid:s.id, actId:a.id};
     data.trackerLog.unshift(entry);
     if(data.trackerLog.length>2000) data.trackerLog.length=2000;
     save();
     if(data.autoSheet){ pushToSheet({type:"tracker", ts:Date.now(), name:s.name, group:s.group||"", activity:a.name}); }
+    return entry;
+  }
+  function trackerAward(s){
+    var actId=$("trackerActSel").value;
+    var a=actById(actId);
+    if(!a){ flash(false,"No tracked activity","","Add one first"); beep(false); return; }
+    trackerLogAdd(s, a);
     flash(true, s.name, a.name, "Logged");
     beep(true);
     renderTracker();
@@ -6766,7 +6899,7 @@ function setupRoster() {
     $("setShulchani").checked=newMode;
     renderShulchaniStatus();
     renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities(); renderActButtons();
-    var fa0=firstArmableActivity(); if(fa0) setArmed(fa0.name, fa0.pts);
+    var fa0=firstArmableActivity(); if(fa0) setArmed(fa0.name, fa0.pts, fa0);
   }
   function renderShulchaniStatus(){
     var box=$("shulchaniStatus");
@@ -7174,7 +7307,7 @@ function setupRoster() {
       // "+0" would read as "scanning this gives nothing". Name only. Both .an and
       // .av are display:block, so omitting .av just makes a shorter card.
       if(!reroutedActivity(a)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
-      b.addEventListener("click", function(){ setArmed(a.name, a.pts); $("scanInput").focus(); });
+      b.addEventListener("click", function(){ setArmed(a.name, a.pts, a); $("scanInput").focus(); });
       wrap.appendChild(b);
     });
   }
@@ -7206,6 +7339,112 @@ function setupRoster() {
     var contestOnly = c.mode==="contestOnly";
     return {scoreToMain: !contestOnly, contestId:c.id, contestOnly:contestOnly};
   }
+  /* ---------- the armed-item scan mechanic (Phase 2d) -------------------
+   * DUAL-WRITE, on purpose, and this is the part to understand before changing
+   * anything here.
+   *
+   * 2c is only PARTIAL (#122): data.attendance, data.hw, data.trackerLog and
+   * data.passes still hold the records their four tabs display, and all four
+   * tabs are still visible. So a tracked scan writes BOTH — the legacy store
+   * (so the tab a rebbi is looking at is correct, exactly as before) and
+   * data.trackedData (so the Gradebook stops being frozen at 2c's migration).
+   * Nothing is converted and nothing moves.
+   *
+   * TRACKED_LEGACY IS 2c'S DELETION LIST. Each entry exists only because a tab
+   * still reads the old store. When #122 retires a tab, delete its row here and
+   * the mechanic keeps working with one fewer special case — that is the whole
+   * point of them being a table rather than branches inside award().
+   *
+   * The legacy hook OWNS the value: it returns what it actually wrote, and that
+   * is what gets mirrored. The mirror never re-derives the value on its own,
+   * because two cycles advancing independently is how the store and the tab
+   * would drift apart while both looked right.
+   */
+  var TRACKED_LEGACY = {
+    "ti-attendance": function(s){
+      // ALWAYS real today, never the date the Attendance TAB happens to show —
+      // a scan from the Record tab has no "day on screen".
+      var next=attCycle(s.id, todayKey());
+      attCycleFlash(s, next);
+      if($("view-attendance") && $("view-attendance").classList.contains("active")){
+        if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
+      }
+      return {ok:true, value:next};
+    },
+    "ti-homework": function(s){
+      // markHwCheckedToday (not setHw) for the same reason: setHw writes to
+      // hwDate, the date the Homework tab is showing.
+      markHwCheckedToday(s.id);
+      flash(true, s.name, "HW Checked", "Homework marked checked (today)");
+      beep(true);
+      // "checked" in the old boolean store IS "full credit" in the four-state
+      // preset. Mirroring the preset's own vocabulary rather than `true` keeps
+      // the Gradebook column readable in one language.
+      return {ok:true, value:"full credit"};
+    },
+    "ti-pass": function(s){
+      // passMarkUsed() is the SAME function the Passes tab's scan box uses, so
+      // the one-pass-per-week rule can't drift between the two — including the
+      // refusal on a second scan. A refusal records NOTHING, which is why the
+      // mirror is gated on ok rather than running unconditionally.
+      if(passMarkUsed(s)==="already"){
+        flash(false, s.name, "Already used their pass", "this week — give it back on Run → Passes if that's wrong");
+        beep(false);
+        return {ok:false};
+      }
+      flash(true, s.name, "Pass used", "that's their one for this week");
+      beep(true);
+      // setPass() writes a real data.log entry, unlike the two above, so the
+      // Recent scans panel and the scan strip have something new to show.
+      renderRecent();
+      if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
+      return {ok:true, value:1};
+    }
+  };
+  // A count item's activity is a Tracker activity, and the Tracker tab is still
+  // live, so it dual-writes too — otherwise arming "Chazan" from the Record tab
+  // would record a scan the Tracker tab never shows.
+  function trackedLegacyFor(item, a){
+    if(TRACKED_LEGACY[item.id]) return TRACKED_LEGACY[item.id];
+    if(item.method==="count") return function(s){
+      trackerLogAdd(s, a);
+      flash(true, s.name, a.name, "Logged");
+      beep(true);
+      if($("view-tracker") && $("view-tracker").classList.contains("active")) renderTracker();
+      return {ok:true};
+    };
+    return null;
+  }
+  // THE one path a tracked scan travels. Records and reports, or refuses — the
+  // flash and the write are the same call, so "it said it worked" and "it wrote
+  // something" cannot be independently true.
+  function recordTrackedScan(a, s){
+    var item=ensureTrackedItemFor(a);
+    if(!item){
+      flash(false, s.name, "Nothing to record", "“"+a.name+"” has no tracked item");
+      beep(false); return false;
+    }
+    var legacy=trackedLegacyFor(item, a);
+    if(legacy){
+      var res=legacy(s) || {ok:false};
+      if(!res.ok) return false;
+      recordTracked(item, s.id, Object.prototype.hasOwnProperty.call(res,"value") ? {value:res.value} : {});
+    } else {
+      // No legacy store behind it: the tracked item IS the record. An
+      // unrecognised method returns null rather than guessing at a value, and
+      // says so instead of flashing a success it didn't write.
+      var entry=recordTracked(item, s.id);
+      if(!entry){
+        flash(false, s.name, "Not recorded", "“"+item.name+"” has a shape this version can't write");
+        beep(false); return false;
+      }
+      flash(true, s.name, item.name, String(entry.value));
+      beep(true);
+    }
+    save();
+    refreshLiveViews();
+    return true;
+  }
   function award(s){
     if(!armed){ flash(false,"Pick an activity first","",""); beep(false); return false; }
     if(!studentInCurrentClass(s)){
@@ -7213,71 +7452,27 @@ function setupRoster() {
       beep(false); return false;
     }
     // If the armed activity has group restrictions, check this student belongs.
-    var armedAct=data.activities.filter(function(a){ return a.name===armed.label && a.pts===armed.delta; })[0];
+    var armedAct=armedActivity();
     if(armedAct && Array.isArray(armedAct.groups) && armedAct.groups.length>0){
       if(armedAct.groups.indexOf(s.group||"")<0){
         flash(false, s.name, "Not in this activity's groups", armedAct.groups.join(", ")+" only");
         beep(false); return false;
       }
     }
-    // Homework Checked is NOT a point-earning activity — it lives in its own
-    // store (data.hw), so awarding it here would write a 0-point log entry and
-    // flash "+0" as if it had worked while the Homework tab stayed empty.
-    // Scanning only marked homework when the Homework TAB was open, because
-    // handleScannedCode routes on the active tab, not on what's armed; arming it
-    // anywhere else silently fell through to points. Route it to the real
-    // homework write instead, so an armed Homework Checked behaves the same from
-    // any tab. Identified exactly the way the personal-QR path does it
-    // (tracked + name), the inverse of trackedActivities()'s own exclusion.
-    // markHwCheckedToday (not setHw) is deliberate: setHw writes to hwDate, the
-    // date the Homework TAB happens to be showing, which is meaningless when
-    // scanning from elsewhere — markHwCheckedToday always marks real today.
-    // Placed after the class/group checks above so the same gating still applies.
-    if(armedAct && armedAct.tracked && armedAct.name==="Homework Checked"){
-      markHwCheckedToday(s.id);
-      flash(true, s.name, "HW Checked", "Homework marked checked (today)");
-      beep(true);
-      return true;
-    }
-    // Bathroom Pass, same idea: pass usage lives in data.passes, not points.
-    // Goes through passMarkUsed(), the SAME function the Passes tab's own scan
-    // box uses, so the one-pass-per-week rule can't drift between the two —
-    // including the refusal on a second scan (a scan never hands a pass back;
-    // that's the Passes tab's per-row toggle, the manual correction path).
-    if(armedAct && passActivity(armedAct)){
-      if(passMarkUsed(s)==="already"){
-        flash(false, s.name, "Already used their pass", "this week — give it back on Run → Passes if that's wrong");
-        beep(false);
-      } else {
-        flash(true, s.name, "Pass used", "that's their one for this week");
-        beep(true);
-      }
-      // setPass() writes a real data.log entry ("Bathroom pass used"), so this
-      // branch DOES have something new for the Recent scans panel and the
-      // global scan bar's strip — unlike the homework/attendance branches
-      // above and below, which keep their own stores and touch no log. Without
-      // this repaint the entry sat in data.log invisible until some unrelated
-      // event happened to redraw the strip, so a rebbi marking passes off the
-      // full-screen seating chart saw nothing at all, then watched every pass
-      // appear at once the moment he closed the chart (activateTab("scan")
-      // repaints on the way out). renderRecent() is the right call rather than
-      // renderSeatsScanBar() directly: the Recent scans panel reads the same
-      // log and was equally stale, and renderRecent() ends by calling the bar.
-      renderRecent();
-      if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
-      return true;
-    }
-    // Attendance, same idea again: it lives in data.attendance, not in points.
-    // ALWAYS marks real today, never the date the Attendance TAB happens to be
-    // showing — a scan from the Record tab has no "day on screen", and silently
-    // writing to whatever day was last viewed there is the exact trap the
-    // homework reroute already documents.
-    if(armedAct && attendanceActivity(armedAct)){
-      attCycleFlash(s, attCycle(s.id, todayKey()));
-      if($("view-attendance") && $("view-attendance").classList.contains("active")){
-        if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
-      }
-      return true;
+    // THE ARMED-ITEM MECHANIC (Phase 2d). One branch, for every tracked item.
+    //
+    // What used to be here: four hand-built branches, each matching an activity
+    // BY NAME and calling its own store's writer. The thing that flashed and
+    // the thing that wrote were separate mechanisms that could disagree about
+    // where a scan should land — which is exactly how dashboard-armed homework
+    // scans came to flash success while writing nothing (pre-#100). Now the
+    // flash and the write are one code path, so that class of bug cannot be
+    // expressed: recordTrackedScan() either records and reports, or refuses.
+    //
+    // Placed after the class/group checks above so the same gating still
+    // applies to a tracked scan as to a point scan.
+    if(armedAct && armedAct.tracked && !freezeActivity(armedAct)){
+      return recordTrackedScan(armedAct, s);
     }
     // Freeze doesn't award points at all — it starts/extends a countdown
     // instead (data.freezes). Always applies, even if the student is already
@@ -9695,7 +9890,7 @@ function setupRoster() {
         b.appendChild(el("span",null,a.name));
         b.appendChild(el("span","hd-pts"+(a.pts<0?" neg":""), fmtDeltaBare(a.pts)));
         b.addEventListener("click", function(){
-          setArmed(a.name, a.pts); closeFn();
+          setArmed(a.name, a.pts, a); closeFn();
           var f=$(focusInputId); if(f) f.focus();
         });
         dd.appendChild(b);
@@ -9719,8 +9914,13 @@ function setupRoster() {
     // path. Homework Checked NO LONGER refuses here \u2014 it is printed on the
     // Activity Menu again, and award() reroutes it to markHwCheckedToday(), so
     // arming it by code then scanning students marks homework for real.
-    if(a.tracked && !reroutedActivity(a)){
-      flash(false, "Not scannable here", "Use the Tracker tab", "“"+a.name+"” keeps its own record");
+    // Every tracked activity is armable by code since 2d — the armed-item
+    // mechanic records to whichever item it points at. The ONE case that still
+    // refuses is a tracked activity with nowhere to write, because arming that
+    // would flash success and record nothing. Freeze is exempt: it is tracked,
+    // has no item by design, and reroutes to applyFreeze().
+    if(a.tracked && !freezeActivity(a) && !ensureTrackedItemFor(a)){
+      flash(false, "Not scannable", "Nothing to record into", "“"+a.name+"” has no tracked item");
       beep(false); return;
     }
     // A printed coin code in a class that has since switched back to points
@@ -9730,13 +9930,9 @@ function setupRoster() {
       flash(false, "Coin code", "Shulchani Mode is off", "“"+a.name+"” only scans while balances are coins");
       beep(false); return;
     }
-    setArmed(a.name, a.pts);
-    if(homeworkActivity(a)){
-      flash(true, "Now marking", a.name, "Scan students to mark homework checked");
-    } else if(attendanceActivity(a)){
-      flash(true, "Now marking", a.name, "Scan a boy to cycle present → absent → late");
-    } else if(passActivity(a)){
-      flash(true, "Now marking", a.name, "Scan students to use their weekly pass");
+    setArmed(a.name, a.pts, a);
+    if(reroutedActivity(a)){
+      flash(true, "Now marking", a.name, "Scan students to "+personalActionVerb(a));
     } else {
       flash(true, "Now scoring", a.name+"  "+fmtDeltaBare(a.pts), "Scan students to give "+fmtDelta(a.pts));
     }
@@ -14415,14 +14611,22 @@ nameLine
     if(fixed!==null) return fixed;
     return s?gbCodeBase(s.trim()):"";
   }
-  // A count item's entries may carry a numeric value (a step) or nothing at
-  // all. Sum the numbers when there are any, otherwise fall back to counting
-  // entries — both readings mean "how many times" and 2d has not fixed the
-  // shape yet.
+  // A count entry stores the step it contributed, so a total is a plain sum —
+  // 2d settled that shape (see recordTracked). The old fallback to
+  // entries.length is gone: it existed only because nothing had ever written a
+  // count entry, and keeping both readings alive after the shape is fixed would
+  // preserve an ambiguity that no longer exists.
+  //
+  // An entry with a non-numeric value counts as ONE. That is not the old guess
+  // coming back — it is the 2a rule that data from a shape this version does
+  // not know is read rather than repaired, and "it happened once" is the only
+  // thing true of every possible shape.
   function gbCountOf(entries){
-    var sum=0, sawNumber=false;
-    entries.forEach(function(e){ if(e && typeof e.value==="number" && isFinite(e.value)){ sum+=e.value; sawNumber=true; } });
-    return sawNumber ? sum : entries.length;
+    var sum=0;
+    entries.forEach(function(e){
+      sum += (e && typeof e.value==="number" && isFinite(e.value)) ? e.value : 1;
+    });
+    return sum;
   }
   function gbCellText(item, entries, codeMap){
     if(!entries || !entries.length) return "";
@@ -15444,7 +15648,7 @@ nameLine
     });
   }
   // if the activity being edited is the one currently armed, keep the armed pill in sync
-  function refreshArmed(a){ if(armed && armed.label===a.name){ setArmed(a.name, a.pts); } }
+  function refreshArmed(a){ if(armed && armed.label===a.name){ setArmed(a.name, a.pts, a); } }
   $("addActivity").addEventListener("click", function(){
     var name=$("newActName").value.trim(); if(!name){ $("newActName").focus(); return; }
     // In Shulchani the field is a COUNT of the coin picked beside it, so the
@@ -18157,6 +18361,39 @@ nameLine
       data.freezeCountItemsDropped=true;
     }
 
+    /* ----- Phase 2d: stamp each tracked activity with its item id ---------
+     * THE END OF NAME-MATCHING (#123). Until now "Homework Checked", the
+     * Bathroom Pass and Attendance were found by comparing a.name against a
+     * string literal every single time a scan needed routing — so renaming one
+     * on the Activities tab quietly turned it back into a plain 0-point
+     * activity, a hazard PASS_ACT_NAME's own comment concedes.
+     *
+     * The name tests run HERE, ONCE, and never again: from now on the activity
+     * carries a.tiId and every caller reads that. A rebbi may rename his
+     * activities freely afterwards.
+     *
+     * Purely additive — a new field on activities that already exist, no
+     * DATA_VERSION bump. An activity is stamped only when its item actually
+     * exists; anything else is left unstamped on purpose and gets an item
+     * minted by ensureTrackedItemFor() the first time it is armed, which is
+     * also what covers tracked activities created after 2a's one-shot seeding.
+     *
+     * Freeze is skipped for the same reason it is skipped everywhere else: it
+     * has no tracked item by design (#114).
+     */
+    if(!data.trackedActIdsStamped){
+      data.activities.forEach(function(a){
+        if(!a || a.tracked!==true || freezeActivity(a)) return;
+        if(typeof a.tiId==="string" && a.tiId) return;
+        var tid = a.name==="Homework Checked" ? "ti-homework"
+                : a.name===PASS_ACT_NAME     ? "ti-pass"
+                : a.name===ATT_ACT_NAME      ? "ti-attendance"
+                : "ti-act-"+a.id;
+        if(trackedItemById(tid)) a.tiId=tid;
+      });
+      data.trackedActIdsStamped=true;
+    }
+
     // Shape guards. An item whose method we do not recognise is left strictly
     // alone — it may come from a newer version, and silently "fixing" it would
     // be the data loss this whole file exists to prevent.
@@ -18618,7 +18855,7 @@ nameLine
   renderHeaderScanContext();
   renderActButtons();
   syncCustomButtons();
-  var fa0=firstArmableActivity(); if(fa0) setArmed(fa0.name, fa0.pts);
+  var fa0=firstArmableActivity(); if(fa0) setArmed(fa0.name, fa0.pts, fa0);
   renderRecent();
   renderScanBoard();
   renderTapPanel();
