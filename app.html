@@ -8050,7 +8050,7 @@ function setupRoster() {
    * DUAL-WRITE, on purpose, and this is the part to understand before changing
    * anything here.
    *
-   * 2c is only PARTIAL (#122): data.attendance, data.hw, data.trackerLog and
+   * 2c's tabs are still to go (#227): data.attendance, data.hw, data.trackerLog and
    * data.passes still hold the records their four tabs display, and all four
    * tabs are still visible. So a tracked scan writes BOTH — the legacy store
    * (so the tab a rebbi is looking at is correct, exactly as before) and
@@ -8058,9 +8058,14 @@ function setupRoster() {
    * Nothing is converted and nothing moves.
    *
    * TRACKED_LEGACY IS 2c'S DELETION LIST. Each entry exists only because a tab
-   * still reads the old store. When #122 retires a tab, delete its row here and
+   * still reads the old store. When #227 removes a tab, delete its row here and
    * the mechanic keeps working with one fewer special case — that is the whole
    * point of them being a table rather than branches inside award().
+   *
+   * But NOT BEFORE the Gradebook can write. This table IS the write path: the
+   * legacy setters are the only thing calling mirrorTracked(), so deleting a
+   * row before there is another writer stops data.trackedData being fed at all,
+   * silently. That is what #227 is about.
    *
    * The legacy hook OWNS the value: it returns what it actually wrote, and that
    * is what gets mirrored. The mirror never re-derives the value on its own,
@@ -8138,7 +8143,7 @@ function setupRoster() {
    * store the tab shows, which is the same rule the writers follow in reverse:
    * the legacy store owns the value.
    *
-   * When #122 retires a tab, delete its row from BOTH tables together. The
+   * When #227 removes a tab, delete its row from BOTH tables together. The
    * reader then falls through to data.trackedData, which by that point is the
    * only copy there is.
    *
