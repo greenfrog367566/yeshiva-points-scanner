@@ -1,9 +1,21 @@
 # The mirror gap — proposal
 
-**Status: PROPOSAL. Nothing here is built.** Written 2026-08-05, after Phase 2d
-landed in two parts (#208 + the tile badges). This is the PROPOSE-FIRST document
-for the one piece 2d deliberately left open, and it is the last thing standing
-between the app and un-hiding the Gradebook (#185).
+**Status: ACCEPTED 2026-08-05 — all five decisions taken as recommended.
+Implemented in PR #219.** Written 2026-08-05, after Phase 2d landed in two parts
+(#208 + the tile badges), as the PROPOSE-FIRST document for the one piece 2d
+deliberately left open.
+
+Kept as written rather than rewritten into a description of what shipped: the
+reasoning is the point, and §2's five verified facts are what the implementation
+rests on. Two things worth knowing when reading it back:
+
+- **§3's "out of scope for the first PR" did not survive contact.** Once the
+  setters transcribe, `recordTrackedScan()` mirroring as well writes a *second*
+  entry for one scan, so collapsing it was forced rather than optional. It went
+  in with the rest.
+- **The one thing #219 could not verify in a browser** is the Tracker "Reset"
+  path from §6 decision 4, because it opens a `confirm()` and a modal dialog
+  freezes the extension. Wording and behaviour are code-verified only.
 
 Read `Menchmark_Phased_Build_Plan.md` §2 first for where this sits.
 
