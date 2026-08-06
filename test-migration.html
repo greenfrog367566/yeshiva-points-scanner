@@ -575,6 +575,22 @@ if(!data.printExcludedSeeded){
   ["CTRL:PASUKPREV","CTRL:PASUKNEXT","CTRL:CUSTOM-"].forEach(function(k){ data.printExcluded[k]=true; });
   data.printExcludedSeeded=true;
 }
+/* CTRL:GIVEALL (#128) gets its OWN one-shot rather than being appended to
+ * the list above, and the difference matters: printExcludedSeeded is
+ * already true in every save that has ever loaded this app, so a code added
+ * to that array would be excluded for nobody who currently uses it — the
+ * exact trap voice notes hit. Same shape as miniContestUnhidden.
+ *
+ * Off by default because it is the one printed code that applies points to
+ * every boy in the class in a single scan. A mis-scan of a student code
+ * costs one point on one boy; a mis-scan of this one costs the whole class,
+ * so it is opt-in from Choose codes rather than something that arrives on
+ * the sheet by surprise.
+ */
+if(!data.printExcludedGiveAllSeeded){
+  data.printExcluded["CTRL:GIVEALL"]=true;
+  data.printExcludedGiveAllSeeded=true;
+}
 // Print-code sections (Choose codes drag-and-drop): which of the fixed
 // Points/Tracked/Navigation groups a code sits in, and the rebbi's chosen
 // order. Both purely additive — a code with no entry here just uses its
@@ -2475,12 +2491,37 @@ function runBuiltInTests() {
   assert("codes→the three default-off codes are seeded",
     d1.printExcluded["CTRL:PASUKPREV"]===true && d1.printExcluded["CTRL:PASUKNEXT"]===true
     && d1.printExcluded["CTRL:CUSTOM-"]===true, "got "+JSON.stringify(d1.printExcluded));
+  // FOUR since #128, not three: CTRL:GIVEALL is seeded off by its own one-shot.
+  assert("codes→CTRL:GIVEALL is seeded off too (#128)",
+    d1.printExcluded["CTRL:GIVEALL"]===true, "got "+JSON.stringify(d1.printExcluded));
   assert("codes→nothing else is excluded by default",
-    Object.keys(d1.printExcluded).length===3, "got "+JSON.stringify(d1.printExcluded));
+    Object.keys(d1.printExcluded).length===4, "got "+JSON.stringify(d1.printExcluded));
   assert("codes→one-shot flag stamped", d1.printExcludedSeeded===true);
+  assert("codes→GIVEALL one-shot flag stamped", d1.printExcludedGiveAllSeeded===true);
+  /* A save that has already seeded the ORIGINAL three and had them all
+   * deliberately re-ticked. The three must stay ticked — that is the invariant
+   * this test has always guarded, and it still holds.
+   *
+   * CTRL:GIVEALL is the one thing that IS added here, and that is the point of
+   * giving it a separate flag: printExcludedSeeded is already true in every
+   * existing save, so a code appended to the original list would arrive on the
+   * printed sheet of every current rebbi with no way to have defaulted it off.
+   * A code nobody has seen yet cannot be a "deliberate re-tick".
+   */
   var t17 = runMigration({ version:4, printExcludedSeeded:true, printExcluded:{} });
   assert("codes→a deliberate re-tick is NOT undone on the next load",
-    Object.keys(t17.printExcluded).length===0, "got "+JSON.stringify(t17.printExcluded));
+    t17.printExcluded["CTRL:PASUKPREV"]===undefined
+    && t17.printExcluded["CTRL:PASUKNEXT"]===undefined
+    && t17.printExcluded["CTRL:CUSTOM-"]===undefined, "got "+JSON.stringify(t17.printExcluded));
+  assert("codes→GIVEALL is seeded off even for a save that predates it",
+    t17.printExcluded["CTRL:GIVEALL"]===true, "got "+JSON.stringify(t17.printExcluded));
+  // And the other half of the one-shot: once a rebbi ticks GIVEALL ON, that
+  // choice survives every later load. This is the assertion that would catch
+  // the seed being made unconditional.
+  var t17g = runMigration({ version:4, printExcludedSeeded:true, printExcludedGiveAllSeeded:true, printExcluded:{} });
+  assert("codes→GIVEALL deliberately ticked ON is never re-excluded",
+    t17g.printExcluded["CTRL:GIVEALL"]===undefined
+    && Object.keys(t17g.printExcluded).length===0, "got "+JSON.stringify(t17g.printExcluded));
   var t17b = runMigration({ version:4, printExcludedSeeded:true, printExcluded:{"ACT:a9":true} });
   assert("codes→an activity turned off stays off", t17b.printExcluded["ACT:a9"]===true);
   assert("codes→an activity never mentioned is NOT excluded (new ones appear by themselves)",
