@@ -8,11 +8,15 @@ The current working queue. Read this at the start of a session.
 
 ## Doing now
 
-**Phase 2d — the armed-item scan mechanic (#123).** Started 2026-08-05.
+**Phase 2d is done — in two parts, both on 2026-08-05.** The mechanic shipped as #208; the tile badges are the second PR. Nothing in #123's scope is left.
 
-It is the critical path, per `Menchmark_Phased_Build_Plan.md`: the last slice of the keystone, and the gate on three separate things — un-hiding the Gradebook (#185), Phase 5's grade storage, and the Firebase rebuild's step 1. It was missing from this queue entirely while smaller items sat above it; that is the discrepancy this entry fixes.
+- **#208** — `award()`'s four name-matched branches collapse into one `recordTrackedScan()`; every tracked activity is armable from every surface; identity is `a.tiId`, not the name. **The count value shape is decided:** an entry stores the step it contributed, so a total is a plain sum and `config.step` is baked in at write, never applied on read. `gbCountOf()`'s guess collapses.
+- **The badges** — while a tracked item is armed, each boy's tile says where he stands on it: `last: 3d` / `never` for counts, `unmarked` (or the marked value) for statuses, `available` / `used` for the pass. They read the **legacy** store, not the mirror, for the reason in the next bullet.
 
-It also decides the **count value shape**, which nothing has ever written. 2b's `gbCountOf()` carries a guess to cover it — the only place in the Gradebook that guesses at data rather than reading it — and that fallback collapses once 2d chooses. Same question: whether `config.step` is baked into the stored value or applied on read. **PROPOSE FIRST on the shape**, even though the writes themselves are expected to be additive.
+**Two of 2d's three gates are now clear. The Gradebook is not one of them.**
+Phase 5's grade storage and the Firebase rebuild's step 1 are unblocked — 2d has given step 1 the count value shape it was waiting on.
+
+⚠️ **#185 stays hidden, and 2d landing did not change that.** A tracked *scan* dual-writes both stores; a *correction on one of the old tabs* does not — "Mark all Present" moves the legacy store and leaves `data.trackedData` on its previous value. Harmless while the Gradebook is hidden and nothing reads the mirror; wrong numbers the moment it is un-hidden. **Closing it means mirroring at the legacy setters rather than at scan time**, and that is the next piece of this work, not a cosmetic one.
 
 **On the horizon:** the Firebase/Firestore rebuild is fully scoped in `docs/Firebase_Rebuild_Scope.md` — real accounts, Firestore replacing localStorage, three tiers, incremental-write data model, converter tool, 8-step build order. Not started; step 1 (data model design session) hasn't begun.
 
@@ -22,7 +26,9 @@ Its phase mapping was reconciled against the code on 2026-08-04 and it now carri
 
 ## Next, in order
 
-**1. Offline resync** — read-only investigation first, then PROPOSE FIRST (after 2d)
+**0. Close the mirror gap, and then un-hide the Gradebook (#185).** The one piece 2d deliberately left. Mirror at the legacy setters — `setAttendance()`, `setHw()`, `setPass()`, the Tracker's own add/undo — so a correction made on an old tab reaches `data.trackedData` the same way a scan does. Then decide, at the same time, whether attendance forward-ports from 2c's cutoff; `data.attConversion` holds the receipt needed to do it safely. **PROPOSE FIRST** — it writes to a store holding real records.
+
+**1. Offline resync** — read-only investigation first, then PROPOSE FIRST
 The snapshot recovers after being offline; logged scans do not unless "resync all scans" is pressed. Want it automatic on reconnect and periodically.
 **Retry safety differs per tab.** The Log dedups by ID so re-pushing is safe. The Attendance Log has no dedup, so a retry duplicates rows. Confirm per tab before proposing.
 **In the Firestore era this asymmetry dissolves** — see the rebuild doc's open question 3 (deterministic client-generated write ids make every retry idempotent). That does not answer the question here; the localStorage/Apps Script investigation is still owed as written.
@@ -57,10 +63,10 @@ What is left of the old "small standalone features" item once Freeze and the raf
 
 ## Phase 2 status
 
-2a and 2b shipped. **2c is partial** — only `data.attendance` was converted (#138); `data.hw` resets, `data.trackerLog` and `data.passes` are still TBD, and all four old tabs are still visible. The remainder is re-scoped in #122. **2d** (armed-item scan mechanic) is the last slice and is **in flight as of 2026-08-05** — see "Doing now". It also pins down the count value shape, which is still undefined — the 2b gradebook carries a guess that should collapse when 2d lands.
+2a and 2b shipped. **2c is partial** — only `data.attendance` was converted (#138); `data.hw` resets, `data.trackerLog` and `data.passes` are still TBD, and all four old tabs are still visible. The remainder is re-scoped in #122. **2d shipped 2026-08-05** in two parts (#208 + the badges) — see "Doing now". The count value shape it was holding up is settled: an entry stores the step it contributed.
 
-**2d now runs ahead of the Firebase rebuild** (locked 2026-08-04): the rebuild's data-model session has to model `trackedData`, and modelling it against 2b's guess means doing it twice.
+**2d has cleared the Firebase rebuild's step 1** (locked 2026-08-04): the data-model session was waiting on `trackedData`'s count shape so it would not be modelled against 2b's guess and then done twice. It now has a real answer to model.
 
-**The Gradebook tab is hidden until 2d lands (#185).** Nothing writes `data.trackedData` except the one-shot 2c attendance conversion, so the grid froze at the migration and showed every day since as missing — a working-looking feature with wrong numbers. Hidden the same one-shot `navHidden` way as Contest, no data touched. **Un-hiding is gated on 2d, not on anything cosmetic** — not tidier empty columns, not #119's item tabs. When 2d lands, decide at the same time whether it forward-ports attendance from the cutoff; `data.attConversion` holds the receipt needed to do that safely.
+**The Gradebook tab is STILL hidden (#185) — 2d landing did not un-hide it.** The reason moved rather than went away. Scans now write `data.trackedData`, so the store is no longer frozen at 2c's migration; but corrections made on the four old tabs still don't reach it, so the grid would show a boy as unmarked after his rebbi fixed him on the Attendance tab. That is a mirror-gap fix at the legacy setters, item 0 in "Next, in order" — **not anything cosmetic**, not tidier empty columns, not #119's item tabs. Decide the attendance forward-port from 2c's cutoff at the same time; `data.attConversion` holds the receipt needed to do that safely.
 
 Instances for worksheets and quizzes are #120, deliberately separate from 2c so two migrations stay small.

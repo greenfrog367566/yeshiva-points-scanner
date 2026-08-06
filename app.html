@@ -453,6 +453,19 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      muted grey so a paused freeze reads as "on hold", not "still counting". */
   .tile-freeze-badge{position:absolute;top:4px;right:4px;font-size:.68rem;font-weight:700;background:var(--ice);color:#fff;border-radius:999px;padding:1px 6px;line-height:1.5;white-space:nowrap;z-index:1}
   .tile-freeze-badge.paused{background:var(--muted)}
+  /* Tracked-item badge (Phase 2d) — "unmarked" / "last: 3d" / "used", shown on a
+     boy's tile only while a tracked item is ARMED. Styled for BOTH tile
+     surfaces for the same reason .ts-mc is: one builder (fillSeatLiveCard)
+     fills the Dashboard's class list and the seating chart.
+     In flow rather than positioned like the freeze badge above — this is a
+     line the rebbi READS off a card he is working down, not a corner marker,
+     and a positioned one would sit on top of the QR in scannable mode. */
+  .tap-btn .tile-track-badge,.seat .tile-track-badge{display:block;font-size:.7rem;font-weight:700;margin-top:2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+  .tap-btn .tile-track-badge.ok,.seat .tile-track-badge.ok{color:var(--good)}
+  .tap-btn .tile-track-badge.warn,.seat .tile-track-badge.warn{color:var(--bad)}
+  /* .todo keeps the inherited muted grey: "nobody has looked at him yet" is not
+     a problem, it is just work still to do, and 25 red tiles at the start of a
+     period would read as 25 things wrong. */
 
   /* ---- Seating chart mode ---- */
   /* Brief ring on the sheet after "⚙ Rearrange seats" scrolls to it, so it is
@@ -4643,6 +4656,9 @@ function setupRoster() {
     });
     if(typeof renderHeaderScanContext==="function") renderHeaderScanContext();
     if(typeof renderSeatsScanBar==="function") renderSeatsScanBar();
+    // Arming a tracked item is what puts the 2d badges on the tiles, and
+    // disarming (or arming a point activity) is what takes them off again.
+    if(typeof refreshTrackedBadges==="function") refreshTrackedBadges();
   }
 
   /* ---------- TABS (grouped, with a subtab row) ---------- */
@@ -7881,6 +7897,163 @@ function setupRoster() {
     };
     return null;
   }
+
+  /* ---------- 2d: the tile badge — the READ side of the armed-item mechanic ---
+   *
+   * TRACKED_LEGACY above says where an armed scan WRITES. This says where the
+   * badge on a boy's tile READS. They are deliberately two tables rather than
+   * one, because today they do not have the same answer.
+   *
+   * 2c is only partial, so the LEGACY store is still the authority on what a
+   * rebbi has actually recorded, while data.trackedData is a mirror that
+   * scan-time writes keep current and tab-side corrections do not (the known
+   * gap #208 left open, and the reason the Gradebook is still hidden — #185).
+   * A badge fed from the mirror would tell a rebbi "unmarked" for a boy he had
+   * just marked Present on the Attendance tab. So the badge reads the same
+   * store the tab shows, which is the same rule the writers follow in reverse:
+   * the legacy store owns the value.
+   *
+   * When #122 retires a tab, delete its row from BOTH tables together. The
+   * reader then falls through to data.trackedData, which by that point is the
+   * only copy there is.
+   *
+   * Every reader returns {text, tone} or null for "say nothing". Tone is one of
+   * ok / warn / todo — the colour only, never the meaning, which is in the text.
+   */
+
+  // Whole calendar days, not elapsed milliseconds: a scan at 11pm last night is
+  // "1d" the next morning, not "0d". This is the same distinction todayKey()
+  // draws everywhere else — a rebbi counts days, not 24-hour periods.
+  function trackedDaysAgo(ts){
+    var a=new Date(ts); a.setHours(0,0,0,0);
+    var b=new Date();   b.setHours(0,0,0,0);
+    return Math.round((b-a)/86400000);
+  }
+  function trackedAgoText(ts){
+    if(typeof ts!=="number" || !isFinite(ts)) return "never";
+    var d=trackedDaysAgo(ts);
+    if(d<=0) return "last: today";
+    return "last: "+d+"d";
+  }
+  // Most recent mirror timestamp for one boy on one item, or null.
+  function trackedMirrorLastTs(itemId, sid){
+    var per=data.trackedData && data.trackedData[itemId];
+    var list=per && per[sid];
+    if(!Array.isArray(list) || !list.length) return null;
+    var ts=null;
+    for(var i=0;i<list.length;i++){
+      var e=list[i];
+      if(e && typeof e.ts==="number" && isFinite(e.ts) && (ts===null || e.ts>ts)) ts=e.ts;
+    }
+    return ts;
+  }
+  var TRACKED_BADGE = {
+    "ti-attendance": function(sid){
+      // attStatusOn() rather than attMarkedRec() so the badge speaks whichever
+      // mode the class is in, without re-deciding here what "unmarked" means.
+      // Absence-first returns "present" for a boy nobody has touched, because
+      // in that mode he IS present. Presence-first returns "" — nobody has
+      // looked at him yet, which is exactly what this badge exists to surface.
+      var st=attStatusOn(todayKey(), sid);
+      if(!st) return {text:"unmarked", tone:"todo"};
+      return {text:st, tone:(st==="present" ? "ok" : "warn")};
+    },
+    "ti-homework": function(sid){
+      // data.hw[...] read directly, never hwDayRecord(), which CREATES the day
+      // record as a side effect. A render must not write.
+      var day=data.hw && data.hw[todayKey()];
+      var rec=day && day[sid];
+      return (rec && rec.checked) ? {text:"checked", tone:"ok"} : {text:"unmarked", tone:"todo"};
+    },
+    "ti-pass": function(sid){
+      // Reads passCount()/passCap() — the same pair the refusal in
+      // TRACKED_LEGACY's ti-pass writer tests, so the badge and the refusal can
+      // never disagree about whether he has one left.
+      var n=passCount(sid), cap=passCap();
+      if(cap>1) return {text:n+" of "+cap+" used", tone:(n>=cap ? "warn" : "ok")};
+      return (n>=cap) ? {text:"used", tone:"warn"} : {text:"available", tone:"ok"};
+    }
+  };
+  // No legacy row for this item — read the item's own method. Mirrors
+  // trackedLegacyFor()'s fall-through, including the count case, which is still
+  // backed by the Tracker tab.
+  function trackedBadgeFromItem(item, a, sid){
+    if(item.method==="count"){
+      /* Walks data.trackerLog RAW rather than calling trackerEntriesFor(),
+       * which applies the Tracker TAB's own day filter. That filter is a
+       * control on a tab the rebbi is not looking at, and letting it reach a
+       * badge on the Record tab is the same "day on screen" trap the attendance
+       * and homework writers each document at length. */
+      var ts=null;
+      for(var i=0;i<data.trackerLog.length;i++){
+        var e=data.trackerLog[i];
+        if(e && e.sid===sid && e.actId===a.id && typeof e.ts==="number" && (ts===null || e.ts>ts)) ts=e.ts;
+      }
+      // data.trackerLog is capped at 2000 entries, so an old enough turn ages
+      // out of it while the (uncapped) mirror still holds it. Take whichever is
+      // more recent rather than letting the cap report "never" for a boy who
+      // has had a turn.
+      var mts=trackedMirrorLastTs(item.id, sid);
+      if(mts!==null && (ts===null || mts>ts)) ts=mts;
+      return (ts===null) ? {text:"never", tone:"todo"} : {text:trackedAgoText(ts), tone:"ok"};
+    }
+    var per=data.trackedData && data.trackedData[item.id];
+    var list=(per && Array.isArray(per[sid])) ? per[sid] : [];
+    if(item.method==="preselect"){
+      if(!list.length) return {text:"unmarked", tone:"todo"};
+      var v=list[list.length-1].value;
+      return {text:String(v), tone:"ok"};
+    }
+    if(item.method==="limited"){
+      var cap2=(item.config && typeof item.config.cap==="number") ? item.config.cap : 1;
+      if(cap2>1) return {text:list.length+" of "+cap2+" used", tone:(list.length>=cap2 ? "warn" : "ok")};
+      return list.length ? {text:"used", tone:"warn"} : {text:"available", tone:"ok"};
+    }
+    // An unrecognised method is READ, not guessed at — the 2a rule, the same
+    // way gbCellText() handles one. How many entries landed is the one thing
+    // true of every possible shape.
+    return list.length ? {text:trackedAgoText(trackedMirrorLastTs(item.id, sid)), tone:"ok"}
+                       : {text:"never", tone:"todo"};
+  }
+  // What this boy's tile should say about the CURRENTLY ARMED tracked item, or
+  // null when nothing tracked is armed. One entry point, called by the one card
+  // builder, so the list and the seating chart cannot show different badges.
+  function trackedTileBadge(s){
+    var a=armedActivity();
+    if(!a || a.tracked!==true || freezeActivity(a)) return null;
+    // trackedItemForActivity(), NEVER ensureTrackedItemFor() — that one MINTS an
+    // item and pushes it into data.trackedItems. Rendering a tile must not
+    // create data, least of all once per student per repaint.
+    var item=trackedItemForActivity(a);
+    if(!item) return null;
+    var reader=TRACKED_BADGE[item.id];
+    return reader ? reader(s.id) : trackedBadgeFromItem(item, a, s.id);
+  }
+  function trackedTileBadgeEl(s){
+    var b=trackedTileBadge(s);
+    if(!b || !b.text) return null;
+    return el("span","tile-track-badge "+(b.tone||"todo"), b.text);
+  }
+  /* Repaint just the badges — the refreshFreezeTile() approach, and for the same
+   * reason. Arming an item changes one line on each card; a full
+   * renderTapPanel() would rebuild every QR code on the chart and throw away
+   * whatever the rebbi had scrolled to, in front of a room, mid-scan.
+   *
+   * No data.tapPanelOpen guard: a closed panel simply has no matching elements,
+   * and the guard would wrongly skip the fullscreen pop-out, which renders with
+   * forceSeating regardless of that setting.
+   */
+  function refreshTrackedBadges(){
+    document.querySelectorAll('.tap-btn[data-sid], .seat[data-sid]').forEach(function(tb){
+      var old=tb.querySelector(".tile-track-badge");
+      if(old && old.parentNode) old.parentNode.removeChild(old);
+      var s=studentById(tb.dataset.sid);
+      if(!s) return;
+      var b=trackedTileBadgeEl(s);
+      if(b) tb.appendChild(b);
+    });
+  }
+
   // THE one path a tracked scan travels. Records and reports, or refuses — the
   // flash and the write are the same call, so "it said it worked" and "it wrote
   // something" cannot be independently true.
@@ -7909,6 +8082,11 @@ function setupRoster() {
     }
     save();
     refreshLiveViews();
+    // The badge this scan just changed — "unmarked" becomes "checked", "last:
+    // 3d" becomes "last: today" — under the rebbi's finger, not on the next
+    // full repaint. Every boy's tile, not only this one, because a limited-use
+    // cap or a preset can move for the class rather than for one student.
+    refreshTrackedBadges();
     return true;
   }
   function award(s){
@@ -9661,6 +9839,18 @@ function setupRoster() {
       var mcHeld=mcHeldFor(s.id);
       if(mcHeld) card.appendChild(el("span","ts-mc", mcHeld));
     }
+    /* THE TRACKED-ITEM BADGE (2d). Appended here, in the one shared builder,
+     * for the same reason the score is: the Dashboard's class list and the
+     * seating chart must not be able to tell a rebbi two different things about
+     * the same boy.
+     *
+     * Independent of showPts, unlike the contest line above it. "Points" is a
+     * setting about scores, and this is not a score — a rebbi who turned points
+     * off to get a cleaner chart has not asked to stop seeing who is still
+     * unmarked. It only ever appears while a tracked item is ARMED, so it is
+     * self-limiting: nothing tracked armed, nothing on the card. */
+    var trkBadge=trackedTileBadgeEl(s);
+    if(trkBadge) card.appendChild(trkBadge);
   }
   // The held total for one boy, already formatted, or "" when there is nothing
   // to show. Kept next to the card rather than inside coinScoreEl() because

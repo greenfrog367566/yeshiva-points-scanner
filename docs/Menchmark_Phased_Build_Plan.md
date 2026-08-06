@@ -54,7 +54,7 @@ The lowest-risk high-visibility change: move existing tabs into the new 5-group 
 
 ## Phase 2 — The Gradebook engine + Tracked Items *(the keystone — everything academic depends on it)*
 
-> **Status (2026-08-04):** 2a SHIPPED (#107) · 2b SHIPPED (#115) · 2c **PARTIAL** — attendance converted only (#138), remainder re-scoped in #122 · 2d **NOT STARTED** (#123). **The Gradebook tab is hidden until 2d lands (#185)**, because nothing writes `data.trackedData` in normal use and the grid froze at the migration. Contest is hidden too, pending #133. 2d is now **locked ahead of the Firebase rebuild's step 1** — it pins the count value shape that model needs.
+> **Status (2026-08-05):** 2a SHIPPED (#107) · 2b SHIPPED (#115) · 2c **PARTIAL** — attendance converted only (#138), remainder re-scoped in #122 · 2d **SHIPPED in two parts** — the armed-item scan mechanic (#208) and the tile badges (this PR). Contest is un-hidden again (#210). **The Gradebook tab is still hidden (#185), and 2d landing did NOT change that** — see the note under 2d below. 2d has now cleared the Firebase rebuild's step 1 of its one blocking input, the count value shape.
 
 The biggest single lift, and the one the most other things wait on. Built in testable sub-slices:
 
@@ -70,8 +70,12 @@ The biggest single lift, and the one the most other things wait on. Built in tes
 - ⚠️ **2c inherits the data question 2a set aside.** `data.attendance`, `data.hw`, `data.trackerLog` and `data.passes` still hold every pre-2a record, and nothing has ever carried them into `data.trackedData`. Do **not** plan 2c on the assumption that the old data is already forward-ported. Retiring a tab therefore means deciding, per store, whether to convert its records, export them, or accept the reset — and saying so explicitly before the old tab's read path goes away.
 - **What actually shipped:** only `data.attendance` was converted, one-shot, with the receipt in `data.attConversion`. `data.hw` is agreed to RESET; `data.trackerLog` and `data.passes` are still TBD. **All four old tabs remain registered and visible** — no tab has been retired yet. Retiring the tab UI is the last step of 2c, not the first.
 
-**2d. The armed-item scan mechanic + tile staleness badges** *(NOT STARTED — #123)* (Count-type "last: 3d / never", Status "unmarked", Limited-use "used/available").
-- **Now the gate on three other things:** un-hiding the Gradebook (#185), unblocking Phase 5's grade storage, and the Firebase rebuild's step 1 — 2d pins the count value shape that model has to carry, so it is sequenced **before** the rebuild begins (locked 2026-08-04).
+**2d. The armed-item scan mechanic + tile staleness badges** *(SHIPPED in two parts — #123)*
+- **The mechanic (#208).** `award()`'s four name-matched branches collapse into one `recordTrackedScan()`. Every tracked activity is armable from every surface. Identity is `a.tiId`, stamped once in `load2fix()`, so renaming an activity no longer breaks it.
+- **The count value shape, decided (#208).** A count entry stores **the step it contributed**; a total is a plain sum and `config.step` is baked in at write time, never applied on read. `gbCountOf()`'s guess collapses to a sum. This was 2d's one blocking input to the rebuild's step 1, and it is now settled.
+- **The badges (this PR).** Count "last: 3d / never", Status "unmarked" (or the marked value), Limited-use "used / available" — on the boy's tile, in both the Dashboard list and the seating chart, only while that item is armed. They read the **legacy** store rather than the mirror, because with 2c partial the legacy store is still the authority on what was actually recorded; a mirror-fed badge would say "unmarked" for a boy just marked Present on the Attendance tab.
+- **Two of its three gates are now clear; one is not.** Phase 5's grade storage and the rebuild's step 1 are unblocked. **Un-hiding the Gradebook (#185) is NOT** — see below.
+- ⚠️ **The mirror gap, still open, and it is what still blocks #185.** A tracked *scan* dual-writes the legacy store and `data.trackedData`. A **correction made on one of the old tabs does not** — "Mark all Present" on the Attendance tab moves the legacy store and leaves the mirror on its previous value. Harmless while the Gradebook is hidden, since nothing displays the mirror; fatal the moment it is un-hidden, since the grid reads the mirror. Closing it means mirroring at the legacy **setters** rather than at scan time. **Do not read "2d has landed" as "the Gradebook can come back."**
 
 **Why here:** Quiz grades (Phase 5), Chart-mode fold-in (Phase 6), and the whole "one engine not five" consolidation all depend on this existing. Build it once, build it right.
 
