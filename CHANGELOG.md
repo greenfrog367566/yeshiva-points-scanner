@@ -26,6 +26,20 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **You can now speak a note onto a scan instead of typing it.** Scan a boy the way you always do, then press **🎤 Note** — or scan the new printed **🎤 Voice Note** card from wherever you happen to be standing — say what he did, and it is saved onto that scan. *"Helped Yitzy pick up his sefarim."* About five seconds, and you never touch a keyboard.
+
+  **This is not a new record — it is a faster way into the one you already have.** Notes on scans have always existed: every entry on the History tab has had a "📝 Add note" button on it. But adding one meant a typing box, on a tablet, in the middle of a lesson — which is not something a rebbi is going to do while teaching. So the notes existed and almost nobody wrote them. A spoken note is saved in exactly the same place, in exactly the same way, and reaches the same Note column on your Google Sheet. A spoken note and a typed note are the same note.
+
+  **Nothing appears on the screen while you speak, and that is deliberate.** The screen in a classroom is often facing the boys — the seating chart, the Leader Board — so words appearing on it would broadcast the note to the room. Some notes are praise you would happily read out loud; "didn't do his homework" is not. The only thing shown is a small red dot in the corner while the microphone is on, which says nothing except that it is listening. You read and fix your notes afterwards on the History tab, at your desk, where they have always lived.
+
+  **It stops on its own** when you stop talking, and after fifteen seconds regardless, so a microphone cannot be left running by accident.
+
+  **Undo now works in two steps.** "↩ Undo last scan" — or the printed Undo card — removes the note you just spoke. Press it again and it reverses the scan underneath, exactly as it always did. So if you speak a note and then realise you scanned the wrong boy, undo twice and both are gone. If that entry already had a note you typed by hand, undo puts your typed note *back* rather than deleting it. And if you have scanned anyone else in between, undo goes straight to that newer scan — the note is only ever the first thing undone when it genuinely is the most recent thing you did.
+
+  **What it needs.** Chrome or Edge, and a connection. The speech recognition is your browser's own, built in, so there is nothing to install and no key to set up — the audio goes to your browser maker the same way any dictation on your device does, and never to Menchmark. On Firefox or Safari, or with no connection, the 🎤 button tells you so and you can still type the note in History as before. It listens through whichever microphone your device already treats as the default, so if you want it to hear a headset, set that headset as the default microphone in your device's sound settings.
+
+  **Nothing is stored that was not stored before.** A spoken note goes into the same field, on the same log entry, that the History note button has always written to. There is no data-version change and no migration, and a save from before this update loads exactly as it did.
+
 - **While you're marking something, each boy's card now tells you where he stands on it.** Arm Attendance, Homework Checked, Bathroom Pass, or any activity you track, and a small line appears under every boy's name saying what he already has for that one thing — right on the Dashboard's class list and on the seating chart, on the screen you are already looking at.
 
   What it says depends on what you armed. **Attendance and Homework** show `present`, `absent`, `late`, `checked`, or **`unmarked`** — so "who haven't I done yet" is something you can see down the chart instead of working out. **Bathroom Pass** shows `available` or `used`, and if you've raised the cap above one pass, `1 of 3 used`. **Anything you count** — Chazan, Called On, Line Leader — shows how long it has been: `last: today`, `last: 3d`, or **`never`**. That last one answers the question a count is really for, which is *who hasn't had a turn in a while*, without leaving the room screen to go and look it up.
