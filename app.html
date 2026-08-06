@@ -6180,7 +6180,17 @@ function setupRoster() {
     if(!name) return;
     data.activities.push({id:nextActId(), name:name, pts:0, tracked:true, groups:[]});
     save();
-    renderTracker(); renderActivities();
+    /* renderActButtons() is the one that was missing, and its absence is why a
+     * tracked activity made here never appeared on the Dashboard. The Record
+     * tab's strip is only ever rebuilt by an explicit call — activateTab("scan")
+     * renders the scan board and the tap panel but deliberately not this — so
+     * the new activity sat in data.activities, correctly saved and armable by
+     * code, with no button to press. Leaving and returning to the Dashboard did
+     * not help either; only a reload did.
+     *
+     * The Activities tab's own add has always called it (see addActivity). This
+     * is the same list, so it gets the same three re-renders. */
+    renderTracker(); renderActivities(); renderActButtons();
   });
 
   /* ==================== HOMEWORK ==================== */
@@ -7756,9 +7766,17 @@ function setupRoster() {
   function actVisibleOnScreen(a){ return !a.hidden && actInCurrentMode(a); }
   function renderActButtons(){
     var wrap=$("actButtons"); wrap.innerHTML="";
-    // Homework Checked gets a button here like any other activity — arming it and
-    // scanning marks homework for real via award()'s reroute. Tracker activities
-    // stay out: they still fall through to the points path with no backstop.
+    /* EVERY tracked activity gets a button here, Tracker ones included. That
+     * changed in 2d and this comment did not: it used to say Tracker activities
+     * "stay out: they still fall through to the points path with no backstop",
+     * which was true only while award() routed by name. Since #208 a tracked
+     * scan goes to recordTrackedScan(), so there is nothing to fall through to
+     * and nothing to keep out — armableActivities() takes the whole flag.
+     *
+     * Worth being accurate about, because a stale exclusion here is the first
+     * thing anyone would suspect when a tracked activity fails to appear. The
+     * actual cause of that, when it happened, was a caller that changed
+     * data.activities without calling this function. */
     var visible=armableActivities().filter(actVisibleInCurrentClass).filter(actVisibleOnScreen);
     if(!data.activities.length){ wrap.appendChild(el("span","recent-empty","No activities yet — add some on the Activities tab.")); return; }
     if(!visible.length){ wrap.appendChild(el("span","recent-empty","No activities are set up for this group — check the Activities tab.")); return; }
