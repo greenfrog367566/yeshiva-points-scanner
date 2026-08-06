@@ -18,10 +18,9 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
   **Your history is already in it.** Every attendance day you have marked, and your whole Tracker history, were brought across the first time you opened the app after this update. You do not have to do anything, and nothing was moved or removed from the tabs you already use — they work exactly as before.
 
-  **Two things worth knowing when you first open it:**
+  **One thing worth knowing:** the **Bathroom Pass** column counts every pass ever used, with dates, while the Passes tab counts only the current week. After you press "Reset all passes", the tab starts again from zero and this column keeps the history. That is on purpose — a new week starting is not the same as last week never happening — and hovering the column heading says so.
 
-  - **Homework starts from now, not from before.** Attendance and your counted activities show their full history; Homework begins from this update onwards. Your older homework marks are safe and still on the Homework tab — they simply were not carried into the grid. This was a deliberate decision made earlier, not something lost.
-  - **The Bathroom Pass column counts every pass ever used, with dates, while the Passes tab counts only the current week.** After you press "Reset all passes", the tab starts again from zero and this column keeps the history. That is on purpose — a new week starting is not the same as last week never happening — and hovering the column heading says so.
+  Homework fills in from the day you next mark it rather than reaching back, which matters to nobody in practice: the grid is arriving over the summer, when there is no homework behind it to reach back to.
 
   If you would rather not see the tab, you can switch it off in Settings, and it will stay off.
 
