@@ -6201,7 +6201,17 @@ function setupRoster() {
     if(!name) return;
     data.activities.push({id:nextActId(), name:name, pts:0, tracked:true, groups:[]});
     save();
-    renderTracker(); renderActivities();
+    /* renderActButtons() is the one that was missing, and its absence is why a
+     * tracked activity made here never appeared on the Dashboard. The Record
+     * tab's strip is only ever rebuilt by an explicit call — activateTab("scan")
+     * renders the scan board and the tap panel but deliberately not this — so
+     * the new activity sat in data.activities, correctly saved and armable by
+     * code, with no button to press. Leaving and returning to the Dashboard did
+     * not help either; only a reload did.
+     *
+     * The Activities tab's own add has always called it (see addActivity). This
+     * is the same list, so it gets the same three re-renders. */
+    renderTracker(); renderActivities(); renderActButtons();
   });
 
   /* ==================== HOMEWORK ==================== */
@@ -7786,9 +7796,17 @@ function setupRoster() {
   function actVisibleOnScreen(a){ return !a.hidden && actInCurrentMode(a); }
   function renderActButtons(){
     var wrap=$("actButtons"); wrap.innerHTML="";
-    // Homework Checked gets a button here like any other activity — arming it and
-    // scanning marks homework for real via award()'s reroute. Tracker activities
-    // stay out: they still fall through to the points path with no backstop.
+    /* EVERY tracked activity gets a button here, Tracker ones included. That
+     * changed in 2d and this comment did not: it used to say Tracker activities
+     * "stay out: they still fall through to the points path with no backstop",
+     * which was true only while award() routed by name. Since #208 a tracked
+     * scan goes to recordTrackedScan(), so there is nothing to fall through to
+     * and nothing to keep out — armableActivities() takes the whole flag.
+     *
+     * Worth being accurate about, because a stale exclusion here is the first
+     * thing anyone would suspect when a tracked activity fails to appear. The
+     * actual cause of that, when it happened, was a caller that changed
+     * data.activities without calling this function. */
     var visible=armableActivities().filter(actVisibleInCurrentClass).filter(actVisibleOnScreen);
     if(!data.activities.length){ wrap.appendChild(el("span","recent-empty","No activities yet — add some on the Activities tab.")); return; }
     if(!visible.length){ wrap.appendChild(el("span","recent-empty","No activities are set up for this group — check the Activities tab.")); return; }
@@ -8575,6 +8593,13 @@ function setupRoster() {
       case "trends":    renderTrends(); break;
       case "history":   renderHistoryTab(); break;
       case "contest":   renderContestTab(); break;
+      /* The Gradebook was missing from this list for a reason that has since
+       * expired: when 2b built it, nothing wrote data.trackedData in normal
+       * use, so there was never anything new for a scan to reveal. Since 2d and
+       * the mirror-gap fix every tracked scan writes it, and a rebbi with the
+       * grid open while another surface records would otherwise be looking at a
+       * cell that is already stale. */
+      case "gradebook": renderGradebook(); break;
       // The wheel is redrawn from live scores/tickets — but never mid-spin, or a
       // scan landing would jerk the animation back to zero.
       case "raffle":    if(!spinning) renderWheel(); break;
@@ -16319,6 +16344,19 @@ nameLine
     items.forEach(function(it){
       var ds=datesByItem[it.id]||[], th=el("th","gb-item",it.name||it.id);
       if(grouped) th.colSpan=Math.max(ds.length,1)+(ds.length>1?1:0);
+      /* A limited-use column and its own tab disagree ON PURPOSE, and a rebbi
+       * comparing the two deserves to be told why rather than left to wonder
+       * which one is broken. "Reset all passes (new week)" clears the counter
+       * the Passes tab reads; it does not erase the record of who used a pass,
+       * because a new week starting is not the same as last week not having
+       * happened. So this column keeps every use, dated, and the tab shows the
+       * current period only. Said on hover rather than on the face of the grid:
+       * it matters exactly once, when the two numbers are first noticed. */
+      if(it.method==="limited"){
+        th.title=(it.name||it.id)+" — every use on record, with its date. The "
+          +"Passes tab counts only the current period, so after a reset that tab "
+          +"starts again from zero and this column keeps the history.";
+      }
       hr1.appendChild(th);
     });
     // Right-hand identity column. Mirrors the left so a row stays readable in
@@ -19838,6 +19876,32 @@ nameLine
     if(!data.gradebookHiddenSeeded){
       data.navHidden.tabs.gradebook=true;
       data.gradebookHiddenSeeded=true;
+    }
+    /* ...and un-hide it, because both reasons it was hidden are now gone.
+     *
+     * It was hidden because nothing wrote data.trackedData in normal use, so
+     * the grid froze at 2c's migration and showed every day since as missing.
+     * Phase 2d gave it a writer (#208 + the tile badges), and the mirror-gap
+     * fix (#219) gave it the other half: a correction made on the Attendance,
+     * Homework, Passes or Tracker tab now transcribes into the same store, so
+     * the grid can no longer contradict the tab a rebbi has just fixed. The
+     * one-shot backfill in this same load2fix() carries the history across,
+     * with the receipt in data.mirrorBackfill.
+     *
+     * ONE-SHOT, and its own flag rather than clearing gradebookHiddenSeeded —
+     * the same shape as miniContestUnhidden above, for the same reason. A rebbi
+     * who switched the Gradebook ON himself while it was hidden is not
+     * overruled, and one who hides it again later keeps it hidden through every
+     * future load. Clearing the original flag would re-arm the hide and take
+     * the tab away from him a second time.
+     *
+     * THE RETURN TRIP, which is the half of hide-until-ready that proves the
+     * model: nothing was deleted while it was hidden, so the finished 2b UI
+     * comes back intact with real data behind it rather than being rebuilt.
+     */
+    if(!data.gradebookUnhidden){
+      data.navHidden.tabs.gradebook=false;
+      data.gradebookUnhidden=true;
     }
     if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
     if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }

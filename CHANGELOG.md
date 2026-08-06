@@ -10,6 +10,20 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ## [Unreleased]
 
+### Added
+
+- **The Gradebook is switched on.** One grid for everything you track: your boys down the side, Attendance / Homework / Bathroom Pass / anything you count across the top, with a total for each. Pick which items to show and over what dates, then print exactly what you see. It sits under **Run → Gradebook**.
+
+  It was built a while ago and deliberately kept switched off, because it had nothing real to read — it could only show what a one-time conversion had put there, so it froze on that day and every day since looked blank. That is fixed: everything you record now reaches it, whether you scanned it or marked it by hand on one of the tabs.
+
+  **Your history is already in it.** Every attendance day you have marked, and your whole Tracker history, were brought across the first time you opened the app after this update. You do not have to do anything, and nothing was moved or removed from the tabs you already use — they work exactly as before.
+
+  **One thing worth knowing:** the **Bathroom Pass** column counts every pass ever used, with dates, while the Passes tab counts only the current week. After you press "Reset all passes", the tab starts again from zero and this column keeps the history. That is on purpose — a new week starting is not the same as last week never happening — and hovering the column heading says so.
+
+  Homework fills in from the day you next mark it rather than reaching back, which matters to nobody in practice: the grid is arriving over the summer, when there is no homework behind it to reach back to.
+
+  If you would rather not see the tab, you can switch it off in Settings, and it will stay off.
+
 ### Changed
 
 - **Corrections you make on the Attendance, Homework, Passes and Tracker tabs are now kept alongside your scans, not just on the tab you made them on.** Until now, scanning a boy recorded his mark in two places, but *fixing* it on the tab afterwards only moved one of them. Nothing you could see was wrong, because the one screen that reads the second copy — the Gradebook — is still switched off. But it meant the two could disagree, and that disagreement was the last thing keeping the Gradebook off.
@@ -164,6 +178,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 - **Seating chart: "A–Z by name" and "🎲 Shuffle" — re-seat the whole class in one click.** Everything else on the class-sheet page moves **one boy at a time**: drag a seat, ✕ to empty one. That is right for tuning a chart and hopeless for the two things rebbeim actually do to a whole room — putting a brand-new class into a sensible starting order, and breaking up a seating plan that has settled into cliques. Two buttons on the toolbar now do it in one go. **A–Z by name** seats everyone alphabetically **by last name**, filling desks left to right, front to back — the same sorting the List layout and the Students tab already use, so A–Z means one thing across the app. **🎲 Shuffle** deals the whole class into random desks. **Both ask first**, because both replace an arrangement you may have built by hand and a seating chart has no undo. **Only where each boy sits changes** — no points, scans, tracked records or history are read or touched by either button, and the confirm box says so, since "reset" and "shuffle" both sound alarming on a page whose cards show points. **Your room keeps its shape:** the grid grows if the roster no longer fits and never shrinks, so a chart you have arranged around an aisle or a doorway comes back the same size. The one exception is a chart **nobody has ever arranged**, which gets sized roughly square to the roster rather than keeping the invented 4×6 — the same thing the auto-seater already does, so a class of twelve doesn't print inside a page of empty desks. **Both charts redraw together**, the print mock-up and the live Dashboard one, exactly as dragging a seat already does. The buttons are hidden in the **List (A–Z)** layout, where there is no room to arrange. **No saved data changes and there is no migration** — these write the same `seats` array that dragging a boy has always written.
 
 ### Fixed
+
+- **A new tracked activity did not appear on the Dashboard until you reloaded the app.** Adding one with "+ Add activity" on the Tracker tab saved it correctly and it showed up on the Tracker tab straight away — but the row of activity buttons you actually scan with, on the Dashboard, carried on showing the old list. Going to another tab and coming back did not help; only closing and reopening the app did. So a rebbi who added "Chazan" and went to use it found it simply wasn't there, with nothing to suggest the problem was only on screen. The button now appears the moment you add it. Nothing was ever lost — the activity was saved the whole time, and any you added earlier are already there.
 
 - **Undoing a scan left the old number sitting on the seating chart and the class list.** The undo itself always worked — the boy's score was corrected properly and everything else in the app agreed — but his own card kept showing the score he had *before* the undo, sometimes for a good while, until something unrelated happened to redraw the panel. So the one card a rebbi was looking at was the one place still showing the mistake he had just fixed, which is a hard thing to trust. His card now updates the moment the undo lands, on both the seating chart and the class list. Found while putting contest points on those cards; it has been the case since long before contests, and applies to every scan, contest or not.
 
