@@ -12,6 +12,14 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **Voice notes are now switched on for everyone.** The 🎤 button next to "Undo last scan" lets you speak a note straight onto the scan you just made, instead of typing it. It arrived switched off so it could be used in a real classroom for a day first; that has happened, so it is on.
+
+  **If you would rather not have it, turn it off in Settings and it stays off** — it will not switch itself back on afterwards.
+
+  Two things worth knowing. **It is a per-device setting**, so turning it on or off on your tablet does not change your laptop. And **if you tried it during the first day and switched it off, it has come back on once** — the app cannot tell that apart from never having been offered it. Turning it off now will stick for good.
+
+  Nothing new is stored. A spoken note is saved in the same place a typed note has always been saved, so it shows in History and reaches your Google Sheet exactly as before.
+
 - **Scans that don't give points now show up in Scan history too — so you can write down why.** Freezing a boy, tapping +1 on the Tracker, giving out the bathroom pass, and marking a boy late or absent: until now none of those appeared under **Review → Scan history**, so there was nowhere to record what was behind them. Now they do, and every one takes a note — typed with 📝, or spoken with 🎤 if you have voice notes on.
 
   That was the whole point. "Absent" is a fact; "absent, third Tuesday in a row, spoke to his father" is the thing you actually want in front of you at parent-teacher night, and there was previously no place in the app to put it.
