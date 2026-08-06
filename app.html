@@ -168,6 +168,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* ---- Preview-mode banner ---- */
   #saveWarn{display:none;background:var(--bad-soft);color:#7c2d1c;border:1px solid #e3bdb5;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem}
   #saveWarn b{color:#5e1f12}
+  /* Storage-quota warning (#129). Red like #saveWarn rather than amber like
+     #backupNudge, because unlike the nudge something has actually been lost or
+     refused. Same slot, same shape. */
+  #storageWarn{display:none;background:var(--bad-soft);color:#7c2d1c;border:1px solid #e3bdb5;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem}
+  #storageWarn b{color:#5e1f12}
   /* Backup staleness nudge. Shares #saveWarn's slot at the top of <main> so it
      shows on whichever tab is open, but amber rather than red — nothing is
      broken, it is a reminder. Hidden by default; shown only by maybeShowBackupNudge(). */
@@ -1296,7 +1301,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* print */
   @media print{
     @page{size:letter;margin:0}
-    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.fab-btn,.view-note,.toolbar,.no-print,#saveWarn,#backupNudge,.pill-note,#globalScanBar{display:none!important}
+    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.fab-btn,.view-note,.toolbar,.no-print,#saveWarn,#storageWarn,#backupNudge,.pill-note,#globalScanBar{display:none!important}
     body{background:#fff}
     main{max-width:none;padding:0}
     .view{display:none!important}
@@ -1831,6 +1836,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <b>Preview mode — scores won't be saved here.</b> You're viewing this inside a browser that blocks local saving.
     To use it for real, download this file and open it in Chrome on your own computer; everything will then save automatically.
   </div>
+
+  <!-- Raised by showStorageWarn() when a save hit the storage quota. Empty and
+       hidden until then; shares #saveWarn's slot so it shows on whichever tab
+       is open. -->
+  <div id="storageWarn"></div>
 
   <div id="backupNudge">
     <span id="backupNudgeText"></span>
@@ -4516,7 +4526,55 @@ function setupRoster() {
     data = migrateData(data);
     load2fix();
   }
-  function save(){ if(canSave){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} } scheduleAutoSnapshot(); }
+  // The empty catch that used to be here meant a failed save failed SILENTLY:
+  // the rebbi kept scanning, every flash said success, and nothing reached
+  // localStorage. That was survivable while a save was small. #129 makes the
+  // log ten times bigger, so guarding the failure belongs WITH that change
+  // rather than being filed as a separate improvement — it is the risk this
+  // change introduces, and the four questions in CLAUDE.md rule 1 ask exactly
+  // this about it.
+  //
+  // A failure here is almost always the origin quota. The log is both the part
+  // that grew and the only part of the save that exists anywhere else: entries
+  // already pushed to the Sheet's Log tab survive there. So the log is what
+  // yields — halve it and retry, which keeps the roster, the scores, the
+  // attendance and the tracked data that nothing else holds a copy of. Trading
+  // old history to keep scores is right; doing it invisibly is not, so a trim
+  // raises the banner too.
+  function save(){
+    if(canSave){
+      var trimmed=0, failed=false;
+      for(;;){
+        try{ localStorage.setItem(KEY, JSON.stringify(data)); break; }
+        catch(e){
+          // Below this there is nothing useful left to give back, and the
+          // problem is something other than the log. Stop and say so.
+          if(data.log.length<=50){ failed=true; break; }
+          var keep=Math.max(50, Math.floor(data.log.length/2));
+          trimmed += data.log.length-keep;
+          data.log.length=keep;
+        }
+      }
+      if(failed || trimmed) showStorageWarn(trimmed, failed);
+    }
+    scheduleAutoSnapshot();
+  }
+  // Shown when a save had to give something up, or could not happen at all.
+  // Deliberately a banner and not an alert(): save() runs on every scan, and a
+  // modal per scan would be unusable exactly when the rebbi is mid-lesson. Sits
+  // in the same slot as #saveWarn and stays up until the page is reloaded.
+  function showStorageWarn(trimmed, failed){
+    var box=document.getElementById("storageWarn");
+    if(!box) return;
+    box.innerHTML = failed
+      ? "<b>This device is out of storage — your most recent scans were NOT saved.</b> "
+        + "Back up to your Google Sheet now (Run → Settings) before closing this tab. "
+        + "Freeing space on the device will let saving start working again."
+      : "<b>Storage filled up, so the oldest "+trimmed+" history entries were dropped to make room.</b> "
+        + "Nothing else was lost — the roster, every score and today’s marks all saved normally. "
+        + "Those older entries are still on the Log tab of your Google Sheet if you have been syncing.";
+    box.style.display="block";
+  }
 
   /* ---------- helpers ---------- */
   var pipWin = null; // set while the floating scanner is popped out into a real OS window
@@ -4716,15 +4774,62 @@ function setupRoster() {
    * before tracked scans were logged at all, and the tracked entries get their
    * own, larger allowance sized to how much faster they arrive.
    *
-   * This does NOT solve #129 (the log cap in general) — a busy class still
-   * loses old point scans at 500. It only guarantees this feature isn't what
-   * takes them.
+   * #129 is now solved too, by the raise below — but these are two separate
+   * guarantees and both are load-bearing. The split says tracked scans can
+   * never evict a point scan; the raise says point scans survive long enough
+   * to be undone. Either one without the other still loses history.
    */
-  var LOG_CAP=500, TRACKED_LOG_CAP=1500;
+  // LOG_CAP raised 500 -> 5000 (#129).
+  //
+  // 500 was set when the only writer was one-scan-at-a-time, and it worked out
+  // to three or four school days of ordinary use — far less than anyone reading
+  // the word "History" would assume. That mattered for more than what is on
+  // screen, because data.log is the SOURCE two things are computed from: undo
+  // locates its target by scanning the log, so an entry that has fallen off the
+  // end cannot be undone at all (the button simply does nothing), and the
+  // Contest tab's contestScoreFor() silently stops counting it.
+  //
+  // Batch awards turned that from a capacity problem into a correctness one.
+  // Undo does not delete — it APPENDS a correction — so one 25-boy batch plus
+  // its undo is 50 entries, a tenth of the old log. Near the cap, a batch's own
+  // entries could roll off before the rebbi undid them, leaving nothing to
+  // reverse. That is what #129 blocks #127 and #128 on.
+  //
+  // Measured before choosing. Entry sizes: 128 B an ordinary scan, 181 B an
+  // undo correction, 239 B the worst case (a contest undo, which carries mcId,
+  // mcMerged, undoOf and contestId all at once).
+  //
+  // Cost per save(), measured IN THE BROWSER, not in node — node's JSON is
+  // about three times faster and flattered this decision until it was checked
+  // properly. Desktop Chrome, sample roster, stringify + setItem together:
+  //     cap    500    340 KB    ~6 ms
+  //     cap   2000    521 KB   ~12 ms
+  //     cap   5000    884 KB   ~24 ms   <- chosen
+  //     cap  10000   1490 KB   ~36 ms
+  // and in days of history: 5000 is ~33 school days of typical use (~150
+  // entries/day), or ~13 of heavy whole-class-award use. 500 was three or four.
+  //
+  // 10000 was rejected on save COST, not on size — 1.5 MB still fits the origin
+  // quota fine. save() is synchronous and runs on EVERY scan, so this is paid
+  // one scan at a time on a classroom tablet, where these desktop figures are
+  // optimistic by an unmeasured factor of maybe two to four.
+  //
+  // TRACKED_LOG_CAP stays at 1500 rather than scaling with the raise, because
+  // the two budgets are sized in DAYS, not in entries. Tracked scans arrive at
+  // roughly 35 a day once trackedValueIsNotable() has cut attendance and
+  // homework out, so 1500 is ~43 school days — already deeper than the ~33 the
+  // raised point budget buys. Scaling it too would have bought nothing and cost
+  // the save budget. Worst case both saturate at 6500 entries (~1.15 MB), which
+  // still sits under the 10000 that was rejected, and only after ~33 days of
+  // heavy use of both.
+  var LOG_CAP=5000, TRACKED_LOG_CAP=1500;
   function trimLog(){
-    // Below the smaller cap neither class can be over, so the common case never
-    // walks the array.
-    if(data.log.length<=LOG_CAP) return;
+    // Below the SMALLER of the two caps neither class can be over, so the
+    // common case never walks the array. This has to be the minimum, not
+    // LOG_CAP: since the raise, LOG_CAP is no longer the smaller one, and
+    // testing against it alone would let a log that is all tracked entries run
+    // to 5000 without the tracked budget ever being enforced.
+    if(data.log.length<=Math.min(LOG_CAP,TRACKED_LOG_CAP)) return;
     var kept=[], nPts=0, nTrk=0;
     for(var i=0;i<data.log.length;i++){
       var e=data.log[i];
@@ -8089,7 +8194,7 @@ function setupRoster() {
 
      The original Contest (everything above and below with `contest` in the
      name) computed every number it showed by walking data.log. data.log is
-     capped at 500 entries in addLogEntry() and emptied outright by
+     capped in addLogEntry() (LOG_CAP entries; 500 back then) and emptied by
      resetAllScores(), so a contest's results decayed as the class kept
      scanning and vanished entirely on a reset — "saving" a contest saved a
      label with nothing behind it (#131, #133, #134). That feature is hidden
@@ -8252,7 +8357,7 @@ function setupRoster() {
     });
     // Stamp the held entries so Undo knows their points DID reach the main
     // score. Best-effort by design: an entry that has already rolled off the
-    // 500-cap simply cannot be undone, which is true of every old scan in the
+    // log cap simply cannot be undone, which is true of every old scan in the
     // app and does not affect a single total.
     data.log.forEach(function(e){ if(e.mcId===c.id) e.mcMerged=true; });
     return mcArchive(c, "merged", granted, students);
@@ -11716,7 +11821,7 @@ function setupRoster() {
     if(range==="contest"){
       /* A MINI CONTEST OWNS THIS RANGE WHENEVER ONE IS RUNNING, and it answers
        * from c.totals — the stored copy — not from the log. That is the whole
-       * point of #210: the log is capped at 500 entries and wipeable, so a
+       * point of #210: the log is capped (LOG_CAP) and wipeable, so a
        * contest read out of it decays to a label with no scores behind it.
        *
        * This is why the range button was hidden for a mini contest until now.
@@ -11730,7 +11835,7 @@ function setupRoster() {
         // An activity filter has nothing to read in a stored total — totals
         // are per student, not per activity. Fall back to the log for that
         // one case, which is the same scan-by-scan detail the Contest tab
-        // offers and carries the same 500-entry limit; the unfiltered number
+        // offers and carries the same LOG_CAP limit; the unfiltered number
         // above it stays complete either way.
         if(label){
           var lsum=0;
@@ -12198,7 +12303,7 @@ function setupRoster() {
   //
   // This used to store metadata only — {id, name, startTs, endTs, mode, merged,
   // savedTs} — and every display recomputed the numbers by walking data.log.
-  // data.log is capped at 500 entries, so a saved contest quietly became a
+  // data.log is capped (LOG_CAP entries), so a saved contest quietly became a
   // label with no scores behind it after a few days of ordinary scanning, and
   // its card rendered "No scan data found for this contest". `totals` fixes
   // that: a saved contest now carries its own per-student results and no longer
@@ -12400,7 +12505,7 @@ function setupRoster() {
   var mcExpanded={};   // sid -> bool, standings breakdown toggle
 
   // Scan-by-scan detail for one student. DISPLAY ONLY. This walks data.log and
-  // is therefore allowed to come back short or empty as the 500-entry cap rolls
+  // is therefore allowed to come back short or empty as the log cap rolls
   // past — which is precisely why no TOTAL is ever computed from it. When it is
   // short, renderMiniContest() says so out loud rather than letting a partial
   // list read as complete.
@@ -12439,7 +12544,7 @@ function setupRoster() {
     var detail=mcEntriesFor(c.id, null).filter(function(e){ return !e.undone; }).length;
     if(detail<c.scans){
       note+="  (The totals here are complete. The scan-by-scan lists below only go back "
-        +detail+" of "+c.scans+" scans — older detail has rolled out of the 500-scan history.)";
+        +detail+" of "+c.scans+" scans — older detail has rolled out of the "+LOG_CAP+"-scan history.)";
     }
     $("mcHeldNote").textContent=note;
 
