@@ -3891,6 +3891,13 @@ function setupRoster() {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">🎤 Voice notes</h3>
+      <p class="view-note" style="margin:0 0 10px">Say a note onto the scan you just made instead of typing it. Scan a boy, then press <strong>🎤 Note</strong> next to Undo — or scan the printed <strong>🎤 Voice Note</strong> card from wherever you're standing — and say what he did. Nothing is shown on screen while you speak, so nothing reaches the class; you read and fix your notes afterwards on the History tab.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setVoiceNotes"> Let me speak notes onto scans</label>
+      <p class="view-note" style="margin:8px 0 0">On by default. Turning it off hides the 🎤 buttons and stops the printed card, and the microphone is then never opened at all. No note you have already saved is changed or removed, and typing a note on the History tab keeps working either way. Needs Chrome or Edge and a connection — it uses your browser's own dictation, so there is nothing to install and no account to set up.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">🪙 Shulchani Mode</h3>
       <p class="view-note" style="margin:0 0 10px">Replace numeric points with Talmudic coin denominations (Darkon, Sela, Dinar, Maah, Pundion, Isar, Prutah). Balances are stored as integer Prutot and displayed as the largest-coin breakdown.</p>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setShulchani"> Use Shulchani Mode</label>
@@ -4229,6 +4236,7 @@ function setupRoster() {
     log: [],        // {ts, sid, label, delta}
     sheetUrl: "",
     autoSheet: true,
+    voiceNotes: true,
     // Absence-first: unmarked means present. The mode a new install starts in,
     // and what every existing save backfills to — see attPresenceFirst().
     attMode: "absence",
@@ -6796,6 +6804,7 @@ function setupRoster() {
   /* ---------- SETTINGS ---------- */
   function renderSettings(){
     $("setSound").checked = !data.muted;
+    $("setVoiceNotes").checked = data.voiceNotes!==false;
     $("setShulchani").checked = !!data.shulchaniMode;
     renderShulchaniStatus();
     $("setTapBreakdown").checked = !!data.tapShowsBreakdown;
@@ -6851,6 +6860,13 @@ function setupRoster() {
     var mb=$("muteBtn"); if(mb) mb.textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   });
   $("setTapBreakdown").addEventListener("change", function(){ data.tapShowsBreakdown=this.checked; save(); });
+  // Switching it off mid-recording stops the microphone there and then, rather
+  // than leaving one open that the setting claims can no longer be opened.
+  $("setVoiceNotes").addEventListener("change", function(){
+    data.voiceNotes=this.checked; save();
+    if(!this.checked && typeof vnStop==="function") vnStop();
+    applyVoiceNotes();
+  });
   // Redraws the panel: turning this off has to put the empty grid back straight
   // away, or the setting reads as doing nothing until the next render.
   $("setSeatListFallback").addEventListener("change", function(){ data.seatListFallback=this.checked; save(); renderTapPanel(); });
@@ -9167,6 +9183,13 @@ function setupRoster() {
   }
 
   function startVoiceNote(){
+    // Says why rather than doing nothing. The printed card can be scanned by a
+    // rebbi who has no idea the setting exists, and a card that silently no-ops
+    // reads as a broken card.
+    if(data.voiceNotes===false){
+      flash(false,"Voice notes are switched off","","Turn them on in Settings → Voice notes");
+      beep(false); return;
+    }
     if(vnRec){ vnStop(); return; }   // scanning the card again ends it early
     if(!vnSupported()){
       flash(false,"Voice notes need Chrome or Edge","","You can still type a note in History");
@@ -9263,6 +9286,17 @@ function setupRoster() {
       pushToSheet({type:"note", id:entry.id, note:entry.note||""});
     }
     return true;
+  }
+
+  // Hides the two 🎤 buttons when the setting is off. The printed card is not
+  // hidden by anything — it is a piece of paper — which is why startVoiceNote()
+  // carries its own check rather than relying on the buttons being gone.
+  function applyVoiceNotes(){
+    var on = data.voiceNotes!==false;
+    ["voiceNoteBtn","voiceNoteBtnDash"].forEach(function(id){
+      var b=$(id); if(b) b.style.display = on ? "" : "none";
+    });
+    if(!on) vnSetDot(false);
   }
 
   var vnBtn=$("voiceNoteBtn");     if(vnBtn)  vnBtn.addEventListener("click", startVoiceNote);
@@ -19355,6 +19389,11 @@ nameLine
     if(!data.className) data.className = "Sample Class 1";
     if(typeof data.sheetUrl!=="string") data.sheetUrl="";
     if(typeof data.autoSheet!=="boolean") data.autoSheet=true;
+    // Voice notes default ON for existing saves as well as new ones: the button
+    // is inert until pressed and opens no microphone by itself, and defaulting
+    // it off would recreate exactly the problem it exists to solve — a note
+    // feature nobody can find. A rebbi who wants it gone unticks it in Settings.
+    if(typeof data.voiceNotes!=="boolean") data.voiceNotes=true;
     if(!data.raffle||typeof data.raffle!=="object"||Array.isArray(data.raffle)) data.raffle={mode:"auto",entries:{},winners:[]};
     if(!data.raffle.entries||typeof data.raffle.entries!=="object"||Array.isArray(data.raffle.entries)) data.raffle.entries={};
     if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[];
@@ -20483,6 +20522,7 @@ nameLine
   $("muteBtn").textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   showDate();
   applyHeaderShortcutsVisibility();
+  applyVoiceNotes();
   applyFullWidth();
   applyFabPositions();
   renderHeaderScanContext();
