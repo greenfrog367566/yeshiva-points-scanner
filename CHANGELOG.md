@@ -10,6 +10,20 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ## [Unreleased]
 
+### Changed
+
+- **Corrections you make on the Attendance, Homework, Passes and Tracker tabs are now kept alongside your scans, not just on the tab you made them on.** Until now, scanning a boy recorded his mark in two places, but *fixing* it on the tab afterwards only moved one of them. Nothing you could see was wrong, because the one screen that reads the second copy — the Gradebook — is still switched off. But it meant the two could disagree, and that disagreement was the last thing keeping the Gradebook off.
+
+  **Now every way of marking a boy lands in both.** Press "Mark the rest Present", tap Present/Late/Absent on a row, check or uncheck homework, mark a pass used or give one back, press +1 or undo on the Tracker — each of those is now recorded the same way a scan is. Nothing about how you use those tabs changes; they simply stop being the only place the record lives.
+
+  **Fixing a mark never erases the first one.** If you mark a boy absent and then correct him to present, both are kept, in order, and the correction is the one that counts. A mark you correct on Wednesday for Monday's date is filed under **Monday**, where it belongs, not under the day you happened to fix it.
+
+  **Your existing records were brought across too, once, when you next opened the app.** Every attendance day you have marked, and your whole Tracker history, were copied into the second record. This cannot double-count: a record already there is recognised and left alone, so it is safe even if you restore an old backup. Homework was deliberately left out — it was already agreed that homework starts fresh rather than being carried over — and bathroom passes have no history to carry, so both simply start from today.
+
+  **One deliberate difference to know about.** "Reset all passes (new week)" clears the counter on the Passes tab, as it always has, but it does **not** erase the record of who used a pass. So once the Gradebook is switched on, its passes column will show every pass used over time while the Passes tab shows only the current week. That is on purpose — a new week starting is not the same as last week never happening.
+
+  **And one warning made honest.** "Reset" on the Tracker tab now also clears that activity's history from the Gradebook, because they are the same records. The confirmation box says so plainly instead of mentioning only the tab you are standing on.
+
 ### Added
 
 - **While you're marking something, each boy's card now tells you where he stands on it.** Arm Attendance, Homework Checked, Bathroom Pass, or any activity you track, and a small line appears under every boy's name saying what he already has for that one thing — right on the Dashboard's class list and on the seating chart, on the screen you are already looking at.

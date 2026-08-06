@@ -16,7 +16,9 @@ The current working queue. Read this at the start of a session.
 **Two of 2d's three gates are now clear. The Gradebook is not one of them.**
 Phase 5's grade storage and the Firebase rebuild's step 1 are unblocked — 2d has given step 1 the count value shape it was waiting on.
 
-⚠️ **#185 stays hidden, and 2d landing did not change that.** A tracked *scan* dual-writes both stores; a *correction on one of the old tabs* does not — "Mark all Present" moves the legacy store and leaves `data.trackedData` on its previous value. Harmless while the Gradebook is hidden and nothing reads the mirror; wrong numbers the moment it is un-hidden. **Closing it means mirroring at the legacy setters rather than at scan time**, and that is the next piece of this work, not a cosmetic one.
+**The mirror gap is closed** (proposal in `docs/Mirror_Gap_Proposal.md`, approved 2026-08-05). Corrections made on the four old tabs now reach `data.trackedData` by **transcription at the setter** — the mirror copies the value the legacy store just wrote, with that record's own timestamp and day, and never computes one. A one-shot idempotent backfill in `load2fix()` picks up attendance marked since 2c's cutoff and the whole tracker history; homework is deliberately not back-filled (2c settled that it resets) and passes have no history to back-fill from.
+
+⚠️ **#185 is now unblocked but still hidden — un-hiding is its own PR, by design.** That was decision 5 of the proposal: this change writes to a store holding real records, and un-hiding is a one-line `navHidden` seed. Two verifiable PRs rather than one that changes the data and reveals it in the same breath. **Read `data.mirrorBackfill` on a real save before un-hiding** — it is the receipt saying what came across.
 
 **On the horizon:** the Firebase/Firestore rebuild is fully scoped in `docs/Firebase_Rebuild_Scope.md` — real accounts, Firestore replacing localStorage, three tiers, incremental-write data model, converter tool, 8-step build order. Not started; step 1 (data model design session) hasn't begun.
 
@@ -26,7 +28,11 @@ Its phase mapping was reconciled against the code on 2026-08-04 and it now carri
 
 ## Next, in order
 
-**0. Close the mirror gap, and then un-hide the Gradebook (#185).** The one piece 2d deliberately left. Mirror at the legacy setters — `setAttendance()`, `setHw()`, `setPass()`, the Tracker's own add/undo — so a correction made on an old tab reaches `data.trackedData` the same way a scan does. Then decide, at the same time, whether attendance forward-ports from 2c's cutoff; `data.attConversion` holds the receipt needed to do it safely. **PROPOSE FIRST** — it writes to a store holding real records.
+**0. Un-hide the Gradebook (#185).** The mirror gap is closed, so the blocker is gone. This is a one-shot `navHidden` un-seed with its own flag — the same shape as `miniContestUnhidden` (#210), so a rebbi who switched the tab on by hand is not overruled either way. **Before doing it:** load a real save, read `data.mirrorBackfill`, and check its numbers against the Attendance and Tracker tabs. The receipt exists precisely so this is checked rather than trusted.
+
+Two things to settle in that PR, both deliberately left open here:
+- The Gradebook's pass column reads **all time** while the Passes tab reads **this period** (proposal decision 3, accepted knowingly). Decide whether the column needs a word of explanation on screen.
+- `refreshLiveViews()` does not re-render the Gradebook, because nothing wrote the mirror when it was built. It does now, so the hook should probably learn the `gradebook` case.
 
 **1. Offline resync** — read-only investigation first, then PROPOSE FIRST
 The snapshot recovers after being offline; logged scans do not unless "resync all scans" is pressed. Want it automatic on reconnect and periodically.
@@ -67,6 +73,6 @@ What is left of the old "small standalone features" item once Freeze and the raf
 
 **2d has cleared the Firebase rebuild's step 1** (locked 2026-08-04): the data-model session was waiting on `trackedData`'s count shape so it would not be modelled against 2b's guess and then done twice. It now has a real answer to model.
 
-**The Gradebook tab is STILL hidden (#185) — 2d landing did not un-hide it.** The reason moved rather than went away. Scans now write `data.trackedData`, so the store is no longer frozen at 2c's migration; but corrections made on the four old tabs still don't reach it, so the grid would show a boy as unmarked after his rebbi fixed him on the Attendance tab. That is a mirror-gap fix at the legacy setters, item 0 in "Next, in order" — **not anything cosmetic**, not tidier empty columns, not #119's item tabs. Decide the attendance forward-port from 2c's cutoff at the same time; `data.attConversion` holds the receipt needed to do that safely.
+**The Gradebook tab is hidden (#185) but no longer blocked.** Both reasons it was hidden are now gone: 2d gave `data.trackedData` a writer, and the mirror-gap fix means a correction on one of the old tabs reaches it too, so the grid can no longer contradict the tab a rebbi just fixed. Un-hiding is item 0 in "Next, in order" — a one-shot `navHidden` un-seed, kept as its own PR on purpose (proposal decision 5) so the data change and the reveal are verified separately. The attendance forward-port question is settled: the backfill re-runs 2c's merge idempotently, and `data.mirrorBackfill` is the receipt.
 
 Instances for worksheets and quizzes are #120, deliberately separate from 2c so two migrations stay small.
