@@ -10,6 +10,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ## [Unreleased]
 
+### Added
+
+- **The Gradebook is switched on.** One grid for everything you track: your boys down the side, Attendance / Homework / Bathroom Pass / anything you count across the top, with a total for each. Pick which items to show and over what dates, then print exactly what you see. It sits under **Run → Gradebook**.
+
+  It was built a while ago and deliberately kept switched off, because it had nothing real to read — it could only show what a one-time conversion had put there, so it froze on that day and every day since looked blank. That is fixed: everything you record now reaches it, whether you scanned it or marked it by hand on one of the tabs.
+
+  **Your history is already in it.** Every attendance day you have marked, and your whole Tracker history, were brought across the first time you opened the app after this update. You do not have to do anything, and nothing was moved or removed from the tabs you already use — they work exactly as before.
+
+  **Two things worth knowing when you first open it:**
+
+  - **Homework starts from now, not from before.** Attendance and your counted activities show their full history; Homework begins from this update onwards. Your older homework marks are safe and still on the Homework tab — they simply were not carried into the grid. This was a deliberate decision made earlier, not something lost.
+  - **The Bathroom Pass column counts every pass ever used, with dates, while the Passes tab counts only the current week.** After you press "Reset all passes", the tab starts again from zero and this column keeps the history. That is on purpose — a new week starting is not the same as last week never happening — and hovering the column heading says so.
+
+  If you would rather not see the tab, you can switch it off in Settings, and it will stay off.
+
 ### Changed
 
 - **Corrections you make on the Attendance, Homework, Passes and Tracker tabs are now kept alongside your scans, not just on the tab you made them on.** Until now, scanning a boy recorded his mark in two places, but *fixing* it on the tab afterwards only moved one of them. Nothing you could see was wrong, because the one screen that reads the second copy — the Gradebook — is still switched off. But it meant the two could disagree, and that disagreement was the last thing keeping the Gradebook off.

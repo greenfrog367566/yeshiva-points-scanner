@@ -778,6 +778,32 @@ if(!data.gradebookHiddenSeeded){
   data.navHidden.tabs.gradebook=true;
   data.gradebookHiddenSeeded=true;
 }
+/* ...and un-hide it, because both reasons it was hidden are now gone.
+ *
+ * It was hidden because nothing wrote data.trackedData in normal use, so
+ * the grid froze at 2c's migration and showed every day since as missing.
+ * Phase 2d gave it a writer (#208 + the tile badges), and the mirror-gap
+ * fix (#219) gave it the other half: a correction made on the Attendance,
+ * Homework, Passes or Tracker tab now transcribes into the same store, so
+ * the grid can no longer contradict the tab a rebbi has just fixed. The
+ * one-shot backfill in this same load2fix() carries the history across,
+ * with the receipt in data.mirrorBackfill.
+ *
+ * ONE-SHOT, and its own flag rather than clearing gradebookHiddenSeeded —
+ * the same shape as miniContestUnhidden above, for the same reason. A rebbi
+ * who switched the Gradebook ON himself while it was hidden is not
+ * overruled, and one who hides it again later keeps it hidden through every
+ * future load. Clearing the original flag would re-arm the hide and take
+ * the tab away from him a second time.
+ *
+ * THE RETURN TRIP, which is the half of hide-until-ready that proves the
+ * model: nothing was deleted while it was hidden, so the finished 2b UI
+ * comes back intact with real data behind it rather than being rebuilt.
+ */
+if(!data.gradebookUnhidden){
+  data.navHidden.tabs.gradebook=false;
+  data.gradebookUnhidden=true;
+}
 if(!Array.isArray(data.spinnerItems)) data.spinnerItems=[];
 if(data.spinnerMode==="saved"||data.spinnerMode==="custom"||data.spinnerMode==="class"){} else { data.spinnerMode="class"; }
 if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
@@ -2044,22 +2070,36 @@ function runBuiltInTests() {
   assert("mc→junk entries filtered, real one kept",
     mcJunk.miniContestPast.length===1 && mcJunk.miniContestPast[0].id==="ok");
 
-  // --- Test 14b: Gradebook hidden (not removed) — #185 ---
-  // Same one-shot shape as Contest above. The difference that matters is that
-  // EXISTING saves must be hidden too, not just new installs: the tab is
-  // showing attendance frozen at the 2c migration, so a rebbi already running
-  // it is the one most affected. That is why the flag is not in `defaults`.
-  assert("gb→gradebook tab hidden on a new save", d1.navHidden.tabs.gradebook===true);
-  assert("gb→one-shot flag set", d1.gradebookHiddenSeeded===true);
-  var t14d=runMigration({ version:4, navHidden:{groups:{}, tabs:{trends:true}} });
-  assert("gb→EXISTING save gets the gradebook hidden too", t14d.navHidden.tabs.gradebook===true);
-  assert("gb→other hidden tabs are left alone", t14d.navHidden.tabs.trends===true);
-  assert("gb→flag stamped so it only happens once", t14d.gradebookHiddenSeeded===true);
-  // The whole point of the one-shot: a rebbi who turns it back on keeps it on.
-  var t14e=runMigration({ version:4, gradebookHiddenSeeded:true,
+  // --- Test 14b: Gradebook hidden (#185), then UN-hidden ---
+  // The hide and the un-hide are two one-shots that run in that order, exactly
+  // like Contest above, so a save arriving today ends up VISIBLE. Both reasons
+  // for hiding are gone: 2d gave data.trackedData a writer, and the mirror-gap
+  // fix means a correction on one of the four old tabs reaches it too, so the
+  // grid can no longer contradict the tab a rebbi has just fixed.
+  assert("gbUnhide→gradebook tab visible on a new save", d1.navHidden.tabs.gradebook===false);
+  assert("gb→the original hide flag is still stamped", d1.gradebookHiddenSeeded===true);
+  assert("gbUnhide→one-shot flag stamped", d1.gradebookUnhidden===true);
+  // An existing save that #185 hid gets the tab back exactly once.
+  var t14d=runMigration({ version:4, gradebookHiddenSeeded:true,
+    navHidden:{groups:{}, tabs:{gradebook:true, trends:true}} });
+  assert("gbUnhide→a save hidden by #185 gets the Gradebook back",
+    t14d.navHidden.tabs.gradebook===false);
+  assert("gbUnhide→other hidden tabs are left alone", t14d.navHidden.tabs.trends===true);
+  assert("gbUnhide→flag stamped so it only happens once", t14d.gradebookUnhidden===true);
+  /* THE POINT OF USING A SECOND FLAG rather than clearing the first. Once the
+   * un-hide has run, a rebbi who hides the Gradebook himself keeps it hidden
+   * through every later load. Clearing gradebookHiddenSeeded instead would
+   * re-arm the hide and take the tab away from him a second time. */
+  var t14e=runMigration({ version:4, gradebookHiddenSeeded:true, gradebookUnhidden:true,
+    navHidden:{groups:{}, tabs:{gradebook:true}} });
+  assert("gbUnhide→a deliberate re-hide is NOT undone on the next load",
+    t14e.navHidden.tabs.gradebook===true, "got "+JSON.stringify(t14e.navHidden.tabs));
+  // And the rebbi who switched it ON himself while it was hidden is likewise
+  // not disturbed — he was already seeing it, and still is.
+  var t14e2=runMigration({ version:4, gradebookHiddenSeeded:true,
     navHidden:{groups:{}, tabs:{}} });
-  assert("gb→a deliberate un-hide is NOT re-hidden on the next load",
-    t14e.navHidden.tabs.gradebook===undefined, "got "+JSON.stringify(t14e.navHidden.tabs));
+  assert("gbUnhide→a rebbi who un-hid it by hand still sees it",
+    t14e2.navHidden.tabs.gradebook===false, "got "+JSON.stringify(t14e2.navHidden.tabs));
   // Hiding is a NAV setting only — no tracked-item data may be touched by it.
   var gbSrc={ version:4,
     trackedItems:[{id:"ti-custom", name:"Mine", method:"count", config:{step:2}}],
@@ -2076,11 +2116,11 @@ function runBuiltInTests() {
     "before "+beforeTd+"\nafter  "+JSON.stringify(t14f.trackedData));
   assert("gb→save reaches current DATA_VERSION (5); hiding added no bump",
     t14f.version===DATA_VERSION && DATA_VERSION===5);
-  // Corrupted flag must not strand the tab hidden-forever or re-hide forever.
-  var t14g=runMigration({ version:4, gradebookHiddenSeeded:"yes",
+  // Corrupted flags must not strand the tab in either state.
+  var t14g=runMigration({ version:4, gradebookHiddenSeeded:"yes", gradebookUnhidden:"yes",
     navHidden:{groups:{}, tabs:{}} });
-  assert("gb→a truthy non-boolean flag is honoured as already-seeded",
-    t14g.navHidden.tabs.gradebook===undefined);
+  assert("gb→truthy non-boolean flags are honoured as already-run",
+    t14g.navHidden.tabs.gradebook===undefined, "got "+JSON.stringify(t14g.navHidden.tabs));
 
   // --- Test 14c: Freeze gets NO count item, and stray ones are dropped ---
   // A count item for Freeze is a per-boy tally of how many times he was

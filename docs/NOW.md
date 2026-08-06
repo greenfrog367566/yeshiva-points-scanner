@@ -18,7 +18,9 @@ Phase 5's grade storage and the Firebase rebuild's step 1 are unblocked — 2d h
 
 **The mirror gap is closed** (proposal in `docs/Mirror_Gap_Proposal.md`, approved 2026-08-05). Corrections made on the four old tabs now reach `data.trackedData` by **transcription at the setter** — the mirror copies the value the legacy store just wrote, with that record's own timestamp and day, and never computes one. A one-shot idempotent backfill in `load2fix()` picks up attendance marked since 2c's cutoff and the whole tracker history; homework is deliberately not back-filled (2c settled that it resets) and passes have no history to back-fill from.
 
-⚠️ **#185 is now unblocked but still hidden — un-hiding is its own PR, by design.** That was decision 5 of the proposal: this change writes to a store holding real records, and un-hiding is a one-line `navHidden` seed. Two verifiable PRs rather than one that changes the data and reveals it in the same breath. **Read `data.mirrorBackfill` on a real save before un-hiding** — it is the receipt saying what came across.
+**The Gradebook is un-hidden (#185).** Phase 2 is complete end to end — 2a's store, 2b's grid, 2c's conversion, 2d's mechanic, the mirror gap, and now the tab itself. `gradebookUnhidden` is a second one-shot rather than a clearing of `gradebookHiddenSeeded`, the `miniContestUnhidden` shape, so a rebbi who hides it again keeps it hidden and one who un-hid it by hand is not disturbed either.
+
+⚠️ **One thing to watch now that rebbeim can see it: the Homework column starts empty.** Decision 2 of the proposal excluded `data.hw` from the backfill on the grounds that 2c had settled it resets — so Attendance and count items show full history while Homework begins at the ship date, even though the Homework tab still shows the older marks. That asymmetry is now *visible*, side by side, which it never was while the tab was hidden. **If a rebbi reads it as "the Gradebook is broken", back-filling homework is a one-line addition** to the `load2fix()` backfill and is safe by the same `date@ts` dedup. Left as decided rather than reversed unilaterally.
 
 **On the horizon:** the Firebase/Firestore rebuild is fully scoped in `docs/Firebase_Rebuild_Scope.md` — real accounts, Firestore replacing localStorage, three tiers, incremental-write data model, converter tool, 8-step build order. Not started; step 1 (data model design session) hasn't begun.
 
@@ -28,11 +30,13 @@ Its phase mapping was reconciled against the code on 2026-08-04 and it now carri
 
 ## Next, in order
 
-**0. Un-hide the Gradebook (#185).** The mirror gap is closed, so the blocker is gone. This is a one-shot `navHidden` un-seed with its own flag — the same shape as `miniContestUnhidden` (#210), so a rebbi who switched the tab on by hand is not overruled either way. **Before doing it:** load a real save, read `data.mirrorBackfill`, and check its numbers against the Attendance and Tracker tabs. The receipt exists precisely so this is checked rather than trusted.
+**0. The two-tier data custody question (#218)** — a decision, not a build, and it is now the thing gating the biggest piece of work left.
 
-Two things to settle in that PR, both deliberately left open here:
-- The Gradebook's pass column reads **all time** while the Passes tab reads **this period** (proposal decision 3, accepted knowingly). Decide whether the column needs a word of explanation on screen.
-- `refreshLiveViews()` does not re-render the Gradebook, because nothing wrote the mirror when it was built. It does now, so the hook should probably learn the `gradebook` case.
+It challenges the Firebase rebuild's core premise: every rebbi's student records in one person's Firebase project, for schools with no relationship or agreement. It proposes splitting custody by institutional relationship — full Firebase for schools that sign on, local + the rebbi's **own** Google Drive for everyone else.
+
+Why it is item 0 rather than something to get to: it says the split has to be settled **before** step 1's collection design, because it decides whether the storage seam has one implementation behind it or two — and building that seam twice is the cost of deciding late. It also makes the rule-3-vs-Firebase-SDK conflict much easier, since tier 2 would never load the SDK at all. It carries five open questions of its own.
+
+It also names a piece that could start immediately and independently: **spike the Drive OAuth + `drive.file` write flow** against a throwaway Google Cloud project. No dependency on accounts, Firestore or the data model, and it de-risks the one real unknown — the re-auth UX in classroom conditions, not the API.
 
 **1. Offline resync** — read-only investigation first, then PROPOSE FIRST
 The snapshot recovers after being offline; logged scans do not unless "resync all scans" is pressed. Want it automatic on reconnect and periodically.
@@ -57,7 +61,7 @@ What is left of the old "small standalone features" item once Freeze and the raf
 
 ## Standing rules that keep coming up
 
-- **Hide what isn't ready — don't build a mode around it.** A feature showing wrong numbers or with no path forward gets a one-shot `navHidden` seed in `load2fix()`, hidden but never removed — Gradebook (#185) is the one currently hidden, Contest (#133) is the worked example that came back: hidden when its totals were underivable, un-hidden by the stored-totals rework in #210. **A hide is a loan, not a burial** — the return trip is the half that proves the model. **Lean/Simple mode is not the model.** It was built and merged (#121 / PR #150) and reverted the same day — correct logic, but with one visible tab per group the subtab row rendered empty and the header wasted a second row. Decided 2026-08-05: not coming back. It leaves the onboarding half of #121 unsolved on purpose — a new rebbi still opens on 4 groups and ~18 tabs, 11 of them in Run.
+- **Hide what isn't ready — don't build a mode around it.** A feature showing wrong numbers or with no path forward gets a one-shot `navHidden` seed in `load2fix()`, hidden but never removed. **Nothing is currently hidden**: Contest (#133) came back via #210's stored totals, and the Gradebook (#185) came back once 2d and the mirror-gap fix gave it a writer. **A hide is a loan, not a burial** — the return trip is the half that proves the model, and it has now been walked twice, both times with the feature intact rather than rebuilt. **Lean/Simple mode is not the model.** It was built and merged (#121 / PR #150) and reverted the same day — correct logic, but with one visible tab per group the subtab row rendered empty and the header wasted a second row. Decided 2026-08-05: not coming back. It leaves the onboarding half of #121 unsolved on purpose — a new rebbi still opens on 4 groups and ~18 tabs, 11 of them in Run.
 - **Browser-verify before merging anything that touches data.** A Node stub run is not a browser pass. Serve over http or the harness drift check goes amber.
 - **Additive fields only** where possible: `load2fix()` backfill, no `DATA_VERSION` bump.
 - **PROPOSE FIRST** for anything that reshapes a store holding real records.
