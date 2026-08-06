@@ -410,6 +410,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      "Undo" label instead of a signed +/- number — the reversed amount reading
      as red/negative was confusing, since it isn't really a new deduction. */
   .rd.undo,.ss-delta.undo,.shr-delta.undo{color:var(--muted);font-weight:700;font-size:.85em}
+  /* A tracked row (attendance, homework, a tracker count, a freeze, a pass)
+     awards no points, so instead of a signed number it shows what was actually
+     recorded — "Present", "checked", "+1". Deliberately neither green nor red:
+     nothing moved, and colouring it would put a value judgement on a fact. */
+  .rd.tracked,.ss-delta.tracked,.shr-delta.tracked{color:var(--muted);font-weight:700;font-size:.85em;
+    border:1px solid var(--line);border-radius:999px;padding:1px 8px;white-space:nowrap}
   .recent-empty{color:var(--muted);font-size:.9rem;padding:8px 0}
   .history-item .history-ts{flex:0 0 auto;font-size:.8rem;color:var(--muted);white-space:nowrap}
 
@@ -1970,6 +1976,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <input id="historySearch" class="field" placeholder="Search a student…" style="max-width:260px">
       <select id="historyStudentFilter" class="field" style="width:auto"><option value="">All students</option></select>
       <select id="historyActivityFilter" class="field" style="width:auto"><option value="">All activities</option></select>
+      <select id="historyKindFilter" class="field" style="width:auto" title="Tracked scans — attendance, homework, tracker counts, freezes, passes — award no points. Hide them to see only what moved a score.">
+        <option value="all">Points + tracked</option>
+        <option value="points">Points only</option>
+        <option value="tracked">Tracked only</option>
+      </select>
       <select id="historySort" class="field" style="width:auto">
         <option value="newest">Newest first</option>
         <option value="oldest">Oldest first</option>
@@ -4681,8 +4692,156 @@ function setupRoster() {
   function addLogEntry(entry){
     entry.id = entry.id || newId();
     data.log.unshift(entry);
-    if(data.log.length>500) data.log.length=500;
+    trimLog();
     return entry;
+  }
+  /* TWO BUDGETS, NOT ONE — and this is the thing that makes logging tracked
+   * scans safe at all.
+   *
+   * Tracked entries arrive faster than point scans and in bursts: an active
+   * class can log 30 tracker taps in a morning on top of passes and freezes.
+   * Against a single 500-entry cap those evict point scans, and point scans are
+   * what Trends' activity breakdown, the contest scan detail, "resync all
+   * scans" and the data.earned backfill all read — so a flat cap would have
+   * quietly traded the points history for the ability to note a freeze.
+   *
+   * The exception rule in trackedValueIsNotable() takes attendance from ~25 a
+   * day to a handful and homework to none, so the pressure is far lower than a
+   * naive "log every tracked write" would have been. The split stays anyway:
+   * it costs nothing, and it is what makes the guarantee below unconditional
+   * rather than true-at-current-volumes.
+   *
+   * So the two classes are counted separately. Adding a tracked entry can never
+   * push a point scan out: the points history stays exactly as deep as it was
+   * before tracked scans were logged at all, and the tracked entries get their
+   * own, larger allowance sized to how much faster they arrive.
+   *
+   * This does NOT solve #129 (the log cap in general) — a busy class still
+   * loses old point scans at 500. It only guarantees this feature isn't what
+   * takes them.
+   */
+  var LOG_CAP=500, TRACKED_LOG_CAP=1500;
+  function trimLog(){
+    // Below the smaller cap neither class can be over, so the common case never
+    // walks the array.
+    if(data.log.length<=LOG_CAP) return;
+    var kept=[], nPts=0, nTrk=0;
+    for(var i=0;i<data.log.length;i++){
+      var e=data.log[i];
+      if(isTrackedEntry(e)){ if(nTrk>=TRACKED_LOG_CAP) continue; nTrk++; }
+      else { if(nPts>=LOG_CAP) continue; nPts++; }
+      kept.push(e);
+    }
+    if(kept.length!==data.log.length) data.log=kept;
+  }
+  /* Is this History row a non-point scan — attendance, homework, a tracker
+   * count, a freeze, a pass?
+   *
+   * kind:"tracked" is the flag, and it is deliberately a `kind` rather than a
+   * new boolean: `kind` is already the field every existing reader tests, so
+   * resyncAll's `!e.kind` gate skips these for free (they sync to the Sheet
+   * under their own attendance/hw/tracker types, not as Log rows) and nothing
+   * that sums deltas changes, since delta is 0.
+   *
+   * The pass clause is for saves that already exist. setPass() has written
+   * plain delta:0 rows since long before there was a tracked concept, so a
+   * rebbi's log already holds some; recognising them by label means an old
+   * entry reads the same as a new one instead of keeping an Undo button that
+   * cannot give a pass back.
+   */
+  function isTrackedEntry(e){
+    if(!e) return false;
+    if(e.kind==="tracked") return true;
+    return e.delta===0 && /^Bathroom pass /.test(e.label||"");
+  }
+  /* THE one writer for a non-point scan. Attendance, homework, a tracker count,
+   * a freeze, a pass and an itemless tracked item all reach History through
+   * here, so every row has the same shape and every reader has one test.
+   *
+   * `about` is the day the entry is ABOUT, which is not always the day it was
+   * written — a rebbi fixing Monday's attendance on Wednesday writes a
+   * Wednesday row about Monday. Same distinction the Gradebook mirror makes,
+   * and for the same reason: ts orders the log, `about` says what happened.
+   *
+   * `value` is what was recorded ("Present", "checked", "+1"), shown in place
+   * of the "+0" a points row would carry. `src` links back to the legacy
+   * record so undoing it there can mark this row undone here.
+   */
+  function addTrackedLogEntry(sid, label, opts){
+    opts = opts || {};
+    return addLogEntry({
+      ts: (typeof opts.ts==="number" ? opts.ts : Date.now()),
+      sid: sid,
+      label: label,
+      delta: 0,
+      kind: "tracked",
+      tval: (opts.value===undefined || opts.value===null) ? undefined : String(opts.value),
+      about: opts.about || undefined,
+      src: opts.src || undefined
+    });
+  }
+  /* The History label for a tracked row, taken from the tracked ITEM where
+   * there is one.
+   *
+   * Not cosmetic. The Activity filter beside the tracked filter is built from
+   * activity names plus the labels present in the log, so inventing a wording
+   * here puts TWO entries in that list for one concept — the item's real name,
+   * matching nothing, next to a near-identical invented one matching every row.
+   * Naming the row after the item collapses them, and has the better property
+   * besides: a rebbi who renames his tracked item sees the new name in History.
+   *
+   * Falls back for the cases with no item — freeze, which is itemless by
+   * design (#114), and a store whose item has not been minted yet.
+   */
+  function trackedLogLabel(itemId, fallback){
+    var it = trackedItemById(itemId);
+    return (it && it.name) ? it.name : fallback;
+  }
+  /* IS THIS RECORDED VALUE WORTH A HISTORY ROW, OR IS IT THE ROLL CALL?
+   *
+   * Attendance and homework differ from the other tracked writers in one way
+   * that matters: they are taken for the WHOLE CLASS, every day. A row per boy
+   * per day is 25 lines of "Present" every morning, and nobody has ever wanted
+   * to write a note on "Present". The line a rebbi wants is the exception —
+   * absent, late, no credit — and the note he wants to attach to it is why.
+   *
+   * So only the exceptions are logged, plus any mark that CORRECTS AWAY from
+   * one ("I had him down as absent; he was at the dentist"), which is a real
+   * change of mind about something that mattered.
+   *
+   * THE POLARITY IS NOT DECIDED HERE. It reads GB_FIXED_TONES — the same map
+   * the Gradebook already uses to tint a cell — so "which values are the bad
+   * ones" has exactly one definition in the app. A second list would be a
+   * second opinion, and the two would drift.
+   *
+   * "unchecked" is deliberately absent from that map and so is never notable:
+   * it means "not marked yet", not "no credit", and the app must not read a
+   * judgement into a boy's work that the rebbi never made (see hwMirrorValue).
+   *
+   * WHY THIS LOGS ALMOST NO HOMEWORK TODAY, AND WHY THAT IS RIGHT. ti-homework
+   * is seeded as a four-state item — unchecked / full credit / partial credit /
+   * no credit — but the Homework tab is still the old boolean, so it can only
+   * ever produce "full credit" or "unchecked", neither of which is an
+   * exception. The rule is correct and simply has nothing to match. When #122
+   * converts that tab to the four-state cycle, "partial credit" and "no credit"
+   * become reachable and start landing here with no change needed.
+   *
+   * Both attendance modes come out right without a special case. Absence-first:
+   * the rebbi taps only the exceptions and "Mark the rest Present" fills the
+   * others, which are skipped. Presence-first: he taps 25 boys Present (all
+   * skipped) and "Mark the rest Absent" fills the few who aren't there, which
+   * are logged. Each way round, what lands is who was missing.
+   */
+  function trackedValueIsNotable(v){
+    if(v===undefined || v===null) return false;
+    var t = GB_FIXED_TONES[String(v).trim().toLowerCase()];
+    return t==="warn" || t==="bad";
+  }
+  // What a History row shows in the points column. A tracked row has no points
+  // to show, so it shows what was actually recorded instead of a misleading
+  // "+0" that reads as a scan worth nothing.
+  function logEntryValueText(e){
+    return isTrackedEntry(e) ? (e.tval || "logged") : fmt(e.delta);
   }
   function groups(){ var set={}; data.students.forEach(function(s){ if(s.group) set[s.group]=1; }); return Object.keys(set).sort(); }
   function activeStudents(){ return data.currentClass ? data.students.filter(function(s){ return (s.group||"")===data.currentClass; }) : data.students.slice(); }
@@ -5110,7 +5269,15 @@ function setupRoster() {
     }
     var s=studentById(sid);
     var label=on?"Bathroom pass used":"Bathroom pass returned";
-    addLogEntry({ts:Date.now(), sid:sid, label:label, delta:0});
+    // Was a bare addLogEntry() — the one non-point scan that already reached
+    // History, from before there was a tracked concept. Now it goes through the
+    // same writer as the other five, so it gets the same no-Undo treatment
+    // (undoing this row never gave a pass back) and the same filter.
+    //
+    // History takes the ITEM's name and puts used/given-back in the value; the
+    // Sheet push below deliberately keeps the old sentence, because that column
+    // has no second field to put it in and rebbeim have existing rows in it.
+    addTrackedLogEntry(sid, trackedLogLabel("ti-pass","Bathroom Pass"), {value:on?"used":"given back", about:todayKey()});
     if(data.autoSheet && s) pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:0, total:score(sid)});
     save();
   }
@@ -5191,7 +5358,7 @@ function setupRoster() {
     var now=Date.now();
     Object.keys(data.passes.used||{}).forEach(function(sid){
       var s=studentById(sid);
-      addLogEntry({ts:now, sid:sid, label:"Bathroom pass used (weekly reset)", delta:0});
+      addTrackedLogEntry(sid, trackedLogLabel("ti-pass","Bathroom Pass"), {ts:now, value:"reset (new week)", about:todayKey()});
       if(data.autoSheet && s) pushToSheet({type:"scan", ts:now, name:s.name, group:s.group||"", label:"Bathroom pass used (weekly reset)", delta:0, total:score(sid)});
     });
     /* THE MIRROR IS DELIBERATELY NOT TOUCHED HERE, and this is the one place
@@ -5388,6 +5555,26 @@ function setupRoster() {
      * day[sid].ts, not a fresh one, so the mirror and the record it transcribes
      * carry the same timestamp and dedup against each other. */
     mirrorTracked("ti-attendance", sid, {value:status, ts:day[sid].ts, date:dk});
+    /* AND THE SAME ARGUMENT PUTS THE EXCEPTIONS IN HISTORY. Every attendance
+     * write funnels through here, so one line covers the cycle, "Mark the rest
+     * Present", the scan path and the tab's own buttons — a rebbi can note any
+     * of them without each caller having to know.
+     *
+     * Gated on trackedValueIsNotable(), so a full class marked present does not
+     * bury the tab under 25 rows nobody will read; see there for why the
+     * previous status is tested too. `prev` is captured above, before the
+     * overwrite, which is the only reason the correction case can be seen.
+     *
+     * day[sid].ts, not a fresh one, so the History row, the legacy record and
+     * the mirror all carry the same instant. `about:dk` because a correction
+     * typed on Wednesday for Monday is a Wednesday row about Monday.
+     *
+     * Only reached on a real change — the unchanged guard above returns early —
+     * so re-marking a boy absent does not write a second row.
+     */
+    if(trackedValueIsNotable(status) || trackedValueIsNotable(prev && prev.status)){
+      addTrackedLogEntry(sid, trackedLogLabel("ti-attendance","Attendance"), {ts:day[sid].ts, value:(ATT_LABEL[status]||status), about:dk});
+    }
     save();
     if(attDaySent(dk)){
       // Day was already sent — recognize this as a correction and auto-sync
@@ -5920,6 +6107,10 @@ function setupRoster() {
     if(trkItem) mirrorTracked(trkItem.id, s.id, {
       value:trackedCountStep(trkItem), ts:entry.ts, date:gbDateKeyForTs(entry.ts), src:entry.id
     });
+    // src carries the tracker row's id here too, so trackerUndoOne()/
+    // trackerUndoLast() can mark the History row undone rather than leaving a
+    // row behind for a tap the rebbi has since taken back.
+    addTrackedLogEntry(s.id, (trkItem && trkItem.name) || a.name, {ts:entry.ts, value:"+"+trackedCountStep(trkItem||{}), about:gbDateKeyForTs(entry.ts), src:entry.id});
     save();
     if(data.autoSheet){ pushToSheet({type:"tracker", ts:Date.now(), name:s.name, group:s.group||"", activity:a.name}); }
     return entry;
@@ -5966,6 +6157,7 @@ function setupRoster() {
     if(idx<0) return false;
     var gone=data.trackerLog.splice(idx,1)[0];
     unmirrorTrackerEntry(gone);
+    unlogTrackerEntry(gone);
     save(); return true;
   }
   function trackerUndoOne(entryId){
@@ -5973,7 +6165,25 @@ function setupRoster() {
     for(var i=0;i<data.trackerLog.length;i++){ if(data.trackerLog[i].id===entryId){ gone=data.trackerLog[i]; break; } }
     data.trackerLog=data.trackerLog.filter(function(x){return x.id!==entryId;});
     unmirrorTrackerEntry(gone);
+    unlogTrackerEntry(gone);
     save();
+  }
+  /* Marks the History row for an undone tracker tap `undone` rather than
+   * deleting it — History has never deleted anything, and the greyed row is
+   * itself the record that the tap was taken back. Matched on src, so undoing
+   * a tap from three weeks ago strikes that row and not the newest one.
+   *
+   * No correction row is written to pair with it, unlike a points undo: there
+   * is no number to reverse, so a "-0" correction would be noise standing in
+   * for nothing.
+   */
+  function unlogTrackerEntry(e){
+    if(!e || !e.id) return false;
+    for(var i=0;i<data.log.length;i++){
+      var L=data.log[i];
+      if(L && L.kind==="tracked" && L.src===e.id && !L.undone){ L.undone=true; return true; }
+    }
+    return false;
   }
   /* The second of the two places that removes a mirror entry, and like the
    * pass give-back it mirrors a deletion the rebbi performed himself. A count
@@ -6233,10 +6443,23 @@ function setupRoster() {
   function hwMirrorValue(checked){ return checked ? "full credit" : "unchecked"; }
   function setHw(sid, checked){
     var day=hwDayRecord(hwDate);
+    // Captured before the overwrite, purely so the History gate below can see a
+    // correction away from an exception. Nothing else reads it.
+    var hwPrev=day[sid];
     day[sid]={checked:checked, ts:Date.now()};
     // hwDate, not today: this is the tab's own date picker, and unchecking a
     // boy on last Tuesday's homework is about last Tuesday.
     mirrorTracked("ti-homework", sid, {value:hwMirrorValue(checked), ts:day[sid].ts, date:hwDate});
+    /* Same exception rule as attendance, and today it matches nothing: this
+     * store is still the old boolean, so hwMirrorValue() can only say "full
+     * credit" or "unchecked" and neither is an exception. That is deliberate —
+     * see trackedValueIsNotable(). The gate is written against the four-state
+     * vocabulary the item already carries, so #122 switching this tab to the
+     * real cycle starts producing rows here without touching this line.
+     */
+    if(trackedValueIsNotable(hwMirrorValue(checked)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
+      addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(checked), about:hwDate});
+    }
     save();
     var s=studentById(sid);
     if(data.autoSheet && s){ pushToSheet({type:"hw", ts:Date.now(), date:hwDate, name:s.name, group:s.group||"", checked:checked}); }
@@ -6250,8 +6473,18 @@ function setupRoster() {
   function markHwCheckedToday(sid){
     var today=todayKey();
     var day=hwDayRecord(today);
+    var hwPrev=day[sid];
     day[sid]={checked:true, ts:Date.now()};
     mirrorTracked("ti-homework", sid, {value:hwMirrorValue(true), ts:day[sid].ts, date:today});
+    /* Only ever writes "full credit", so the left half can never fire — the
+     * right half is the live one, catching a boy who was marked no/partial
+     * credit and has since had his folder scanned. This is also what stops the
+     * idempotent double-scan writing two identical rows: the second scan finds
+     * a previous value that is no longer an exception, and records nothing.
+     */
+    if(trackedValueIsNotable(hwMirrorValue(true)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
+      addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(true), about:today});
+    }
     save();
     var s=studentById(sid);
     if(data.autoSheet && s){ pushToSheet({type:"hw", ts:Date.now(), date:today, name:s.name, group:s.group||"", checked:true}); }
@@ -8333,6 +8566,12 @@ function setupRoster() {
         flash(false, s.name, "Not recorded", "“"+item.name+"” has a shape this version can't write");
         beep(false); return false;
       }
+      // The itemless path — a tracked item with no legacy store behind it, so
+      // recordTracked() IS the record. The legacy branch above needs nothing
+      // here: each of those setters writes its own History row, exactly as it
+      // writes its own mirror entry, so logging again would double the row for
+      // one scan.
+      addTrackedLogEntry(s.id, item.name, {ts:entry.ts, value:entry.value, about:gbDateKeyForTs(entry.ts)});
       flash(true, s.name, item.name, String(entry.value));
       beep(true);
     }
@@ -8378,7 +8617,7 @@ function setupRoster() {
     // instead (data.freezes). Always applies, even if the student is already
     // frozen (stacks), same as any other activity scanned twice adds twice.
     if(armedAct && freezeActivity(armedAct)){
-      return applyFreeze(s, armedAct.freezeSeconds);
+      return applyFreeze(s, armedAct.freezeSeconds, armedAct);
     }
     // A running (or paused) freeze blocks POSITIVE points only — a demerit/
     // deduction still lands normally, and the freeze itself is untouched
@@ -8544,7 +8783,11 @@ function setupRoster() {
   // paused) — stacks the extra seconds onto what's left, same as scanning any
   // other activity twice adds twice rather than restarting. Never blocked by
   // an existing freeze; that block only applies to real points (see award()).
-  function applyFreeze(s, seconds){
+  // `act` is the freeze activity this came from, where the caller has it. Only
+  // used to name the History row after what the rebbi actually pressed — a room
+  // can have several freeze activities of different durations, and "❄️ Freeze"
+  // for all of them would collapse them into one line in the Activity filter.
+  function applyFreeze(s, seconds, act){
     var addMs=seconds*1000;
     var f=data.freezes[s.id];
     if(f && (f.paused || f.endTs>Date.now())){
@@ -8552,6 +8795,11 @@ function setupRoster() {
     } else {
       data.freezes[s.id]={endTs:Date.now()+addMs, remainingMs:null, paused:false};
     }
+    // A freeze awards nothing and has never been recoverable after the fact —
+    // once it expires, nothing anywhere records that it happened. This row is
+    // the only durable trace, and it is the one a rebbi most wants to write
+    // "why" against.
+    addTrackedLogEntry(s.id, (act && act.name) || "❄️ Freeze", {value:fmtFreezeDuration(seconds), about:todayKey()});
     save();
     flash("ice", s.name, "❄️ "+fmtFreezeDuration(seconds), "now "+fmtFreezeTime(freezeRemainingMs(s.id))+" frozen");
     beep(true);
@@ -8739,7 +8987,7 @@ function setupRoster() {
           flash(false, ps.name, "Not in selected class", "Switch to “"+data.currentClass+"” or choose “All classes” to freeze this student");
           beep(false); return;
         }
-        applyFreeze(ps, pa.freezeSeconds);
+        applyFreeze(ps, pa.freezeSeconds, pa);
         return;
       }
       // Attendance, same idea: it lives in data.attendance, not in points.
@@ -8783,13 +9031,17 @@ function setupRoster() {
     data.log.slice(0,12).forEach(function(entry,i){
       var s=studentById(entry.sid);
       var isCorrection = entry.kind==="correction";
+      var isTracked = isTrackedEntry(entry);
       var row=el("div","recent-item"+(entry.undone?" undone":"")+(isCorrection?" correction":""));
       var name=el("span","rn",(s?s.name:entry.sid)+"  ");
       var sub=el("span",null,entry.label); sub.style.color="var(--muted)"; sub.style.fontSize=".8rem";
       name.appendChild(sub);
-      var d = isCorrection ? el("span","rd undo","Undo") : el("span","rd "+(entry.delta<0?"neg":"pos"), fmt(entry.delta));
+      var d = isCorrection ? el("span","rd undo","Undo")
+            : isTracked   ? el("span","rd tracked", logEntryValueText(entry))
+            : el("span","rd "+(entry.delta<0?"neg":"pos"), fmt(entry.delta));
       row.appendChild(name); row.appendChild(d);
-      if(!isCorrection && !entry.undone){
+      // No ↩ on a tracked row — there is nothing for it to reverse. See undoEntry().
+      if(!isCorrection && !entry.undone && !isTracked){
         var u=el("button","btn btn-sm","↩");
         u.title="Undo this"; u.addEventListener("click", function(){ undoEntryById(entry.id); });
         row.appendChild(u);
@@ -8881,16 +9133,22 @@ function setupRoster() {
           // Scan entry
           var stu=studentById(entry.sid);
           var stuName=stu?stu.name:entry.sid;
+          var ssTracked=isTrackedEntry(entry);
           entryEl.appendChild(el("span","ss-name",stuName));
-          entryEl.appendChild(entry.kind==="correction" ? el("span","ss-delta undo","Undo") : el("span","ss-delta "+(entry.delta<0?"neg":"pos"),fmt(entry.delta)));
+          entryEl.appendChild(entry.kind==="correction" ? el("span","ss-delta undo","Undo")
+            : ssTracked ? el("span","ss-delta tracked", logEntryValueText(entry))
+            : el("span","ss-delta "+(entry.delta<0?"neg":"pos"),fmt(entry.delta)));
           entryEl.appendChild(el("span","ss-label",entry.label+(entry.contestOnly?" Ⓒ":"")));
-          if(isPrimary && stu){
+          // A tracked scan moves no score, so the "→ 14 pts" running total that
+          // follows a point scan would be reporting a number this scan had
+          // nothing to do with.
+          if(isPrimary && stu && !ssTracked){
             entryEl.appendChild(el("span","ss-arrow","→"));
             entryEl.appendChild(el("span","ss-total",fmtScore(stu.id)));
           }
           if(entry.undone){
             entryEl.appendChild(el("span","ss-label"," (undone)"));
-          } else if(entry.kind!=="correction"){
+          } else if(entry.kind!=="correction" && !ssTracked){
             var uBtn=el("button","ss-undo","↩");
             uBtn.title="Undo this";
             (function(id){ uBtn.addEventListener("click",function(){ undoEntryById(id); }); })(entry.id);
@@ -8938,10 +9196,13 @@ function setupRoster() {
     data.log.slice(0,10).forEach(function(entry,i){
       var s=studentById(entry.sid);
       var isCorrection=entry.kind==="correction";
+      var shTracked=isTrackedEntry(entry);
       var row=el("div","seats-hist-row"+(entry.undone?" undone":""));
       row.appendChild(el("span","shr-name", (s?s.name:entry.sid)+"  ·  "+entry.label));
-      row.appendChild(isCorrection ? el("span","shr-delta undo","Undo") : el("span","shr-delta "+(entry.delta<0?"neg":"pos"), fmt(entry.delta)));
-      if(!isCorrection && !entry.undone){
+      row.appendChild(isCorrection ? el("span","shr-delta undo","Undo")
+        : shTracked ? el("span","shr-delta tracked", logEntryValueText(entry))
+        : el("span","shr-delta "+(entry.delta<0?"neg":"pos"), fmt(entry.delta)));
+      if(!isCorrection && !entry.undone && !shTracked){
         var u=el("button","btn btn-sm","↩"); u.title="Undo this";
         u.addEventListener("click", function(){ undoEntryById(entry.id); });
         row.appendChild(u);
@@ -9102,6 +9363,17 @@ function setupRoster() {
   function undoEntry(idx){
     var entry=data.log[idx];
     if(!entry || entry.undone || entry.kind==="correction") return;
+    /* A TRACKED ROW HAS NO POINTS TO REVERSE, so undoing one here would write a
+     * "-0" correction, change nothing at all, and look for all the world like
+     * the attendance mark had been taken back. The buttons are not drawn for
+     * these rows, but this is the gate that matters — undoEntryById() is
+     * reachable from the printed CTRL:UNDO code and from "Undo last scan".
+     *
+     * The right place to un-mark attendance is the Attendance tab, to un-check
+     * homework the Homework tab, to give a pass back Run → Passes. Each of
+     * those writes its own correcting History row through the same setter.
+     */
+    if(isTrackedEntry(entry)) return;
     entry.undone = true;
     // A contestOnly entry never touched data.scores unless it was later
     // merged in — so only reverse the main score here if this entry actually
@@ -9157,7 +9429,10 @@ function setupRoster() {
     if(vnPopNote()) return "note";
     for(var i=0;i<data.log.length;i++){
       var e=data.log[i];
-      if(!e.undone && e.kind!=="correction"){ undoEntry(i); return "scan"; }
+      // Skips tracked rows for the reason in undoEntry(): "Undo last scan"
+      // after marking a boy absent must step back to the last real point scan,
+      // not stall on a row it cannot reverse.
+      if(!e.undone && e.kind!=="correction" && !isTrackedEntry(e)){ undoEntry(i); return "scan"; }
     }
     return false;
   }
@@ -9300,6 +9575,7 @@ function setupRoster() {
     save();
     renderHistoryTab();
     if(data.autoSheet && (data.sheetUrl||"").trim()){
+      ensureSheetLogRow(entry);
       pushToSheet({type:"note", id:entry.id, note:entry.note});
     }
     beep(true);
@@ -9356,7 +9632,22 @@ function setupRoster() {
     var cur=sel.value;
     sel.innerHTML="";
     var allOpt=el("option",null,"All activities"); allOpt.value=""; sel.appendChild(allOpt);
-    allEarnedLabels().forEach(function(label){
+    /* allEarnedLabels() reads data.earned, which only ever records points — so
+     * on its own this dropdown could not narrow to "Attendance" or "❄️ Freeze"
+     * now that those rows exist. Union it with the labels actually present in
+     * the log, so a rebbi who switches to "Tracked only" can narrow further
+     * instead of scrolling one undifferentiated list.
+     */
+    var seen={}, labels=[];
+    allEarnedLabels().forEach(function(l){ if(!seen[l]){ seen[l]=1; labels.push(l); } });
+    var trkLabels=[];
+    data.log.forEach(function(e){
+      if(!e || !e.label || seen[e.label]) return;
+      seen[e.label]=1;
+      (isTrackedEntry(e) ? trkLabels : labels).push(e.label);
+    });
+    trkLabels.sort();
+    labels.concat(trkLabels).forEach(function(label){
       var o=el("option",null,label); o.value=label; sel.appendChild(o);
     });
     sel.value = cur || "";
@@ -9374,6 +9665,12 @@ function setupRoster() {
     var term=($("historySearch").value||"").trim().toLowerCase();
     var studentFilter=sel.value;
     var activityFilter=$("historyActivityFilter") ? $("historyActivityFilter").value : "";
+    // Remembered per device, because it is a way of reading the tab rather than
+    // a one-off search — a rebbi who only ever wants the points view should not
+    // re-pick it every time he opens History.
+    var kindSel=$("historyKindFilter");
+    if(kindSel){ kindSel.value = data.historyKindFilter || "all"; }
+    var kindFilter = kindSel ? kindSel.value : "all";
     var sortMode=$("historySort") ? $("historySort").value : "newest";
     document.querySelectorAll("#historyViewMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.hvm===historyViewMode); });
     if($("historySort")) $("historySort").style.display = historyViewMode==="ranked" ? "none" : "";
@@ -9387,6 +9684,11 @@ function setupRoster() {
       if(studentFilter && entry.sid!==studentFilter) return false;
       if(term && name.toLowerCase().indexOf(term)<0) return false;
       if(activityFilter && entry.label!==activityFilter) return false;
+      // The tracked filter. A correction is always shown with its points —
+      // it belongs to the scan it reverses, and hiding it would leave the
+      // undone row with nothing explaining it.
+      if(kindFilter==="points"  && isTrackedEntry(entry)) return false;
+      if(kindFilter==="tracked" && !isTrackedEntry(entry)) return false;
       return true;
     });
 
@@ -9410,15 +9712,26 @@ function setupRoster() {
       var name = s ? s.name : entry.sid;
       shown++;
       var isCorrection = entry.kind==="correction";
-      var row=el("div","recent-item history-item"+(entry.undone?" undone":"")+(isCorrection?" correction":""));
+      var isTracked = isTrackedEntry(entry);
+      var row=el("div","recent-item history-item"+(entry.undone?" undone":"")+(isCorrection?" correction":"")+(isTracked?" tracked-item":""));
       var nameEl=el("span","rn", name+"  ");
       var sub=el("span",null, entry.label); sub.style.color="var(--muted)"; sub.style.fontSize=".8rem";
       nameEl.appendChild(sub);
       row.appendChild(nameEl);
       var when=new Date(entry.ts);
-      row.appendChild(el("span","history-ts", when.toLocaleDateString(undefined,{month:"short",day:"numeric"})+"  "+when.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})));
-      row.appendChild(isCorrection ? el("span","rd undo","Undo") : el("span","rd "+(entry.delta<0?"neg":"pos"), fmt(entry.delta)));
-      if(!isCorrection && !entry.undone){
+      // A tracked row carries the day it is ABOUT as well as when it was
+      // written, and says so only when they differ — which is exactly the case
+      // a rebbi needs to see: Monday's attendance fixed on Wednesday.
+      var whenTxt = when.toLocaleDateString(undefined,{month:"short",day:"numeric"})+"  "+when.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+      if(isTracked && entry.about && entry.about!==gbDateKeyForTs(entry.ts)) whenTxt += "  (for "+entry.about+")";
+      row.appendChild(el("span","history-ts", whenTxt));
+      row.appendChild(isCorrection ? el("span","rd undo","Undo")
+        : isTracked ? el("span","rd tracked", logEntryValueText(entry))
+        : el("span","rd "+(entry.delta<0?"neg":"pos"), fmt(entry.delta)));
+      // Undo and Edit are points operations. On a tracked row Undo would
+      // reverse nothing while looking like it un-marked the boy, and Edit would
+      // offer to change a point value that does not exist — see undoEntry().
+      if(!isCorrection && !entry.undone && !isTracked){
         var u=el("button","btn btn-sm","↩");
         u.title="Undo this"; u.addEventListener("click", (function(eid){ return function(){ undoEntryById(eid); }; })(entry.id));
         row.appendChild(u);
@@ -9475,6 +9788,10 @@ function setupRoster() {
     var totals={}; // sid -> sum
     filteredLog.forEach(function(e){
       if(e.undone || e.kind==="correction") return;
+      // "Most given" ranks points. A tracked row carries delta 0, so including
+      // it would add a boy to the ranking at 0 for having been marked present —
+      // a row in a points ranking that is not about points.
+      if(isTrackedEntry(e)) return;
       totals[e.sid] = (totals[e.sid]||0) + (e.delta||0);
     });
     var rows=Object.keys(totals).map(function(sid){
@@ -9493,6 +9810,9 @@ function setupRoster() {
   $("historySearch").addEventListener("input", renderHistoryTab);
   $("historyStudentFilter").addEventListener("change", renderHistoryTab);
   $("historyActivityFilter").addEventListener("change", renderHistoryTab);
+  if($("historyKindFilter")) $("historyKindFilter").addEventListener("change", function(){
+    data.historyKindFilter=this.value; save(); renderHistoryTab();
+  });
   if($("historySort")) $("historySort").addEventListener("change", renderHistoryTab);
   $("historyViewMode").addEventListener("click", function(e){
     var b=e.target.closest("button"); if(!b) return;
@@ -9509,6 +9829,10 @@ function setupRoster() {
     var entry=null;
     for(var i=0;i<data.log.length;i++){ if(data.log[i].id===id){ entry=data.log[i]; break; } }
     if(!entry || entry.undone || entry.kind==="correction") return;
+    // Same reason as undoEntry(): there is no point value on a tracked row to
+    // change. The Edit button isn't drawn for one, but the guard belongs here
+    // rather than only in the renderer.
+    if(isTrackedEntry(entry)) return;
     var raw=prompt("Change points for this scan \u2014 \u201C"+entry.label+" / "+(studentById(entry.sid)||{name:entry.sid}).name+"\u201D  (current: "+(entry.delta>0?"+":"")+entry.delta+")  New value:", String(entry.delta));
     if(raw===null) return; // cancelled
     var newDelta=parseInt(raw,10);
@@ -9551,8 +9875,34 @@ function setupRoster() {
     save();
     renderHistoryTab();
     if(data.autoSheet && (data.sheetUrl||"").trim()){
+      ensureSheetLogRow(entry);
       pushToSheet({type:"note", id:entry.id, note:entry.note});
     }
+  }
+
+  /* A NOTE NEEDS A ROW TO LAND ON.
+   *
+   * The Apps Script's "note" handler finds a scan by its ID in column G of the
+   * Log tab and fills column I. A tracked scan has no row there — those sync
+   * under their own attendance/hw/tracker types, to their own tabs — so without
+   * this the note would save locally, report nothing wrong, and never appear in
+   * the Sheet. Silent, and exactly the kind of half-landing this app has been
+   * bitten by before.
+   *
+   * So the first note on a tracked scan sends the row too. Deliberately not on
+   * the scan itself: an attendance mark writes a row on the Attendance tab
+   * already, and putting all of them in the Log as well would double a rebbi's
+   * Sheet for no gain. A tracked row reaches the Log only once it carries
+   * something the Log is the only place to keep.
+   *
+   * Safe to call twice — appendRow is gated on logHasId(), so a second note on
+   * the same scan updates the note rather than adding a row.
+   */
+  function ensureSheetLogRow(entry){
+    if(!entry || !isTrackedEntry(entry)) return;
+    var s=studentById(entry.sid);
+    pushToSheet({type:"scan", ts:entry.ts, name:s?s.name:entry.sid, group:(s&&s.group)||"",
+      label:entry.label+(entry.tval?" — "+entry.tval:""), delta:0, total:score(entry.sid), id:entry.id});
   }
 
   function renderScanBoard(){
@@ -16641,6 +16991,10 @@ nameLine
     (data.log||[]).forEach(function(e){
       if(!e || e.sid!==sid) return;
       if(e.undone || e.kind==="correction") return; // skip reversed scans and the corrections that reverse them
+      // This is a POINTS breakdown — "Chazan  +12  (4×)". A tracked row would
+      // enter it as "Attendance  0 pts  (12×)", which is not what this panel
+      // answers. The Gradebook is where tracked counts are read.
+      if(isTrackedEntry(e)) return;
       if(cutoff && e.ts<cutoff) return;
       if(e.ts>upper) return;
       var L=e.label||"Points";
@@ -19522,6 +19876,17 @@ nameLine
       });
       data.earnedSeeded=true;
     }
+    /* Which History rows to show: "all" | "points" | "tracked". Purely a view
+     * preference — nothing is stored or destroyed by it, and an unrecognised
+     * value falls back to "all" rather than leaving the tab showing nothing.
+     *
+     * Defaults to "all" on purpose. Tracked scans are being logged for the
+     * first time in this version, and a default that hid them would ship the
+     * feature switched off for everyone who already has a save — the rebbi
+     * would see nothing change and have no reason to look for the filter.
+     * Additive, so no DATA_VERSION bump.
+     */
+    if(["all","points","tracked"].indexOf(data.historyKindFilter)<0) data.historyKindFilter="all";
     if(typeof data.quizDelay!=="number") data.quizDelay=1;
     if(typeof data.gameAuto!=="boolean") data.gameAuto=false;
     if(typeof data.gameAutoSecs!=="number") data.gameAutoSecs=5;
