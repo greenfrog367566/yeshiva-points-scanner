@@ -1888,6 +1888,9 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <div class="armed-bar">
             <span style="font-size:.85rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Now scoring</span>
             <span class="armed-pill" id="armedPill">—</span>
+            <!-- margin-left:auto, not .grow — .grow is only defined inside
+                 .toolbar and .erow, and .armed-bar is neither. -->
+            <button class="btn btn-sm" id="giveAllBtn" type="button" style="margin-left:auto" title="Give the armed activity to every student in the selected class">👥 Give to all</button>
           </div>
           <div class="act-buttons" id="actButtons"></div>
           <div class="custom-row">
@@ -8971,7 +8974,28 @@ function setupRoster() {
   // given to twenty-five boys at once is the same kind of event as a point given
   // by scanning one \u2014 same log entry, same contest tagging, same Sheet push,
   // same undo. A quiet caller owns the re-render itself.
-  function awardWith(s, label, delta, quiet){
+  /* Fourth parameter is an OPTIONS OBJECT, not a flag.
+   *
+   * It was `quiet` alone until #127/#128 needed two more things from it, and
+   * both issues called this out as the point to stop adding positional
+   * parameters rather than the point to add a fifth. A bare `true` is still
+   * accepted and still means {quiet:true}, so nothing that predates this
+   * breaks — and so a call site missed in the sweep degrades to the old
+   * behaviour instead of silently treating `true` as an options object with no
+   * properties set (which would have turned every batch award loud again).
+   *
+   *   quiet     — no flash, no beep, no per-student re-render (the #124 flag)
+   *   batchId   — stamps the entry as one of a batch, so #127's undo can find
+   *               its siblings. Absence means "not part of a batch", which is
+   *               why no load2fix() backfill is needed for it.
+   *   deferSave — skip save(); the CALLER must save() once when its loop ends.
+   *               save() is ~24 ms against a full log, so a 30-boy whole-class
+   *               award pays ~720 ms in saves alone if each student writes.
+   */
+  function awardWith(s, label, delta, opts){
+    if(opts===true) opts={quiet:true};
+    opts=opts||{};
+    var quiet=!!opts.quiet;
     if(!studentInCurrentClass(s)){
       if(!quiet){
         flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student");
@@ -8988,8 +9012,8 @@ function setupRoster() {
     if(tag.scoreToMain) data.scores[s.id]=score(s.id)+delta;
     if(delta>0 && tag.scoreToMain) recordEarn(s.id, label, delta);
     if(tag.scoreToMain && !quiet) maybeSixSeven(s);
-    var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly, mcId:mcId||undefined});
-    save();
+    var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly, mcId:mcId||undefined, batchId:opts.batchId||undefined});
+    if(!opts.deferSave) save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
     if(!quiet){
       flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
@@ -8997,6 +9021,77 @@ function setupRoster() {
       renderRecent(); renderScanBoard(); refreshLiveViews();
     }
     return true;
+  }
+  /* #128 — GIVE THE ARMED ACTIVITY TO THE WHOLE CLASS.
+   *
+   * No new concept: `armed` is already {label, delta} waiting for the next
+   * student, and activeStudents() already scopes to data.currentClass. This is
+   * that activity applied across that list instead of waiting for one scan.
+   *
+   * It reuses awardWith() rather than writing a third award path, so every boy
+   * gets an ordinary logged entry and History, Trends, the contest merge and
+   * Undo all keep working. It stamps one batchId, which is what makes a
+   * mis-aimed whole-class award reversible in one action (#127) — that
+   * dependency is the whole reason #127 lands first.
+   *
+   * TRACKED ITEMS ARE REFUSED, not silently awarded 0. A tracked activity
+   * records a mark, not points, and awardWith() is the points path; letting one
+   * through here would write a class-wide row of zeroes that looked like it had
+   * marked everybody. Marking a whole class present is a real want, but it
+   * belongs to the tab that owns that store, not to the points path.
+   */
+  function giveArmedToAll(){
+    if(!armed || !armed.label){
+      flash(false, "Nothing armed", "", "Pick an activity first, then give it to the class"); beep(false); return;
+    }
+    if(reroutedActivity(armedActivity())){
+      flash(false, "Not for tracked items", armed.label, "This records a mark, not points — mark the class on its own tab"); beep(false); return;
+    }
+    var delta=armed.delta;
+    if(!isFinite(delta) || delta===0){
+      flash(false, "Nothing to give", armed.label, "That activity is worth zero"); beep(false); return;
+    }
+    var list=activeStudents();
+    if(!list.length){
+      flash(false, "No students", "", data.currentClass ? "No students in “"+data.currentClass+"”" : "Add students first"); beep(false); return;
+    }
+    var where=data.currentClass ? "“"+data.currentClass+"”" : "every class";
+    /* The absent question, answered the way the seating-chart picker answers it
+     * (pickSeedElig): today's attendance is a SUGGESTION the rebbi confirms,
+     * never a silent rule. Deciding either way without asking is the one thing
+     * to avoid — giving points to a boy who was not there is immediately
+     * visible to the class, and skipping a boy because of a stale mark is just
+     * as wrong. Only boys actually marked absent count; attMarkedRec() ignores
+     * the auto-filled ones, so a class where nobody took attendance never sees
+     * this question at all.
+     */
+    var dk=todayKey();
+    var absent=list.filter(function(s){ var r=attMarkedRec(dk, s.id); return !!r && r.status==="absent"; });
+    var targets=list;
+    if(absent.length){
+      if(confirm(absent.length+" of the "+list.length+" are marked absent today.\n\n"
+                 +"OK — skip them, give to the other "+(list.length-absent.length)
+                 +"\nCancel — give to all "+list.length+" anyway")){
+        targets=list.filter(function(s){ return absent.indexOf(s)<0; });
+      }
+    }
+    if(!targets.length){ flash(false, "Nobody left", "", "Every student is marked absent today"); beep(false); return; }
+    if(!confirm(fmtDelta(delta)+" — “"+armed.label+"” — to all "+targets.length
+                +" student"+(targets.length===1?"":"s")+" in "+where+"?\n\n"
+                +"This logs one entry per student, exactly like scanning them, so it can be undone in one action from History.")) return;
+    // One id for the whole press, and one save at the end rather than one per
+    // boy — see awardWith()'s deferSave note.
+    var bid=newId(), done=0, skipped=0;
+    targets.forEach(function(s){
+      if(awardWith(s, armed.label, delta, {quiet:true, batchId:bid, deferSave:true})) done++;
+      else skipped++;
+    });
+    save();
+    renderRecent(); renderScanBoard(); renderStandings(); renderTapPanel(); refreshLiveViews();
+    flash(delta>=0, "Whole class", fmtDeltaBare(delta),
+          armed.label+" · "+done+" student"+(done===1?"":"s")
+          +(absent.length && targets.length!==list.length ? "  ("+absent.length+" absent skipped)" : ""));
+    beep(delta>=0);
   }
   // 6-7 celebration (optional — data.sixSeven, Settings tab). Checked after any
   // scan that touched the main score; deliberately re-fires on every landing on
@@ -9517,10 +9612,83 @@ function setupRoster() {
   // index at render time — data.log is unshifted on every new scan, so a
   // captured index goes stale the moment another scan lands, and the button
   // would silently undo the wrong entry.
-  function undoEntryById(id){
+  /* #127 — BATCH UNDO.
+   *
+   * A batch award writes one entry per boy, which is what makes History honest
+   * and Undo work at all (#124). The cost is that reversing a 25-boy batch was
+   * 25 separate clicks, which nobody does — leaving a mis-aimed whole-class
+   * award *harder* to take back than the single scan it replaced.
+   *
+   * The fix is a shared `batchId` stamped at write. Nothing is recomputed and
+   * nothing is grouped by guesswork: entries either carry the same id or they
+   * do not. An entry with no batchId simply is not part of a batch, so absence
+   * is already meaningful and no load2fix() backfill is required — which is
+   * what keeps this additive and out of DATA_VERSION territory.
+   *
+   * Reversal is PER STUDENT, not one summarising correction. Every other undo
+   * in the app appends one correction per entry, and History, the Sheet's Log
+   * tab, Trends and the contest totals all read that shape; a single lump
+   * correction would be a new shape all four would have to learn. #127 leaned
+   * this way on consistency grounds and flagged the log cost as the objection —
+   * an objection #226 removed, since the cap is now 5000 rather than 500.
+   */
+  function batchSiblings(batchId){
+    if(!batchId) return [];
+    return data.log.filter(function(e){
+      return e.batchId===batchId && !e.undone && e.kind!=="correction";
+    });
+  }
+  // Reverses every entry still standing in the batch. Each goes through
+  // undoEntry(), so the contest/mini-contest/score bookkeeping there is applied
+  // once per student exactly as an individual undo would — this loops the
+  // existing path rather than reimplementing it.
+  function undoBatch(batchId){
+    var sibs=batchSiblings(batchId), n=0;
+    // Resolve each by id, not by index: undoEntry() unshifts a correction onto
+    // data.log, so every index captured before the loop is stale by the second
+    // iteration.
+    sibs.forEach(function(e){ if(undoEntryByIdSilent(e.id)) n++; });
+    return n;
+  }
+  function undoEntryByIdSilent(id){
     if(!id) return false;
     for(var i=0;i<data.log.length;i++){ if(data.log[i].id===id){ undoEntry(i); return true; } }
     return false;
+  }
+  /* Every ↩ button in the app routes here — Recent scans, History, the scan
+   * strip, and all four contest views. That is deliberately where the batch
+   * offer lives, so it appears on all of them without each one growing its own
+   * copy.
+   *
+   * It is equally deliberate that undoMostRecentScan() does NOT ask. That path
+   * is reached from the printed CTRL:UNDO code and the "Undo last scan" button
+   * mid-scanning, where a modal would land in the middle of a scanning rhythm
+   * with a scanner in hand. There, one press reverses one scan, as it always
+   * has.
+   *
+   * The click already means "undo this one", so Cancel keeps that promise and
+   * only OK widens it to the whole batch. Undo appends corrections rather than
+   * deleting, but there is no redo, so the wider action is the one that has to
+   * be chosen explicitly.
+   */
+  function undoEntryById(id){
+    if(!id) return false;
+    var entry=null;
+    for(var i=0;i<data.log.length;i++){ if(data.log[i].id===id){ entry=data.log[i]; break; } }
+    if(!entry) return false;
+    var sibs=batchSiblings(entry.batchId);
+    if(sibs.length>1){
+      var s=studentById(entry.sid);
+      var who=s?s.name:"This student";
+      if(confirm(who+"'s "+fmtDeltaBare(entry.delta)+" for “"+entry.label+"” was given to "
+                 +sibs.length+" students at once.\n\nOK — undo all "+sibs.length
+                 +"\nCancel — undo only this one")){
+        var n=undoBatch(entry.batchId);
+        alert("Reversed "+n+" student"+(n===1?"":"s")+" — "+fmtDelta(-entry.delta)+" each for “"+entry.label+"”.");
+        return true;
+      }
+    }
+    return undoEntryByIdSilent(id);
   }
   // "Undo last scan" finds the most recent entry that's a real scan (not a correction)
   // and hasn't already been undone — so repeated clicks step back through real history
@@ -9541,6 +9709,7 @@ function setupRoster() {
     }
     return false;
   }
+  $("giveAllBtn").addEventListener("click", function(){ giveArmedToAll(); });
   $("undoLast").addEventListener("click", function(){ undoMostRecentScan(); });
   // The dashboard and seating-chart undos are the SAME action, not a second
   // implementation — all three call undoMostRecentScan(), so undo behaves
@@ -11416,6 +11585,13 @@ function setupRoster() {
       else { flash(false,"Nothing to undo","",""); beep(false); }
       return;
     }
+    // Whole-class award, scanned. The workflow is scanner-first, so the action
+    // has to be reachable without reaching for the screen. It runs the same
+    // giveArmedToAll() the button does — including both confirms, which is the
+    // point: this is the one printed code that touches every boy at once, so a
+    // mis-scan must not be silently expensive. It is excluded from the printed
+    // Activity Menu by default for the same reason (see printExcluded seeds).
+    if(c==="CTRL:GIVEALL"){ giveArmedToAll(); return; }
     if(c==="CTRL:CUSTOM+" || c==="CTRL:CUSTOM-"){
       var camt2=$("customAmt");
       var n2=Math.abs(parseInt(camt2?camt2.value:1,10)||0);
@@ -17381,10 +17557,15 @@ nameLine
     if(!reason){ alert("A reason is needed — it's what the History entry will say."); return; }
     if(!confirm(fmtDelta(amt)+" "+unit+" to "+sel.length+" student"+(sel.length===1?"":"s")+"\nReason: “"+reason+"”\n\nThis logs one entry per student, exactly like scanning them, so it can be undone from History.")) return;
     var done=0, skipped=[];
+    // One shared id across the whole loop — this is what lets #127's undo find
+    // the siblings later. deferSave means the 25 awards write once at the end
+    // rather than 25 times; save() is ~24 ms against a full log.
+    var bid=newId();
     sel.forEach(function(s){
-      if(awardWith(s, reason, amt, true)) done++;
+      if(awardWith(s, reason, amt, {quiet:true, batchId:bid, deferSave:true})) done++;
       else skipped.push(s.name);
     });
+    save();
     renderStudents(); renderRecent(); renderScanBoard(); renderStandings(); refreshLiveViews();
     var msg=fmtDelta(amt)+" "+unit+" given to "+done+" student"+(done===1?"":"s")+" for “"+reason+"”.";
     // Students outside the class selected in the top-right corner are refused by
@@ -17889,6 +18070,9 @@ nameLine
     items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", tone:"pos", defaultSection:"pos"});
     items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", tone:"neg", defaultSection:"neg"});
     items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan", tone:"trk", defaultSection:"nav"});
+    // Registered so it can be ticked in Choose codes, but seeded excluded — see
+    // the printExcludedGiveAllSeeded note in load2fix().
+    items.push({qrText:"CTRL:GIVEALL", name:"Give to All", sub:"👥 armed activity to the whole class", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:NOTE", name:"🎤 Voice Note", sub:"speak a note onto the last scan", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
@@ -20147,6 +20331,22 @@ nameLine
     if(!data.printExcludedSeeded){
       ["CTRL:PASUKPREV","CTRL:PASUKNEXT","CTRL:CUSTOM-"].forEach(function(k){ data.printExcluded[k]=true; });
       data.printExcludedSeeded=true;
+    }
+    /* CTRL:GIVEALL (#128) gets its OWN one-shot rather than being appended to
+     * the list above, and the difference matters: printExcludedSeeded is
+     * already true in every save that has ever loaded this app, so a code added
+     * to that array would be excluded for nobody who currently uses it — the
+     * exact trap voice notes hit. Same shape as miniContestUnhidden.
+     *
+     * Off by default because it is the one printed code that applies points to
+     * every boy in the class in a single scan. A mis-scan of a student code
+     * costs one point on one boy; a mis-scan of this one costs the whole class,
+     * so it is opt-in from Choose codes rather than something that arrives on
+     * the sheet by surprise.
+     */
+    if(!data.printExcludedGiveAllSeeded){
+      data.printExcluded["CTRL:GIVEALL"]=true;
+      data.printExcludedGiveAllSeeded=true;
     }
     // Print-code sections (Choose codes drag-and-drop): which of the fixed
     // Points/Tracked/Navigation groups a code sits in, and the rebbi's chosen
