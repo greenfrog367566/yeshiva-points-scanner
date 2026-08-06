@@ -54,7 +54,7 @@ The lowest-risk high-visibility change: move existing tabs into the new 5-group 
 
 ## Phase 2 — The Gradebook engine + Tracked Items *(the keystone — everything academic depends on it)*
 
-> **Status (2026-08-05):** 2a SHIPPED (#107) · 2b SHIPPED (#115) · 2c **PARTIAL** — attendance converted only (#138), remainder re-scoped in #122 · 2d **SHIPPED in two parts** — the armed-item scan mechanic (#208) and the tile badges (this PR). Contest is un-hidden again (#210). **The Gradebook is UN-HIDDEN (#185)** — 2d plus the mirror-gap fix cleared both reasons it was hidden, and Phase 2 is now complete end to end. 2d has now cleared the Firebase rebuild's step 1 of its one blocking input, the count value shape.
+> **Status (2026-08-05):** 2a SHIPPED (#107) · 2b SHIPPED (#115) · 2c **PARTIAL** — data done (attendance converted #138; tracker and passes answered by #219; homework resets), tabs blocked on the Gradebook not being able to write, now #227 · 2d **SHIPPED in two parts** — the armed-item scan mechanic (#208) and the tile badges (this PR). Contest is un-hidden again (#210). **The Gradebook is UN-HIDDEN (#185)** — 2d plus the mirror-gap fix cleared both reasons it was hidden, and Phase 2 is now complete end to end. 2d has now cleared the Firebase rebuild's step 1 of its one blocking input, the count value shape.
 
 The biggest single lift, and the one the most other things wait on. Built in testable sub-slices:
 
@@ -66,7 +66,7 @@ The biggest single lift, and the one the most other things wait on. Built in tes
 
 **2b. The Gradebook UI** *(SHIPPED — PR #115)* — the one full interface: auto-populated matrix, toggleable columns, search + date filter, weekly grid view, by-student drill-down, print. Hidden from the nav by #185 until it had something real to read; **un-hidden once 2d and the mirror-gap fix gave it that**, and it came back intact because hiding never deleted anything.
 
-**2c. Retire the old tabs** *(PARTIAL — attendance converted in PR #138; remainder re-scoped to #122)* — Attendance/Homework/Passes/Tracker become presets (Gradebook columns + armable scan items), their old standalone tabs removed once the Gradebook covers them.
+**2c. Retire the old tabs** *(PARTIAL — all four stores settled; removing the tabs is blocked on the Gradebook being read-only, now #227)* — Attendance/Homework/Passes/Tracker become presets (Gradebook columns + armable scan items), their old standalone tabs removed once the Gradebook covers them.
 - ⚠️ **2c inherits the data question 2a set aside.** `data.attendance`, `data.hw`, `data.trackerLog` and `data.passes` still hold every pre-2a record, and nothing has ever carried them into `data.trackedData`. Do **not** plan 2c on the assumption that the old data is already forward-ported. Retiring a tab therefore means deciding, per store, whether to convert its records, export them, or accept the reset — and saying so explicitly before the old tab's read path goes away.
 - **What actually shipped:** only `data.attendance` was converted, one-shot, with the receipt in `data.attConversion`. `data.hw` is agreed to RESET; `data.trackerLog` and `data.passes` are still TBD. **All four old tabs remain registered and visible** — no tab has been retired yet. Retiring the tab UI is the last step of 2c, not the first.
 
