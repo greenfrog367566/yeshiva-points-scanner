@@ -419,6 +419,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .live-dot{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--good);background:var(--good-soft);border:1px solid #b9e0cb;border-radius:999px;padding:2px 9px}
   .live-dot::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--good);animation:pulse 1.6s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  /* Voice-note recording light. Deliberately non-textual and in the header
+     rather than on the scan flash: that flash hides itself after 1.4s, which
+     would take the indicator away while the mic was still live — the opposite
+     of its job. Nothing readable is ever drawn while recording, because the
+     tablet is often class-facing (seating-chart pop-out, Standings) and text
+     on screen would publish the note to the room. */
+  .mic-dot{display:none;width:10px;height:10px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 3px rgba(229,72,77,.25);flex:0 0 auto}
+  .mic-dot.on{display:inline-block;animation:pulse 1.2s ease-in-out infinite}
   @media(prefers-reduced-motion:reduce){.live-dot::before{animation:none}}
   .board-head button{margin-left:auto}
   .board-body{max-height:360px;overflow:auto;padding:4px 0}
@@ -1779,6 +1787,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   </div>
   <nav class="tabs" id="groupTabs"></nav>
   <div class="header-right">
+    <span id="micDot" class="mic-dot" title="Recording a voice note"></span>
     <select id="classSel" class="mute-btn" title="Which class you're working with"></select>
     <span class="header-date" id="todayDate"></span>
     <span class="header-date" id="todayDateHebrew"></span>
@@ -1843,6 +1852,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
            missing, and it stays visible whatever a rebbi has done to the
            panel layout. -->
       <button class="btn btn-sm" id="undoLastDash" title="Reverse the most recent scan">↩ Undo last scan</button>
+      <button class="btn btn-sm" id="voiceNoteBtnDash" title="Speak a note onto the most recent scan">🎤 Note</button>
       <button class="btn btn-sm" id="scanCustomizeBtn" title="Rearrange the sections on this page">⚙ Customize layout</button>
       <button class="btn btn-sm btn-bad" id="scanLayoutReset" style="display:none">↺ Reset layout</button>
     </div>
@@ -1897,7 +1907,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <div class="card pad recent">
             <h3>Recent scans</h3>
             <div id="recentList"></div>
-            <button class="btn btn-sm" id="undoLast" style="margin-top:12px;width:100%">↩ Undo last scan</button>
+            <div style="display:flex;gap:6px;margin-top:12px">
+              <button class="btn btn-sm" id="undoLast" style="flex:1">↩ Undo last scan</button>
+              <button class="btn btn-sm" id="voiceNoteBtn" title="Speak a note onto the most recent scan">🎤 Note</button>
+            </div>
           </div>
         </div>
       </div>
@@ -3878,6 +3891,13 @@ function setupRoster() {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">🎤 Voice notes</h3>
+      <p class="view-note" style="margin:0 0 10px">Say a note onto the scan you just made instead of typing it. Scan a student, then press <strong>🎤 Note</strong> next to Undo — or scan the printed <strong>🎤 Voice Note</strong> card from wherever you're standing — and say what he did. Nothing is shown on screen while you speak, so nothing reaches the class; you read and fix your notes afterwards on the History tab.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setVoiceNotes"> Let me speak notes onto scans</label>
+      <p class="view-note" style="margin:8px 0 0">Off to begin with — tick it to switch it on. While it is off the 🎤 buttons are hidden, the printed card does nothing, and the microphone is never opened at all. No note you have already saved is changed or removed, and typing a note on the History tab keeps working either way. Needs Chrome or Edge and a connection — it uses your browser's own dictation, so there is nothing to install and no account to set up.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">🪙 Shulchani Mode</h3>
       <p class="view-note" style="margin:0 0 10px">Replace numeric points with Talmudic coin denominations (Darkon, Sela, Dinar, Maah, Pundion, Isar, Prutah). Balances are stored as integer Prutot and displayed as the largest-coin breakdown.</p>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setShulchani"> Use Shulchani Mode</label>
@@ -4216,6 +4236,7 @@ function setupRoster() {
     log: [],        // {ts, sid, label, delta}
     sheetUrl: "",
     autoSheet: true,
+    voiceNotes: false,
     // Absence-first: unmarked means present. The mode a new install starts in,
     // and what every existing save backfills to — see attPresenceFirst().
     attMode: "absence",
@@ -6783,6 +6804,7 @@ function setupRoster() {
   /* ---------- SETTINGS ---------- */
   function renderSettings(){
     $("setSound").checked = !data.muted;
+    $("setVoiceNotes").checked = data.voiceNotes!==false;
     $("setShulchani").checked = !!data.shulchaniMode;
     renderShulchaniStatus();
     $("setTapBreakdown").checked = !!data.tapShowsBreakdown;
@@ -6838,6 +6860,13 @@ function setupRoster() {
     var mb=$("muteBtn"); if(mb) mb.textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   });
   $("setTapBreakdown").addEventListener("change", function(){ data.tapShowsBreakdown=this.checked; save(); });
+  // Switching it off mid-recording stops the microphone there and then, rather
+  // than leaving one open that the setting claims can no longer be opened.
+  $("setVoiceNotes").addEventListener("change", function(){
+    data.voiceNotes=this.checked; save();
+    if(!this.checked && typeof vnStop==="function") vnStop();
+    applyVoiceNotes();
+  });
   // Redraws the panel: turning this off has to put the empty grid back straight
   // away, or the setting reads as doing nothing until the next render.
   $("setSeatListFallback").addEventListener("change", function(){ data.seatListFallback=this.checked; save(); renderTapPanel(); });
@@ -9096,10 +9125,15 @@ function setupRoster() {
   // and hasn't already been undone — so repeated clicks step back through real history
   // instead of toggling the same undo back and forth. Shared by the Recent-scans
   // button, the History tab's button, and the CTRL:UNDO printed code.
+  // Returns "note" or "scan" for what it popped, false for nothing. Strings
+  // rather than true because a just-spoken note is now also undoable and the
+  // callers word their message differently; every existing `if(undo...())`
+  // caller still reads correctly, since both strings are truthy.
   function undoMostRecentScan(){
+    if(vnPopNote()) return "note";
     for(var i=0;i<data.log.length;i++){
       var e=data.log[i];
-      if(!e.undone && e.kind!=="correction"){ undoEntry(i); return true; }
+      if(!e.undone && e.kind!=="correction"){ undoEntry(i); return "scan"; }
     }
     return false;
   }
@@ -9108,6 +9142,172 @@ function setupRoster() {
   // implementation — all three call undoMostRecentScan(), so undo behaves
   // identically (and stays correct) wherever it is pressed from.
   $("undoLastDash").addEventListener("click", function(){ undoMostRecentScan(); });
+
+  /* ---------- Voice notes: speak a note onto the scan you just made ----------
+     Built on the browser's own SpeechRecognition, NOT the Gemini proxy. That is
+     a deliberate choice, not a shortcut: it costs nothing, needs no Worker
+     change, and the audio goes to the browser vendor under its own terms rather
+     than arriving on Menchmark's own infrastructure with students' names in it.
+
+     Nothing readable is drawn while recording. The tablet is often class-facing
+     (the seating-chart pop-out, Standings, the raffle wheel), so on-screen text
+     would publish the note to the room the same way saying it over a PA would —
+     fine for praise, unusable for "didn't do his homework." Confirmation is the
+     beep that already fires on every scan; typos get fixed later in History,
+     which is where these notes already live and are already edited.
+
+     Writes entry.note — the SAME field the History "Add note" button has always
+     written, through the same save/Sheet path. No new stored field, so there is
+     no load2fix() backfill and no DATA_VERSION bump: a spoken note and a typed
+     one are indistinguishable once saved. */
+  var vnRec = null;         // live SpeechRecognition while recording, else null
+  var vnTargetId = null;    // log entry this note will attach to
+  var vnCapTimer = null;    // hard cap, so a mic that never hears silence stops anyway
+  var vnLastNote = null;    // {id, prev} — what the next undo should restore
+  var VN_STALE_MS = 120000; // how old a scan may be and still be annotatable
+  var VN_MAX_MS   = 15000;  // longest one note may run
+
+  function vnSupported(){ return !!(window.SpeechRecognition || window.webkitSpeechRecognition); }
+
+  // The scan a note would attach to: newest real, non-undone entry — and only
+  // if it is recent. Without this window, scanning the mic card after lunch
+  // would silently annotate something from an hour ago.
+  function vnTargetEntry(){
+    for(var i=0;i<data.log.length;i++){
+      var e=data.log[i];
+      if(e.undone || e.kind==="correction") continue;
+      if(Date.now()-(e.ts||0) > VN_STALE_MS) return null;
+      return e;
+    }
+    return null;
+  }
+
+  function vnSetDot(on){ var d=$("micDot"); if(d) d.classList.toggle("on", !!on); }
+
+  function vnStop(){
+    if(vnCapTimer){ clearTimeout(vnCapTimer); vnCapTimer=null; }
+    if(vnRec){ try{ vnRec.stop(); }catch(_){ } }
+  }
+
+  function startVoiceNote(){
+    // Says why rather than doing nothing. The printed card can be scanned by a
+    // rebbi who has no idea the setting exists, and a card that silently no-ops
+    // reads as a broken card.
+    if(data.voiceNotes===false){
+      flash(false,"Voice notes are switched off","","Turn them on in Settings → Voice notes");
+      beep(false); return;
+    }
+    if(vnRec){ vnStop(); return; }   // scanning the card again ends it early
+    if(!vnSupported()){
+      flash(false,"Voice notes need Chrome or Edge","","You can still type a note in History");
+      beep(false); return;
+    }
+    var target=vnTargetEntry();
+    if(!target){
+      flash(false,"Nothing to attach a note to","","Scan a student first, then scan this card");
+      beep(false); return;
+    }
+    var Rec = window.SpeechRecognition || window.webkitSpeechRecognition, rec;
+    try{ rec = new Rec(); }
+    catch(e){ flash(false,"Couldn't start the microphone","",""); beep(false); return; }
+
+    rec.lang="en-US";
+    rec.continuous=false;     // the API's own end-of-speech detection ends it on silence
+    rec.interimResults=false; // nothing is displayed, so interim text has no use here
+    rec.maxAlternatives=1;
+
+    var heard="";
+    rec.onresult=function(ev){
+      for(var i=ev.resultIndex;i<ev.results.length;i++){
+        if(ev.results[i].isFinal) heard += ev.results[i][0].transcript;
+      }
+    };
+    rec.onerror=function(ev){
+      var err = ev && ev.error;
+      var msg = err==="not-allowed" ? "Microphone blocked — allow it in the browser"
+              : err==="network"     ? "Voice notes need a connection"
+              : err==="no-speech"   ? "Didn't catch anything"
+              : "Microphone error";
+      flash(false, msg, "", ""); beep(false);
+    };
+    // onend always runs, on success and on error alike, so the dot and the
+    // cap timer are cleared in exactly one place.
+    rec.onend=function(){
+      vnRec=null; vnSetDot(false);
+      if(vnCapTimer){ clearTimeout(vnCapTimer); vnCapTimer=null; }
+      var txt=heard.trim(), id=vnTargetId;
+      vnTargetId=null;
+      if(txt) vnSaveNote(id, txt);
+    };
+
+    vnTargetId=target.id;
+    vnRec=rec;
+    try{ rec.start(); }
+    catch(e){
+      vnRec=null; vnTargetId=null;
+      flash(false,"Couldn't start the microphone","",""); beep(false); return;
+    }
+    vnSetDot(true);
+    beep(true);
+    vnCapTimer=setTimeout(vnStop, VN_MAX_MS);
+  }
+
+  // Same write path as setEntryNote(), so a spoken note is indistinguishable
+  // from a typed one once saved — Sheet push included. A second note appends
+  // rather than overwriting, and the previous value is kept so undo RESTORES
+  // it instead of destroying a note that was typed by hand earlier.
+  function vnSaveNote(id, txt){
+    var entry=null;
+    for(var i=0;i<data.log.length;i++){ if(data.log[i].id===id){ entry=data.log[i]; break; } }
+    if(!entry) return;
+    vnLastNote={id:entry.id, prev:entry.note};
+    entry.note = entry.note ? (entry.note+" "+txt) : txt;
+    save();
+    renderHistoryTab();
+    if(data.autoSheet && (data.sheetUrl||"").trim()){
+      pushToSheet({type:"note", id:entry.id, note:entry.note});
+    }
+    beep(true);
+  }
+
+  // Undo pops the most recent thing, and a note just spoken IS the most recent
+  // thing. Modelled as a STACK, not a mode: scan undo once and the note goes,
+  // scan it again and the scan underneath reverses. A mode would mean one card
+  // silently doing two different things depending on state nobody can see —
+  // speak a note, realise it was the wrong student, scan undo, and watch the points
+  // quietly survive. The stack resolves that case by simply being scanned twice.
+  //
+  // Only reachable in a state the app could not previously be in, so undo is
+  // unchanged for anyone who never records a note.
+  function vnPopNote(){
+    if(!vnLastNote) return false;
+    // Anything scanned since buries the note, so undo must reach the newer
+    // thing first — that is what makes this a stack rather than a special case.
+    if(!data.log.length || data.log[0].id!==vnLastNote.id){ vnLastNote=null; return false; }
+    var entry=data.log[0];
+    if(vnLastNote.prev) entry.note=vnLastNote.prev; else delete entry.note;
+    vnLastNote=null;
+    save();
+    renderHistoryTab();
+    if(data.autoSheet && (data.sheetUrl||"").trim()){
+      pushToSheet({type:"note", id:entry.id, note:entry.note||""});
+    }
+    return true;
+  }
+
+  // Hides the two 🎤 buttons when the setting is off. The printed card is not
+  // hidden by anything — it is a piece of paper — which is why startVoiceNote()
+  // carries its own check rather than relying on the buttons being gone.
+  function applyVoiceNotes(){
+    var on = data.voiceNotes!==false;
+    ["voiceNoteBtn","voiceNoteBtnDash"].forEach(function(id){
+      var b=$(id); if(b) b.style.display = on ? "" : "none";
+    });
+    if(!on) vnSetDot(false);
+  }
+
+  var vnBtn=$("voiceNoteBtn");     if(vnBtn)  vnBtn.addEventListener("click", startVoiceNote);
+  var vnBtnD=$("voiceNoteBtnDash"); if(vnBtnD) vnBtnD.addEventListener("click", startVoiceNote);
 
   /* ---------- History tab: the full scan log, searchable ---------- */
   var historyViewMode = "row"; // "row" (recent, existing sorts) or "ranked" (grouped totals)
@@ -10689,6 +10889,13 @@ function setupRoster() {
     // by the ⚙ button and normally off via "Done"; without this, scanning while
     // still in customize mode would leave the rearrange outlines showing.)
     if(typeof scanCustomizing!=="undefined" && scanCustomizing && typeof setScanCustomize==="function"){ setScanCustomize(false); }
+    // CTRL:NOTE is checked ABOVE the floating panel, unlike the CTRL: codes
+    // below — that panel returns early, so a code reaching it is swallowed and
+    // treated as a student. The whole point of the printed mic card is that it
+    // works from across the room without knowing what is on screen, so it can't
+    // be the one control that silently depends on which panel happens to be
+    // open. (The other CTRL: codes have that gap too; leaving it as found.)
+    if(c==="CTRL:NOTE"){ startVoiceNote(); return; }
     if(fpOpen){ fpScan(c); return; }
     if(/^ACT:/i.test(c)){ armActivityByCode(c); return; }
     // CTRL: codes are universal controls, not tied to any one tab or mode — they
@@ -10698,7 +10905,9 @@ function setupRoster() {
     // Checked here, up front, they now work from anywhere, matching how ACT:
     // codes already did.
     if(c==="CTRL:UNDO"){
-      if(undoMostRecentScan()){ flash(true,"Undo","","Reversed the last scan"); beep(true); }
+      var undone=undoMostRecentScan();
+      if(undone==="note"){ flash(true,"Undo","","Removed the spoken note"); beep(true); }
+      else if(undone){ flash(true,"Undo","","Reversed the last scan"); beep(true); }
       else { flash(false,"Nothing to undo","",""); beep(false); }
       return;
     }
@@ -17171,6 +17380,7 @@ nameLine
     items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", tone:"pos", defaultSection:"pos"});
     items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", tone:"neg", defaultSection:"neg"});
     items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan", tone:"trk", defaultSection:"nav"});
+    items.push({qrText:"CTRL:NOTE", name:"🎤 Voice Note", sub:"speak a note onto the last scan", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
@@ -19199,6 +19409,18 @@ nameLine
     if(!data.className) data.className = "Sample Class 1";
     if(typeof data.sheetUrl!=="string") data.sheetUrl="";
     if(typeof data.autoSheet!=="boolean") data.autoSheet=true;
+    // Deliberately OFF to begin with, and this is a temporary state: the
+    // maintainer wants a day of real classroom use before other rebbeim meet
+    // the feature at all. Turn it on in Settings.
+    //
+    // NOTE for whoever flips this back on: changing the literal is NOT enough
+    // on its own. This line only fills the field when it is ABSENT, so any save
+    // that has already loaded this build carries a stored `false` and would
+    // keep it forever. Switching the default on has to be a one-shot seed with
+    // its own flag — the `miniContestUnhidden` / `gradebookUnhidden` pattern —
+    // so a rebbi who deliberately ticked it on is not overruled either way.
+    // (Moot if this never ships while off: nobody's save has the field yet.)
+    if(typeof data.voiceNotes!=="boolean") data.voiceNotes=false;
     if(!data.raffle||typeof data.raffle!=="object"||Array.isArray(data.raffle)) data.raffle={mode:"auto",entries:{},winners:[]};
     if(!data.raffle.entries||typeof data.raffle.entries!=="object"||Array.isArray(data.raffle.entries)) data.raffle.entries={};
     if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[];
@@ -20353,6 +20575,7 @@ nameLine
   $("muteBtn").textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   showDate();
   applyHeaderShortcutsVisibility();
+  applyVoiceNotes();
   applyFullWidth();
   applyFabPositions();
   renderHeaderScanContext();
