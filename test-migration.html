@@ -137,6 +137,54 @@ function trackedItemById(id){
   return null;
 }
 
+// Mirrored from app.html for the mirror-gap backfill in load2fix(). Same rule
+// as the two above: the copy below calls these, so without them the harness
+// throws instead of testing anything. Kept byte-identical to app.html's (bar
+// indentation) so the sync check compares like with like.
+function trackedItemForActivity(a){ return (a && a.tiId) ? trackedItemById(a.tiId) : null; }
+function newTrackedItemId(){
+  var used={}, n=1;
+  data.trackedItems.forEach(function(it){ if(it && it.id) used[it.id]=1; });
+  while(used["ti-x"+n]) n++;
+  return "ti-x"+n;
+}
+function ensureTrackedItemFor(a){
+  if(!a || a.tracked!==true || freezeActivity(a)) return null;
+  var it = trackedItemForActivity(a);
+  if(it) return it;
+  it = { id:newTrackedItemId(), name:a.name, method:"count", config:{ step:1 } };
+  data.trackedItems.push(it);
+  a.tiId = it.id;
+  return it;
+}
+function trackedCountStep(item){
+  return (item && item.config && typeof item.config.step==="number") ? item.config.step : 1;
+}
+function actById(id){ for(var i=0;i<data.activities.length;i++){ if(data.activities[i].id===id) return data.activities[i]; } return null; }
+function gbDateKeyForTs(ts){ return new Date(ts-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10); }
+function trackedEntryKey(e){
+  return (e && typeof e.date==="string" ? e.date : "")+"@"+(e ? e.ts : "");
+}
+function mirrorTracked(itemId, sid, entry){
+  if(!itemId || !sid || !entry) return {added:false, entry:null};
+  if(typeof entry.ts!=="number" || !isFinite(entry.ts)) return {added:false, entry:null};
+  if(!data.trackedData || typeof data.trackedData!=="object" || Array.isArray(data.trackedData)) data.trackedData={};
+  var per=data.trackedData[itemId];
+  if(!per || typeof per!=="object" || Array.isArray(per)) per=data.trackedData[itemId]={};
+  var list=per[sid];
+  if(!Array.isArray(list)) list=per[sid]=[];
+  var key=trackedEntryKey(entry);
+  for(var i=0;i<list.length;i++){
+    if(list[i] && trackedEntryKey(list[i])===key) return {added:false, entry:list[i]};
+  }
+  var rec={value:entry.value, ts:entry.ts};
+  if(typeof entry.date==="string" && entry.date) rec.date=entry.date;
+  if(typeof entry.src==="string" && entry.src) rec.src=entry.src;
+  list.push(rec);
+  list.sort(function(a,b){ return (a.ts||0)-(b.ts||0); });
+  return {added:true, entry:rec};
+}
+
 function migrateData(d){
   if(!d.version) d.version = 1;
   if(d.version===1){
@@ -1038,6 +1086,69 @@ if(!data.attConversion || typeof data.attConversion!=="object" || Array.isArray(
   });
   data.attConversion=attStats;
 }
+
+/* ---- THE MIRROR BACKFILL: everything the gap already swallowed --------
+ *
+ * Wiring the setters (above, in the app) only fixes what happens NEXT.
+ * There is a window of records already written that the mirror never heard
+ * about, and un-hiding the Gradebook over it would show a grid missing days
+ * a rebbi knows he marked — #185's fault a third time, from a third cause.
+ *
+ * ATTENDANCE: 2c converted it once, up to that moment. Every mark and
+ * correction made on the tab SINCE then is missing. This re-runs the same
+ * merge, which is safe precisely because setAttendance() stamps a fresh ts
+ * on every change: each correction is its own date@ts, and mirrorTracked()
+ * dedups everything 2c or a scan already wrote.
+ *
+ * TRACKER: never converted at all. data.trackerLog is a real dated history
+ * with stable ids, so it transcribes exactly, src and all.
+ *
+ * HOMEWORK IS DELIBERATELY NOT HERE. 2c settled that data.hw RESETS rather
+ * than converts, and back-filling it would reverse that decision through
+ * the back door. Its mirror starts from the day this ships.
+ *
+ * PASSES CANNOT BE HERE. data.passCount is a rolling counter with no
+ * per-use history to read — there is nothing to back-fill from. Its mirror
+ * also starts now.
+ *
+ * IDEMPOTENT, and the flag is belt-and-braces rather than the safety. Every
+ * write goes through mirrorTracked()'s date@ts dedup, so running this twice
+ * on the same save changes nothing. The receipt is the way back: it says
+ * what came across, so the numbers can be checked against the tabs rather
+ * than taken on trust.
+ */
+if(!data.mirrorBackfill || typeof data.mirrorBackfill!=="object" || Array.isArray(data.mirrorBackfill)){
+  var mbStats={ ts:Date.now(), att:0, attSkipped:0, tracker:0, trackerSkipped:0, trackerNoItem:0 };
+  Object.keys(data.attendance).sort().forEach(function(dk){
+    var day=data.attendance[dk];
+    if(!day || typeof day!=="object" || Array.isArray(day)) return;
+    Object.keys(day).forEach(function(sid){
+      // _sentAt and _lastSendCount sit alongside student ids in this very
+      // object. They are day metadata, not students. (Same guard as 2c's.)
+      if(sid.charAt(0)==="_") return;
+      var rec=day[sid];
+      if(!rec || typeof rec!=="object" || Array.isArray(rec) || typeof rec.status!=="string"){ mbStats.attSkipped++; return; }
+      if(typeof rec.ts!=="number" || !isFinite(rec.ts)){ mbStats.attSkipped++; return; }
+      if(mirrorTracked("ti-attendance", sid, {value:rec.status, ts:rec.ts, date:dk}).added) mbStats.att++;
+    });
+  });
+  // Oldest first, so entries land in the order they happened rather than
+  // data.trackerLog's newest-first display order.
+  data.trackerLog.slice().reverse().forEach(function(e){
+    if(!e || !e.sid || !e.actId || typeof e.ts!=="number" || !isFinite(e.ts)){ mbStats.trackerSkipped++; return; }
+    var a=actById(e.actId);
+    // An entry whose activity a rebbi has since deleted has nowhere to go.
+    // Counted rather than dropped silently, so the receipt explains a
+    // Gradebook total that is lower than the Tracker tab's.
+    if(!a){ mbStats.trackerNoItem++; return; }
+    var it=ensureTrackedItemFor(a);
+    if(!it){ mbStats.trackerNoItem++; return; }
+    if(mirrorTracked(it.id, e.sid, {
+      value:trackedCountStep(it), ts:e.ts, date:gbDateKeyForTs(e.ts), src:e.id
+    }).added) mbStats.tracker++;
+  });
+  data.mirrorBackfill=mbStats;
+}
   }
 
 // ===== Drift check =====
@@ -1535,6 +1646,109 @@ function runBuiltInTests() {
   var t9n = runMigration({ version:4, trackedItemsSeeded:true, trackedItems:[],
     activities:[{id:"a1",name:"Chazan",pts:0,tracked:true}] });
   assert("2d→no item to point at means no stamp", !t9n.activities[0].tiId, "got "+t9n.activities[0].tiId);
+
+  // 9o. THE MIRROR BACKFILL. Closes the gap where a correction made on one of
+  //     the four old tabs never reached data.trackedData, which is what kept
+  //     the Gradebook hidden after 2d landed (#185).
+  var MB_DAY = 86400000, mbNow = Date.now();
+  var mbBlob = {
+    version:4, attActivitySeeded:true,
+    students:[{id:"s1",name:"Dovid",group:""},{id:"s2",name:"Yaakov",group:""}],
+    activities:[{id:"a2",name:"Chazan",pts:0,tracked:true}],
+    attendance:{
+      "2026-08-03":{ s1:{status:"absent", ts:mbNow-2*MB_DAY}, s2:{status:"present", ts:mbNow-2*MB_DAY},
+                     _sentAt:mbNow-2*MB_DAY },
+      // No ts — never a real observation, and 2c dropped these too.
+      "2026-08-04":{ s1:{status:"present", ts:null} }
+    },
+    trackerLog:[
+      {id:"tl-2", ts:mbNow-1*MB_DAY, sid:"s1", actId:"a2"},
+      {id:"tl-1", ts:mbNow-5*MB_DAY, sid:"s1", actId:"a2"},
+      {id:"tl-x", ts:mbNow-3*MB_DAY, sid:"s2", actId:"a-deleted"}
+    ]
+  };
+  var t9o = runMigration(mbBlob);
+  var mbAtt = (t9o.trackedData["ti-attendance"]||{});
+  assert("backfill→a marked day reaches the mirror", (mbAtt.s1||[]).length===1, "got "+JSON.stringify(mbAtt.s1));
+  assert("backfill→it lands in the day it is ABOUT, not today",
+    mbAtt.s1 && mbAtt.s1[0].date==="2026-08-03", "got "+(mbAtt.s1&&mbAtt.s1[0].date));
+  assert("backfill→it carries the legacy record's own value",
+    mbAtt.s1 && mbAtt.s1[0].value==="absent", "got "+(mbAtt.s1&&mbAtt.s1[0].value));
+  assert("backfill→an entry with no ts is dropped, not invented",
+    t9o.mirrorBackfill.attSkipped===1, "got "+t9o.mirrorBackfill.attSkipped);
+  assert("backfill→day metadata (_sentAt) is not mistaken for a student",
+    !mbAtt._sentAt, "got "+JSON.stringify(mbAtt._sentAt));
+  var mbItem = t9o.activities.filter(function(a){return a.id==="a2";})[0].tiId;
+  var mbTrk = (t9o.trackedData[mbItem]||{});
+  assert("backfill→tracker history reaches the mirror", (mbTrk.s1||[]).length===2, "got "+JSON.stringify(mbTrk.s1));
+  assert("backfill→tracker entries are ordered oldest first",
+    mbTrk.s1 && mbTrk.s1[0].ts < mbTrk.s1[1].ts, "got "+JSON.stringify(mbTrk.s1));
+  assert("backfill→each carries src back to the row it transcribes",
+    mbTrk.s1 && mbTrk.s1[0].src==="tl-1" && mbTrk.s1[1].src==="tl-2", "got "+JSON.stringify(mbTrk.s1));
+  assert("backfill→an entry whose activity was deleted is counted, not guessed at",
+    t9o.mirrorBackfill.trackerNoItem===1, "got "+t9o.mirrorBackfill.trackerNoItem);
+  /* att is 0 here and that is the RIGHT number, not a miss. On a save that has
+   * never been converted, 2c's own attendance conversion runs first in this
+   * same load2fix() pass and takes those two records; the backfill then finds
+   * them already present and adds nothing. So this asserts something stronger
+   * than "the backfill ran" — it asserts the date@ts dedup holds ACROSS 2c's
+   * converter and this one, which is what stops a double-count on every
+   * existing save in the field. The gap window 2c cannot reach is covered
+   * separately, below, where attConversion already exists. */
+  assert("backfill→leaves a receipt, and does not re-add what 2c just converted",
+    t9o.mirrorBackfill && t9o.mirrorBackfill.att===0 && t9o.mirrorBackfill.tracker===2,
+    "got "+JSON.stringify(t9o.mirrorBackfill));
+  // Homework is deliberately NOT back-filled — 2c settled that data.hw resets,
+  // and a backfill must not reverse that through the back door.
+  var t9p = runMigration({ version:4, hw:{ "2026-08-03":{ s1:{checked:true, ts:mbNow-2*MB_DAY} } },
+    students:[{id:"s1",name:"Dovid",group:""}] });
+  assert("backfill→homework is deliberately NOT back-filled",
+    !t9p.trackedData["ti-homework"] || !(t9p.trackedData["ti-homework"].s1||[]).length,
+    "got "+JSON.stringify(t9p.trackedData["ti-homework"]));
+  // IDEMPOTENCE — the property the whole design rests on. A second run over a
+  // save that already carries the receipt, and a second run with the receipt
+  // wiped (a restored backup), must both change nothing.
+  var t9q = runMigration(JSON.parse(JSON.stringify(t9o)));
+  assert("backfill→re-running changes nothing",
+    (t9q.trackedData["ti-attendance"].s1||[]).length===1 && (t9q.trackedData[mbItem].s1||[]).length===2,
+    "att "+(t9q.trackedData["ti-attendance"].s1||[]).length+" trk "+(t9q.trackedData[mbItem].s1||[]).length);
+  var lostReceipt = JSON.parse(JSON.stringify(t9o));
+  delete lostReceipt.mirrorBackfill;
+  var t9r = runMigration(lostReceipt);
+  assert("backfill→a lost receipt cannot cause duplicates",
+    (t9r.trackedData["ti-attendance"].s1||[]).length===1 && (t9r.trackedData[mbItem].s1||[]).length===2,
+    "att "+(t9r.trackedData["ti-attendance"].s1||[]).length+" trk "+(t9r.trackedData[mbItem].s1||[]).length);
+  /* THE GAP WINDOW ITSELF — the reason this whole thing exists. A save that 2c
+   * already converted (so its converter is gated off and will never look
+   * again), carrying a day the rebbi marked on the Attendance tab afterwards.
+   * Nothing before this change could ever have moved that record into the
+   * mirror, and the Gradebook would have shown the day as missing. */
+  var gapWindow = JSON.parse(JSON.stringify(t9o));
+  delete gapWindow.mirrorBackfill;
+  gapWindow.attendance["2026-08-06"]={ s1:{status:"late", ts:mbNow-6*3600000} };
+  var t9t = runMigration(gapWindow);
+  assert("backfill→reaches a day marked AFTER 2c's conversion",
+    t9t.mirrorBackfill.att===1, "got "+JSON.stringify(t9t.mirrorBackfill));
+  var gapList = t9t.trackedData["ti-attendance"].s1 || [];
+  assert("backfill→that day lands in its own column with its own value",
+    gapList.some(function(e){ return e.date==="2026-08-06" && e.value==="late"; }),
+    "got "+JSON.stringify(gapList));
+  assert("backfill→and it did not disturb what was already converted",
+    gapList.some(function(e){ return e.date==="2026-08-03" && e.value==="absent"; }),
+    "got "+JSON.stringify(gapList));
+
+  // A correction is a NEW date@ts on the same day, so it appends and wins by
+  // being last — the reading the Gradebook takes for a preselect item.
+  var corrected = JSON.parse(JSON.stringify(t9o));
+  delete corrected.mirrorBackfill;
+  corrected.attendance["2026-08-03"].s1={status:"present", ts:mbNow-1*MB_DAY};
+  var t9s = runMigration(corrected);
+  var corrList = t9s.trackedData["ti-attendance"].s1;
+  assert("backfill→a correction appends rather than overwriting", corrList.length===2, "got "+JSON.stringify(corrList));
+  assert("backfill→and the correction is the one that wins",
+    corrList[corrList.length-1].value==="present", "got "+corrList[corrList.length-1].value);
+  assert("backfill→the mark it corrects is still there",
+    corrList[0].value==="absent", "got "+corrList[0].value);
 
   // --- Test 10: THE ONE THAT MATTERS — old stores are untouched ---
   // Phase 2a parks data.attendance / data.hw / data.trackerLog / data.passes.

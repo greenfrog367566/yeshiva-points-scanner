@@ -4113,6 +4113,80 @@ function setupRoster() {
     list.push(entry);
     return entry;
   }
+  // What one tap on a count item is worth. Extracted so the scan path and the
+  // Tracker tab's own +1 cannot disagree about it.
+  function trackedCountStep(item){
+    return (item && item.config && typeof item.config.step==="number") ? item.config.step : 1;
+  }
+
+  /* ---------- The mirror: transcription, not derivation ------------------
+   *
+   * THE GAP THIS CLOSES. A tracked SCAN dual-wrote both stores, but a
+   * CORRECTION made on one of the four old tabs did not — "Mark the rest
+   * Present" moved data.attendance and left data.trackedData on whatever it
+   * last heard from a scan. The Gradebook reads the mirror, so it would have
+   * contradicted the tab a rebbi had just fixed. That is what kept #185 hidden
+   * after 2d landed.
+   *
+   * WHY THIS IS NOT THE RE-DERIVATION 2d FORBIDS. 2d's rule is that the legacy
+   * hook owns the value and the mirror records what it returns, because two
+   * cycles advancing independently is how the two stores drift while both look
+   * right. This is that same rule from the other end: the legacy setter has
+   * just computed the value, and the mirror TRANSCRIBES it — that value, that
+   * record's own timestamp, that record's own day. Nothing here decides what
+   * anything should be. Only one of them cycles.
+   *
+   * DEDUP ON date@ts, the same key 2c's attendance conversion uses, which is
+   * what makes every writer here safe to call twice: a setter that fires
+   * twice, a backfill re-run from a restored backup, or a scan whose legacy
+   * hook and whose own mirror step both land on the same record.
+   *
+   * ORDERED BY ts, because the Gradebook reads the LAST entry in a date group
+   * as the current one. A correction typed today for Monday sorts into
+   * Monday's group after the mark it corrects, which is exactly what makes the
+   * correction win without anything being overwritten.
+   */
+  function trackedEntryKey(e){
+    return (e && typeof e.date==="string" ? e.date : "")+"@"+(e ? e.ts : "");
+  }
+  function mirrorTracked(itemId, sid, entry){
+    if(!itemId || !sid || !entry) return {added:false, entry:null};
+    // No timestamp, no entry. The Gradebook drops entries without a usable ts
+    // when it groups them, so writing one would be storing something nothing
+    // can read — 2c dropped these too, and counted them in its receipt.
+    if(typeof entry.ts!=="number" || !isFinite(entry.ts)) return {added:false, entry:null};
+    if(!data.trackedData || typeof data.trackedData!=="object" || Array.isArray(data.trackedData)) data.trackedData={};
+    var per=data.trackedData[itemId];
+    if(!per || typeof per!=="object" || Array.isArray(per)) per=data.trackedData[itemId]={};
+    var list=per[sid];
+    if(!Array.isArray(list)) list=per[sid]=[];
+    var key=trackedEntryKey(entry);
+    for(var i=0;i<list.length;i++){
+      if(list[i] && trackedEntryKey(list[i])===key) return {added:false, entry:list[i]};
+    }
+    var rec={value:entry.value, ts:entry.ts};
+    // Both optional and both only written when real, so an entry keeps the
+    // exact shape 2a declared unless there is something extra to say.
+    if(typeof entry.date==="string" && entry.date) rec.date=entry.date;
+    // src links a mirror entry back to the legacy row it transcribes, so an
+    // undo on the old tab removes exactly the entry that row produced rather
+    // than guessing at the most recent one.
+    if(typeof entry.src==="string" && entry.src) rec.src=entry.src;
+    list.push(rec);
+    list.sort(function(a,b){ return (a.ts||0)-(b.ts||0); });
+    return {added:true, entry:rec};
+  }
+  // Take one entry back out. Walks NEWEST FIRST, so a caller with nothing more
+  // specific than "undo his last one" gets the right entry by default.
+  function unmirrorTracked(itemId, sid, match){
+    var per=data.trackedData && data.trackedData[itemId];
+    var list=per && per[sid];
+    if(!Array.isArray(list) || !list.length) return false;
+    for(var i=list.length-1;i>=0;i--){
+      if(!match || match(list[i])){ list.splice(i,1); return true; }
+    }
+    return false;
+  }
 
   /* ---------- first-run: route new users through setup wizard ---------- */
   try {
@@ -4993,6 +5067,10 @@ function setupRoster() {
     if(on){
       if(n>=passCap()) return;              // already exhausted — never overshoot the cap
       n++; data.passCount[sid]=n; data.passes.used[sid]=Date.now();
+      // The Gradebook's pass column counts ENTRIES against the cap, so one use
+      // is one entry. Dated today because a pass is used when it is used —
+      // this store has no per-use history to correct after the fact.
+      mirrorTracked("ti-pass", sid, {value:1, ts:data.passes.used[sid], date:todayKey()});
     } else {
       // "Give back" hands ONE pass back rather than clearing the student, so a
       // cap above 1 can be corrected a step at a time. At zero the student is
@@ -5000,6 +5078,14 @@ function setupRoster() {
       n--;
       if(n<=0){ delete data.passCount[sid]; delete data.passes.used[sid]; }
       else data.passCount[sid]=n;
+      /* A give-back REMOVES an entry rather than appending one, because the
+       * Gradebook reads a limited item as `entries.length` against the cap —
+       * appending anything at all would push the count the wrong way. Newest
+       * first, which is the pass he just got back.
+       *
+       * This is one of only two places in the app that takes a mirror entry
+       * away, and both mirror a deletion the rebbi personally performed. */
+      unmirrorTracked("ti-pass", sid, null);
     }
     var s=studentById(sid);
     var label=on?"Bathroom pass used":"Bathroom pass returned";
@@ -5087,6 +5173,20 @@ function setupRoster() {
       addLogEntry({ts:now, sid:sid, label:"Bathroom pass used (weekly reset)", delta:0});
       if(data.autoSheet && s) pushToSheet({type:"scan", ts:now, name:s.name, group:s.group||"", label:"Bathroom pass used (weekly reset)", delta:0, total:score(sid)});
     });
+    /* THE MIRROR IS DELIBERATELY NOT TOUCHED HERE, and this is the one place
+     * in this feature where the two stores are MEANT to disagree.
+     *
+     * data.passCount is a rolling counter for the CURRENT period, and this
+     * button starts a new period. data.trackedData["ti-pass"] is a dated
+     * history of every pass ever used. Clearing the counter is not a statement
+     * that last week's passes never happened, so propagating this would delete
+     * true records — the only history of them the app has — every single week.
+     *
+     * Consequence, accepted knowingly: the Gradebook's pass column reads all
+     * time while this tab reads this period, and after a reset they will show
+     * different numbers. That is the Gradebook being the record and this tab
+     * being the working surface, not a bug to reconcile away.
+     */
     data.passes.used={}; data.passCount={}; data.passes.reset=now; save(); renderPasses();
     passFlash(true,"Passes reset","Everyone has their passes again");
   });
@@ -5257,6 +5357,16 @@ function setupRoster() {
     // Unchanged: leave the record — and its timestamp — completely alone.
     if(prev && prev.status===status && typeof prev.ts==="number") return false;
     day[sid]={status:status, ts:Date.now()};
+    /* THE ONE PLACE ATTENDANCE REACHES THE GRADEBOOK. Every attendance write in
+     * the app funnels through here — the cycle, "Mark the rest Present", the
+     * scan path and the tab's own per-row buttons — so one line here covers all
+     * of them, and a future caller gets it for free rather than having to know.
+     *
+     * `dk`, not today: a rebbi correcting Monday on a Wednesday is writing
+     * about Monday, and the Gradebook groups by the day an entry is ABOUT.
+     * day[sid].ts, not a fresh one, so the mirror and the record it transcribes
+     * carry the same timestamp and dedup against each other. */
+    mirrorTracked("ti-attendance", sid, {value:status, ts:day[sid].ts, date:dk});
     save();
     if(attDaySent(dk)){
       // Day was already sent — recognize this as a correction and auto-sync
@@ -5773,6 +5883,22 @@ function setupRoster() {
     var entry={id:newId(), ts:Date.now(), sid:s.id, actId:a.id};
     data.trackerLog.unshift(entry);
     if(data.trackerLog.length>2000) data.trackerLog.length=2000;
+    /* Covers the Tracker tab's own "+1" as well as an armed scan, because both
+     * come through here — which is the whole point of mirroring at the setter
+     * rather than at the scan.
+     *
+     * ensureTrackedItemFor() rather than trackedItemForActivity(): a rebbi who
+     * has only ever used the Tracker tab has an activity with no item yet, and
+     * refusing to mint one here would mean his taps never reach the Gradebook
+     * at all. Minting on a real user action is exactly what an armed scan
+     * already does; it is only a RENDER that must never create data.
+     *
+     * src carries the legacy row's id so trackerUndoOne() can take back the
+     * one entry it produced instead of guessing at the most recent. */
+    var trkItem=ensureTrackedItemFor(a);
+    if(trkItem) mirrorTracked(trkItem.id, s.id, {
+      value:trackedCountStep(trkItem), ts:entry.ts, date:gbDateKeyForTs(entry.ts), src:entry.id
+    });
     save();
     if(data.autoSheet){ pushToSheet({type:"tracker", ts:Date.now(), name:s.name, group:s.group||"", activity:a.name}); }
     return entry;
@@ -5817,10 +5943,34 @@ function setupRoster() {
       if(e.sid===sid && (!actId||e.actId===actId) && trackerMatchesDay(e)){ idx=i; break; } // list is newest-first
     }
     if(idx<0) return false;
-    data.trackerLog.splice(idx,1); save(); return true;
+    var gone=data.trackerLog.splice(idx,1)[0];
+    unmirrorTrackerEntry(gone);
+    save(); return true;
   }
   function trackerUndoOne(entryId){
-    data.trackerLog=data.trackerLog.filter(function(x){return x.id!==entryId;}); save();
+    var gone=null;
+    for(var i=0;i<data.trackerLog.length;i++){ if(data.trackerLog[i].id===entryId){ gone=data.trackerLog[i]; break; } }
+    data.trackerLog=data.trackerLog.filter(function(x){return x.id!==entryId;});
+    unmirrorTrackerEntry(gone);
+    save();
+  }
+  /* The second of the two places that removes a mirror entry, and like the
+   * pass give-back it mirrors a deletion the rebbi performed himself. A count
+   * item is read as the SUM of its entries, so an undo cannot be expressed by
+   * appending anything — the entry has to go.
+   *
+   * Matched on src, so undoing an entry from three weeks ago removes that one
+   * rather than the most recent. An entry written before src existed has none;
+   * it falls back to the timestamp, which the two were always written from
+   * together.
+   */
+  function unmirrorTrackerEntry(e){
+    if(!e || !e.actId || !e.sid) return false;
+    var a=actById(e.actId); if(!a) return false;
+    var it=trackedItemForActivity(a); if(!it) return false;
+    return unmirrorTracked(it.id, e.sid, function(m){
+      return m && (m.src ? m.src===e.id : m.ts===e.ts);
+    });
   }
   // Wipes every logged entry for one tracked activity (all students, all
   // dates) — a full reset, e.g. starting a new week/unit fresh. Doesn't
@@ -5831,8 +5981,21 @@ function setupRoster() {
     if(!a){ flash(false,"No tracked activity selected","",""); beep(false); return; }
     var count=data.trackerLog.filter(function(e){ return e.actId===actId; }).length;
     if(!count){ alert("\u201C"+a.name+"\u201D has no logged entries to reset."); return; }
-    if(!confirm("Reset \u201C"+a.name+"\u201D? This permanently deletes all "+count+" logged entr"+(count===1?"y":"ies")+" for this activity, for every student. This can't be undone. Continue?")) return;
+    /* THE DIALOG HAD TO CHANGE IN THE SAME BREATH AS THE CODE BELOW IT.
+     *
+     * Until now this wiped one store and the Gradebook could not see it either
+     * way. Now that the two are mirrored, the same button also clears this
+     * activity's Gradebook history \u2014 and a dialog that still said only
+     * "logged entries" would be promising a rebbi something the code then
+     * destroys. That is exactly the fault that cost Contest its totals
+     * (#131/#134), and the reason CLAUDE.md asks the question before shipping
+     * anything destructive.
+     */
+    if(!confirm("Reset \u201C"+a.name+"\u201D? This permanently deletes all "+count+" logged entr"+(count===1?"y":"ies")+" for this activity, for every student \u2014 on this tab AND in the Gradebook, which reads the same records. This can't be undone. Continue?")) return;
     data.trackerLog=data.trackerLog.filter(function(e){ return e.actId!==actId; });
+    // "for every student" means the item's whole map, not a per-student walk.
+    var resetItem=trackedItemForActivity(a);
+    if(resetItem && data.trackedData && data.trackedData[resetItem.id]) data.trackedData[resetItem.id]={};
     save();
     applyTrackerViewMode();
   }
@@ -6027,9 +6190,22 @@ function setupRoster() {
     if(!data.hw[dateKey]) data.hw[dateKey]={};
     return data.hw[dateKey];
   }
+  /* The boolean store's two states, said in the four-state preset's own
+   * vocabulary. checked -> "full credit" is the mapping #208 already used for a
+   * scan, kept identical here so a scan and a tab click produce the same entry.
+   *
+   * UNCHECKED IS "unchecked", NOT "no credit". The legacy boolean only ever
+   * meant "not marked", and "no credit" is a judgement about the boy's work
+   * that the rebbi never made — the preset can express both, the boolean
+   * cannot, and writing the stronger one would put words in his mouth.
+   */
+  function hwMirrorValue(checked){ return checked ? "full credit" : "unchecked"; }
   function setHw(sid, checked){
     var day=hwDayRecord(hwDate);
     day[sid]={checked:checked, ts:Date.now()};
+    // hwDate, not today: this is the tab's own date picker, and unchecking a
+    // boy on last Tuesday's homework is about last Tuesday.
+    mirrorTracked("ti-homework", sid, {value:hwMirrorValue(checked), ts:day[sid].ts, date:hwDate});
     save();
     var s=studentById(sid);
     if(data.autoSheet && s){ pushToSheet({type:"hw", ts:Date.now(), date:hwDate, name:s.name, group:s.group||"", checked:checked}); }
@@ -6044,6 +6220,7 @@ function setupRoster() {
     var today=todayKey();
     var day=hwDayRecord(today);
     day[sid]={checked:true, ts:Date.now()};
+    mirrorTracked("ti-homework", sid, {value:hwMirrorValue(true), ts:day[sid].ts, date:today});
     save();
     var s=studentById(sid);
     if(data.autoSheet && s){ pushToSheet({type:"hw", ts:Date.now(), date:today, name:s.name, group:s.group||"", checked:true}); }
@@ -8080,7 +8257,20 @@ function setupRoster() {
     if(legacy){
       var res=legacy(s) || {ok:false};
       if(!res.ok) return false;
-      recordTracked(item, s.id, Object.prototype.hasOwnProperty.call(res,"value") ? {value:res.value} : {});
+      /* NO MIRROR WRITE HERE ANY MORE — the legacy hook already did it.
+       *
+       * Every one of these hooks goes through a setter that now transcribes
+       * into data.trackedData itself: attendance through setAttendance(),
+       * homework through markHwCheckedToday(), the pass through setPass(), a
+       * count through trackerLogAdd(). Writing again here would append a
+       * SECOND entry for one scan — same record, a few milliseconds later and
+       * with no date on it, so the dedup key would not even catch it.
+       *
+       * This is the redundancy the mirror-gap proposal predicted: once
+       * corrections mirror at the setter, a scan is just another caller of the
+       * setter and needs no path of its own. TRACKED_LEGACY still owns the
+       * value, the flash and the refusal — it simply no longer owns the copy.
+       */
     } else {
       // No legacy store behind it: the tracked item IS the record. An
       // unrecognised method returns null rather than guessing at a value, and
@@ -19712,6 +19902,69 @@ nameLine
         attOut[sid].sort(function(a,b){ return (a.ts||0)-(b.ts||0); });
       });
       data.attConversion=attStats;
+    }
+
+    /* ---- THE MIRROR BACKFILL: everything the gap already swallowed --------
+     *
+     * Wiring the setters (above, in the app) only fixes what happens NEXT.
+     * There is a window of records already written that the mirror never heard
+     * about, and un-hiding the Gradebook over it would show a grid missing days
+     * a rebbi knows he marked — #185's fault a third time, from a third cause.
+     *
+     * ATTENDANCE: 2c converted it once, up to that moment. Every mark and
+     * correction made on the tab SINCE then is missing. This re-runs the same
+     * merge, which is safe precisely because setAttendance() stamps a fresh ts
+     * on every change: each correction is its own date@ts, and mirrorTracked()
+     * dedups everything 2c or a scan already wrote.
+     *
+     * TRACKER: never converted at all. data.trackerLog is a real dated history
+     * with stable ids, so it transcribes exactly, src and all.
+     *
+     * HOMEWORK IS DELIBERATELY NOT HERE. 2c settled that data.hw RESETS rather
+     * than converts, and back-filling it would reverse that decision through
+     * the back door. Its mirror starts from the day this ships.
+     *
+     * PASSES CANNOT BE HERE. data.passCount is a rolling counter with no
+     * per-use history to read — there is nothing to back-fill from. Its mirror
+     * also starts now.
+     *
+     * IDEMPOTENT, and the flag is belt-and-braces rather than the safety. Every
+     * write goes through mirrorTracked()'s date@ts dedup, so running this twice
+     * on the same save changes nothing. The receipt is the way back: it says
+     * what came across, so the numbers can be checked against the tabs rather
+     * than taken on trust.
+     */
+    if(!data.mirrorBackfill || typeof data.mirrorBackfill!=="object" || Array.isArray(data.mirrorBackfill)){
+      var mbStats={ ts:Date.now(), att:0, attSkipped:0, tracker:0, trackerSkipped:0, trackerNoItem:0 };
+      Object.keys(data.attendance).sort().forEach(function(dk){
+        var day=data.attendance[dk];
+        if(!day || typeof day!=="object" || Array.isArray(day)) return;
+        Object.keys(day).forEach(function(sid){
+          // _sentAt and _lastSendCount sit alongside student ids in this very
+          // object. They are day metadata, not students. (Same guard as 2c's.)
+          if(sid.charAt(0)==="_") return;
+          var rec=day[sid];
+          if(!rec || typeof rec!=="object" || Array.isArray(rec) || typeof rec.status!=="string"){ mbStats.attSkipped++; return; }
+          if(typeof rec.ts!=="number" || !isFinite(rec.ts)){ mbStats.attSkipped++; return; }
+          if(mirrorTracked("ti-attendance", sid, {value:rec.status, ts:rec.ts, date:dk}).added) mbStats.att++;
+        });
+      });
+      // Oldest first, so entries land in the order they happened rather than
+      // data.trackerLog's newest-first display order.
+      data.trackerLog.slice().reverse().forEach(function(e){
+        if(!e || !e.sid || !e.actId || typeof e.ts!=="number" || !isFinite(e.ts)){ mbStats.trackerSkipped++; return; }
+        var a=actById(e.actId);
+        // An entry whose activity a rebbi has since deleted has nowhere to go.
+        // Counted rather than dropped silently, so the receipt explains a
+        // Gradebook total that is lower than the Tracker tab's.
+        if(!a){ mbStats.trackerNoItem++; return; }
+        var it=ensureTrackedItemFor(a);
+        if(!it){ mbStats.trackerNoItem++; return; }
+        if(mirrorTracked(it.id, e.sid, {
+          value:trackedCountStep(it), ts:e.ts, date:gbDateKeyForTs(e.ts), src:e.id
+        }).added) mbStats.tracker++;
+      });
+      data.mirrorBackfill=mbStats;
     }
   }
   // Reached from exactly ONE place: the "Reset all scores" button in Settings.
