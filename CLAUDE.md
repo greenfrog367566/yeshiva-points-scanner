@@ -191,14 +191,21 @@ it should be marked ready.
 
 ### Repo settings that enforce this
 
-These are **maintainer-only** settings; Claude cannot change them and should not
-try. If a merge went wrong and one of these is off, say so rather than adding a
+**Claude may change these, but only when asked to — never on its own
+initiative**, and always saying plainly what changed. Branch protection is
+exactly the kind of thing that must never move without the maintainer knowing.
+If a merge went wrong and one of these is off, say so rather than adding a
 convention on top of a missing guard:
 
-- **Require the `validate` status check on `main`.** Settings → Branches → rule
-  for `main` → *Require status checks to pass* → `validate`. **The single
-  highest-value one** — a missing or red check then blocks the button, which is
-  precisely what did not happen with #211.
+- **Require the `validate` status check on `main`.** ✅ **ON since 2026-08-06.**
+  It is a **ruleset** (`main-protection`), not classic branch protection — so it
+  is edited via `gh api repos/:owner/:repo/rulesets/:id`, and Settings → Rules,
+  not Settings → Branches. `bypass_actors` is empty, which means **nobody can
+  merge past a missing check, including the owner** (`current_user_can_bypass`
+  reads `never`). To land something while checks cannot run, the only route is
+  to set `enforcement` to `evaluate` temporarily and back to `active` after.
+  **The single highest-value guard** — a missing or red check now blocks the
+  button, which is precisely what did not happen with #211, or with #226.
 - **Automatically delete head branches.** Settings → General. Also makes
   GitHub retarget correctly in the case above, and stops dead branches piling up
   (`feat/mini-contest` outlived its own PR carrying a content-dead merge commit).
