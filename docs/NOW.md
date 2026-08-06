@@ -8,19 +8,12 @@ The current working queue. Read this at the start of a session.
 
 ## Doing now
 
-**Phase 2d is done — in two parts, both on 2026-08-05.** The mechanic shipped as #208; the tile badges are the second PR. Nothing in #123's scope is left.
+**#127 → #128: batch undo, then whole-class award.** Unblocked 2026-08-06 when #129 raised the log cap. Build them as one piece, **in that order** — #127 is #128's safety net, and shipping the award first would hand rebbeim a way to create 25-entry batches that nothing can reverse.
 
-- **#208** — `award()`'s four name-matched branches collapse into one `recordTrackedScan()`; every tracked activity is armable from every surface; identity is `a.tiId`, not the name. **The count value shape is decided:** an entry stores the step it contributed, so a total is a plain sum and `config.step` is baked in at write, never applied on read. `gbCountOf()`'s guess collapses.
-- **The badges** — while a tracked item is armed, each boy's tile says where he stands on it: `last: 3d` / `never` for counts, `unmarked` (or the marked value) for statuses, `available` / `used` for the pass. They read the **legacy** store, not the mirror, for the reason in the next bullet.
+- **#127 — a batch award cannot be undone as a batch.** Undo does not delete, it *appends* a correction per boy, so reversing a 25-boy award by hand is 25 separate clicks and there is no handle on the batch itself. Needs a batch id stamped at write and an undo that reads it.
+- **#128 — award an activity to the whole class in one action.** **Write once at the end, not per student.** `save()` measures ~24 ms against a full log, so a 30-boy award that calls `awardWith()` per boy pays ~720 ms in saves alone. That was measured while sizing #129 — don't re-derive it.
 
-**Two of 2d's three gates are now clear. The Gradebook is not one of them.**
-Phase 5's grade storage and the Firebase rebuild's step 1 are unblocked — 2d has given step 1 the count value shape it was waiting on.
-
-**The mirror gap is closed** (proposal in `docs/Mirror_Gap_Proposal.md`, approved 2026-08-05). Corrections made on the four old tabs now reach `data.trackedData` by **transcription at the setter** — the mirror copies the value the legacy store just wrote, with that record's own timestamp and day, and never computes one. A one-shot idempotent backfill in `load2fix()` picks up attendance marked since 2c's cutoff and the whole tracker history; homework is deliberately not back-filled (2c settled that it resets) and passes have no history to back-fill from.
-
-**The Gradebook is un-hidden (#185).** Phase 2 is complete end to end — 2a's store, 2b's grid, 2c's conversion, 2d's mechanic, the mirror gap, and now the tab itself. `gradebookUnhidden` is a second one-shot rather than a clearing of `gradebookHiddenSeeded`, the `miniContestUnhidden` shape, so a rebbi who hides it again keeps it hidden and one who un-hid it by hand is not disturbed either.
-
-**The Homework column starts at the ship date, and that is a non-issue — write this down before someone re-litigates it in November.** Decision 2 excluded `data.hw` from the backfill, so Attendance and count items carry their history and Homework does not. That was flagged as a possible "looks broken" moment, and it isn't, for a reason that is not visible in the code: **the beta cohort onboarded on v0.9.0 (2026-07-18), in the summer, so no rebbi has any homework history for the backfill to have missed.** The column fills from the first day of the school year, which is also the first day anyone marks homework. Nothing to fix.
+**Why #129 was the blocker, now that it is gone:** undo locates its target by scanning `data.log`, so at the old 500-entry cap a batch's own entries could roll off the end *before* the rebbi undid them, leaving nothing to reverse. The cap is now 5000, with tracked scans on their own separate 1500 budget so they can never evict a point scan (#225 + #226, both merged 2026-08-06).
 
 ⚠️ **Voice notes shipped dark (#222, merged 2026-08-06) — switching them on for everyone now REQUIRES a one-shot seed.** Speak a note onto the scan you just made; it writes `entry.note`, the same field History's "Add note" has always used, so nothing new is stored but the setting itself. `data.voiceNotes` merged defaulting **false**, on purpose, so there was a classroom day before other rebbeim met it.
 
@@ -42,12 +35,16 @@ Why it is item 0 rather than something to get to: it says the split has to be se
 
 It also names a piece that could start immediately and independently: **spike the Drive OAuth + `drive.file` write flow** against a throwaway Google Cloud project. No dependency on accounts, Firestore or the data model, and it de-risks the one real unknown — the re-auth UX in classroom conditions, not the API.
 
-**1. Offline resync** — read-only investigation first, then PROPOSE FIRST
+**1. Finish Phase 2c: give the Gradebook a writer, then drop the four old tabs (#227)** — the biggest build item left, and it was missing from this list entirely until 2026-08-06.
+
+Every `gb*` function only reads. Until the grid can edit a cell, the Attendance / Homework / Passes / Tracker tabs cannot go, because their setters are the only thing feeding the mirror — see the Phase 2 status section for what each store already did. **Give it its own session**: it needs a cell editor plus setters, and it touches the transcription seam, so it is the riskiest thing currently on the board. When a tab does go, delete its `TRACKED_LEGACY` row, its badge-table row **and** that store's `mirrorTracked()` call together.
+
+**2. Offline resync** — read-only investigation first, then PROPOSE FIRST
 The snapshot recovers after being offline; logged scans do not unless "resync all scans" is pressed. Want it automatic on reconnect and periodically.
 **Retry safety differs per tab.** The Log dedups by ID so re-pushing is safe. The Attendance Log has no dedup, so a retry duplicates rows. Confirm per tab before proposing.
 **In the Firestore era this asymmetry dissolves** — see the rebuild doc's open question 3 (deterministic client-generated write ids make every retry idempotent). That does not answer the question here; the localStorage/Apps Script investigation is still owed as written.
 
-**2. Warning flash, and the sticky raffle removal**
+**3. Warning flash, and the sticky raffle removal**
 What is left of the old "small standalone features" item once Freeze and the raffle note shipped. **Not the behavior ladder** — no marks store, no rung counting, no reset periods. Those stay in `docs/Behavior_Ladder_Spec.md`.
 - Warning flash: reuses the minus flash, **records nothing**. A recorded warning implies a count, a count implies rungs, and rungs are the ladder. Verified not started — nothing in `app.html` matches.
 - The raffle removal *note* shipped (`renderRaffleAdjustNote()`, "N students removed … from past wins"). What did **not** ship is the question it was filed with: report how a removal could clear itself after the next draw rather than staying sticky. Still open, still a report before a change.
@@ -70,7 +67,7 @@ What is left of the old "small standalone features" item once Freeze and the raf
 - **Additive fields only** where possible: `load2fix()` backfill, no `DATA_VERSION` bump.
 - **PROPOSE FIRST** for anything that reshapes a store holding real records.
 - **Never nest new fields into a parked store** — it breaks 2a's byte-identity guarantee (lesson from #124).
-- **Ask what happens when the data is gone or wrong** before shipping. Contest's model was sound and it still lost data, because totals were only derivable from a wipeable 500-entry log.
+- **Ask what happens when the data is gone or wrong** before shipping. Contest's model was sound and it still lost data, because totals were only derivable from a capped, wipeable log. **Raising that cap to 5000 (#226) did not retire this rule** — the log is still capped and still wiped by "Reset all scores", so anything whose totals are only *derivable* from it is still built on sand. Store the total.
 - Every branch that edits `CHANGELOG.md` will conflict with every other one. Keep both sets of entries; it is never a real conflict.
 
 ---
@@ -81,6 +78,8 @@ What is left of the old "small standalone features" item once Freeze and the raf
 
 **2d has cleared the Firebase rebuild's step 1** (locked 2026-08-04): the data-model session was waiting on `trackedData`'s count shape so it would not be modelled against 2b's guess and then done twice. It now has a real answer to model.
 
-**The Gradebook tab is hidden (#185) but no longer blocked.** Both reasons it was hidden are now gone: 2d gave `data.trackedData` a writer, and the mirror-gap fix means a correction on one of the old tabs reaches it too, so the grid can no longer contradict the tab a rebbi just fixed. Un-hiding is item 0 in "Next, in order" — a one-shot `navHidden` un-seed, kept as its own PR on purpose (proposal decision 5) so the data change and the reveal are verified separately. The attendance forward-port question is settled: the backfill re-runs 2c's merge idempotently, and `data.mirrorBackfill` is the receipt.
+**The Gradebook is UN-HIDDEN (#185, shipped 2026-08-05)** — this section said "hidden" for a day after it stopped being true, so read the date before trusting it. Both reasons it was hidden are gone: 2d gave `data.trackedData` a writer, and the mirror-gap fix means a correction on one of the old tabs reaches it too, so the grid can no longer contradict the tab a rebbi just fixed. The attendance forward-port question is settled: the backfill re-runs 2c's merge idempotently, and `data.mirrorBackfill` is the receipt.
+
+**The Homework column starts at the ship date, and that is a non-issue — kept here so nobody re-litigates it in November.** Mirror-gap decision 2 excluded `data.hw` from the backfill, so Attendance and count items carry their history and Homework does not. That was flagged as a possible "looks broken" moment, and it isn't, for a reason not visible in the code: **the beta cohort onboarded on v0.9.0 (2026-07-18), in the summer, so no rebbi has any homework history for the backfill to have missed.** The column fills from the first day of the school year, which is also the first day anyone marks homework. Nothing to fix.
 
 Instances for worksheets and quizzes are #120, deliberately separate from 2c so two migrations stay small.

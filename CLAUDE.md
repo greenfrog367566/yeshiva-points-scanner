@@ -311,9 +311,9 @@ Every teacher's roster, scores, and history live in their browser's `localStorag
 - Does any dialog promise something the code then destroys?
 - Is there a way back — a log entry, a stored previous value, a backup path?
 
-Learned from Contest (#131, #133, #134). The data model was sound: scans carried a `contestId`, merge stamped entries individually, undo read those flags correctly. But contest totals were only ever computed by walking `data.log`, which is capped at 500 and was wipeable — so "saving" a contest saved a label with no scores behind it. Separately, ending a contest and resetting all scores shared one OK button, and the dialog promised the contest's history would survive while the code deleted the log it was computed from.
+Learned from Contest (#131, #133, #134). The data model was sound: scans carried a `contestId`, merge stamped entries individually, undo read those flags correctly. But contest totals were only ever computed by walking `data.log`, which is capped (500 at the time, 5000 since #226) and is still wipeable — so "saving" a contest saved a label with no scores behind it. **The raise did not retire the lesson:** a bigger cap moves the cliff, it does not remove it, so anything whose totals are only *derivable* from the log is still built on sand. Store the total. Separately, ending a contest and resetting all scores shared one OK button, and the dialog promised the contest's history would survive while the code deleted the log it was computed from.
 
-The same question is open elsewhere: **#129** (the log cap, general version), **#130** (batch class assign writes with no trail), **#125** (roster import silently overwrites classes).
+The same question is open elsewhere: **#130** (batch class assign writes with no trail) and **#125** (roster import silently overwrites classes). **#129** (the log cap) closed 2026-08-06 — the cap is now 5000, with tracked scans on a separate 1500 budget so they can never evict a point scan.
 
 ### 2. Validate before every commit
 
