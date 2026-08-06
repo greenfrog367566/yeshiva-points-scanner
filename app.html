@@ -6876,6 +6876,7 @@ function setupRoster() {
     data.voiceNotes=this.checked; save();
     if(!this.checked && typeof vnStop==="function") vnStop();
     applyVoiceNotes();
+    renderHistoryTab(); // the per-row 🎤 buttons are drawn conditionally
   });
   // Redraws the panel: turning this off has to put the empty grid back straight
   // away, or the setting reads as doing nothing until the next render.
@@ -9202,12 +9203,22 @@ function setupRoster() {
 
   function vnSetDot(on){ var d=$("micDot"); if(d) d.classList.toggle("on", !!on); }
 
+  function vnEntryById(id){
+    for(var i=0;i<data.log.length;i++){ if(data.log[i].id===id) return data.log[i]; }
+    return null;
+  }
+
   function vnStop(){
     if(vnCapTimer){ clearTimeout(vnCapTimer); vnCapTimer=null; }
     if(vnRec){ try{ vnRec.stop(); }catch(_){ } }
   }
 
-  function startVoiceNote(){
+  // entryId names an exact log entry — that is how the History tab's per-row
+  // 🎤 works. Called with nothing, it falls back to the most recent scan, which
+  // is what the printed card and the two 🎤 buttons want. An explicit id
+  // deliberately skips the staleness window: on History a rebbi is pointing at
+  // the row he means, however old it is.
+  function startVoiceNote(entryId){
     // Says why rather than doing nothing. The printed card can be scanned by a
     // rebbi who has no idea the setting exists, and a card that silently no-ops
     // reads as a broken card.
@@ -9220,9 +9231,10 @@ function setupRoster() {
       flash(false,"Voice notes need Chrome or Edge","","You can still type a note in History");
       beep(false); return;
     }
-    var target=vnTargetEntry();
+    var target = entryId ? vnEntryById(entryId) : vnTargetEntry();
     if(!target){
-      flash(false,"Nothing to attach a note to","","Scan a student first, then scan this card");
+      if(entryId) flash(false,"That scan is no longer in the log","","");
+      else flash(false,"Nothing to attach a note to","","Scan a student first, then scan this card");
       beep(false); return;
     }
     var Rec = window.SpeechRecognition || window.webkitSpeechRecognition, rec;
@@ -9324,8 +9336,10 @@ function setupRoster() {
     if(!on) vnSetDot(false);
   }
 
-  var vnBtn=$("voiceNoteBtn");     if(vnBtn)  vnBtn.addEventListener("click", startVoiceNote);
-  var vnBtnD=$("voiceNoteBtnDash"); if(vnBtnD) vnBtnD.addEventListener("click", startVoiceNote);
+  // Wrapped, not passed directly: a click handler is called with the MouseEvent,
+  // which startVoiceNote() would now read as an entry id.
+  var vnBtn=$("voiceNoteBtn");      if(vnBtn)  vnBtn.addEventListener("click", function(){ startVoiceNote(); });
+  var vnBtnD=$("voiceNoteBtnDash"); if(vnBtnD) vnBtnD.addEventListener("click", function(){ startVoiceNote(); });
 
   /* ---------- History tab: the full scan log, searchable ---------- */
   var historyViewMode = "row"; // "row" (recent, existing sorts) or "ranked" (grouped totals)
@@ -9422,6 +9436,19 @@ function setupRoster() {
         noteBtn.style.marginLeft="4px";
         noteBtn.addEventListener("click", (function(eid){ return function(){ setEntryNote(eid); }; })(entry.id));
         row.appendChild(noteBtn);
+        // Speak the note for THIS row rather than the most recent scan — the
+        // same field either way, so it reads back as one note however it was
+        // written. Hidden when the setting is off or the browser has no
+        // recognition, since unlike the printed card this button can simply not
+        // be drawn. Speaking onto a row that already has a note ADDS to it; the
+        // 📝 button is still how you rewrite or clear one.
+        if(data.voiceNotes!==false && vnSupported()){
+          var micBtn=el("button","btn btn-sm","🎤");
+          micBtn.style.marginLeft="4px";
+          micBtn.title = entry.note ? "Say something to add to this note" : "Say this note out loud";
+          micBtn.addEventListener("click", (function(eid){ return function(){ startVoiceNote(eid); }; })(entry.id));
+          row.appendChild(micBtn);
+        }
       }
       list.appendChild(row);
       if(entry.note){
