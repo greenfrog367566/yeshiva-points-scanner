@@ -12,17 +12,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
-- **Every scan now shows up in Scan history — including the ones that don't give points.** Marking a boy present, checking his homework, tapping +1 on the Tracker, freezing him, giving him the bathroom pass: until now none of those appeared under **Review → Scan history**, so there was nowhere to write down *why*. Now they all do, and every one of them takes a note — typed with 📝, or spoken with 🎤 if you have voice notes on.
+- **Scans that don't give points now show up in Scan history too — so you can write down why.** Freezing a boy, tapping +1 on the Tracker, giving out the bathroom pass, and marking a boy late or absent: until now none of those appeared under **Review → Scan history**, so there was nowhere to record what was behind them. Now they do, and every one takes a note — typed with 📝, or spoken with 🎤 if you have voice notes on.
 
   That was the whole point. "Absent" is a fact; "absent, third Tuesday in a row, spoke to his father" is the thing you actually want in front of you at parent-teacher night, and there was previously no place in the app to put it.
 
-  **A new filter beside the activity picker** lets you choose **Points + tracked** (the new default), **Points only** — which is exactly what the tab showed before this update — or **Tracked only**, if you want to read a week of attendance on its own. Your choice is remembered. The activity picker beside it now also lists the tracked ones, so you can narrow to just "Attendance" or just "❄️ Freeze".
+  **Attendance only puts the exceptions in the history — not the whole roll call.** The boys who were simply present don't each get a line; late and absent do, and so does a correction like changing a boy from absent back to present. So a morning gives you the two or three lines worth reading instead of twenty-five saying "present". Nothing is left out of your actual attendance record or the Gradebook — this is only about what the history page shows you.
+
+  **Homework doesn't add lines yet, and that's deliberate.** On the Homework tab you tick the boys who *did* their homework — the boy who didn't is simply never ticked, so he'd leave no line at all. Filling the history with twenty "did it" lines while missing the one boy you'd want to note would be backwards. Once the Homework tab can record "handed in late" or "didn't do it" properly, those will appear here automatically.
+
+  **A new filter beside the activity picker** lets you choose **Points + tracked** (the new default), **Points only** — which is exactly what the tab showed before this update — or **Tracked only**. Your choice is remembered. The activity picker beside it now also lists the tracked ones, so you can narrow to just "Attendance" or just "❄️ Freeze".
 
   **These rows have no ↩ Undo button, on purpose.** There are no points on them to take back, so an Undo there would have changed nothing at all while looking for all the world like it had un-marked the boy. To fix a mark, fix it where you made it — the Attendance tab, the Homework tab, Run → Passes — and the correction appears in the history as its own row. Tracker taps are the exception: undoing one on the Tracker tab crosses its row out here too, since that really is the same action.
 
   **Correcting an old day says so.** Fix Monday's attendance on Wednesday and the row reads "Wed 3:40pm (for 2026-08-03)", so a late correction never reads as something that happened today.
 
-  **Nothing about your points history changed.** Tracked rows are counted against their own separate limit, so they can never push a points scan out of the history — a busy week of attendance costs you nothing you had before. They are also left out of "Most given" and out of a boy's points breakdown on Trends, both of which are about points and would only have been muddled by a row worth zero.
+  **Nothing about your points history changed.** Tracked rows are counted against their own separate limit, so they can never push a points scan out of the history — a busy week costs you nothing you had before. They are also left out of "Most given" and out of a boy's points breakdown on Trends, both of which are about points and would only have been muddled by a row worth zero.
 
   **They stay out of your Google Sheet's Log tab too**, since attendance, homework and tracker taps already sync to their own tabs there and doubling them up would help nobody. The one exception is a row you write a note on — that one is sent across, so the note has somewhere to land.
 

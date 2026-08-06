@@ -4698,13 +4698,18 @@ function setupRoster() {
   /* TWO BUDGETS, NOT ONE — and this is the thing that makes logging tracked
    * scans safe at all.
    *
-   * A tracked scan arrives at roughly one per boy per item per day. A class of
-   * 25 taking attendance and checking homework writes ~50 entries a day, and
-   * against a single 500-entry cap that evicts every point scan inside about
-   * ten school days. The point scans are what Trends' activity breakdown, the
-   * contest scan detail, "resync all scans" and the data.earned backfill all
-   * read — so a flat cap would have quietly traded the whole points history for
-   * the ability to note an attendance mark.
+   * Tracked entries arrive faster than point scans and in bursts: an active
+   * class can log 30 tracker taps in a morning on top of passes and freezes.
+   * Against a single 500-entry cap those evict point scans, and point scans are
+   * what Trends' activity breakdown, the contest scan detail, "resync all
+   * scans" and the data.earned backfill all read — so a flat cap would have
+   * quietly traded the points history for the ability to note a freeze.
+   *
+   * The exception rule in trackedValueIsNotable() takes attendance from ~25 a
+   * day to a handful and homework to none, so the pressure is far lower than a
+   * naive "log every tracked write" would have been. The split stays anyway:
+   * it costs nothing, and it is what makes the guarantee below unconditional
+   * rather than true-at-current-volumes.
    *
    * So the two classes are counted separately. Adding a tracked entry can never
    * push a point scan out: the points history stays exactly as deep as it was
@@ -4791,6 +4796,46 @@ function setupRoster() {
   function trackedLogLabel(itemId, fallback){
     var it = trackedItemById(itemId);
     return (it && it.name) ? it.name : fallback;
+  }
+  /* IS THIS RECORDED VALUE WORTH A HISTORY ROW, OR IS IT THE ROLL CALL?
+   *
+   * Attendance and homework differ from the other tracked writers in one way
+   * that matters: they are taken for the WHOLE CLASS, every day. A row per boy
+   * per day is 25 lines of "Present" every morning, and nobody has ever wanted
+   * to write a note on "Present". The line a rebbi wants is the exception —
+   * absent, late, no credit — and the note he wants to attach to it is why.
+   *
+   * So only the exceptions are logged, plus any mark that CORRECTS AWAY from
+   * one ("I had him down as absent; he was at the dentist"), which is a real
+   * change of mind about something that mattered.
+   *
+   * THE POLARITY IS NOT DECIDED HERE. It reads GB_FIXED_TONES — the same map
+   * the Gradebook already uses to tint a cell — so "which values are the bad
+   * ones" has exactly one definition in the app. A second list would be a
+   * second opinion, and the two would drift.
+   *
+   * "unchecked" is deliberately absent from that map and so is never notable:
+   * it means "not marked yet", not "no credit", and the app must not read a
+   * judgement into a boy's work that the rebbi never made (see hwMirrorValue).
+   *
+   * WHY THIS LOGS ALMOST NO HOMEWORK TODAY, AND WHY THAT IS RIGHT. ti-homework
+   * is seeded as a four-state item — unchecked / full credit / partial credit /
+   * no credit — but the Homework tab is still the old boolean, so it can only
+   * ever produce "full credit" or "unchecked", neither of which is an
+   * exception. The rule is correct and simply has nothing to match. When #122
+   * converts that tab to the four-state cycle, "partial credit" and "no credit"
+   * become reachable and start landing here with no change needed.
+   *
+   * Both attendance modes come out right without a special case. Absence-first:
+   * the rebbi taps only the exceptions and "Mark the rest Present" fills the
+   * others, which are skipped. Presence-first: he taps 25 boys Present (all
+   * skipped) and "Mark the rest Absent" fills the few who aren't there, which
+   * are logged. Each way round, what lands is who was missing.
+   */
+  function trackedValueIsNotable(v){
+    if(v===undefined || v===null) return false;
+    var t = GB_FIXED_TONES[String(v).trim().toLowerCase()];
+    return t==="warn" || t==="bad";
   }
   // What a History row shows in the points column. A tracked row has no points
   // to show, so it shows what was actually recorded instead of a misleading
@@ -5510,19 +5555,26 @@ function setupRoster() {
      * day[sid].ts, not a fresh one, so the mirror and the record it transcribes
      * carry the same timestamp and dedup against each other. */
     mirrorTracked("ti-attendance", sid, {value:status, ts:day[sid].ts, date:dk});
-    /* AND THE SAME ARGUMENT PUTS IT IN HISTORY. Every attendance write funnels
-     * through here, so one line covers the cycle, "Mark the rest Present", the
-     * scan path and the tab's own buttons — a rebbi can attach a note to any of
-     * them without each caller having to know.
+    /* AND THE SAME ARGUMENT PUTS THE EXCEPTIONS IN HISTORY. Every attendance
+     * write funnels through here, so one line covers the cycle, "Mark the rest
+     * Present", the scan path and the tab's own buttons — a rebbi can note any
+     * of them without each caller having to know.
+     *
+     * Gated on trackedValueIsNotable(), so a full class marked present does not
+     * bury the tab under 25 rows nobody will read; see there for why the
+     * previous status is tested too. `prev` is captured above, before the
+     * overwrite, which is the only reason the correction case can be seen.
      *
      * day[sid].ts, not a fresh one, so the History row, the legacy record and
      * the mirror all carry the same instant. `about:dk` because a correction
      * typed on Wednesday for Monday is a Wednesday row about Monday.
      *
      * Only reached on a real change — the unchanged guard above returns early —
-     * so re-marking a boy Present does not write a second row.
+     * so re-marking a boy absent does not write a second row.
      */
-    addTrackedLogEntry(sid, trackedLogLabel("ti-attendance","Attendance"), {ts:day[sid].ts, value:(ATT_LABEL[status]||status), about:dk});
+    if(trackedValueIsNotable(status) || trackedValueIsNotable(prev && prev.status)){
+      addTrackedLogEntry(sid, trackedLogLabel("ti-attendance","Attendance"), {ts:day[sid].ts, value:(ATT_LABEL[status]||status), about:dk});
+    }
     save();
     if(attDaySent(dk)){
       // Day was already sent — recognize this as a correction and auto-sync
@@ -6391,11 +6443,23 @@ function setupRoster() {
   function hwMirrorValue(checked){ return checked ? "full credit" : "unchecked"; }
   function setHw(sid, checked){
     var day=hwDayRecord(hwDate);
+    // Captured before the overwrite, purely so the History gate below can see a
+    // correction away from an exception. Nothing else reads it.
+    var hwPrev=day[sid];
     day[sid]={checked:checked, ts:Date.now()};
     // hwDate, not today: this is the tab's own date picker, and unchecking a
     // boy on last Tuesday's homework is about last Tuesday.
     mirrorTracked("ti-homework", sid, {value:hwMirrorValue(checked), ts:day[sid].ts, date:hwDate});
-    addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:(checked?"checked":"not checked"), about:hwDate});
+    /* Same exception rule as attendance, and today it matches nothing: this
+     * store is still the old boolean, so hwMirrorValue() can only say "full
+     * credit" or "unchecked" and neither is an exception. That is deliberate —
+     * see trackedValueIsNotable(). The gate is written against the four-state
+     * vocabulary the item already carries, so #122 switching this tab to the
+     * real cycle starts producing rows here without touching this line.
+     */
+    if(trackedValueIsNotable(hwMirrorValue(checked)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
+      addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(checked), about:hwDate});
+    }
     save();
     var s=studentById(sid);
     if(data.autoSheet && s){ pushToSheet({type:"hw", ts:Date.now(), date:hwDate, name:s.name, group:s.group||"", checked:checked}); }
@@ -6409,9 +6473,18 @@ function setupRoster() {
   function markHwCheckedToday(sid){
     var today=todayKey();
     var day=hwDayRecord(today);
+    var hwPrev=day[sid];
     day[sid]={checked:true, ts:Date.now()};
     mirrorTracked("ti-homework", sid, {value:hwMirrorValue(true), ts:day[sid].ts, date:today});
-    addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:"checked", about:today});
+    /* Only ever writes "full credit", so the left half can never fire — the
+     * right half is the live one, catching a boy who was marked no/partial
+     * credit and has since had his folder scanned. This is also what stops the
+     * idempotent double-scan writing two identical rows: the second scan finds
+     * a previous value that is no longer an exception, and records nothing.
+     */
+    if(trackedValueIsNotable(hwMirrorValue(true)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
+      addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(true), about:today});
+    }
     save();
     var s=studentById(sid);
     if(data.autoSheet && s){ pushToSheet({type:"hw", ts:Date.now(), date:today, name:s.name, group:s.group||"", checked:true}); }
