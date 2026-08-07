@@ -8,16 +8,7 @@ The current working queue. Read this at the start of a session.
 
 ## Doing now
 
-**#127 → #128: batch undo, then whole-class award.** Unblocked 2026-08-06 when #129 raised the log cap. Build them as one piece, **in that order** — #127 is #128's safety net, and shipping the award first would hand rebbeim a way to create 25-entry batches that nothing can reverse.
-
-- **#127 — a batch award cannot be undone as a batch.** Undo does not delete, it *appends* a correction per boy, so reversing a 25-boy award by hand is 25 separate clicks and there is no handle on the batch itself. Needs a batch id stamped at write and an undo that reads it.
-- **#128 — award an activity to the whole class in one action.** **Write once at the end, not per student.** `save()` measures ~24 ms against a full log, so a 30-boy award that calls `awardWith()` per boy pays ~720 ms in saves alone. That was measured while sizing #129 — don't re-derive it.
-
-**Why #129 was the blocker, now that it is gone:** undo locates its target by scanning `data.log`, so at the old 500-entry cap a batch's own entries could roll off the end *before* the rebbi undid them, leaving nothing to reverse. The cap is now 5000, with tracked scans on their own separate 1500 budget so they can never evict a point scan (#225 + #226, both merged 2026-08-06).
-
-**Voice notes are being switched on for everyone — approved 2026-08-06, in flight as its own PR.** They shipped dark (#222) so there was a classroom day first. The seed is written exactly as the note at the backfill line demanded: `load2fix()` fills `data.voiceNotes` only when the field is *absent*, so every save that has once loaded the #222 build carries a stored `false` and a changed literal would have reached nobody. Hence `voiceNotesOnSeeded`, the `miniContestUnhidden` shape — which is also what protects a rebbi who switches them back **off** afterwards.
-
-**Accepted cost, not a bug:** a stored `false` cannot be told apart from a rebbi who tried voice notes during the dark day and turned them off, so that rebbi is switched on once. Small population, one toggle undoes it. **Note it is off on every device separately**, localStorage being per-origin: testing on localhost does not carry to `menchmark.app`.
+Nothing in flight. **#127/#128 (batch undo + whole-class award) shipped as #230, and voice-notes-on shipped as #231** — both merged and verified live on `menchmark.app` 2026-08-07. See `CHANGELOG.md` for what each did; pull the next item from "Next, in order" below.
 
 **On the horizon:** the Firebase/Firestore rebuild is fully scoped in `docs/Firebase_Rebuild_Scope.md` — real accounts, Firestore replacing localStorage, three tiers, incremental-write data model, converter tool, 8-step build order. Not started; step 1 (data model design session) hasn't begun.
 
@@ -34,6 +25,8 @@ It challenges the Firebase rebuild's core premise: every rebbi's student records
 Why it is item 0 rather than something to get to: it says the split has to be settled **before** step 1's collection design, because it decides whether the storage seam has one implementation behind it or two — and building that seam twice is the cost of deciding late. It also makes the rule-3-vs-Firebase-SDK conflict much easier, since tier 2 would never load the SDK at all. It carries five open questions of its own.
 
 It also names a piece that could start immediately and independently: **spike the Drive OAuth + `drive.file` write flow** against a throwaway Google Cloud project. No dependency on accounts, Firestore or the data model, and it de-risks the one real unknown — the re-auth UX in classroom conditions, not the API.
+
+**`docs/Data_Custody_Decision.md` (2026-08-07) works the five open questions with a recommendation each**, so a yes/no/other per question is enough to move — read that before re-deriving the issue from scratch. Its one non-technical question (what a school has to agree to, to become tier 1) is flagged as staying explicitly Ben's call rather than getting a recommendation.
 
 **1. Finish Phase 2c: give the Gradebook a writer, then drop the four old tabs (#227)** — the biggest build item left, and it was missing from this list entirely until 2026-08-06.
 

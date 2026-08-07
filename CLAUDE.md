@@ -12,7 +12,7 @@ Menchmark is a free, open-source classroom assistant for Yeshiva and Jewish Day 
 
 | File | Purpose |
 |---|---|
-| `app.html` | The Menchmark app (~19,750 lines of vanilla JS, all logic in one IIFE) |
+| `app.html` | The Menchmark app (~22,450 lines of vanilla JS, all logic in one IIFE) |
 | `index.html` | Site front door — the scroll-driven GSAP brand-story intro, with Skip → `home.html` |
 | `home.html` | The landing/marketing page (Tailwind CDN) — was `index.html` before the intro swap |
 | `setup.html` | Onboarding wizard for first-time users |
@@ -419,7 +419,7 @@ These docs in `docs/` are the settled design. They answer most "should we..." qu
 - **Offline_NoComputer_Secretary_Spec.md** — Offline Mode, Batch Import parser (spec'd against real scanner data), Secretary Mode.
 - **Positioning.md** — settled copy decisions: the canonical self-description, "classroom economy" rejected as positioning (with its one permitted exception), "rebbeim" not "teachers", no licensing/free-forever language in user-facing copy, no AI framing. **Check it before writing or editing any user-facing copy.**
 - **Firebase_Rebuild_Scope.md** — the settled scope for the upcoming Firebase/Firestore rebuild: real accounts, Firestore replacing localStorage-as-database, three tiers (rebbi/admin/superadmin), the incremental-write data model (not one JSON blob per class), the converter tool, what retires (file:// offline copy, Sheets-as-database, Apps Script), and the 8-step build order. **Not started — build order step 1 (data model design session) hasn't begun**, and **Phase 2d is locked to run before it.** Read before touching anything auth/sync/data-model shaped, and before assuming the current localStorage-only architecture described elsewhere in this file is the long-term plan. Its phase mapping was reconciled against the code on 2026-08-04; it now carries an **"Open questions for step 1"** list that has to be worked before the data-model session starts.
-  - ⚠️ **Open conflict, unresolved by design — decide before step 1.** That rebuild needs the Firebase SDK, which cannot coexist with **rule 3 above** (single file, no build step) untouched: the modular SDK is ESM-for-bundlers, so it is either a forbidden CDN `<script src>` or a vendored compat bundle inlined into an already ~1.2 MB file. Neither rule wins by default. Per the conflict rule below, CLAUDE.md wins until a human decides otherwise — so **rule 3 stands, and the rebuild cannot start step 1 until this is settled.** The trade-offs are written up in the rebuild doc's open question 1; note that the back button and app security do *not* depend on this choice, though earlier drafts implied they did.
+  - ⚠️ **Open conflict, unresolved by design — decide before step 1.** That rebuild needs the Firebase SDK, which cannot coexist with **rule 3 above** (single file, no build step) untouched: the modular SDK is ESM-for-bundlers, so it is either a forbidden CDN `<script src>` or a vendored compat bundle inlined into an already ~1.2 MB file. Neither rule wins by default. Per the conflict rule below, CLAUDE.md wins until a human decides otherwise — so **rule 3 stands, and the rebuild cannot start step 1 until this is settled.** The trade-offs are written up in the rebuild doc's open question 1; note that the back button and app security do *not* depend on this choice, though earlier drafts implied they did. **Narrowed 2026-08-07:** tier-1 rebbeim must get PWA/offline capability too, which rules the CDN option out for a second reason (a service worker can't reliably precache a cross-origin script) and leaves inline-vendored vs. same-origin-file-vendored as the only two live options — see the rebuild doc's open question 1 for the full narrowing, and `docs/Data_Custody_Decision.md` for why that choice is gated on the two-tier split rather than decided here.
 
 If a spec and this CLAUDE.md ever conflict, **CLAUDE.md wins**; flag the conflict to the maintainer.
 
@@ -457,7 +457,7 @@ The Google Sheet backup remains the ultimate safety net — PWA persistent stora
 
 ## File navigation tips
 
-The app file is large (~19,750 lines / ~1.2 MB) — never read it whole.
+The app file is large (~22,450 lines / ~1.3 MB, verified against `main` 2026-08-07) — never read it whole.
 
 ## What NOT to do
 
