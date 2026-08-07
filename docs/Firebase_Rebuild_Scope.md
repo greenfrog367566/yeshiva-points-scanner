@@ -165,6 +165,24 @@ Not features — the decisions the data-model session cannot start without, plus
 
 **10. Student View means something different now.** The build plan lists it among undesigned gaps. A student-facing screen under real accounts and three tiers is a fundamentally different design than one under a single shared localStorage — it becomes an access-control question, not just a UI. Revisit after step 2, not before.
 
+**11. What does the signup code actually *decide*? (raised 2026-08-07, PROPOSED — not settled.)** Path B above says "rebbi taps Sign in with Google, enters a code" and treats that code as **the approval gate** — the thing that replaces a per-person checkbox. The proposal here is that the same code does a second job it is currently silent about: it decides **where the new account lands**.
+
+  - **A beta tester gets a PIN** at account creation — he has no school in the system to attach to, so the code creates a **standalone** account (which, if the two-tier split in `Data_Custody_Decision.md` is accepted, is exactly a **tier-2** account).
+  - **Everyone else is included in their school** — the code he types is his *school's* code, and it drops him inside that school's space, visible to that school's admin, from his very first sign-in (tier 1).
+
+  One field on the signup screen, two outcomes, decided by which code was typed. **This is the concrete mechanic behind the "Path B reframing" that `Data_Custody_Decision.md` §3 lists as a consequence of the split** — that doc names the reframe ("self-serve defaults to tier 2, code promotes to tier 1") but deliberately leaves the mechanic to this document. It is written here as an open question rather than folded into Locked decisions above, because the same doc says the Path B amendment waits on Ben's yes to the split itself.
+
+  **Why it is worth deciding at step 1 and not at step 2:** "which school does this account belong to" is a *field on the account record and a term in every security rule*, not a signup-screen detail. Deciding it late means either retrofitting a `schoolId` onto accounts that were created without one, or discovering that a rebbi who signed up standalone can never be adopted into his school without a migration.
+
+  **What it does NOT mean:** this is a **join/scoping code typed once at account creation**, not a device-unlock PIN for a shared classroom Chromebook. A screen-lock PIN is a separate idea and is not in this build.
+
+  **The sub-questions, each cheap to answer now and expensive later:**
+  1. **One code namespace or two?** Recommend one field where the code itself carries its type (school code vs. beta PIN), so the rebbi never has to know which kind he was handed and the screen never grows a "what kind of code is this?" radio button.
+  2. **Per-person PIN or per-batch code?** These pull in opposite directions and the answer probably differs by path: a **live PD room** wants one batch code readable off a projected screen (this is what Path B was written for), while an **individually-invited beta tester** wants a per-person, single-use, revocable PIN so a leaked code can't provision strangers. Supporting both is one field on a `codes` collection (`maxUses`, `usedBy`, `revoked`), not two systems.
+  3. **What if a rebbi has no code at all?** Recommend: he still gets in and lands standalone — never a free-text "type your school name" box, which manufactures duplicate schools that an admin then has to merge by hand. A school claims him later (sub-question 4); he never types its name.
+  4. **Adoption, the reverse direction.** A standalone rebbi whose school signs on afterwards has to become part of it. That is **Q2 in `Data_Custody_Decision.md`** (tier migration via the converter tool's backup-upload mode) viewed from the account side — same event, two halves: his *data* moves, and his *account* gets a `schoolId`. Confirm both halves are covered, don't assume the data half implies the account half.
+  5. **Does the code carry a role?** An admin's account has to be created somehow too. Either the code carries the tier (school-admin code vs. school-rebbi code), or admins stay Path A / provisioned-only. Recommend the latter to start — the fewer things a typed string can grant, the better.
+
 ### File System Access API — local backup safety net
 
 - **Not truly silent from first launch — one real permission click, then silent after that.** Browsers sandbox web apps on purpose; a site writing to disk with zero prompt ever is exactly what that sandboxing exists to prevent. The File System Access API gets close: rebbi picks a folder once, grants permission once, and after that the app writes backup files into it with no further prompts.
