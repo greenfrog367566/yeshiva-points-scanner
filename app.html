@@ -2843,8 +2843,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <h2 class="view-title">Print: Activities</h2>
     <div id="menuLabelsBlock">
       <p class="view-note no-print">Print this and keep it on your clipboard. Scanning one of these <b>switches what you're scoring</b> and jumps you to the scan screen — it doesn't give points to anyone.</p>
+      <!-- The same toolbar the student labels carry, in the same order and with
+           the same wording: format, then what to narrow to, then how many of
+           each. "Sections" stands in for "groups" because sections ARE the
+           activity codes' groups — the ones you name yourself under Choose
+           codes — and "codes" rather than "activities" because the Undo,
+           Custom and phrase-nav cards print on this sheet too. -->
       <div class="toolbar no-print">
         <select id="menuLabelFormat" class="field" style="width:auto"></select>
+        <select id="menuSection" class="field" style="width:auto"><option value="">All sections</option></select>
+        <select id="menuWhich" class="field" style="width:auto"><option value="">All codes</option></select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.9rem;color:var(--muted)">Copies each <input id="menuCopies" type="number" min="1" value="1" class="field" style="width:64px"></label>
+        <button class="btn btn-sm" id="menuFillSheet" title="Fill one whole sheet with the selected code">Fill a sheet (1 code)</button>
         <button class="btn btn-sm" id="menuChooseCodes">Choose codes</button>
         <button class="btn btn-primary" id="printMenu">🖨 Print activity menu</button>
       </div>
@@ -18343,10 +18353,80 @@ nameLine
     // Class-name title above the printed menu, so a teacher with several
     // classes can tell the sheets apart. Tiles view only — an extra element
     // above an Avery sheet would push the die-cut label positions off.
+    /* SECTION FILTER — the activity codes' answer to the student labels' group
+     * dropdown. Sections are already the rebbi's own grouping of these codes
+     * (Choose codes: add, rename, drag between them), so narrowing to one is
+     * how "print just my deductions" or "print just the Coins strip" becomes a
+     * single sheet instead of the whole menu with the rest cut away by hand.
+     *
+     * printCodeSectionOf(), never the raw override — it falls back through the
+     * code's own default section and then to the first surviving section, so a
+     * code whose section the rebbi has DELETED still lands somewhere and is
+     * still printable. Reading data.printCodeSections directly would drop it.
+     *
+     * Nothing here is persisted, exactly as labelGroup / labelWho / labelCopies
+     * are not: these are "what am I printing right now" choices, and a stored
+     * section filter is a way to come back next month and quietly print a third
+     * of your codes. Only the format stays, which is a property of the paper.
+     */
+    var secSel=$("menuSection"), secCur=secSel.value;
+    secSel.innerHTML='<option value="">All sections</option>';
+    codeSections().forEach(function(sec){ var o=el("option",null,codeSectionLabel(sec)); o.value=sec.key; secSel.appendChild(o); });
+    if(codeSections().some(function(sec){ return sec.key===secCur; })) secSel.value=secCur; else secSel.value="";
+    var secKey=secSel.value;
+    var secName=secKey ? codeSectionLabel(codeSectionByKey(secKey)) : "";
+
+    // Class-name title above the printed menu, so a teacher with several
+    // classes can tell the sheets apart. Tiles view only — an extra element
+    // above an Avery sheet would push the die-cut label positions off.
+    // The section is named too when one is picked: two sheets from one class
+    // are otherwise identically titled and only tellable apart by reading the
+    // codes, which is exactly what the title exists to save.
     var mt=$("menuPrintTitle");
-    if(mt){ mt.textContent=data.currentClass||"All Classes"; mt.style.display=(avery||!data.activities.length)?"none":"block"; }
+    if(mt){ mt.textContent=(data.currentClass||"All Classes")+(secName?" · "+secName:""); mt.style.display=(avery||!data.activities.length)?"none":"block"; }
     if(!data.activities.length){ (avery?sheet:mg).appendChild(el("div","empty-state","Add activities first, on the Activities tab.")); return; }
+
     var items=menuLabelItems();
+    if(secKey) items=items.filter(function(it){ return printCodeSectionOf(it)===secKey; });
+
+    /* ONE CODE, AND HOW MANY OF EACH — the "Whole class" picker and "Copies
+     * each" box, doing here what they do for student labels. The use they exist
+     * for is the same one: a sheet of nothing but the code you actually wear
+     * out. "Undo Last Scan" and the armed activity a rebbi uses every period
+     * are the ones that get taped to a desk, a folder and a clipboard, and
+     * getting three of them meant printing the whole menu three times.
+     *
+     * Built from the SECTION-FILTERED list, so the two narrow together the same
+     * way the student pickers do — pick Negative and this offers the negative
+     * codes only. A pick that the section filter has just excluded falls back to
+     * "All codes" rather than silently printing nothing.
+     */
+    var whichSel=$("menuWhich"), whichCur=whichSel.value;
+    whichSel.innerHTML='<option value="">All codes</option>';
+    items.forEach(function(it){ var o=el("option",null,it.name); o.value=it.qrText; whichSel.appendChild(o); });
+    if(items.some(function(it){ return it.qrText===whichCur; })) whichSel.value=whichCur; else whichSel.value="";
+    var which=whichSel.value;
+    if(which) items=items.filter(function(it){ return it.qrText===which; });
+
+    // Same clamp as the student labels' copies box, for the same reason: this
+    // multiplies straight into a QR-generating loop, so a pasted 99999 would
+    // hang the tab rather than print anything.
+    var copies=Math.max(1, Math.min(400, parseInt($("menuCopies").value,10)||1));
+    if(copies>1){
+      var expanded=[];
+      items.forEach(function(it){ for(var k=0;k<copies;k++) expanded.push(it); });
+      items=expanded;
+    }
+
+    // Every code turned off, or a section the rebbi has emptied. Says which,
+    // rather than showing a blank sheet that reads as a broken page.
+    if(!items.length){
+      (avery?sheet:mg).appendChild(el("div","empty-state",
+        secKey ? "No codes in “"+secName+"” right now — move some into it under Choose codes, or pick All sections."
+               : "Every code is turned off. Turn some back on under Choose codes."));
+      return;
+    }
+
     if(avery){
       var averyItems=items.map(function(it){ return {qrText:it.qrText, line1:it.name, line2:it.sub}; });
       renderAverySheetGeneric(averyItems, sheet, data.menuLabelFormat, hasQR);
@@ -18476,6 +18556,26 @@ nameLine
       grid.appendChild(page);
     });
   }
+  // The activity menu's own copy of the label toolbar. renderMenuLabels() alone,
+  // not renderLabels() — that one rebuilds the student labels and every personal
+  // page as well, and regenerating a class's worth of QR codes to redraw this one
+  // sheet is the expensive way round. Same reason $("menuLabelFormat") has always
+  // called it directly.
+  $("menuSection").addEventListener("change", function(){ renderMenuLabels(); });
+  $("menuWhich").addEventListener("change", function(){ renderMenuLabels(); });
+  // "input", not "change" — covers typing, the spinner arrows and paste. The
+  // student box learned this the hard way: a second "change" listener beside it
+  // double-rendered, and QR generation is the part that costs.
+  $("menuCopies").addEventListener("input", function(){ renderMenuLabels(); });
+  $("menuFillSheet").addEventListener("click", function(){
+    // LABEL_SPECS has no entry for "tiles" — it is a free-flowing grid with no
+    // fixed count — so it falls back to 30, the Avery 5160 sheet, exactly as the
+    // student version does. Same number, same reasoning, kept the same on purpose.
+    var spec=LABEL_SPECS[data.menuLabelFormat];
+    var per = spec ? spec.cols*spec.rows : 30;
+    if(!$("menuWhich").value){ alert("Pick one code in the “All codes” dropdown first — then this fills a whole sheet with just that code."); return; }
+    $("menuCopies").value=per; renderMenuLabels();
+  });
   $("personalFormat").addEventListener("change", function(){ data.personalLabelFormat=this.value; save(); renderPersonalPages(); });
   $("personalActivity").addEventListener("change", renderLabels);
   $("labelGroup").addEventListener("change", renderLabels);

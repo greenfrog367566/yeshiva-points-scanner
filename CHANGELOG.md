@@ -12,6 +12,17 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **Print: Activities now has the same choices the student labels have.** The activity menu could only ever print one thing: every code you use, once each. Now it carries the toolbar you already know from **Print → Students**, in the same order and with the same wording.
+
+  - **Sections** — narrow the sheet to one of your own code sections. The sections are the ones you name and drag codes between under **Choose codes**, so "print just my deductions", or just the Coins strip, is now one sheet instead of the whole menu with the rest cut off by hand. The printed heading names the section as well as the class, so two sheets from one class are tellable apart at a glance.
+  - **One code** — pick a single code instead of all of them.
+  - **Copies each** — how many of each code to print.
+  - **Fill a sheet (1 code)** — pick one code and this fills a whole sheet with it, exactly as "Fill a sheet (1 student)" does for a boy's label.
+
+  The use this is really for: the codes that wear out. **Undo Last Scan**, and whichever activity you arm every single period, are the ones that end up taped to a desk, a folder and a clipboard — and getting three of them meant printing the entire menu three times and throwing most of it away.
+
+  **Nothing about the normal sheet changed.** Leave the new boxes alone and you get exactly the menu you got before. Like the student labels, these choices are not remembered between visits — they are "what am I printing right now", not a setting, so you can never come back next month and quietly print a third of your codes without noticing.
+
 - **"Mark the rest Present" is now on the class list too — including full screen.** Taking attendance off the seating chart is the natural way to do it: you arm **Attendance**, tap the two or three boys who are away, and everyone else is simply here. Saying so meant leaving the chart, dropping out of full screen and going to the Attendance tab to press one button. That button is now on the chart itself.
 
   It appears **only while Attendance is the armed activity** — the same moment each boy's card starts showing his present/absent badge. Arm something else and it goes away again, so there is no attendance button sitting on a points chart waiting to be pressed by mistake.
