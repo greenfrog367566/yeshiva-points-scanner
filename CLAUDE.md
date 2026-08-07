@@ -55,18 +55,25 @@ against the live site rather than assuming**, e.g.:
 
 ```bash
 # does the deployed app actually contain the thing you just merged?
+# -L is required: menchmark.app/app.html 307-redirects to /app (Cloudflare's
+# clean-URL rewrite), so a bare curl follows nothing, fetches zero bytes, and
+# grep -c reports 0 for a perfectly healthy deploy — indistinguishable from
+# the failure this check exists to catch.
 # grep -c, never grep -o: -c prints a number either way, so a miss is a visible
 # 0. -o prints nothing at all on a miss, and silent failure reads as success.
-curl -s https://menchmark.app/app.html | grep -c 'someIdentifierFromYourChange'
+curl -sL https://menchmark.app/app.html | grep -c 'someIdentifierFromYourChange'
 ```
 
 **WAIT A MINUTE FIRST, AND RE-RUN BEFORE CONCLUDING ANYTHING.** A `0` from that
-command is ambiguous three ways — *not deployed yet*, *deploy stalled*, and
-*you checked too fast* all look identical, and the last one is the common case.
-This has already caught someone: a check run about a minute after the #155 merge
-returned `0`, and the same command a minute later returned `10`. The result only
-means something read against the merge timestamp, so get that first
-(`gh pr view <n> --json mergedAt`) and give it a minute before believing a zero.
+command is ambiguous four ways now — *not deployed yet*, *deploy stalled*,
+*you checked too fast*, and *forgot `-L`* all look identical, and the last two
+are the common cases. This has already caught someone twice: a check run about
+a minute after the #155 merge returned `0`, and the same command a minute later
+returned `10` — and on 2026-08-07 a `-L`-less check on the #230 merge returned
+`0` for content that was already live, only caught by comparing byte counts
+directly against `main`. The result only means something read against the
+merge timestamp, so get that first (`gh pr view <n> --json mergedAt`) and give
+it a minute before believing a zero.
 
 `sw.js` serves HTML network-first, so once a deploy is out it reaches installed
 users immediately; bump `CACHE_VERSION` in `sw.js` on a release to purge the
