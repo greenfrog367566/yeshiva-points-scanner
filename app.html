@@ -5021,6 +5021,9 @@ function setupRoster() {
     // Arming a tracked item is what puts the 2d badges on the tiles, and
     // disarming (or arming a point activity) is what takes them off again.
     if(typeof refreshTrackedBadges==="function") refreshTrackedBadges();
+    // And arming Attendance specifically is what puts "Mark the rest Present"
+    // on the class list. Same in-place treatment, same reason — see there.
+    if(typeof refreshAttFillBtn==="function") refreshAttFillBtn();
   }
 
   /* ---------- TABS (grouped, with a subtab row) ---------- */
@@ -6009,10 +6012,8 @@ function setupRoster() {
     // The fill-in button says which way it fills, because in presence-first the
     // useful sweep is the opposite one: the rebbi has marked everyone who is
     // here, and what is left over is the absences.
-    $("attMarkAllPresent").textContent = attPresenceFirst() ? "Mark the rest Absent" : "Mark the rest Present";
-    $("attMarkAllPresent").title = attPresenceFirst()
-      ? "Marks every student you haven't marked yet as absent — anyone you already marked is left alone"
-      : "Marks every student who hasn't been marked yet — anyone you already set to absent or late is left alone";
+    $("attMarkAllPresent").textContent = attFillLabel();
+    $("attMarkAllPresent").title = attFillTitle();
   }
   // Switching the mode NEVER rewrites a record — it changes what an unmarked
   // boy means from here on. A day already marked reads the same in both, which
@@ -6022,6 +6023,9 @@ function setupRoster() {
     data.attMode = b.dataset.attmode==="presence" ? "presence" : "absence";
     save();
     if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
+    // The class list's copy of the fill button says which way it fills too, and
+    // it is not on this tab to be redrawn by the line above.
+    refreshAttFillBtn();
   });
   $("attPrevDay").addEventListener("click", function(){ var d=new Date(attDate+"T00:00:00"); d.setDate(d.getDate()-1); attDate=d.toISOString().slice(0,10); renderAttendance(); });
   $("attNextDay").addEventListener("click", function(){ var d=new Date(attDate+"T00:00:00"); d.setDate(d.getDate()+1); attDate=d.toISOString().slice(0,10); renderAttendance(); });
@@ -6032,14 +6036,34 @@ function setupRoster() {
   // this button lost all three — silently, with no undo, and with the day then
   // reading as a clean full house. Anyone carrying a real timestamp has been
   // marked deliberately and is left exactly as he is.
-  $("attMarkAllPresent").addEventListener("click", function(){
+  //
+  // Extracted from the button because the class list has its own copy of it now
+  // (see the Attendance button in renderTapPanelInto). Two buttons writing
+  // attendance in two places is exactly how "the rest" would come to mean two
+  // different things, so there is one implementation and both call it. The DAY
+  // is the caller's: the tab means the day it is showing, the class list always
+  // means today. Returns how many students it actually wrote.
+  function attFillUnmarked(dateKey){
     // Presence-first fills the leftovers as ABSENT: there the rebbi has marked
     // everyone who is here, so what is left over is precisely who isn't.
     var fill=attPresenceFirst() ? "absent" : "present";
+    var n=0;
     activeStudents().forEach(function(s){
-      if(attMarkedRec(attDate, s.id)) return;
-      setAttendance(s.id, fill, attDate);
+      if(attMarkedRec(dateKey, s.id)) return;
+      if(setAttendance(s.id, fill, dateKey)) n++;
     });
+    return n;
+  }
+  // The wording both buttons use, so the tab and the chart cannot drift on which
+  // way round the fill goes.
+  function attFillLabel(){ return attPresenceFirst() ? "Mark the rest Absent" : "Mark the rest Present"; }
+  function attFillTitle(){
+    return attPresenceFirst()
+      ? "Marks every student you haven't marked yet as absent — anyone you already marked is left alone"
+      : "Marks every student who hasn't been marked yet — anyone you already set to absent or late is left alone";
+  }
+  $("attMarkAllPresent").addEventListener("click", function(){
+    attFillUnmarked(attDate);
     renderAttendance();
   });
   $("attSendBtn").addEventListener("click", sendAttendance);
@@ -8637,6 +8661,65 @@ function setupRoster() {
       if(b) tb.appendChild(b);
     });
   }
+  /* "MARK THE REST PRESENT", ON THE CLASS LIST ITSELF.
+   *
+   * Taking attendance off the seating chart is the whole point of arming
+   * Attendance there — tap the three boys who are away, and the rest are simply
+   * here. Closing that out meant leaving the chart (full screen, leaving full
+   * screen) to press the one button on the Attendance tab that says so. Now it
+   * is on the chart, and it runs the SAME fill the tab runs: attFillUnmarked(),
+   * one implementation, so "the rest" cannot come to mean two different things.
+   *
+   * ONLY WHILE ATTENDANCE IS ARMED. A permanent attendance button on a points
+   * chart is a way to mark a whole class by accident, and this toolbar already
+   * carries five controls. Armed-and-attendance is the one state in which this
+   * chart IS an attendance screen — it is also exactly when every tile is
+   * already showing its present/absent badge (trackedTileBadge).
+   *
+   * ALWAYS TODAY, NEVER attDate. The chart has no day on screen, so it follows
+   * the rule the tracked attendance scan already follows in TRACKED_LEGACY
+   * "ti-attendance": real today, not whatever day the Attendance TAB is parked
+   * on. Passing the date explicitly is load-bearing — setAttendance() and
+   * attCycle() both DEFAULT to attDate, so omitting it would quietly write this
+   * morning's roll onto a day the rebbi was reading last week.
+   */
+  function attFillToolbarBtn(){
+    var b=el("button","seat-modebtn att-fill-btn","✓ "+attFillLabel());
+    b.title=attFillTitle()+" — for today.";
+    b.addEventListener("click", function(){
+      var n=attFillUnmarked(todayKey());
+      // Nothing left to fill is a real answer, not a failure: the roll is
+      // already complete. Saying so beats a button that looks dead.
+      if(!n){ flash(false, "Attendance", "Nobody left to mark", "Everyone is already marked for today"); beep(false); return; }
+      flash(true, "Attendance", attFillLabel(), n+(n===1?" student":" students"));
+      beep(true);
+      // The badges change under the rebbi's finger rather than on the next full
+      // repaint — the same reason recordTrackedScan() calls this instead of
+      // renderTapPanel(), which would rebuild every QR on the chart mid-scan.
+      refreshTrackedBadges();
+      refreshLiveViews();
+    });
+    return b;
+  }
+  /* Add it, drop it, or re-label it in place — never a renderTapPanel().
+   *
+   * Arming is deliberately a badge-level repaint (see refreshTrackedBadges
+   * above), so a button that only exists while Attendance is armed has to be
+   * maintained the same way: rebuilding the panel on every arm would throw away
+   * the rebbi's scroll position and regenerate every QR code, in front of a
+   * room, mid-scan. Re-labels as well as adds, because "the rest" flips between
+   * Present and Absent with data.attMode.
+   */
+  function refreshAttFillBtn(){
+    var want=attendanceActivity(armedActivity());
+    document.querySelectorAll(".seat-toolbar-main").forEach(function(tb){
+      var cur=tb.querySelector(".att-fill-btn");
+      if(!want){ if(cur && cur.parentNode) cur.parentNode.removeChild(cur); return; }
+      if(!cur){ tb.appendChild(attFillToolbarBtn()); return; }
+      cur.textContent="✓ "+attFillLabel();
+      cur.title=attFillTitle()+" — for today.";
+    });
+  }
 
   // THE one path a tracked scan travels. Records and reports, or refuses — the
   // flash and the write are the same call, so "it said it worked" and "it wrote
@@ -10487,7 +10570,10 @@ function setupRoster() {
     if(!open) return;
     var body=bodyEl; body.innerHTML="";
 
-    var toolbar=el("div","seat-toolbar");
+    // seat-toolbar-main marks THIS row apart from the ⚙ Setup row below, which
+    // carries the same class — refreshAttFillBtn() has to be able to find the
+    // one the attendance button belongs on without matching both.
+    var toolbar=el("div","seat-toolbar seat-toolbar-main");
     // Seating chart not shown in Teach / Shorashim context
     var allowSeating=true; // teachTapPanelBody/shorTapPanelBody no longer exist; all remaining tap panels allow seating view
     var effViewMode=opts.forceSeating ? "seating" : (allowSeating ? data.tapViewMode : "list");
@@ -10647,6 +10733,11 @@ function setupRoster() {
       pickBtn.addEventListener("click", openCodePickerModal);
       toolbar.appendChild(pickBtn);
     }
+
+    // Built here so it is present on the first paint if Attendance is already
+    // armed; added and removed after that by refreshAttFillBtn(), which is what
+    // keeps it in step with arming without redrawing the chart.
+    if(attendanceActivity(armedActivity())) toolbar.appendChild(attFillToolbarBtn());
 
     if(effViewMode==="seating"){
       var lay=seatLayout();

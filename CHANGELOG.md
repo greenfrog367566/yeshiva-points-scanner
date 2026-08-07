@@ -12,6 +12,16 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **"Mark the rest Present" is now on the class list too — including full screen.** Taking attendance off the seating chart is the natural way to do it: you arm **Attendance**, tap the two or three boys who are away, and everyone else is simply here. Saying so meant leaving the chart, dropping out of full screen and going to the Attendance tab to press one button. That button is now on the chart itself.
+
+  It appears **only while Attendance is the armed activity** — the same moment each boy's card starts showing his present/absent badge. Arm something else and it goes away again, so there is no attendance button sitting on a points chart waiting to be pressed by mistake.
+
+  **It does exactly what the Attendance tab's button does, because it is the same button underneath.** It fills in only the boys **nobody has marked yet** — anyone you already set to absent or late is left exactly as he is. If you mark who's *here* rather than who's away, it fills the leftovers as **Absent** and says so on the button, the same way the tab does.
+
+  **It always means today.** The Attendance tab can be parked on last Tuesday; the seating chart has no day on screen, so this always writes today's date — the same rule a scanned attendance code already follows.
+
+  It tells you what it did ("14 students"), and if the roll is already complete it says that instead of looking like a button that does nothing.
+
 - **Voice notes are now switched on for everyone.** The 🎤 button next to "Undo last scan" lets you speak a note straight onto the scan you just made, instead of typing it. It arrived switched off so it could be used in a real classroom for a day first; that has happened, so it is on.
 
   **If you would rather not have it, turn it off in Settings and it stays off** — it will not switch itself back on afterwards.
