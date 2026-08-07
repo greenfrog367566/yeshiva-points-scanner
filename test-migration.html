@@ -381,7 +381,21 @@ if(!data.school) data.school = "Sample School";
 if(!data.className) data.className = "Sample Class 1";
 if(typeof data.sheetUrl!=="string") data.sheetUrl="";
 if(typeof data.autoSheet!=="boolean") data.autoSheet=true;
-if(typeof data.voiceNotes!=="boolean") data.voiceNotes=false;
+if(typeof data.voiceNotes!=="boolean") data.voiceNotes=true;
+/* THE ONE-SHOT, and the reason it is a one-shot rather than a plain flip.
+ *
+ * `miniContestUnhidden` / `gradebookUnhidden` shape: set it once, stamp a
+ * flag, never look again. That is what protects the rebbi who switches it
+ * back OFF after this ships — without the flag, every subsequent load would
+ * re-enable it and there would be no way to refuse the feature.
+ *
+ * The cost, accepted deliberately: a stored `false` is indistinguishable
+ * from a rebbi who tried voice notes during the dark period and turned them
+ * off, so that rebbi is switched back on once.
+ *
+ * NOT in `defaults`, so it reaches existing saves too — the whole point.
+ */
+if(!data.voiceNotesOnSeeded){ data.voiceNotes=true; data.voiceNotesOnSeeded=true; }
 if(!data.raffle||typeof data.raffle!=="object"||Array.isArray(data.raffle)) data.raffle={mode:"auto",entries:{},winners:[]};
 if(!data.raffle.entries||typeof data.raffle.entries!=="object"||Array.isArray(data.raffle.entries)) data.raffle.entries={};
 if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[];
@@ -2483,6 +2497,26 @@ function runBuiltInTests() {
   assert("sheet→a string code size repairs to 1", t16k.seatPrintOpts.iconScale===1);
   var t16m = runMigration({ version:4, seatPrintOpts:{avatarMode:"qr", iconScale:9} });
   assert("sheet→an out-of-range code size repairs to 1", t16m.seatPrintOpts.iconScale===1);
+
+  /* --- Voice notes switched ON for everyone (2026-08-06) ---
+   *
+   * #222 shipped them off, so the interesting case is not the fresh install —
+   * it is the save that already carries a stored `false`, which a plain change
+   * of the default literal would never have reached. That is the first
+   * assertion, and it is the whole reason this is a one-shot.
+   *
+   * The second is what the flag protects: once stamped, a rebbi who turns voice
+   * notes back OFF stays off through every later load. Without that, the seed
+   * would re-enable the feature forever and there would be no way to refuse it.
+   */
+  assert("voice→a stored false IS flipped on (this is the point of the seed)",
+    runMigration({ version:4, voiceNotes:false }).voiceNotes===true);
+  assert("voice→the one-shot flag is stamped", d1.voiceNotesOnSeeded===true);
+  assert("voice→a fresh save gets them on", d1.voiceNotes===true);
+  var tvn = runMigration({ version:4, voiceNotes:false, voiceNotesOnSeeded:true });
+  assert("voice→turned back OFF after the seed, it STAYS off", tvn.voiceNotes===false);
+  var tvn2 = runMigration({ version:4, voiceNotes:true, voiceNotesOnSeeded:true });
+  assert("voice→left on after the seed, it stays on", tvn2.voiceNotes===true);
 
   // --- Test 17: #117 printed-code selection ---
   assert("codes→printExcluded backfills to an object",

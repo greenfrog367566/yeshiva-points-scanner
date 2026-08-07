@@ -4260,7 +4260,7 @@ function setupRoster() {
     log: [],        // {ts, sid, label, delta}
     sheetUrl: "",
     autoSheet: true,
-    voiceNotes: false,
+    voiceNotes: true,
     // Absence-first: unmarked means present. The mode a new install starts in,
     // and what every existing save backfills to — see attPresenceFirst().
     attMode: "absence",
@@ -20102,18 +20102,31 @@ nameLine
     if(!data.className) data.className = "Sample Class 1";
     if(typeof data.sheetUrl!=="string") data.sheetUrl="";
     if(typeof data.autoSheet!=="boolean") data.autoSheet=true;
-    // Deliberately OFF to begin with, and this is a temporary state: the
-    // maintainer wants a day of real classroom use before other rebbeim meet
-    // the feature at all. Turn it on in Settings.
+    // Voice notes are ON as of 2026-08-06. They shipped OFF (#222) so the
+    // maintainer had a classroom day with them before other rebbeim met the
+    // feature; that day has happened and he approved switching them on.
     //
-    // NOTE for whoever flips this back on: changing the literal is NOT enough
-    // on its own. This line only fills the field when it is ABSENT, so any save
-    // that has already loaded this build carries a stored `false` and would
-    // keep it forever. Switching the default on has to be a one-shot seed with
-    // its own flag — the `miniContestUnhidden` / `gradebookUnhidden` pattern —
-    // so a rebbi who deliberately ticked it on is not overruled either way.
-    // (Moot if this never ships while off: nobody's save has the field yet.)
-    if(typeof data.voiceNotes!=="boolean") data.voiceNotes=false;
+    // This line alone could not do it, and the note left here last time said so
+    // exactly: it fills the field only when ABSENT, so every save that has once
+    // loaded the #222 build carries a stored `false` and would keep it forever
+    // however the literal reads. Hence the one-shot below.
+    if(typeof data.voiceNotes!=="boolean") data.voiceNotes=true;
+    /* THE ONE-SHOT, and the reason it is a one-shot rather than a plain flip.
+     *
+     * `miniContestUnhidden` / `gradebookUnhidden` shape: set it once, stamp a
+     * flag, never look again. That is what protects the rebbi who switches it
+     * back OFF after this ships — without the flag, every subsequent load would
+     * re-enable it and there would be no way to refuse the feature.
+     *
+     * The cost, accepted deliberately: a stored `false` is indistinguishable
+     * from a rebbi who tried voice notes during the dark period and turned them
+     * off, so that rebbi is switched back on once. With #222 having been off
+     * for everyone by default that is a small population, and one Settings
+     * toggle undoes it for good.
+     *
+     * NOT in `defaults`, so it reaches existing saves too — the whole point.
+     */
+    if(!data.voiceNotesOnSeeded){ data.voiceNotes=true; data.voiceNotesOnSeeded=true; }
     if(!data.raffle||typeof data.raffle!=="object"||Array.isArray(data.raffle)) data.raffle={mode:"auto",entries:{},winners:[]};
     if(!data.raffle.entries||typeof data.raffle.entries!=="object"||Array.isArray(data.raffle.entries)) data.raffle.entries={};
     if(!Array.isArray(data.raffle.winners)) data.raffle.winners=[];

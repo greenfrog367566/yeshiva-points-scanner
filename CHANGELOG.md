@@ -12,6 +12,13 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **Voice notes are now switched on for everyone.** The 🎤 button next to "Undo last scan" lets you speak a note straight onto the scan you just made, instead of typing it. It arrived switched off so it could be used in a real classroom for a day first; that has happened, so it is on.
+
+  **If you would rather not have it, turn it off in Settings and it stays off** — it will not switch itself back on afterwards.
+
+  Two things worth knowing. **It is a per-device setting**, so turning it on or off on your tablet does not change your laptop. And **if you tried it during the first day and switched it off, it has come back on once** — the app cannot tell that apart from never having been offered it. Turning it off now will stick for good.
+
+  Nothing new is stored. A spoken note is saved in the same place a typed note has always been saved, so it shows in History and reaches your Google Sheet exactly as before.
 - **Give an activity to the whole class in one action.** Pick the activity you want — "Davening", "On time", whatever is armed — then press **👥 Give to all** next to it on the Record screen. Every boy in the class you have selected gets it at once, instead of you scanning twenty-five codes for something the whole class earned together.
 
   It is also **scannable**, because the whole workflow is built around a scanner: a **Give to All** code applies whatever activity is currently armed to the entire class. That code does **not** appear on your printed Activity Menu unless you tick it on yourself, under Choose codes. That is deliberate — every other code on that sheet affects one boy, and a mis-scan costs one point. This one affects everybody at once, so it should not turn up on a sheet by surprise.
