@@ -6783,10 +6783,21 @@ function setupRoster() {
         host.appendChild(b);
       });
     }
-    function editOpen(){
+    // The same field serves both lengths a rebbi can set. "snack" edits the
+    // snack button's length; anything else sets the timer itself. It used to
+    // be a prompt(), which cannot be used here at all: prompt() belongs to the
+    // MAIN window, so once the timer is popped out it would open a dialog
+    // behind whatever app the rebbi had switched to and the pop-out would
+    // simply look frozen.
+    var editTarget="length";
+    function editOpen(target){
       var disp=$("ftDisplay"), inp=$("ftEdit");
       if(!disp||!inp) return;
-      inp.value=""; inp.placeholder=fmtTime(curVal());
+      editTarget = target==="snack" ? "snack" : "length";
+      inp.value="";
+      inp.placeholder = editTarget==="snack"
+        ? ("Snack — "+fmtTime((data&&data.snackSeconds)||420))
+        : fmtTime(curVal());
       disp.style.display="none"; inp.style.display="";
       inp.focus();
     }
@@ -6794,10 +6805,21 @@ function setupRoster() {
       var disp=$("ftDisplay"), inp=$("ftEdit");
       if(!disp||!inp || inp.style.display==="none") return; // Enter already closed it; ignore the blur that follows
       inp.style.display="none"; disp.style.display="";
-      if(commit) setLength(parseTimeInput(inp.value), true);
+      if(commit){
+        var sec=parseTimeInput(inp.value);
+        if(editTarget==="snack"){
+          if(sec!=null && sec>0 && data){
+            data.snackSeconds=Math.min(Math.round(sec), 24*3600);
+            save(); renderSnackBtn();
+          }
+        } else {
+          setLength(sec, true);
+        }
+      }
+      editTarget="length";
       render();
     }
-    $("ftDisplay").addEventListener("click", editOpen);
+    $("ftDisplay").addEventListener("click", function(){ editOpen("length"); });
     $("ftEdit").addEventListener("keydown", function(e){
       if(e.key==="Enter"){ e.preventDefault(); editClose(true); }
       else if(e.key==="Escape"){ e.preventDefault(); editClose(false); }
@@ -6821,13 +6843,7 @@ function setupRoster() {
     window._refreshTimerPanel = function(){ renderSnackBtn(); renderPresets(); applyDefaultLength(); };
     renderSnackBtn(); renderPresets();
     $("ftSnack").addEventListener("click", function(){ stop(); mode="down"; var s=(data&&data.snackSeconds)||420; baseSet=s; remaining=s; start(); });
-    $("ftSnackEdit").addEventListener("click", function(){
-      var raw=prompt("Snack timer length, in minutes:", String(((data&&data.snackSeconds)||420)/60));
-      if(raw===null) return; // cancelled
-      var mins=parseFloat(raw);
-      if(isNaN(mins)||mins<=0){ alert("Please enter a number of minutes greater than 0."); return; }
-      data.snackSeconds=Math.round(mins*60); save(); renderSnackBtn();
-    });
+    $("ftSnackEdit").addEventListener("click", function(){ editOpen("snack"); });
     $("ftMin").addEventListener("click", function(){ ft.classList.toggle("min"); render(); });
     $("ftClose").addEventListener("click", function(){
       // Popped out, ✕ has to close the WINDOW — hiding the panel inside it
@@ -6839,15 +6855,14 @@ function setupRoster() {
       popOutPanel(ft, "Timer — Pop-out", {width:280, height:340,
         onFail:function(){},   // the timer has no flash strip to write into
         onEnter:function(){
+          // Minimize is the only control that stops meaning anything — the OS
+          // owns this window's size now. Everything else, snack length
+          // included, works popped out because nothing here uses prompt().
           $("ftMin").style.display="none";
-          // prompt()/alert() fire on the MAIN window, which is behind another
-          // app while popped out — the pop-out would just look frozen.
-          $("ftSnackEdit").style.display="none";
           render();
         },
         onExit:function(){
           var m=$("ftMin"); if(m) m.style.display="";
-          var se=$("ftSnackEdit"); if(se) se.style.display="";
           render();
         }});
     });

@@ -67,13 +67,15 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
   It needs Chrome or Edge on a computer. On anything else the ⧉ button is simply not there, and the timer works exactly as it always has.
 
-  While it is popped out, the ✎ button for the snack length is hidden. Changing it opens a typing box on the main window, which would be sitting behind whatever you had switched to — so it would have looked as though the timer had frozen. Put the timer back on the page and the button returns.
+  **Everything on the timer keeps working while it is popped out**, including changing the snack length — see below.
 
 - **You can now just type the time you want.** Tap the big number on the timer and type it: **12** for twelve minutes, **12:30**, **1:05:00**, or **90s**. Before this the only way to set a length was to nudge it with the +/− buttons, so twelve minutes took seven presses — and some lengths could not be reached at all, since the smallest step was ten seconds and 45 seconds simply was not a number the timer could be set to.
 
   **A row of one-tap lengths** — 1, 2, 3, 5, 10 and 15 minutes — sits under the number for the ones you reach for constantly.
 
   **The timer also remembers.** Whatever you type becomes the length it opens at next time, so if your shiur always starts with a twelve-minute chazarah, you type it once. It used to always open at five minutes with no way to change that. Nothing is lost if you never touch it: an existing timer keeps opening at five minutes exactly as before.
+
+  **Setting the snack length works the same way.** Pressing ✎ next to the snack button now types straight into the timer instead of opening a separate pop-up box, and it accepts the same things — **7**, **7:30**, **450s**. It used to ask for minutes only, so seven and a half minutes had to be entered as "7.5". The old pop-up box also could not be used at all once the timer was popped out — it would have opened behind whatever program you had switched to, making the timer look frozen — so this is what lets the snack length be changed from the popped-out window like everything else.
 
 ### Changed
 
