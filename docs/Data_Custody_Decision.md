@@ -141,6 +141,13 @@ merged feature.
   amendments that follow *from* the split being accepted, not decisions this
   document needs to make independently. They're listed in #218 as consequences,
   not open questions, so they aren't repeated here.
+  **The mechanic behind that reframe now has a written proposal** —
+  `Firebase_Rebuild_Scope.md`, open question 11 (2026-08-07): the code typed at
+  signup decides where the account lands, so a beta tester's PIN creates a
+  standalone (tier-2) account while a school's code includes the rebbi in that
+  school (tier 1). Still PROPOSED, still downstream of §1 — but its
+  sub-question 4 (a standalone rebbi being adopted once his school signs on) is
+  the account-side half of **Q2** above, so answer the two together.
 - **The GCP project / OAuth client setup itself** — that's an account-creation
   step that has to happen in Ben's Google Cloud Console, not something Claude
   can do unprompted (account creation is outside what Claude acts on without
