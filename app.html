@@ -2843,8 +2843,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <h2 class="view-title">Print: Activities</h2>
     <div id="menuLabelsBlock">
       <p class="view-note no-print">Print this and keep it on your clipboard. Scanning one of these <b>switches what you're scoring</b> and jumps you to the scan screen — it doesn't give points to anyone.</p>
+      <!-- The same toolbar the student labels carry, in the same order and with
+           the same wording: format, then what to narrow to, then how many of
+           each. "Sections" stands in for "groups" because sections ARE the
+           activity codes' groups — the ones you name yourself under Choose
+           codes — and "codes" rather than "activities" because the Undo,
+           Custom and phrase-nav cards print on this sheet too. -->
       <div class="toolbar no-print">
         <select id="menuLabelFormat" class="field" style="width:auto"></select>
+        <select id="menuSection" class="field" style="width:auto"><option value="">All sections</option></select>
+        <select id="menuWhich" class="field" style="width:auto"><option value="">All codes</option></select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.9rem;color:var(--muted)">Copies each <input id="menuCopies" type="number" min="1" value="1" class="field" style="width:64px"></label>
+        <button class="btn btn-sm" id="menuFillSheet" title="Fill one whole sheet with the selected code">Fill a sheet (1 code)</button>
         <button class="btn btn-sm" id="menuChooseCodes">Choose codes</button>
         <button class="btn btn-primary" id="printMenu">🖨 Print activity menu</button>
       </div>
@@ -5021,6 +5031,9 @@ function setupRoster() {
     // Arming a tracked item is what puts the 2d badges on the tiles, and
     // disarming (or arming a point activity) is what takes them off again.
     if(typeof refreshTrackedBadges==="function") refreshTrackedBadges();
+    // And arming Attendance specifically is what puts "Mark the rest Present"
+    // on the class list. Same in-place treatment, same reason — see there.
+    if(typeof refreshAttFillBtn==="function") refreshAttFillBtn();
   }
 
   /* ---------- TABS (grouped, with a subtab row) ---------- */
@@ -6009,10 +6022,8 @@ function setupRoster() {
     // The fill-in button says which way it fills, because in presence-first the
     // useful sweep is the opposite one: the rebbi has marked everyone who is
     // here, and what is left over is the absences.
-    $("attMarkAllPresent").textContent = attPresenceFirst() ? "Mark the rest Absent" : "Mark the rest Present";
-    $("attMarkAllPresent").title = attPresenceFirst()
-      ? "Marks every student you haven't marked yet as absent — anyone you already marked is left alone"
-      : "Marks every student who hasn't been marked yet — anyone you already set to absent or late is left alone";
+    $("attMarkAllPresent").textContent = attFillLabel();
+    $("attMarkAllPresent").title = attFillTitle();
   }
   // Switching the mode NEVER rewrites a record — it changes what an unmarked
   // boy means from here on. A day already marked reads the same in both, which
@@ -6022,6 +6033,9 @@ function setupRoster() {
     data.attMode = b.dataset.attmode==="presence" ? "presence" : "absence";
     save();
     if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
+    // The class list's copy of the fill button says which way it fills too, and
+    // it is not on this tab to be redrawn by the line above.
+    refreshAttFillBtn();
   });
   $("attPrevDay").addEventListener("click", function(){ var d=new Date(attDate+"T00:00:00"); d.setDate(d.getDate()-1); attDate=d.toISOString().slice(0,10); renderAttendance(); });
   $("attNextDay").addEventListener("click", function(){ var d=new Date(attDate+"T00:00:00"); d.setDate(d.getDate()+1); attDate=d.toISOString().slice(0,10); renderAttendance(); });
@@ -6032,14 +6046,34 @@ function setupRoster() {
   // this button lost all three — silently, with no undo, and with the day then
   // reading as a clean full house. Anyone carrying a real timestamp has been
   // marked deliberately and is left exactly as he is.
-  $("attMarkAllPresent").addEventListener("click", function(){
+  //
+  // Extracted from the button because the class list has its own copy of it now
+  // (see the Attendance button in renderTapPanelInto). Two buttons writing
+  // attendance in two places is exactly how "the rest" would come to mean two
+  // different things, so there is one implementation and both call it. The DAY
+  // is the caller's: the tab means the day it is showing, the class list always
+  // means today. Returns how many students it actually wrote.
+  function attFillUnmarked(dateKey){
     // Presence-first fills the leftovers as ABSENT: there the rebbi has marked
     // everyone who is here, so what is left over is precisely who isn't.
     var fill=attPresenceFirst() ? "absent" : "present";
+    var n=0;
     activeStudents().forEach(function(s){
-      if(attMarkedRec(attDate, s.id)) return;
-      setAttendance(s.id, fill, attDate);
+      if(attMarkedRec(dateKey, s.id)) return;
+      if(setAttendance(s.id, fill, dateKey)) n++;
     });
+    return n;
+  }
+  // The wording both buttons use, so the tab and the chart cannot drift on which
+  // way round the fill goes.
+  function attFillLabel(){ return attPresenceFirst() ? "Mark the rest Absent" : "Mark the rest Present"; }
+  function attFillTitle(){
+    return attPresenceFirst()
+      ? "Marks every student you haven't marked yet as absent — anyone you already marked is left alone"
+      : "Marks every student who hasn't been marked yet — anyone you already set to absent or late is left alone";
+  }
+  $("attMarkAllPresent").addEventListener("click", function(){
+    attFillUnmarked(attDate);
     renderAttendance();
   });
   $("attSendBtn").addEventListener("click", sendAttendance);
@@ -8637,6 +8671,65 @@ function setupRoster() {
       if(b) tb.appendChild(b);
     });
   }
+  /* "MARK THE REST PRESENT", ON THE CLASS LIST ITSELF.
+   *
+   * Taking attendance off the seating chart is the whole point of arming
+   * Attendance there — tap the three boys who are away, and the rest are simply
+   * here. Closing that out meant leaving the chart (full screen, leaving full
+   * screen) to press the one button on the Attendance tab that says so. Now it
+   * is on the chart, and it runs the SAME fill the tab runs: attFillUnmarked(),
+   * one implementation, so "the rest" cannot come to mean two different things.
+   *
+   * ONLY WHILE ATTENDANCE IS ARMED. A permanent attendance button on a points
+   * chart is a way to mark a whole class by accident, and this toolbar already
+   * carries five controls. Armed-and-attendance is the one state in which this
+   * chart IS an attendance screen — it is also exactly when every tile is
+   * already showing its present/absent badge (trackedTileBadge).
+   *
+   * ALWAYS TODAY, NEVER attDate. The chart has no day on screen, so it follows
+   * the rule the tracked attendance scan already follows in TRACKED_LEGACY
+   * "ti-attendance": real today, not whatever day the Attendance TAB is parked
+   * on. Passing the date explicitly is load-bearing — setAttendance() and
+   * attCycle() both DEFAULT to attDate, so omitting it would quietly write this
+   * morning's roll onto a day the rebbi was reading last week.
+   */
+  function attFillToolbarBtn(){
+    var b=el("button","seat-modebtn att-fill-btn","✓ "+attFillLabel());
+    b.title=attFillTitle()+" — for today.";
+    b.addEventListener("click", function(){
+      var n=attFillUnmarked(todayKey());
+      // Nothing left to fill is a real answer, not a failure: the roll is
+      // already complete. Saying so beats a button that looks dead.
+      if(!n){ flash(false, "Attendance", "Nobody left to mark", "Everyone is already marked for today"); beep(false); return; }
+      flash(true, "Attendance", attFillLabel(), n+(n===1?" student":" students"));
+      beep(true);
+      // The badges change under the rebbi's finger rather than on the next full
+      // repaint — the same reason recordTrackedScan() calls this instead of
+      // renderTapPanel(), which would rebuild every QR on the chart mid-scan.
+      refreshTrackedBadges();
+      refreshLiveViews();
+    });
+    return b;
+  }
+  /* Add it, drop it, or re-label it in place — never a renderTapPanel().
+   *
+   * Arming is deliberately a badge-level repaint (see refreshTrackedBadges
+   * above), so a button that only exists while Attendance is armed has to be
+   * maintained the same way: rebuilding the panel on every arm would throw away
+   * the rebbi's scroll position and regenerate every QR code, in front of a
+   * room, mid-scan. Re-labels as well as adds, because "the rest" flips between
+   * Present and Absent with data.attMode.
+   */
+  function refreshAttFillBtn(){
+    var want=attendanceActivity(armedActivity());
+    document.querySelectorAll(".seat-toolbar-main").forEach(function(tb){
+      var cur=tb.querySelector(".att-fill-btn");
+      if(!want){ if(cur && cur.parentNode) cur.parentNode.removeChild(cur); return; }
+      if(!cur){ tb.appendChild(attFillToolbarBtn()); return; }
+      cur.textContent="✓ "+attFillLabel();
+      cur.title=attFillTitle()+" — for today.";
+    });
+  }
 
   // THE one path a tracked scan travels. Records and reports, or refuses — the
   // flash and the write are the same call, so "it said it worked" and "it wrote
@@ -10487,7 +10580,10 @@ function setupRoster() {
     if(!open) return;
     var body=bodyEl; body.innerHTML="";
 
-    var toolbar=el("div","seat-toolbar");
+    // seat-toolbar-main marks THIS row apart from the ⚙ Setup row below, which
+    // carries the same class — refreshAttFillBtn() has to be able to find the
+    // one the attendance button belongs on without matching both.
+    var toolbar=el("div","seat-toolbar seat-toolbar-main");
     // Seating chart not shown in Teach / Shorashim context
     var allowSeating=true; // teachTapPanelBody/shorTapPanelBody no longer exist; all remaining tap panels allow seating view
     var effViewMode=opts.forceSeating ? "seating" : (allowSeating ? data.tapViewMode : "list");
@@ -10647,6 +10743,11 @@ function setupRoster() {
       pickBtn.addEventListener("click", openCodePickerModal);
       toolbar.appendChild(pickBtn);
     }
+
+    // Built here so it is present on the first paint if Attendance is already
+    // armed; added and removed after that by refreshAttFillBtn(), which is what
+    // keeps it in step with arming without redrawing the chart.
+    if(attendanceActivity(armedActivity())) toolbar.appendChild(attFillToolbarBtn());
 
     if(effViewMode==="seating"){
       var lay=seatLayout();
@@ -18252,10 +18353,80 @@ nameLine
     // Class-name title above the printed menu, so a teacher with several
     // classes can tell the sheets apart. Tiles view only — an extra element
     // above an Avery sheet would push the die-cut label positions off.
+    /* SECTION FILTER — the activity codes' answer to the student labels' group
+     * dropdown. Sections are already the rebbi's own grouping of these codes
+     * (Choose codes: add, rename, drag between them), so narrowing to one is
+     * how "print just my deductions" or "print just the Coins strip" becomes a
+     * single sheet instead of the whole menu with the rest cut away by hand.
+     *
+     * printCodeSectionOf(), never the raw override — it falls back through the
+     * code's own default section and then to the first surviving section, so a
+     * code whose section the rebbi has DELETED still lands somewhere and is
+     * still printable. Reading data.printCodeSections directly would drop it.
+     *
+     * Nothing here is persisted, exactly as labelGroup / labelWho / labelCopies
+     * are not: these are "what am I printing right now" choices, and a stored
+     * section filter is a way to come back next month and quietly print a third
+     * of your codes. Only the format stays, which is a property of the paper.
+     */
+    var secSel=$("menuSection"), secCur=secSel.value;
+    secSel.innerHTML='<option value="">All sections</option>';
+    codeSections().forEach(function(sec){ var o=el("option",null,codeSectionLabel(sec)); o.value=sec.key; secSel.appendChild(o); });
+    if(codeSections().some(function(sec){ return sec.key===secCur; })) secSel.value=secCur; else secSel.value="";
+    var secKey=secSel.value;
+    var secName=secKey ? codeSectionLabel(codeSectionByKey(secKey)) : "";
+
+    // Class-name title above the printed menu, so a teacher with several
+    // classes can tell the sheets apart. Tiles view only — an extra element
+    // above an Avery sheet would push the die-cut label positions off.
+    // The section is named too when one is picked: two sheets from one class
+    // are otherwise identically titled and only tellable apart by reading the
+    // codes, which is exactly what the title exists to save.
     var mt=$("menuPrintTitle");
-    if(mt){ mt.textContent=data.currentClass||"All Classes"; mt.style.display=(avery||!data.activities.length)?"none":"block"; }
+    if(mt){ mt.textContent=(data.currentClass||"All Classes")+(secName?" · "+secName:""); mt.style.display=(avery||!data.activities.length)?"none":"block"; }
     if(!data.activities.length){ (avery?sheet:mg).appendChild(el("div","empty-state","Add activities first, on the Activities tab.")); return; }
+
     var items=menuLabelItems();
+    if(secKey) items=items.filter(function(it){ return printCodeSectionOf(it)===secKey; });
+
+    /* ONE CODE, AND HOW MANY OF EACH — the "Whole class" picker and "Copies
+     * each" box, doing here what they do for student labels. The use they exist
+     * for is the same one: a sheet of nothing but the code you actually wear
+     * out. "Undo Last Scan" and the armed activity a rebbi uses every period
+     * are the ones that get taped to a desk, a folder and a clipboard, and
+     * getting three of them meant printing the whole menu three times.
+     *
+     * Built from the SECTION-FILTERED list, so the two narrow together the same
+     * way the student pickers do — pick Negative and this offers the negative
+     * codes only. A pick that the section filter has just excluded falls back to
+     * "All codes" rather than silently printing nothing.
+     */
+    var whichSel=$("menuWhich"), whichCur=whichSel.value;
+    whichSel.innerHTML='<option value="">All codes</option>';
+    items.forEach(function(it){ var o=el("option",null,it.name); o.value=it.qrText; whichSel.appendChild(o); });
+    if(items.some(function(it){ return it.qrText===whichCur; })) whichSel.value=whichCur; else whichSel.value="";
+    var which=whichSel.value;
+    if(which) items=items.filter(function(it){ return it.qrText===which; });
+
+    // Same clamp as the student labels' copies box, for the same reason: this
+    // multiplies straight into a QR-generating loop, so a pasted 99999 would
+    // hang the tab rather than print anything.
+    var copies=Math.max(1, Math.min(400, parseInt($("menuCopies").value,10)||1));
+    if(copies>1){
+      var expanded=[];
+      items.forEach(function(it){ for(var k=0;k<copies;k++) expanded.push(it); });
+      items=expanded;
+    }
+
+    // Every code turned off, or a section the rebbi has emptied. Says which,
+    // rather than showing a blank sheet that reads as a broken page.
+    if(!items.length){
+      (avery?sheet:mg).appendChild(el("div","empty-state",
+        secKey ? "No codes in “"+secName+"” right now — move some into it under Choose codes, or pick All sections."
+               : "Every code is turned off. Turn some back on under Choose codes."));
+      return;
+    }
+
     if(avery){
       var averyItems=items.map(function(it){ return {qrText:it.qrText, line1:it.name, line2:it.sub}; });
       renderAverySheetGeneric(averyItems, sheet, data.menuLabelFormat, hasQR);
@@ -18385,6 +18556,26 @@ nameLine
       grid.appendChild(page);
     });
   }
+  // The activity menu's own copy of the label toolbar. renderMenuLabels() alone,
+  // not renderLabels() — that one rebuilds the student labels and every personal
+  // page as well, and regenerating a class's worth of QR codes to redraw this one
+  // sheet is the expensive way round. Same reason $("menuLabelFormat") has always
+  // called it directly.
+  $("menuSection").addEventListener("change", function(){ renderMenuLabels(); });
+  $("menuWhich").addEventListener("change", function(){ renderMenuLabels(); });
+  // "input", not "change" — covers typing, the spinner arrows and paste. The
+  // student box learned this the hard way: a second "change" listener beside it
+  // double-rendered, and QR generation is the part that costs.
+  $("menuCopies").addEventListener("input", function(){ renderMenuLabels(); });
+  $("menuFillSheet").addEventListener("click", function(){
+    // LABEL_SPECS has no entry for "tiles" — it is a free-flowing grid with no
+    // fixed count — so it falls back to 30, the Avery 5160 sheet, exactly as the
+    // student version does. Same number, same reasoning, kept the same on purpose.
+    var spec=LABEL_SPECS[data.menuLabelFormat];
+    var per = spec ? spec.cols*spec.rows : 30;
+    if(!$("menuWhich").value){ alert("Pick one code in the “All codes” dropdown first — then this fills a whole sheet with just that code."); return; }
+    $("menuCopies").value=per; renderMenuLabels();
+  });
   $("personalFormat").addEventListener("change", function(){ data.personalLabelFormat=this.value; save(); renderPersonalPages(); });
   $("personalActivity").addEventListener("change", renderLabels);
   $("labelGroup").addEventListener("change", renderLabels);
