@@ -12,7 +12,7 @@
 
 Before any ordering, two realities drive the sequence:
 
-1. **This is one ~19,750-line single-file app that real rebbeim use live.** A bad migration = a teacher loses a year of student data mid-semester. So **every phase that touches the data model must ship its `migrateData()` path first, tested, before any feature that depends on it.** Data safety is not a phase — it's a gate on every phase.
+1. **This is one ~22,450-line single-file app that real rebbeim use live.** A bad migration = a teacher loses a year of student data mid-semester. So **every phase that touches the data model must ship its `migrateData()` path first, tested, before any feature that depends on it.** Data safety is not a phase — it's a gate on every phase.
 
 2. **Features have real dependencies.** The Gradebook engine underpins Quiz grades, Chart-mode, and the tracked-items consolidation. The Library underpins the Review Wizard. Print reorganization underpins the No-Computer workflow. Building in the wrong order means building things twice. The phases below are ordered so nothing waits on something built later.
 
