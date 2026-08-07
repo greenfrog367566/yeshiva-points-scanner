@@ -35,6 +35,8 @@ Why it is item 0 rather than something to get to: it says the split has to be se
 
 It also names a piece that could start immediately and independently: **spike the Drive OAuth + `drive.file` write flow** against a throwaway Google Cloud project. No dependency on accounts, Firestore or the data model, and it de-risks the one real unknown — the re-auth UX in classroom conditions, not the API.
 
+**`docs/Data_Custody_Decision.md` (2026-08-07) works the five open questions with a recommendation each**, so a yes/no/other per question is enough to move — read that before re-deriving the issue from scratch. Its one non-technical question (what a school has to agree to, to become tier 1) is flagged as staying explicitly Ben's call rather than getting a recommendation.
+
 **1. Finish Phase 2c: give the Gradebook a writer, then drop the four old tabs (#227)** — the biggest build item left, and it was missing from this list entirely until 2026-08-06.
 
 Every `gb*` function only reads. Until the grid can edit a cell, the Attendance / Homework / Passes / Tracker tabs cannot go, because their setters are the only thing feeding the mirror — see the Phase 2 status section for what each store already did. **Give it its own session**: it needs a cell editor plus setters, and it touches the transcription seam, so it is the riskiest thing currently on the board. When a tab does go, delete its `TRACKED_LEGACY` row, its badge-table row **and** that store's `mirrorTracked()` call together.
