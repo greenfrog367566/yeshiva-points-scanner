@@ -1102,8 +1102,17 @@
     createImageBitmap(blob).then(function(bmp){
       return detector.detect(bmp).then(function(codes){
         if(!codes.length){
-          brSetStatus("No QR code found in that "+how+" ("+bmp.width+"x"+bmp.height+"). "+
-            "Crop it tighter around the code, or hold the code up to the camera instead.");
+          /* The pairing code is ~41 squares across, so it needs roughly 4px a
+             square. Below that no amount of upscaling helps — the detail was
+             thrown away by whatever shrank the picture. */
+          var tooSmall=Math.min(bmp.width,bmp.height)<200;
+          brSetStatus("No QR code found in that "+how+" ("+bmp.width+"x"+bmp.height+")."+
+            (tooSmall
+              ? " That is too small to decode: this pairing code is about 41 squares across, so it needs"+
+                " ~170px at the absolute minimum and 300px+ to be reliable. Enlarge the Link Controller window"+
+                " first, screenshot at full size without shrinking it, or use “Read the code from a window…”,"+
+                " which captures at native resolution and avoids the problem entirely."
+              : " Crop tighter around the code, or use “Read the code from a window…” instead."));
           return;
         }
         for(var k=0;k<codes.length;k++){ if(maybePair(codes[k].rawValue)) return; }
