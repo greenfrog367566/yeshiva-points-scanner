@@ -98,6 +98,20 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
   **Setting the snack length works the same way.** Pressing ✎ next to the snack button now types straight into the timer instead of opening a separate pop-up box, and it accepts the same things — **7**, **7:30**, **450s**. It used to ask for minutes only, so seven and a half minutes had to be entered as "7.5". The old pop-up box also could not be used at all once the timer was popped out — it would have opened behind whatever program you had switched to, making the timer look frozen — so this is what lets the snack length be changed from the popped-out window like everything else.
 
+- **The timer can now be a clock face, not just a number.** Three buttons across the top of the timer choose how it is drawn. **Nothing changes unless you press one** — it starts on Digits, which is exactly what the timer has always looked like.
+
+  **Digits** — the number, as before.
+
+  **Disc** — a coloured circle that shrinks as the time runs down. A boy can see how much is left from across the room without reading anything.
+
+  **Clock** — a real clock face showing the actual time, with the time you have left **shaded across it**. If it is 1:10 and you set five minutes, the shaded block runs from where the minute hand is now to the 15 — so the answer on the board is not "5:00 left" but **"you have until 1:15."**
+
+  That difference is the whole point of the Clock face. A number tells a boy how much time is left only if he already has a sense of how long five minutes is; a shaded clock face shows him *where the time ends*, and he can watch the hand travel into it. It is also the one that quietly teaches reading a clock, which not every boy in a Shiur Aleph can do yet.
+
+  **When no timer is running, Clock is simply a clock on the wall of your screen** — which, popped out with ⧉, is exactly what it becomes.
+
+  **Two smaller things it does on purpose.** The shaded block never runs past a full hour: beyond that it would lap the face and stop meaning anything, so the block fills and the number underneath tells you the real figure. And on the stopwatch (Count up) the Disc steps aside for the number, because a disc that shrinks needs a length to shrink from and a stopwatch has none — your choice is remembered, and the Disc comes straight back when you switch to Count down.
+
 ### Changed
 
 - **Corrections you make on the Attendance, Homework, Passes and Tracker tabs are now kept alongside your scans, not just on the tab you made them on.** Until now, scanning a boy recorded his mark in two places, but *fixing* it on the tab afterwards only moved one of them. Nothing you could see was wrong, because the one screen that reads the second copy — the Gradebook — is still switched off. But it meant the two could disagree, and that disagreement was the last thing keeping the Gradebook off.

@@ -1002,12 +1002,26 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .ft-chip:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
   .ft-row{display:flex;gap:6px;margin-top:8px}
   .ft-row .btn{flex:1;padding:7px 4px}
+  /* Face picker: how the timer is DRAWN, independent of what it is counting.
+     Digits is the default, so an existing timer looks exactly as it did. */
+  .ft-faces{display:flex;gap:4px;margin-bottom:8px}
+  .ft-face{flex:1;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:4px 2px;font-size:.72rem;font-weight:700;color:var(--muted);cursor:pointer}
+  .ft-face:hover{border-color:var(--ink);color:var(--ink)}
+  .ft-face.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .ft-svg{display:block;width:100%;height:auto;margin-bottom:6px}
+  /* With a face drawn, the number shrinks to a caption under it. It stays
+     visible on purpose: it is still the tap target for typing a time, AND on
+     the clock it is the only thing separating a capped block from exactly an
+     hour, since both shade the whole face. */
+  .float-timer.face-disc .ft-display,.float-timer.face-clock .ft-display{font-size:1.15rem;margin-bottom:6px}
   /* Popped out, the OS owns the window size, so the panel fills it and the
      number scales to whatever the rebbi drags the window to — the point of
      the pop-out is being readable from the back of the room. */
   .float-timer.in-pip{border:none;border-radius:0;box-shadow:none}
   .float-timer.in-pip .ft-display{font-size:min(24vw,17vh);line-height:1.05;margin-bottom:4px}
   .float-timer.in-pip .ft-edit{font-size:min(14vw,10vh)}
+  .float-timer.in-pip .ft-svg{max-height:58vh}
+  .float-timer.in-pip.face-disc .ft-display,.float-timer.in-pip.face-clock .ft-display{font-size:min(8vw,6vh)}
   .float-timer.min .ft-body{display:none}
   .float-timer.min{width:auto}
   .float-timer.min .ft-grip{cursor:grab}
@@ -1715,6 +1729,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <button class="ft-btn" id="ftClose" title="Close">✕</button>
   </div>
   <div class="ft-body" id="ftBody">
+    <div class="ft-faces" id="ftFaces">
+      <button class="ft-face" data-face="digits" title="Just the number">Digits</button>
+      <button class="ft-face" data-face="disc" title="A coloured disc that shrinks as the time runs down">Disc</button>
+      <button class="ft-face" data-face="clock" title="A real clock face, with the timer's block shaded across it">Clock</button>
+    </div>
+    <svg class="ft-svg" id="ftFace" viewBox="0 0 200 200" style="display:none" aria-hidden="true"></svg>
     <button class="ft-display" id="ftDisplay" title="Tap to type a time — 12, 12:30, 1:05:00, 90s. It also becomes the length the timer opens at.">05:00</button>
     <input id="ftEdit" class="field ft-edit" style="display:none" autocomplete="off" placeholder="12:30" aria-label="Type a time">
     <div class="ft-presets" id="ftPresets"></div>
@@ -6733,10 +6753,108 @@ function setupRoster() {
     function pad(n){ return (n<10?"0":"")+n; }
     function fmtTime(sec){ sec=Math.max(0,Math.round(sec)); var h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60; return h>0?(h+":"+pad(m)+":"+pad(s)):(pad(m)+":"+pad(s)); }
     function curVal(){ return mode==="down"?remaining:elapsed; }
+    /* ---- faces: how the timer is DRAWN ----
+       Two things were being conflated — what it counts (a duration, or the
+       time of day) and how it is drawn (a number, or a face). Digits and Disc
+       both show a duration; Clock shows the time of day with the timer's block
+       shaded across it, which is a different statement: not "5:00 left" but
+       "you have until 1:15". Clock with no timer running is simply a wall
+       clock, so those are one face, not two.
+
+       Own namespace constant rather than the shared SVGNS: this IIFE is
+       evaluated before that var is assigned, and a namespace of undefined
+       yields elements that are not SVG at all. polar() is a function
+       declaration so it IS hoisted, and is reused rather than re-derived. */
+    var FT_SVGNS="http://www.w3.org/2000/svg";
+    function ftEl(tag,attrs){ var e=document.createElementNS(FT_SVGNS,tag); for(var k in attrs) e.setAttribute(k,attrs[k]); return e; }
+    // Wedge sweeping `ang` degrees clockwise from `startDeg` (0 = 12 o'clock).
+    // A full circle CANNOT be an arc — start and end points coincide and it
+    // draws nothing — so it degenerates to a plain circle.
+    function ftWedge(cx,cy,r,startDeg,ang,fill){
+      if(ang<=0) return null;
+      if(ang>=359.9) return ftEl("circle",{cx:cx,cy:cy,r:r,fill:fill});
+      var p0=polar(cx,cy,r,startDeg), p1=polar(cx,cy,r,startDeg+ang), laf=ang>180?1:0;
+      return ftEl("path",{d:"M "+cx+" "+cy+" L "+p0[0].toFixed(2)+" "+p0[1].toFixed(2)
+        +" A "+r+" "+r+" 0 "+laf+" 1 "+p1[0].toFixed(2)+" "+p1[1].toFixed(2)+" Z", fill:fill});
+    }
+    function curFace(){
+      var f=(data&&data.timerFace)||"digits";
+      return (f==="disc"||f==="clock")?f:"digits";
+    }
+    function drawDisc(host){
+      var cx=100, cy=100, r=88;
+      host.appendChild(ftEl("circle",{cx:cx,cy:cy,r:r,fill:"#eef0f6",stroke:"#d8dbe4","stroke-width":3}));
+      // Remaining as a share of the length that was set — the Time Timer idea.
+      var frac = (mode==="down" && baseSet>0) ? Math.max(0,Math.min(1,remaining/baseSet)) : 0;
+      var w=ftWedge(cx,cy,r,0,frac*360,"var(--bad,#c9433f)");
+      if(w) host.appendChild(w);
+    }
+    function drawClock(host){
+      var cx=100, cy=100, r=88, now=new Date();
+      host.appendChild(ftEl("circle",{cx:cx,cy:cy,r:r,fill:"var(--card,#fff)",stroke:"var(--ink,#141a2e)","stroke-width":3}));
+      var mins=now.getMinutes()+now.getSeconds()/60;
+      // Shade from where the minute hand is now to where it will be at zero.
+      // Capped at one hour: past that the block laps the face and stops
+      // meaning anything. The digits under the face say what the real figure
+      // is, which is the only thing telling a capped block from exactly 60.
+      if(mode==="down" && remaining>0){
+        var w=ftWedge(cx,cy,r-4, mins*6, (Math.min(remaining,3600)/3600)*360, "rgba(201,67,63,.30)");
+        if(w) host.appendChild(w);
+      }
+      for(var i=0;i<60;i++){
+        var big=(i%5===0), p0=polar(cx,cy,r-(big?14:7),i*6), p1=polar(cx,cy,r-2,i*6);
+        host.appendChild(ftEl("line",{x1:p0[0].toFixed(2),y1:p0[1].toFixed(2),x2:p1[0].toFixed(2),y2:p1[1].toFixed(2),
+          stroke:big?"var(--ink,#141a2e)":"#b9bfd0","stroke-width":big?3:1.5,"stroke-linecap":"round"}));
+      }
+      var hp=polar(cx,cy,r*0.52,(now.getHours()%12)*30 + now.getMinutes()*0.5);
+      host.appendChild(ftEl("line",{x1:cx,y1:cy,x2:hp[0].toFixed(2),y2:hp[1].toFixed(2),stroke:"var(--ink,#141a2e)","stroke-width":7,"stroke-linecap":"round"}));
+      var mp=polar(cx,cy,r*0.78,mins*6);
+      host.appendChild(ftEl("line",{x1:cx,y1:cy,x2:mp[0].toFixed(2),y2:mp[1].toFixed(2),stroke:"var(--ink,#141a2e)","stroke-width":4.5,"stroke-linecap":"round"}));
+      host.appendChild(ftEl("circle",{cx:cx,cy:cy,r:5,fill:"var(--bad,#c9433f)"}));
+    }
+    function renderFace(){
+      var host=$("ftFace"); if(!host) return;
+      var face=curFace();
+      var picker=$("ftFaces");
+      // The picker always shows what is SAVED, so the rebbi's choice is never
+      // silently rewritten — only what gets drawn changes below.
+      if(picker) [].forEach.call(picker.children, function(b){ b.classList.toggle("on", b.dataset.face===face); });
+      // Counting up there is no total to shrink against, so a disc would sit
+      // at empty forever and read as broken. It falls back to the number for
+      // as long as that is true, exactly as the +/- row and presets do, and
+      // comes back untouched on the way to count-down. A clock is still a
+      // clock either way, so it stays.
+      if(face==="disc" && mode!=="down") face="digits";
+      ft.classList.toggle("face-disc", face==="disc");
+      ft.classList.toggle("face-clock", face==="clock");
+      if(face==="digits"){ host.style.display="none"; host.innerHTML=""; return; }
+      host.style.display="";
+      host.innerHTML="";
+      if(face==="disc") drawDisc(host); else drawClock(host);
+    }
+    /* The clock has to keep moving when NO timer is running — it is a wall
+       clock then, and tickIv only exists while counting. Self-cancelling in
+       the same shape as the other timed views in this file, so it can never
+       outlive the thing it is drawing. */
+    var clockIv=null;
+    function panelShowing(){
+      if(pipWin && pipPanelId==="floatTimer") return true;
+      return ft.style.display==="block";
+    }
+    function syncClockTick(){
+      var want = curFace()==="clock" && panelShowing();
+      if(want && !clockIv){
+        clockIv=setInterval(function(){
+          if(!(curFace()==="clock" && panelShowing())){ clearInterval(clockIv); clockIv=null; return; }
+          if(!running) renderFace();   // while running, tick() already redraws
+        },1000);
+      } else if(!want && clockIv){ clearInterval(clockIv); clockIv=null; }
+    }
     function render(){
       var disp=$("ftDisplay"); disp.textContent=fmtTime(curVal());
       disp.classList.toggle("running", running && !(mode==="down"&&remaining<=0));
       disp.classList.toggle("done", mode==="down"&&remaining<=0 && !running);
+      renderFace(); syncClockTick();
       $("ftStart").textContent=running?"Pause":"Start";
       $("ftMode").innerHTML=mode==="down"?"Count&nbsp;down":"Count&nbsp;up";
       $("ftSetRow").style.display=mode==="down"?"flex":"none";
@@ -6854,6 +6972,11 @@ function setupRoster() {
       render();
     }
     $("ftDisplay").addEventListener("click", function(){ editOpen("length"); });
+    $("ftFaces").addEventListener("click", function(e){
+      var b=e.target.closest("button"); if(!b||!b.dataset.face) return;
+      if(data){ data.timerFace=b.dataset.face; save(); }
+      render();
+    });
     $("ftEdit").addEventListener("keydown", function(e){
       if(e.key==="Enter"){ e.preventDefault(); editClose(true); }
       else if(e.key==="Escape"){ e.preventDefault(); editClose(false); }
@@ -20968,6 +21091,11 @@ nameLine
     // timer was hardcoded to before this was configurable, so an existing save
     // that has never seen this field behaves exactly as it did.
     if(typeof data.timerDefaultSeconds!=="number" || data.timerDefaultSeconds<=0) data.timerDefaultSeconds=300;
+    // How the timer is drawn. Anything that isn't a face we know falls back to
+    // "digits", which is what the timer has always looked like — so an
+    // existing save, and a value from some later version, both land somewhere
+    // sensible rather than on a blank panel.
+    if(data.timerFace!=="disc" && data.timerFace!=="clock") data.timerFace="digits";
     if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerExcluded={};
     if(!Array.isArray(data.spinnerSavedLists)) data.spinnerSavedLists=[];
     // Attendance / Tracker / Homework tools
