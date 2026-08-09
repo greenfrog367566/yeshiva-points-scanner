@@ -21,7 +21,7 @@ Record group, not just the single first-scan beat (#11). Treat the table as the
 plan it was made from, not a description of the finished video.
 
 **Still open:** the video is not linked anywhere. `quick-start.html`,
-`home.html`, and the app all have no pointer to it, so the rebbeim it was made
+`index.html`, and the app all have no pointer to it, so the rebbeim it was made
 for cannot find it. Tracked in `docs/NOW.md`.
 
 **Goal:** get a rebbi from "never opened this" to "printed sheet in hand,

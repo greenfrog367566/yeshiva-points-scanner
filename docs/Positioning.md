@@ -4,7 +4,7 @@ Settled decisions about how Menchmark describes itself in user-facing copy.
 A reference list, not an essay — check it before writing or editing copy.
 
 **Scope — "user-facing copy" means:** `app.html` (UI strings, help/About),
-`beta.html`, `home.html`, `index.html`, `quick-start.html`, `setup.html`, and
+`beta.html`, `index.html`, `intro.html`, `quick-start.html`, `setup.html`, and
 `docs/user-guide.md`. Internal docs (`CLAUDE.md`, `README.md`, `CHANGELOG.md`,
 the spec docs) are not bound by these rules.
 
@@ -14,20 +14,20 @@ the spec docs) are not bound by these rules.
 
 > A classroom assistant for Yeshiva and Jewish Day School rebbeim.
 
-The authoritative wording lives in `home.html`'s `<meta name="description">`.
+The authoritative wording lives in `index.html`'s `<meta name="description">`.
 Other surfaces should match it rather than invent their own phrasing.
 
 When listing what the app covers, the settled list is **middos and derech
 eretz, attendance, homework, and learning**. Don't claim the Gradebook until
 the Gradebook screen ships — Phase 2a landed the data shell only, and
-`home.html` still marks it Coming soon.
+`index.html` still marks it Coming soon.
 
 ## 2. "Classroom economy" is not Menchmark's positioning
 
 Never use it as the app's self-description. It frames points and prizes as the
 purpose, which is both off-positioning and an undersell.
 
-**Permitted exception:** `home.html`'s Shulchani Mode paragraph ("Run a full
+**Permitted exception:** `index.html`'s Shulchani Mode paragraph ("Run a full
 classroom economy — coins, denominations, a store — if that's your style. Or
 keep it simple."). There it accurately scopes one optional mode among several
 and is immediately qualified. Leave it.
