@@ -202,6 +202,35 @@
         </div>
       </div>
       <div id="sweepNone" class="note" hidden></div>
+
+      <div id="bridgeWrap" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <div style="font-weight:700;margin-bottom:4px">Link Controller bridge <span id="brDot" style="font-weight:400;color:var(--muted)">— not connected</span></div>
+        <p class="hint" style="margin-top:0">
+          The Link's <em>zoom</em> is a standard control the browser can drive directly, but its <em>gimbal</em> is a
+          vendor command no browser can reach. Insta360's own <strong>Link Controller</strong> app can, and it leaves a
+          local WebSocket open for its phone remote — this talks to that. Open Link Controller, start its phone/remote
+          pairing so the <strong>QR code</strong> is on screen, then either
+          <strong>hold it up to the camera</strong> (it pairs itself), <strong>paste a screenshot</strong> anywhere on
+          this page, or type the port and token in by hand.
+        </p>
+        <div class="row">
+          <label class="f">Port <input type="text" id="brPort" style="width:100px" placeholder="e.g. 51234"></label>
+          <label class="f" style="flex:1;min-width:200px">Token <input type="text" id="brToken" placeholder="from the pairing QR code"></label>
+          <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:1px">
+            <button class="btn" id="brConnect">Connect</button>
+            <button class="btn sec" id="brDisconnect" disabled>Disconnect</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn sec" id="brLeft" disabled>◀</button>
+          <button class="btn sec" id="brRight" disabled>▶</button>
+          <button class="btn sec" id="brUp" disabled>▲</button>
+          <button class="btn sec" id="brDown" disabled>▼</button>
+          <label class="f">Pan speed <input type="number" id="brSpeed" value="20" min="1" max="30" step="1"></label>
+          <label class="f">Move time (ms) <input type="number" id="brMove" value="350" min="50" max="3000" step="50"></label>
+        </div>
+        <div id="brStatus" class="hint"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -565,20 +594,43 @@
   var SWEEP_SETTLE_MS=420;      /* gimbal travel before the picture is worth reading */
   var sweep={stops:[],idx:0,dir:1,moving:false,arrivedAt:0,seen:null,perStop:[],startedAt:0};
 
+  /* Sweep can be driven two ways — the camera's own pan, or the Link Controller
+     bridge — so its panel appears when EITHER is available, and reappears if the
+     bridge connects later. */
+  function refreshSweepAvailability(){
+    if(panCaps&&ptzTrack) return;                 /* native already showing */
+    if(bridge.connected){
+      sweepNone.hidden=true;
+      sweepWrap.hidden=false;
+      $("ptzHint").hidden=true;
+      syncPatternUI();
+      if(!sweepOnBox.checked)
+        sweepStatus.textContent="Driving the gimbal through Link Controller. Stops are relative moves, so it starts from wherever the camera is aimed now.";
+    } else {
+      sweepWrap.hidden=true;
+      sweepOnBox.checked=false;
+      resetSweep();
+      if(ptzTrack) sweepNone.hidden=false;        /* camera open but no pan */
+    }
+  }
+
   function setupSweep(caps,t){
     panCaps=null; tiltCaps=null; ptzTrack=null;
     sweepWrap.hidden=true; sweepNone.hidden=true;
     resetSweep();
     var p=caps.pan;
     if(!p || typeof p.max!=="number" || p.max<=p.min){
-      sweepNone.hidden=false;
+      ptzTrack=t;                                  /* remembered so the bridge can still sweep */
+      sweepNone.hidden=true;
+      refreshSweepAvailability();
+      if(sweepWrap.hidden) sweepNone.hidden=false;
       sweepNone.innerHTML="<strong>Sweep needs pan control, and this camera exposes none to the browser"+
         (ptzDenied? " (the pan/tilt/zoom permission was refused)." : ".")+"</strong><br>"+
         "On the Insta360 Link this is expected rather than a fault: its <em>zoom</em> is a standard UVC control, "+
         "which is why the zoom panel above works, but <em>pan and tilt</em> are vendor extension-unit commands, "+
         "and browsers deliberately cannot reach those. The gimbal is only steerable through Insta360's own Link "+
-        "Controller app — which does expose a local WebSocket that a page like this could drive, using the port "+
-        "and token from the pairing QR code the app displays. That bridge is not built here yet. "+
+        "Controller app — so use the <strong>Link Controller bridge</strong> below: pair it with the app's QR code, "+
+        "connect, and sweep switches itself on using the gimbal through that instead. "+
         "Whatever aims the camera, turn the Link's AI tracking off first, or it will fight it.";
       sweepOnBox.checked=false;
       return;
@@ -623,8 +675,15 @@
   /* Stops are laid out around the camera's mechanical centre so a sweep is
      repeatable — not around wherever it happened to be pointing. */
   function buildStops(){
-    if(!panCaps) return [];
     var n=clampInt($("sweepStops").value,2,20,5);
+    /* Bridge mode has no absolute positions to aim at — a "stop" is just one
+       relative move further along, so the list is placeholders. */
+    if(!panCaps){
+      if(!bridge.connected) return [];
+      var out=[];
+      for(var k=0;k<n;k++) out.push({pan:null,tilt:null});
+      return out;
+    }
     var pct=Math.max(5,Math.min(100,parseFloat($("sweepSpan").value)||60))/100;
     var pc=(panCaps.min+panCaps.max)/2, pspan=(panCaps.max-panCaps.min)*pct;
     var pans=[];
@@ -652,19 +711,52 @@
     if(sweepStopList) sweepStopList.innerHTML="";
   }
 
-  function sweepGoTo(i){
-    if(!ptzTrack||!sweep.stops.length) return;
-    var s=sweep.stops[Math.max(0,Math.min(sweep.stops.length-1,i))];
-    var c={};
-    if(s.pan!=null) c.pan=snapTo(s.pan,panCaps);
-    if(s.tilt!=null && tiltCaps) c.tilt=snapTo(s.tilt,tiltCaps);
-    sweep.moving=true;
-    ptzTrack.applyConstraints({advanced:[c]}).catch(function(e){
-      sweepStatus.textContent="The camera refused to pan: "+e.name+" — "+e.message+". Sweep stopped.";
-      sweepOnBox.checked=false;
-    }).then(function(){
-      setTimeout(function(){ sweep.moving=false; sweep.arrivedAt=Date.now(); },SWEEP_SETTLE_MS);
-    });
+  function sweepArrived(extra){
+    setTimeout(function(){ sweep.moving=false; sweep.arrivedAt=Date.now(); },SWEEP_SETTLE_MS+(extra||0));
+  }
+
+  function sweepGoTo(i,prevIdx){
+    if(!sweep.stops.length) return;
+
+    /* Native path: absolute positions, so every stop is exactly repeatable. */
+    if(panCaps&&ptzTrack){
+      var s=sweep.stops[Math.max(0,Math.min(sweep.stops.length-1,i))];
+      var c={};
+      if(s.pan!=null) c.pan=snapTo(s.pan,panCaps);
+      if(s.tilt!=null && tiltCaps) c.tilt=snapTo(s.tilt,tiltCaps);
+      sweep.moving=true;
+      ptzTrack.applyConstraints({advanced:[c]}).catch(function(e){
+        sweepStatus.textContent="The camera refused to pan: "+e.name+" — "+e.message+". Sweep stopped.";
+        sweepOnBox.checked=false;
+      }).then(function(){ sweepArrived(); });
+      return;
+    }
+
+    /* Bridge path: the gimbal only takes RELATIVE velocity, so a stop is "move
+       one step further along", and the first stop is simply where we already
+       are. Ping-ponging is what keeps the drift from accumulating. */
+    if(bridge.connected){
+      var dur=clampInt($("brMove").value,50,3000,350);
+      sweep.moving=true;
+      if(prevIdx==null){
+        /* First stop of a traverse. Without this the sweep would start at
+           whatever the camera is aimed at and only ever travel outward from
+           there, covering half the room. Run back to one end first so the
+           swept arc is CENTRED on where the rebbi pointed it. */
+        var half=Math.max(0,(sweep.stops.length-1)/2)*dur;
+        if(half<40){ sweepArrived(); return; }
+        sweepStatus.textContent="Centring the sweep — running to one end first.";
+        brMove(-1,0,half,function(){ sweepArrived(); });
+        return;
+      }
+      var step=i-prevIdx;
+      if(step===0){ sweepArrived(); return; }
+      brMove(step>0?1:-1,0,dur,function(){ sweepArrived(); });
+      return;
+    }
+
+    sweepOnBox.checked=false;
+    sweepStatus.textContent="Nothing can pan the camera — sweep stopped.";
   }
 
   function renderSweepStops(){
@@ -731,13 +823,14 @@
   }
 
   function sweepTick(values){
-    if(!sweepOnBox.checked||!panCaps||!ptzTrack) return;
+    if(!sweepOnBox.checked) return;
+    if(!(panCaps&&ptzTrack) && !bridge.connected) return;
     if(!sweep.stops.length){
       sweep.stops=buildStops();
       if(!sweep.stops.length){ sweepOnBox.checked=false; return; }
       sweep.idx=0; sweep.dir=1; sweep.seen=Object.create(null); sweep.perStop=[];
       sweep.startedAt=Date.now();
-      sweepGoTo(0);
+      sweepGoTo(0,null);
       return;
     }
     if(sweep.moving) return;
@@ -760,8 +853,9 @@
       next=sweep.idx+sweep.dir;
       if(next<0||next>=sweep.stops.length) next=sweep.idx;
     }
+    var prev=sweep.idx;
     sweep.idx=next;
-    sweepGoTo(next);
+    sweepGoTo(next,prev);
   }
 
   /* Sweeping and auto-zoom would fight each other — auto-zoom would resize on
@@ -778,6 +872,231 @@
     if(autoZoomBox.checked && sweepOnBox.checked){
       sweepOnBox.checked=false;
       sweepStatus.textContent="Sweep off — auto-zoom took over.";
+    }
+  });
+
+  /* ================= LINK CONTROLLER BRIDGE =================
+     The Link's gimbal is a UVC vendor extension unit, which no browser can
+     touch. Insta360's own Link Controller app can, and it leaves a WebSocket
+     open on localhost for its phone remote — port and token come from the
+     pairing QR code it shows. Messages are protobuf, so this carries just
+     enough of a codec to speak it: no library, matching the file's no-build,
+     no-dependency shape. Schema mirrored from the app's own .proto. */
+
+  var PB={
+    /* enum values straight out of the schema */
+    PARAM_ZOOM:1, PARAM_PAN_TILT_RELATIVE:12,
+    XU_PANTILT_RELATIVE_CONTROL:22
+  };
+
+  function pbVarint(v){
+    var out=[], b=BigInt(v);
+    if(b<0n) b+=(1n<<64n);            /* negative int32 sign-extends to 64 bits */
+    do{
+      var byte=Number(b & 0x7Fn); b >>= 7n;
+      if(b>0n) byte|=0x80;
+      out.push(byte);
+    } while(b>0n);
+    return out;
+  }
+  function pbTag(f,w){ return pbVarint((f<<3)|w); }
+  function pbUtf8(s){
+    var out=[], e=encodeURIComponent(s);
+    for(var i=0;i<e.length;i++){
+      if(e[i]==="%"){ out.push(parseInt(e.substr(i+1,2),16)); i+=2; }
+      else out.push(e.charCodeAt(i));
+    }
+    return out;
+  }
+  function pbBool(f,v){ return v? pbTag(f,0).concat(pbVarint(1)) : []; }
+  function pbInt(f,v){ return (!v)? [] : pbTag(f,0).concat(pbVarint(v)); }
+  function pbStr(f,s){ if(!s) return []; var b=pbUtf8(s); return pbTag(f,2).concat(pbVarint(b.length),b); }
+  function pbMsg(f,body){ return pbTag(f,2).concat(pbVarint(body.length),body); }
+  function pbPacked(f,arr){
+    if(!arr||!arr.length) return [];
+    var p=[]; arr.forEach(function(v){ p=p.concat(pbVarint(v)); });
+    return pbTag(f,2).concat(pbVarint(p.length),p);
+  }
+
+  /* Request { hasUvcRequest=1 hasUvcExtendRequest=2 hasControlRequest=4
+               hasHeartbeatRequest=5 uvcRequest=10 uvcExtendRequest=11
+               controlRequest=13 heartbeatRequest=14 } */
+  function encControl(token){
+    return new Uint8Array(pbBool(4,true).concat(pbMsg(13,pbStr(1,token))));
+  }
+  function encHeartbeat(){
+    return new Uint8Array(pbBool(5,true).concat(pbMsg(14,[])));
+  }
+  /* UVCExtendRequest { serial=1 paramType=2 selector=3 data=4 presetPosIndex=5 } */
+  function encPanTilt(serial,data){
+    var body=pbStr(1,serial)
+      .concat(pbInt(2,PB.PARAM_PAN_TILT_RELATIVE))
+      .concat(pbInt(3,PB.XU_PANTILT_RELATIVE_CONTROL))
+      .concat(pbPacked(4,data))
+      .concat(pbInt(5,-1));
+    return new Uint8Array(pbBool(2,true).concat(pbMsg(11,body)));
+  }
+  /* UVCRequest { serial=1 paramType=2 value=3 } */
+  function encZoom(serial,value){
+    var body=pbStr(1,serial).concat(pbInt(2,PB.PARAM_ZOOM)).concat(pbInt(3,value));
+    return new Uint8Array(pbBool(1,true).concat(pbMsg(10,body)));
+  }
+
+  /* Just enough decoding to read the serial number and the control verdict. */
+  function pbRead(bytes){
+    var i=0, out={};
+    function vi(){
+      var shift=0n, val=0n, b;
+      do{ b=bytes[i++]; val |= BigInt(b & 0x7F)<<shift; shift+=7n; } while(b & 0x80);
+      return val;
+    }
+    while(i<bytes.length){
+      var key=Number(vi()), f=key>>3, w=key&7, v=null;
+      if(w===0) v=vi();
+      else if(w===2){ var len=Number(vi()); v=bytes.subarray(i,i+len); i+=len; }
+      else if(w===5) i+=4;
+      else if(w===1) i+=8;
+      else break;
+      (out[f]=out[f]||[]).push(v);
+    }
+    return out;
+  }
+  function pbUtf8Decode(b){
+    try{ return new TextDecoder().decode(b); }catch(e){ return ""; }
+  }
+
+  var bridge={ws:null,connected:false,serial:"",hb:null,moveTimer:null};
+  var brStatus=$("brStatus"), brDot=$("brDot");
+  var brBtns=["brLeft","brRight","brUp","brDown"];
+
+  function brSetStatus(msg){ brStatus.textContent=msg; }
+  function brEnable(on){
+    brBtns.forEach(function(id){ $(id).disabled=!on; });
+    $("brDisconnect").disabled=!on;
+    $("brConnect").disabled=on;
+    brDot.textContent=on? "— connected"+(bridge.serial? " to "+bridge.serial : "") : "— not connected";
+    brDot.style.color=on? "var(--good)" : "var(--muted)";
+  }
+
+  function brConnect(){
+    var port=$("brPort").value.trim(), token=$("brToken").value.trim();
+    if(!port||!token){ brSetStatus("Port and token are both needed — they are in the pairing QR code."); return; }
+    brDisconnect(true);
+    var url="ws://localhost:"+port+"/?token="+encodeURIComponent(token);
+    var ws;
+    try{ ws=new WebSocket(url); }
+    catch(e){ brSetStatus("Could not open "+url+" — "+e.message); return; }
+    ws.binaryType="arraybuffer";
+    bridge.ws=ws;
+    brSetStatus("Connecting to "+url+" …");
+    ws.onopen=function(){
+      bridge.connected=true;
+      ws.send(encControl(token));
+      bridge.hb=setInterval(function(){
+        if(bridge.ws&&bridge.ws.readyState===1) bridge.ws.send(encHeartbeat());
+      },1000);
+      brEnable(true);
+      brSetStatus("Connected — asked Link Controller for control.");
+      refreshSweepAvailability();
+    };
+    ws.onmessage=function(ev){
+      var f=pbRead(new Uint8Array(ev.data));
+      if(f[10]&&f[10].length){                       /* deviceInfoNotify */
+        var inner=pbRead(f[10][0]);
+        if(inner[1]&&inner[1].length){
+          var sn=pbUtf8Decode(inner[1][0]);
+          if(sn&&sn!==bridge.serial){ bridge.serial=sn; brEnable(true); brSetStatus("Camera reported: "+sn); }
+        }
+      }
+      if(f[12]&&f[12].length){                       /* controlResponse */
+        var cr=pbRead(f[12][0]);
+        var ok=cr[1]&&cr[1].length? Number(cr[1][0])===1 : false;
+        if(!ok) brSetStatus("Link Controller refused control — the token may be stale, or its phone remote already has control. Re-open the pairing QR and try again.");
+      }
+      if(f[16]&&f[16].length){                       /* toastNotify */
+        var tn=pbRead(f[16][0]);
+        if(tn[2]&&tn[2].length) brSetStatus("Link Controller says: "+pbUtf8Decode(tn[2][0]));
+      }
+    };
+    ws.onerror=function(){
+      brSetStatus("WebSocket error. Is Link Controller running, and is the port right? The port changes each time it starts.");
+    };
+    ws.onclose=function(){
+      bridge.connected=false; bridge.serial="";
+      if(bridge.hb){ clearInterval(bridge.hb); bridge.hb=null; }
+      brEnable(false);
+      refreshSweepAvailability();
+    };
+  }
+
+  function brDisconnect(quiet){
+    if(bridge.hb){ clearInterval(bridge.hb); bridge.hb=null; }
+    if(bridge.ws){ try{ bridge.ws.close(); }catch(e){} bridge.ws=null; }
+    bridge.connected=false; bridge.serial="";
+    brEnable(false);
+    if(!quiet){ brSetStatus("Disconnected."); refreshSweepAvailability(); }
+  }
+
+  /* The gimbal command is a VELOCITY, not a distance: it keeps moving until a
+     stop is sent. So a "move" is speed for a while, then zero. */
+  function brSend(data){
+    if(!bridge.ws||bridge.ws.readyState!==1) return;
+    bridge.ws.send(encPanTilt(bridge.serial,data));
+  }
+  function brStop(){ brSend([0,0,0,0]); }
+  function brMove(dx,dy,ms,done){
+    if(!bridge.connected) return;
+    var sp=clampInt($("brSpeed").value,1,30,20);
+    var dur=ms||clampInt($("brMove").value,50,3000,350);
+    brSend([dx>0?1:dx<0?255:0, dx?sp:0, dy>0?1:dy<0?255:0, dy?Math.min(20,sp):0]);
+    if(bridge.moveTimer) clearTimeout(bridge.moveTimer);
+    bridge.moveTimer=setTimeout(function(){
+      brStop();
+      if(done) done();
+    },dur);
+  }
+
+  $("brConnect").addEventListener("click",brConnect);
+  $("brDisconnect").addEventListener("click",function(){ brDisconnect(false); });
+  $("brLeft").addEventListener("click",function(){ brMove(-1,0); });
+  $("brRight").addEventListener("click",function(){ brMove(1,0); });
+  $("brUp").addEventListener("click",function(){ brMove(0,1); });
+  $("brDown").addEventListener("click",function(){ brMove(0,-1); });
+
+  /* Pairing without typing: the app's QR code holds a URL carrying port and
+     token, and this page is already looking at QR codes through the camera. */
+  function maybePair(text){
+    if(!text||bridge.connected) return false;
+    if(text.indexOf("port=")===-1||text.indexOf("token=")===-1) return false;
+    var port=null,token=null;
+    try{
+      var u=new URL(text);
+      port=u.searchParams.get("port"); token=u.searchParams.get("token");
+    }catch(e){
+      var mp=/[?&]port=([^&\s]+)/.exec(text), mt=/[?&]token=([^&\s]+)/.exec(text);
+      if(mp) port=decodeURIComponent(mp[1]);
+      if(mt) token=decodeURIComponent(mt[1]);
+    }
+    if(!port||!token) return false;
+    $("brPort").value=port; $("brToken").value=token;
+    brSetStatus("Paired from a QR code — port "+port+". Press Connect.");
+    return true;
+  }
+
+  document.addEventListener("paste",function(ev){
+    var items=ev.clipboardData&&ev.clipboardData.items;
+    if(!items||!supported) return;
+    for(var i=0;i<items.length;i++){
+      if(items[i].type.indexOf("image")===-1) continue;
+      var blob=items[i].getAsFile(); if(!blob) continue;
+      brSetStatus("Reading the pasted screenshot …");
+      createImageBitmap(blob).then(function(bmp){ return detector.detect(bmp); })
+        .then(function(codes){
+          for(var k=0;k<codes.length;k++){ if(maybePair(codes[k].rawValue)) return; }
+          brSetStatus("No pairing QR code found in that image.");
+        })
+        .catch(function(e){ brSetStatus("Could not read that image: "+e.message); });
+      return;
     }
   });
 
@@ -921,7 +1240,7 @@
     var seen={}, uniq=0, now=Date.now(), boxes=[], smallest=Infinity;
     codes.forEach(function(c){
       var val=c.rawValue==null? "" : String(c.rawValue);
-      if(!seen[val]){ seen[val]=true; uniq++; noteRead(val,now); }
+      if(!seen[val]){ seen[val]=true; uniq++; noteRead(val,now); maybePair(val); }
 
       /* measured in detect-frame pixels — the units auto-zoom steers on */
       var bb=boxOf(c);
