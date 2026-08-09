@@ -82,6 +82,22 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
   If you would rather not see the tab, you can switch it off in Settings, and it will stay off.
 
+- **The timer can pop out into its own little window that stays on top of everything else.** Press **⧉** on the timer and it lifts off the page into a small window of its own — one you can drag onto a corner of the screen, or onto a second monitor, and which stays visible while you work in a different tab or a different program entirely. Stretch that window and the number grows with it, so it can be read from the back of the room.
+
+  **The timer and the points scanner cannot both be popped out at once.** Your browser only allows one such window, so popping out one puts the other back on the page. That is the browser's rule, not ours, so rather than refuse we simply swap them over.
+
+  It needs Chrome or Edge on a computer. On anything else the ⧉ button is simply not there, and the timer works exactly as it always has.
+
+  **Everything on the timer keeps working while it is popped out**, including changing the snack length — see below.
+
+- **You can now just type the time you want.** Tap the big number on the timer and type it: **12** for twelve minutes, **12:30**, **1:05:00**, or **90s**. Before this the only way to set a length was to nudge it with the +/− buttons, so twelve minutes took seven presses — and some lengths could not be reached at all, since the smallest step was ten seconds and 45 seconds simply was not a number the timer could be set to.
+
+  **A row of one-tap lengths** — 1, 2, 3, 5, 10 and 15 minutes — sits under the number for the ones you reach for constantly.
+
+  **The timer also remembers.** Whatever you type becomes the length it opens at next time, so if your shiur always starts with a twelve-minute chazarah, you type it once. It used to always open at five minutes with no way to change that. Nothing is lost if you never touch it: an existing timer keeps opening at five minutes exactly as before.
+
+  **Setting the snack length works the same way.** Pressing ✎ next to the snack button now types straight into the timer instead of opening a separate pop-up box, and it accepts the same things — **7**, **7:30**, **450s**. It used to ask for minutes only, so seven and a half minutes had to be entered as "7.5". The old pop-up box also could not be used at all once the timer was popped out — it would have opened behind whatever program you had switched to, making the timer look frozen — so this is what lets the snack length be changed from the popped-out window like everything else.
+
 ### Changed
 
 - **Corrections you make on the Attendance, Homework, Passes and Tracker tabs are now kept alongside your scans, not just on the tab you made them on.** Until now, scanning a boy recorded his mark in two places, but *fixing* it on the tab afterwards only moved one of them. Nothing you could see was wrong, because the one screen that reads the second copy — the Gradebook — is still switched off. But it meant the two could disagree, and that disagreement was the last thing keeping the Gradebook off.
@@ -236,6 +252,10 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 - **Seating chart: "A–Z by name" and "🎲 Shuffle" — re-seat the whole class in one click.** Everything else on the class-sheet page moves **one boy at a time**: drag a seat, ✕ to empty one. That is right for tuning a chart and hopeless for the two things rebbeim actually do to a whole room — putting a brand-new class into a sensible starting order, and breaking up a seating plan that has settled into cliques. Two buttons on the toolbar now do it in one go. **A–Z by name** seats everyone alphabetically **by last name**, filling desks left to right, front to back — the same sorting the List layout and the Students tab already use, so A–Z means one thing across the app. **🎲 Shuffle** deals the whole class into random desks. **Both ask first**, because both replace an arrangement you may have built by hand and a seating chart has no undo. **Only where each boy sits changes** — no points, scans, tracked records or history are read or touched by either button, and the confirm box says so, since "reset" and "shuffle" both sound alarming on a page whose cards show points. **Your room keeps its shape:** the grid grows if the roster no longer fits and never shrinks, so a chart you have arranged around an aisle or a doorway comes back the same size. The one exception is a chart **nobody has ever arranged**, which gets sized roughly square to the roster rather than keeping the invented 4×6 — the same thing the auto-seater already does, so a class of twelve doesn't print inside a page of empty desks. **Both charts redraw together**, the print mock-up and the live Dashboard one, exactly as dragging a seat already does. The buttons are hidden in the **List (A–Z)** layout, where there is no room to arrange. **No saved data changes and there is no migration** — these write the same `seats` array that dragging a boy has always written.
 
 ### Fixed
+
+- **The points scanner no longer leaves a false error message behind when you switch away from the app.** It was meant to pop itself out into its own window whenever you switched to another tab or program, so it would stay in front of you. It never actually could: browsers only allow a window like that to open in response to a button press, and switching away from a tab is not a button press. So the attempt failed every time and left *"Couldn't open pop-out window"* sitting in the scanner for you to find when you came back — an error about something you had never asked for.
+
+  The attempt has been removed. **Popping the scanner out by pressing ⧉ works exactly as it always did** — that is a button press, so the browser allows it. There is simply no longer a broken automatic version of it failing quietly in the background.
 
 - **A whole batch of points can now be taken back in one action, instead of one boy at a time.** Giving points to several boys at once — from the tick-boxes on Run → Students, or the new "Give to all" — writes a separate line for each boy, which is what keeps History honest and lets you undo any single one of them. But it also meant that undoing a mistake made to twenty-five boys took twenty-five separate presses, which nobody is going to do. **A wrong batch was harder to take back than the single scan it replaced** — the opposite of what the feature was for.
 

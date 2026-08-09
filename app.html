@@ -980,7 +980,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #fsBtn.fab-btn{bottom:16px}
   #timerBtn.fab-btn{bottom:80px}
   #pickerBtn.fab-btn{bottom:144px}
-  .float-timer{position:fixed;top:12px;right:12px;z-index:200;width:208px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(20,26,46,.28);overflow:hidden;user-select:none;touch-action:none}
+  .float-timer{position:fixed;top:12px;right:12px;z-index:200;width:236px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(20,26,46,.28);overflow:hidden;user-select:none;touch-action:none}
   .ft-grip{display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--ink);color:#fff;cursor:grab}
   .ft-grip:active{cursor:grabbing}
   .ft-title{flex:1;font-weight:700;font-size:.9rem}
@@ -988,12 +988,26 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .ft-btn:hover{background:rgba(255,255,255,.3)}
   .ft-btn.on{background:var(--brass);color:#fff}
   .ft-body{padding:12px}
-  .ft-display{font-family:var(--serif);font-size:2.5rem;font-weight:700;text-align:center;letter-spacing:1px;margin-bottom:10px;font-variant-numeric:tabular-nums}
+  /* The display is a button so the whole number is one big tap target for
+     "type a time" — the fastest way to any value, since the +/- row can only
+     ever nudge and cannot reach e.g. 0:45 at all. */
+  .ft-display{display:block;width:100%;border:none;background:none;padding:0;cursor:pointer;font-family:var(--serif);font-size:2.5rem;font-weight:700;text-align:center;letter-spacing:1px;margin-bottom:10px;font-variant-numeric:tabular-nums;color:inherit}
+  .ft-display:hover{color:var(--brass)}
   .ft-display.done{color:var(--bad);animation:ftPulse 1s ease-in-out infinite}
   .ft-display.running{color:var(--brass)}
   @keyframes ftPulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .ft-edit{font-family:var(--serif);font-size:2rem;font-weight:700;text-align:center;letter-spacing:1px;margin-bottom:10px;font-variant-numeric:tabular-nums}
+  .ft-presets{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:2px}
+  .ft-chip{flex:1 1 30%;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:5px 2px;font-size:.8rem;font-weight:700;color:var(--ink);cursor:pointer}
+  .ft-chip:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
   .ft-row{display:flex;gap:6px;margin-top:8px}
   .ft-row .btn{flex:1;padding:7px 4px}
+  /* Popped out, the OS owns the window size, so the panel fills it and the
+     number scales to whatever the rebbi drags the window to — the point of
+     the pop-out is being readable from the back of the room. */
+  .float-timer.in-pip{border:none;border-radius:0;box-shadow:none}
+  .float-timer.in-pip .ft-display{font-size:min(24vw,17vh);line-height:1.05;margin-bottom:4px}
+  .float-timer.in-pip .ft-edit{font-size:min(14vw,10vh)}
   .float-timer.min .ft-body{display:none}
   .float-timer.min{width:auto}
   .float-timer.min .ft-grip{cursor:grab}
@@ -1696,14 +1710,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 <div id="floatTimer" class="float-timer" style="display:none">
   <div class="ft-grip" id="ftGrip">
     <span class="ft-title" id="ftTitle">⏱ Timer</span>
+    <button class="ft-btn" id="ftPip" title="Pop out into a floating window that stays on top of other apps (Chrome/Edge on a computer)">⧉</button>
     <button class="ft-btn" id="ftMin" title="Minimize">–</button>
     <button class="ft-btn" id="ftClose" title="Close">✕</button>
   </div>
   <div class="ft-body" id="ftBody">
-    <div class="ft-display" id="ftDisplay">05:00</div>
+    <button class="ft-display" id="ftDisplay" title="Tap to type a time — 12, 12:30, 1:05:00, 90s. It also becomes the length the timer opens at.">05:00</button>
+    <input id="ftEdit" class="field ft-edit" style="display:none" autocomplete="off" placeholder="12:30" aria-label="Type a time">
+    <div class="ft-presets" id="ftPresets"></div>
     <div class="ft-row" id="ftSetRow">
       <button class="btn btn-sm" data-add="60">+1:00</button>
-      <button class="btn btn-sm" data-add="30">+0:30</button>
       <button class="btn btn-sm" data-add="10">+0:10</button>
       <button class="btn btn-sm" data-add="-10">−0:10</button>
       <button class="btn btn-sm" data-add="-60">−1:00</button>
@@ -6724,6 +6740,9 @@ function setupRoster() {
       $("ftStart").textContent=running?"Pause":"Start";
       $("ftMode").innerHTML=mode==="down"?"Count&nbsp;down":"Count&nbsp;up";
       $("ftSetRow").style.display=mode==="down"?"flex":"none";
+      // Presets are countdown lengths, so they follow the +/- row out of sight
+      // in count-up mode rather than sitting there meaning nothing.
+      $("ftPresets").style.display=mode==="down"?"flex":"none";
       $("ftTitle").textContent=ft.classList.contains("min")?("⏱ "+fmtTime(curVal())):"⏱ Timer";
     }
     function tick(){
@@ -6751,24 +6770,141 @@ function setupRoster() {
       else { remaining=Math.max(0,remaining+sec); baseSet=remaining; }
       render();
     }
+    /* ---- setting a length ----
+       The +/- row can only ever nudge, and at 10s granularity it cannot reach
+       some values at all (0:45 is unreachable), so typing is the real control
+       and the preset chips cover the common lengths in one tap. */
+    // Accepts what a rebbi would actually type: "12" (bare = minutes),
+    // "12:30", "1:05:00", "90s", "2m", "1h". Returns seconds, or null.
+    function parseTimeInput(raw){
+      raw=String(raw==null?"":raw).trim().toLowerCase();
+      if(!raw) return null;
+      if(raw.indexOf(":")>=0){
+        var parts=raw.split(":");
+        if(parts.length>3) return null;
+        var n=[];
+        for(var i=0;i<parts.length;i++){
+          if(!/^\d+$/.test(parts[i].trim())) return null;
+          n.push(parseInt(parts[i],10));
+        }
+        while(n.length<3) n.unshift(0);   // "12:30" reads as 0h 12m 30s
+        return n[0]*3600 + n[1]*60 + n[2];
+      }
+      var m=raw.match(/^(\d+(?:\.\d+)?)\s*(h|hr|hrs|m|min|mins|s|sec|secs)?$/);
+      if(!m) return null;
+      var v=parseFloat(m[1]), unit=(m[2]||"m").charAt(0);
+      if(unit==="h") return Math.round(v*3600);
+      if(unit==="s") return Math.round(v);
+      return Math.round(v*60);
+    }
+    // persist=true also stores it as the length the timer opens at next time,
+    // which is the "configurable default timer length" half of #34.
+    function setLength(sec, persist){
+      if(sec==null || !isFinite(sec) || sec<=0) return false;
+      sec=Math.min(Math.round(sec), 24*3600);
+      stop(); mode="down"; baseSet=sec; remaining=sec;
+      if(persist && data){ data.timerDefaultSeconds=sec; save(); }
+      render();
+      return true;
+    }
+    var TIMER_PRESETS=[60,120,180,300,600,900];
+    function renderPresets(){
+      var host=$("ftPresets"); if(!host) return;
+      host.innerHTML="";
+      TIMER_PRESETS.forEach(function(sec){
+        var b=el("button","ft-chip", sec<60?(sec+"s"):((sec/60)+" min"));
+        b.addEventListener("click", function(){ setLength(sec,false); });
+        host.appendChild(b);
+      });
+    }
+    // The same field serves both lengths a rebbi can set. "snack" edits the
+    // snack button's length; anything else sets the timer itself. It used to
+    // be a prompt(), which cannot be used here at all: prompt() belongs to the
+    // MAIN window, so once the timer is popped out it would open a dialog
+    // behind whatever app the rebbi had switched to and the pop-out would
+    // simply look frozen.
+    var editTarget="length";
+    function editOpen(target){
+      var disp=$("ftDisplay"), inp=$("ftEdit");
+      if(!disp||!inp) return;
+      editTarget = target==="snack" ? "snack" : "length";
+      inp.value="";
+      inp.placeholder = editTarget==="snack"
+        ? ("Snack — "+fmtTime((data&&data.snackSeconds)||420))
+        : fmtTime(curVal());
+      disp.style.display="none"; inp.style.display="";
+      inp.focus();
+    }
+    function editClose(commit){
+      var disp=$("ftDisplay"), inp=$("ftEdit");
+      if(!disp||!inp || inp.style.display==="none") return; // Enter already closed it; ignore the blur that follows
+      inp.style.display="none"; disp.style.display="";
+      if(commit){
+        var sec=parseTimeInput(inp.value);
+        if(editTarget==="snack"){
+          if(sec!=null && sec>0 && data){
+            data.snackSeconds=Math.min(Math.round(sec), 24*3600);
+            save(); renderSnackBtn();
+          }
+        } else {
+          setLength(sec, true);
+        }
+      }
+      editTarget="length";
+      render();
+    }
+    $("ftDisplay").addEventListener("click", function(){ editOpen("length"); });
+    $("ftEdit").addEventListener("keydown", function(e){
+      if(e.key==="Enter"){ e.preventDefault(); editClose(true); }
+      else if(e.key==="Escape"){ e.preventDefault(); editClose(false); }
+    });
+    $("ftEdit").addEventListener("blur", function(){ editClose(true); });
     $("ftStart").addEventListener("click", function(){ running?pause():start(); });
     $("ftReset").addEventListener("click", reset);
     $("ftMode").addEventListener("click", function(){ stop(); mode=(mode==="down"?"up":"down"); if(mode==="down") remaining=baseSet; else elapsed=0; render(); });
     $("ftSetRow").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; addTime(parseInt(b.dataset.add,10)||0); });
     function renderSnackBtn(){ var s=(data&&data.snackSeconds)||420; $("ftSnack").textContent="🍪 Snack — "+fmtTime(s); }
+    // This IIFE runs at script-eval time, before load() has populated data —
+    // the same ordering trap makeFabDraggable documents. So the saved default
+    // length is applied later, from the post-load call site.
+    function applyDefaultLength(){
+      if(running) return;                 // never yank a length out from under a running timer
+      var s=(data&&data.timerDefaultSeconds)||300;
+      baseSet=s; if(mode==="down") remaining=s;
+      render();
+    }
     window._refreshSnackBtn = renderSnackBtn;
-    renderSnackBtn();
+    window._refreshTimerPanel = function(){ renderSnackBtn(); renderPresets(); applyDefaultLength(); };
+    renderSnackBtn(); renderPresets();
     $("ftSnack").addEventListener("click", function(){ stop(); mode="down"; var s=(data&&data.snackSeconds)||420; baseSet=s; remaining=s; start(); });
-    $("ftSnackEdit").addEventListener("click", function(){
-      var raw=prompt("Snack timer length, in minutes:", String(((data&&data.snackSeconds)||420)/60));
-      if(raw===null) return; // cancelled
-      var mins=parseFloat(raw);
-      if(isNaN(mins)||mins<=0){ alert("Please enter a number of minutes greater than 0."); return; }
-      data.snackSeconds=Math.round(mins*60); save(); renderSnackBtn();
-    });
+    $("ftSnackEdit").addEventListener("click", function(){ editOpen("snack"); });
     $("ftMin").addEventListener("click", function(){ ft.classList.toggle("min"); render(); });
-    $("ftClose").addEventListener("click", function(){ ft.style.display="none"; });
+    $("ftClose").addEventListener("click", function(){
+      // Popped out, ✕ has to close the WINDOW — hiding the panel inside it
+      // would just leave an empty pop-out sitting on top of everything.
+      if(pipWin && pipPanelId==="floatTimer"){ pipWin.close(); return; }
+      ft.style.display="none";
+    });
+    $("ftPip").addEventListener("click", function(){
+      popOutPanel(ft, "Timer — Pop-out", {width:280, height:340,
+        onFail:function(){},   // the timer has no flash strip to write into
+        onEnter:function(){
+          // Minimize is the only control that stops meaning anything — the OS
+          // owns this window's size now. Everything else, snack length
+          // included, works popped out because nothing here uses prompt().
+          $("ftMin").style.display="none";
+          render();
+        },
+        onExit:function(){
+          var m=$("ftMin"); if(m) m.style.display="";
+          render();
+        }});
+    });
+    if(!pipSupported()) $("ftPip").style.display="none";
     makeFabDraggable($("timerBtn"), "timer", function(){
+      // Popped out, the panel isn't on this page — toggling its display would
+      // empty the pop-out window instead of hiding anything. Raise it instead.
+      if(pipWin && pipPanelId==="floatTimer"){ pipWin.focus(); return; }
       var show=(ft.style.display==="none"||!ft.style.display);
       ft.style.display=show?"block":"none"; if(show){ ft.classList.remove("min"); render(); }
     });
@@ -6776,6 +6912,7 @@ function setupRoster() {
     function ftUp(){ drag=null; document.removeEventListener("pointermove",ftMove,true); document.removeEventListener("pointerup",ftUp,true); document.removeEventListener("pointercancel",ftUp,true); }
     $("ftGrip").addEventListener("pointerdown", function(e){
       if(e.target.closest(".ft-btn")) return;
+      if(pipWin && pipPanelId==="floatTimer") return; // the OS owns the popped-out window's position
       var r=ft.getBoundingClientRect();
       drag={dx:e.clientX-r.left, dy:e.clientY-r.top};
       ft.style.right="auto"; ft.style.left=r.left+"px"; ft.style.top=r.top+"px";
@@ -6976,7 +7113,9 @@ function setupRoster() {
     fpAward(s);
   }
   function fpToggle(show){
-    if(pipWin){ pipWin.focus(); return; } // already popped out — just bring it to front
+    // Only when the SCANNER owns the pop-out. A bare pipWin test here would
+    // refuse to open the scanner whenever the timer happened to be popped out.
+    if(pipWin && pipPanelId==="floatScan"){ pipWin.focus(); return; } // already popped out — just bring it to front
     fpOpen = (show==null) ? !fpOpen : !!show;
     $("floatScan").style.display = fpOpen?"block":"none";
     if(fpOpen){ if(data.fsWidth) $("floatScan").style.width=data.fsWidth+"px"; $("floatScan").classList.remove("min"); $("fsCompact").classList.toggle("on", !!data.fpCompact); fpRenderActs(); fpRenderNames(); setTimeout(function(){ $("fsInput").focus(); },50); }
@@ -6984,7 +7123,9 @@ function setupRoster() {
     renderHeaderScanContext();
   }
   makeFabDraggable($("fsBtn"), "scan", function(){ fpToggle(); });
-  $("fsClose").addEventListener("click", function(){ if(pipWin){ pipWin.close(); } else { fpToggle(false); } });
+  // Same scoping: a bare pipWin test would close the TIMER's pop-out window
+  // when the rebbi clicked the scanner's own ✕ on the page.
+  $("fsClose").addEventListener("click", function(){ if(pipWin && pipPanelId==="floatScan"){ pipWin.close(); } else { fpToggle(false); } });
   $("fsMin").addEventListener("click", function(){ $("floatScan").classList.toggle("min"); });
   $("fsCompact").addEventListener("click", function(){ data.fpCompact=!data.fpCompact; save(); this.classList.toggle("on", data.fpCompact); fpRenderNames(); });
   $("fsCustomAdd").addEventListener("click", function(){
@@ -7011,79 +7152,105 @@ function setupRoster() {
   $("fsInput").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); var v=this.value; this.value=""; fpScan(v); } });
   makeDraggable($("floatScan"), $("fsGrip"));
 
-  /* ---- Picture-in-Picture pop-out for the floating scanner ----
-     Uses the Document Picture-in-Picture API (Chrome/Edge desktop) to move
-     the floating scanner's real DOM node into a genuine OS-level always-on-top
-     window — it keeps working (and stays visible) even when switching to a
-     different browser tab or a different app entirely. Only one such window
-     can exist per tab, and it isn't supported in Safari/Firefox, so this is
-     an enhancement on top of the normal on-page floating panel, not a
-     replacement for it. */
-  var fsHomeParent=null, fsHomeNext=null; // where #floatScan lives normally, so it can go back
+  /* ---- Picture-in-Picture pop-out (shared by the scanner and the timer) ----
+     Uses the Document Picture-in-Picture API (Chrome/Edge desktop) to move a
+     floating panel's real DOM node into a genuine OS-level always-on-top
+     window — it keeps working, and stays visible, even when switching to a
+     different browser tab or a different app entirely. Not supported in
+     Safari/Firefox, so this is an enhancement on top of the normal on-page
+     floating panel, never a replacement for it.
+
+     THE BROWSER ALLOWS EXACTLY ONE SUCH WINDOW PER TAB. Requesting a second
+     one silently closes the first — no error, no prompt (verified in Chrome).
+     So the scanner and the timer can never both be popped out, and asking for
+     one while the other is out is treated as a SWAP: the outgoing panel drops
+     back onto the page and the new one takes the window.
+
+     pipPanelId says WHICH panel currently owns pipWin. Every "is my panel
+     popped out?" test has to check it — a bare `if(pipWin)` used to be
+     unambiguous when the scanner was the only pop-out, and silently means the
+     wrong thing now. */
+  var pipPanelId=null;
   function pipSupported(){ return "documentPictureInPicture" in window; }
-  async function fsPopOut(){
-    if(pipWin){ pipWin.focus(); return; }
-    if(!pipSupported()){
-      fpFlash(false, "Pop-out needs Chrome or Edge on a computer");
-      return;
-    }
-    var panel=$("floatScan");
-    fsHomeParent=panel.parentNode; fsHomeNext=panel.nextSibling;
+  async function popOutPanel(panel, title, opts){
+    opts=opts||{};
+    var fail=opts.onFail||function(msg){ fpFlash(false,msg); };
+    if(pipWin && pipPanelId===panel.id){ pipWin.focus(); return; } // already out — just raise it
+    if(!pipSupported()){ fail("Pop-out needs Chrome or Edge on a computer"); return; }
+    if(pipWin) pipWin.close();   // swap: the outgoing panel's pagehide puts it back on the page
+    var homeParent=panel.parentNode, homeNext=panel.nextSibling, w;
     try{
-      pipWin = await window.documentPictureInPicture.requestWindow({ width: 340, height: 480 });
+      w = await window.documentPictureInPicture.requestWindow({ width: opts.width||340, height: opts.height||480 });
     }catch(err){
-      pipWin=null;
-      fpFlash(false, "Couldn't open pop-out window");
+      fail("Couldn't open pop-out window");
       return;
     }
+    pipWin=w; pipPanelId=panel.id;
     // Copy every style/link tag over so the popped-out panel looks the same —
-    // this is a one-time copy since the PiP window is a separate document.
+    // a one-time copy, since the PiP window is a separate document.
     document.querySelectorAll("style, link[rel='stylesheet']").forEach(function(node){
-      pipWin.document.head.appendChild(node.cloneNode(true));
+      w.document.head.appendChild(node.cloneNode(true));
     });
-    pipWin.document.title="Points — Pop-out";
-    pipWin.document.body.style.margin="0";
-    pipWin.document.body.style.background="var(--paper,#eceef3)";
-    // Move the real node (not a copy) — every listener already attached to
-    // it, and to its children, keeps working untouched since it's the same
+    w.document.title=title;
+    w.document.body.style.margin="0";
+    w.document.body.style.background="var(--paper,#eceef3)";
+    // Move the real node (not a copy) — every listener already attached to it,
+    // and to its children, keeps working untouched since it's the same
     // element, just relocated to a new document.
-    pipWin.document.body.appendChild(panel);
+    w.document.body.appendChild(panel);
     panel.style.display="block";
     panel.style.position="static";
     panel.style.width="100%";
     panel.style.maxWidth="none";
     panel.style.boxShadow="none";
     panel.classList.remove("min");
-    // Dragging/resizing and the on-page Minimize button don't apply once the
-    // OS itself is managing this window's position/size.
-    $("fsMin").style.display="none";
-    fpOpen=true;
-    fpRenderActs(); fpRenderNames();
-    setTimeout(function(){ var i=$("fsInput"); if(i) i.focus(); },50);
-    renderHeaderScanContext();
-    // When the user closes the pop-out (its own close button, or our own
-    // fsClose button now living inside it), move the panel back home.
-    pipWin.addEventListener("pagehide", function(){
-      if(fsHomeParent){
-        if(fsHomeNext) fsHomeParent.insertBefore(panel, fsHomeNext);
-        else fsHomeParent.appendChild(panel);
+    panel.classList.add("in-pip");
+    if(opts.onEnter) opts.onEnter();
+    w.addEventListener("pagehide", function(){
+      // The browser does NOT return the node to the page — verified: after a
+      // swap the panel was still parented to the dead window's document. Put
+      // it back by hand or it is gone until a reload.
+      if(homeParent){
+        if(homeNext) homeParent.insertBefore(panel, homeNext);
+        else homeParent.appendChild(panel);
       }
       panel.style.position=""; panel.style.width=""; panel.style.maxWidth=""; panel.style.boxShadow="";
       panel.style.display="none";
-      var mb=$("fsMin"); if(mb) mb.style.display="";
-      pipWin=null; fpOpen=false;
-      renderHeaderScanContext();
+      panel.classList.remove("in-pip");
+      // Guarded: during a swap this can land after pipWin already points at
+      // the NEW window, and clearing it then would orphan the new pop-out
+      // from $() and freeze whatever is rendering into it.
+      if(pipWin===w){ pipWin=null; pipPanelId=null; }
+      if(opts.onExit) opts.onExit();
     });
   }
+  function fsPopOut(){
+    return popOutPanel($("floatScan"), "Points — Pop-out", { width:340, height:480,
+      onEnter:function(){
+        // Dragging/resizing and the on-page Minimize button don't apply once
+        // the OS itself is managing this window's position and size.
+        $("fsMin").style.display="none";
+        fpOpen=true;
+        fpRenderActs(); fpRenderNames();
+        setTimeout(function(){ var i=$("fsInput"); if(i) i.focus(); },50);
+        renderHeaderScanContext();
+      },
+      onExit:function(){
+        var mb=$("fsMin"); if(mb) mb.style.display="";
+        fpOpen=false;
+        renderHeaderScanContext();
+      }});
+  }
   $("fsPip").addEventListener("click", fsPopOut);
-  // Auto pop-out: if the floating scanner is open and the teacher switches to
-  // a different tab or app, promote it into a real PiP window on its own —
-  // same as clicking "Pop out" by hand, just without needing to remember to.
-  // Only fires while the scanner is already open, so it can't surprise anyone
-  // who never uses it.
-  document.addEventListener("visibilitychange", function(){
-    if(document.hidden && fpOpen && !pipWin && pipSupported()) fsPopOut();
-  });
+  // NOTE: there used to be an auto pop-out here, firing fsPopOut() from a
+  // visibilitychange handler so the scanner promoted itself when the rebbi
+  // switched apps. It could never have worked: Document PiP requires
+  // transient user activation, and a tab switch is not a gesture, so
+  // requestWindow threw NotAllowedError and the catch left "Couldn't open
+  // pop-out window" sitting in the panel to be found on return. Removed in
+  // #35. There is no way for a page to do this to itself — Chrome's auto-PiP
+  // path is gated behind camera/mic/screen capture, which this app has no
+  // claim to.
 
   (function(){
     var rz=null, panel=$("floatScan");
@@ -19959,6 +20126,7 @@ nameLine
         renderActButtons(); renderRecent(); renderStudents(); renderActivities();
         renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
         showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
+        if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
         if (statusEl) statusEl.textContent = "";
         alert("Restored from Google Sheet.");
       })
@@ -20193,6 +20361,7 @@ nameLine
           renderActButtons(); renderRecent(); renderStudents(); renderActivities();
           renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
           showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
+          if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
           renderShulchaniStatus();
           alert("Backup restored.");
         });
@@ -20795,6 +20964,10 @@ nameLine
     if(data.shulchaniMode && !data.shulchaniCoinsSeeded) seedShulchaniCoinCodes(false);
     if(typeof data.showPrutot!=="boolean") data.showPrutot=false;
     if(typeof data.snackSeconds!=="number" || data.snackSeconds<=0) data.snackSeconds=420;
+    // What the floating timer opens at. Purely additive: 300 is the value the
+    // timer was hardcoded to before this was configurable, so an existing save
+    // that has never seen this field behaves exactly as it did.
+    if(typeof data.timerDefaultSeconds!=="number" || data.timerDefaultSeconds<=0) data.timerDefaultSeconds=300;
     if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerExcluded={};
     if(!Array.isArray(data.spinnerSavedLists)) data.spinnerSavedLists=[];
     // Attendance / Tracker / Homework tools
@@ -21524,7 +21697,11 @@ nameLine
     if (location.search.indexOf("tab=printSeats") >= 0) activateTab("printSeats");
   } catch(e) {}
   if(typeof serialTryAutoReconnect==="function") serialTryAutoReconnect();
-  if(typeof window._refreshSnackBtn==="function") window._refreshSnackBtn();
+  // Runs after load(), which is when data.timerDefaultSeconds and
+  // data.snackSeconds actually exist — the timer IIFE itself is evaluated
+  // long before that (same ordering trap as applyFabPositions).
+  if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
+  else if(typeof window._refreshSnackBtn==="function") window._refreshSnackBtn();
   // Auto-generate text set from wizard learning selection — runs once, async,
   // 1.5s delay so the full app is rendered before the toast appears.
   // Auto-generate only if teacher opted in (default: true)
