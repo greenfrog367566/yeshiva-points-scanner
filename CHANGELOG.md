@@ -108,6 +108,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
   That difference is the whole point of the Clock face. A number tells a boy how much time is left only if he already has a sense of how long five minutes is; a shaded clock face shows him *where the time ends*, and he can watch the hand travel into it. It is also the one that quietly teaches reading a clock, which not every boy in a Shiur Aleph can do yet.
 
+  **The face has its numbers on it, and it tells you the time in words underneath** — "3:05 PM". With a timer running it also names the moment it ends: **"3:05 PM → until 3:09 PM"**. That line is the answer a boy actually needs, and it is there in words for the ones still learning to read a face.
+
   **When no timer is running, Clock is simply a clock on the wall of your screen** — which, popped out with ⧉, is exactly what it becomes.
 
   **Two smaller things it does on purpose.** The shaded block never runs past a full hour: beyond that it would lap the face and stop meaning anything, so the block fills and the number underneath tells you the real figure. And on the stopwatch (Count up) the Disc steps aside for the number, because a disc that shrinks needs a length to shrink from and a stopwatch has none — your choice is remembered, and the Disc comes straight back when you switch to Count down.

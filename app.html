@@ -1011,6 +1011,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .ft-swatch{flex:0 0 18px;width:18px;height:auto;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
   .ft-swatch.on{border-color:var(--ink)}
   .ft-svg{display:block;width:100%;height:auto;margin-bottom:6px}
+  .ft-now{text-align:center;font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:3px;font-variant-numeric:tabular-nums}
+  .float-timer.in-pip .ft-now{font-size:min(4.6vw,3.4vh)}
   /* With a face drawn, the number shrinks to a caption under it. It stays
      visible on purpose: it is still the tap target for typing a time, AND on
      the clock it is the only thing separating a capped block from exactly an
@@ -1739,6 +1741,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button class="ft-swatch" data-color="blue" title="Blue until the last 30 seconds, then red" style="background:#2f5fa8"></button>
     </div>
     <svg class="ft-svg" id="ftFace" viewBox="0 0 200 200" style="display:none" aria-hidden="true"></svg>
+    <div class="ft-now" id="ftNow" style="display:none"></div>
     <button class="ft-display" id="ftDisplay" title="Tap to type a time — 12, 12:30, 1:05:00, 90s. It also becomes the length the timer opens at.">05:00</button>
     <input id="ftEdit" class="field ft-edit" style="display:none" autocomplete="off" placeholder="12:30" aria-label="Type a time">
     <div class="ft-presets" id="ftPresets"></div>
@@ -6827,6 +6830,17 @@ function setupRoster() {
         host.appendChild(ftEl("line",{x1:p0[0].toFixed(2),y1:p0[1].toFixed(2),x2:p1[0].toFixed(2),y2:p1[1].toFixed(2),
           stroke:big?"var(--ink,#141a2e)":"#b9bfd0","stroke-width":big?3:1.5,"stroke-linecap":"round"}));
       }
+      // Numerals, inside the ticks. Drawn after the shaded block so they stay
+      // readable through it, and before the hands so the hands pass over them.
+      // A face with no numbers is a harder read for exactly the boys this is
+      // meant to help.
+      for(var n=1;n<=12;n++){
+        var np=polar(cx,cy,r*0.70,n*30);
+        var nt=ftEl("text",{x:np[0].toFixed(2),y:np[1].toFixed(2),"text-anchor":"middle",
+          "dominant-baseline":"central","font-size":"18","font-weight":"700",fill:"var(--ink,#141a2e)"});
+        nt.textContent=n;
+        host.appendChild(nt);
+      }
       var hp=polar(cx,cy,r*0.52,(now.getHours()%12)*30 + now.getMinutes()*0.5);
       host.appendChild(ftEl("line",{x1:cx,y1:cy,x2:hp[0].toFixed(2),y2:hp[1].toFixed(2),stroke:"var(--ink,#141a2e)","stroke-width":7,"stroke-linecap":"round"}));
       var mp=polar(cx,cy,r*0.78,mins*6);
@@ -6855,6 +6869,26 @@ function setupRoster() {
       if(face==="disc" && mode!=="down") face="digits";
       ft.classList.toggle("face-disc", face==="disc");
       ft.classList.toggle("face-clock", face==="clock");
+      // The time in words, only on the clock — that is the face that claims to
+      // be telling you the time, so it should say it plainly too. When a timer
+      // is running it also names the moment it ends, which is the whole point
+      // of shading the block rather than counting down: not "3:55 left" but
+      // "you have until 1:36".
+      var nowEl=$("ftNow");
+      if(nowEl){
+        if(face!=="clock") nowEl.style.display="none";
+        else {
+          nowEl.style.display="";
+          var t=Date.now();
+          // "until X" only while actually RUNNING. Paused, `remaining` is
+          // frozen while the clock is not, so now+remaining creeps forward a
+          // second at a time — naming an end time that keeps receding and was
+          // never real. Stopped, it is just a wall clock.
+          nowEl.textContent = (running && mode==="down" && remaining>0)
+            ? (fmtClockTime(t)+"  →  until "+fmtClockTime(t+remaining*1000))
+            : fmtClockTime(t);
+        }
+      }
       if(face==="digits"){ host.style.display="none"; host.innerHTML=""; return; }
       host.style.display="";
       host.innerHTML="";
