@@ -208,10 +208,12 @@
         <p class="hint" style="margin-top:0">
           The Link's <em>zoom</em> is a standard control the browser can drive directly, but its <em>gimbal</em> is a
           vendor command no browser can reach. Insta360's own <strong>Link Controller</strong> app can, and it leaves a
-          local WebSocket open for its phone remote — this talks to that. Open Link Controller, start its phone/remote
-          pairing so the <strong>QR code</strong> is on screen, then either
-          <strong>hold it up to the camera</strong> (it pairs itself), <strong>paste a screenshot</strong> anywhere on
-          this page, or type the port and token in by hand.
+          local WebSocket open for its phone remote — this talks to that. Open Link Controller and start its
+          phone/remote pairing so the <strong>QR code</strong> is on screen.
+          Then press <strong>“Read the code from a window…”</strong> and pick the Link Controller window: the page
+          reads the code straight out of it at full resolution and connects itself — nothing to squint at, and no
+          screenshot to save. Sharing is used only to find that code, and stops the moment it does.
+          Failing that: hold the code up to the camera, paste or drop a screenshot, or type the port and token in.
         </p>
         <div class="row">
           <label class="f">Port <input type="text" id="brPort" style="width:100px" placeholder="e.g. 51234"></label>
@@ -219,6 +221,7 @@
           <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:1px">
             <button class="btn" id="brConnect">Connect</button>
             <button class="btn sec" id="brDisconnect" disabled>Disconnect</button>
+            <button class="btn" id="brShare">Read the code from a window…</button>
             <button class="btn sec" id="brPick">Choose a screenshot…</button>
             <input type="file" id="brFile" accept="image/*" style="display:none">
           </div>
@@ -1134,6 +1137,63 @@
     }
     brSetStatus("Nothing usable on the clipboard — copy the code as an image "+
       "(Windows: Win+Shift+S), or use “Choose a screenshot…”.");
+  });
+
+  /* The best route by far: let the page look at the Link Controller window
+     itself. The QR is tiny on screen and painful to read by eye or to
+     screenshot accurately — but at native resolution a detector reads it
+     instantly, and it can keep trying every frame until it does. The shared
+     stream is used for nothing else and is stopped the moment a code is found. */
+  $("brShare").addEventListener("click",function(){
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){
+      brSetStatus("This browser cannot share a window. Use “Choose a screenshot…” instead.");
+      return;
+    }
+    if(!supported||!detector){
+      brSetStatus("The barcode detector never loaded, so a shared window cannot be read.");
+      return;
+    }
+    brSetStatus("Pick the Insta360 Link Controller window in the dialog …");
+    navigator.mediaDevices.getDisplayMedia({video:{frameRate:5},audio:false}).then(function(st){
+      var v=document.createElement("video");
+      v.srcObject=st; v.muted=true; v.playsInline=true;
+      var cvs=document.createElement("canvas"), ctx=cvs.getContext("2d",{willReadFrequently:true});
+      var tries=0, stopped=false;
+      function finish(msg){
+        if(stopped) return;
+        stopped=true;
+        st.getTracks().forEach(function(t){ t.stop(); });
+        if(msg) brSetStatus(msg);
+      }
+      st.getVideoTracks()[0].addEventListener("ended",function(){ finish("Window sharing ended."); });
+      v.play().catch(function(){}).then(function(){
+        (function scan(){
+          if(stopped) return;
+          if(++tries>90){ finish("Could not find a pairing code in that window after 30s. Is the QR code showing?"); return; }
+          var w=v.videoWidth, h=v.videoHeight;
+          if(!w||!h){ setTimeout(scan,300); return; }
+          if(cvs.width!==w){ cvs.width=w; cvs.height=h; }
+          ctx.drawImage(v,0,0,w,h);
+          detector.detect(cvs).then(function(codes){
+            for(var i=0;i<codes.length;i++){
+              if(maybePair(codes[i].rawValue)){
+                finish(null);
+                brSetStatus("Read the code from the shared window — connecting …");
+                setTimeout(brConnect,150);
+                return;
+              }
+            }
+            if(codes.length && tries%10===0)
+              brSetStatus("Seeing a QR code but it is not a pairing code — is that the right window?");
+            setTimeout(scan,300);
+          }).catch(function(){ setTimeout(scan,400); });
+        })();
+      });
+    }).catch(function(e){
+      brSetStatus(e.name==="NotAllowedError"
+        ? "Window sharing was cancelled."
+        : "Could not share a window: "+e.name+" — "+e.message);
+    });
   });
 
   $("brPick").addEventListener("click",function(){ $("brFile").click(); });
