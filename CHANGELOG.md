@@ -285,6 +285,18 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Fixed
 
+- **The downloaded offline copy no longer wipes your work every time you open it.** This is the most serious thing fixed so far, and it only ever affected the **"Download separate offline copy"** file — not the normal app, not the installed app, not anyone's Google Sheet.
+
+  **What was happening.** That downloaded file carries a snapshot of your class inside it, so it opens ready to use instead of blank. But the line that loaded the snapshot ran **every single time the file was opened**, not just the first time. So it put your class back exactly as it was on the day you downloaded the file — and everything you had scanned since was overwritten. Close the file at the end of the day, open it the next morning, and the day was gone. Silently, with nothing to tell you it had happened.
+
+  **What it looked like if it happened to you:** points, attendance and homework jumping back to how they were on the day the file was made, and boys you had removed showing up again.
+
+  **What changed.** The file now loads its snapshot **only when there is nothing to lose** — the very first time it is opened on that computer. After that it leaves your saved work alone, permanently. If you open a *different* downloaded copy on a computer that already has work saved in it, that work is now kept as well, and a message at the top of the app tells you plainly what happened and offers to save the other file's snapshot for you, so you end up with both rather than losing one.
+
+  **⚠️ A copy you already downloaded is still the old, unsafe one.** The fix lives in the app, so it can only protect files downloaded from now on — it cannot reach into a file already sitting on a computer. **If you are running an offline copy you downloaded before today, download a fresh one and use that instead.** If you are not sure whether you are using an offline copy, you are almost certainly not — it is the file you would have had to save and open by hand.
+
+  **The safest way to work without internet is still to install Menchmark as an app** (Backup & Sheets → *Install Menchmark as an app*). That keeps everything in one place, saves normally, and has never had this problem. The downloaded copy is for computers that cannot get online even once.
+
 - **The points scanner no longer leaves a false error message behind when you switch away from the app.** It was meant to pop itself out into its own window whenever you switched to another tab or program, so it would stay in front of you. It never actually could: browsers only allow a window like that to open in response to a button press, and switching away from a tab is not a button press. So the attempt failed every time and left *"Couldn't open pop-out window"* sitting in the scanner for you to find when you came back — an error about something you had never asked for.
 
   The attempt has been removed. **Popping the scanner out by pressing ⧉ works exactly as it always did** — that is a button press, so the browser allows it. There is simply no longer a broken automatic version of it failing quietly in the background.
