@@ -165,6 +165,38 @@
         <div id="zoomStatus" class="hint"></div>
       </div>
       <div id="zoomNone" class="hint" hidden></div>
+
+      <div id="sweepWrap" hidden style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="row">
+          <label class="f" style="align-self:flex-end;padding-bottom:6px">
+            <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.9rem;color:var(--ink)">
+              <input type="checkbox" id="sweepOn"> <strong>Sweep the room</strong>
+            </span>
+          </label>
+          <label class="f">Seating
+            <select id="sweepPattern">
+              <option value="row">Rows — pan side to side</option>
+              <option value="arc">Semi-circle — pan the whole arc</option>
+              <option value="grid">Deep rows — pan × tilt grid</option>
+            </select>
+          </label>
+          <label class="f">Stops <input type="number" id="sweepStops" value="5" min="2" max="20" step="1"></label>
+          <label class="f">Arc width (% of full pan) <input type="number" id="sweepSpan" value="60" min="5" max="100" step="5"></label>
+          <label class="f" id="tiltRowsLabel" hidden>Tilt rows <input type="number" id="sweepTiltRows" value="2" min="1" max="5" step="1"></label>
+          <label class="f" id="tiltSpanLabel" hidden>Tilt span (% of full tilt) <input type="number" id="sweepTiltSpan" value="35" min="5" max="100" step="5"></label>
+          <label class="f">Dwell (ms) <input type="number" id="sweepDwell" value="700" min="150" max="5000" step="50"></label>
+        </div>
+        <div id="sweepStopList" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"></div>
+        <div id="sweepStatus" class="hint"></div>
+        <div class="note">
+          <strong>What sweeping is for.</strong> Zoom buys distance by cropping, so it sees fewer boys at once.
+          Sweeping pans the camera across the room and adds up what it found at each stop, buying that coverage
+          back with <em>time</em> instead of field of view — one full pass is a roll call of the room rather than
+          a snapshot. Zoom in until the back row reads, then set enough stops to cover the seats.
+          Roughly <strong>one stop per 1× of zoom</strong>, plus one for overlap.
+        </div>
+      </div>
+      <div id="sweepNone" class="hint" hidden></div>
     </div>
 
     <div class="card">
@@ -179,6 +211,7 @@
         <div class="stat"><div class="k">Most at once</div><div class="v" id="sMax">–</div></div>
         <div class="stat"><div class="k">Detect time</div><div class="v" id="sMs">–</div></div>
         <div class="stat"><div class="k">Smallest code</div><div class="v" id="sSize">–</div></div>
+        <div class="stat hot"><div class="k">Last full sweep</div><div class="v" id="sSweep">–</div></div>
       </div>
       <p class="hint"><strong>Two separate levers on range, and it matters which one you move.</strong>
         <strong>Detect width</strong> is how wide the frame is scaled to before detection — the default 1920
@@ -344,7 +377,7 @@
        and fall back to a plain request if the camera or the user says no —
        losing zoom must never cost us the camera. */
     var withZoom={}; for(var k in v) withZoom[k]=v[k];
-    withZoom.zoom=true;
+    withZoom.zoom=true; withZoom.pan=true; withZoom.tilt=true;
     ptzRequested=true;
     navigator.mediaDevices.getUserMedia({video:withZoom,audio:false}).catch(function(e){
       ptzRequested=false; ptzDenied=e.name;
@@ -389,6 +422,9 @@
     if(!t||!t.getCapabilities){ showNoZoom("This browser cannot report camera capabilities, so zoom cannot be driven."); return; }
     var caps={};
     try{ caps=t.getCapabilities()||{}; }catch(e){}
+    /* Sweep needs pan, not zoom — set it up before the zoom check bails out,
+       so a pan-only camera still gets it. */
+    setupSweep(caps,t);
     if(!caps.zoom || typeof caps.zoom.max!=="number" || caps.zoom.max<=caps.zoom.min){
       showNoZoom("This camera exposes no zoom control to the browser"+
         (ptzDenied? " — the pan/tilt/zoom permission was refused ("+ptzDenied+"), so the camera opened without it." :
@@ -513,10 +549,234 @@
     }
   }
 
+  /* ---------- sweep: pan the room and add up what each stop saw ----------
+     Zoom trades field of view for range; sweeping trades TIME for the field of
+     view back. One completed traverse is a roll call of the whole room rather
+     than a snapshot of one slice of it. */
+  var sweepWrap=$("sweepWrap"), sweepNone=$("sweepNone"), sweepOnBox=$("sweepOn"),
+      sweepStatus=$("sweepStatus"), sweepStopList=$("sweepStopList");
+  var panCaps=null, tiltCaps=null, ptzTrack=null;
+  var SWEEP_SETTLE_MS=420;      /* gimbal travel before the picture is worth reading */
+  var sweep={stops:[],idx:0,dir:1,moving:false,arrivedAt:0,seen:null,perStop:[],startedAt:0};
+
+  function setupSweep(caps,t){
+    panCaps=null; tiltCaps=null; ptzTrack=null;
+    sweepWrap.hidden=true; sweepNone.hidden=true;
+    resetSweep();
+    var p=caps.pan;
+    if(!p || typeof p.max!=="number" || p.max<=p.min){
+      sweepNone.hidden=false;
+      sweepNone.textContent="Sweep needs pan control, and this camera exposes none to the browser"+
+        (ptzDenied? " (the pan/tilt/zoom permission was refused)." : ".")+
+        " On the Insta360 Link the gimbal may only be steerable from Insta360's own app, and its AI tracking "+
+        "will fight anything that tries to aim the camera anyway — turn tracking off before trusting a sweep.";
+      sweepOnBox.checked=false;
+      return;
+    }
+    panCaps=p; ptzTrack=t;
+    if(caps.tilt && typeof caps.tilt.max==="number" && caps.tilt.max>caps.tilt.min) tiltCaps=caps.tilt;
+    $("sweepPattern").disabled=false;
+    sweepWrap.hidden=false;
+    syncPatternUI();
+    sweepStatus.textContent="Ready. Zoom in until the far seats read, then switch this on.";
+  }
+
+  function syncPatternUI(){
+    var grid=$("sweepPattern").value==="grid";
+    $("tiltRowsLabel").hidden=!(grid&&tiltCaps);
+    $("tiltSpanLabel").hidden=!(grid&&tiltCaps);
+    if(grid&&!tiltCaps) sweepStatus.textContent="This camera reports no tilt, so a grid sweep will pan only.";
+  }
+  $("sweepPattern").addEventListener("change",function(){
+    var v=$("sweepPattern").value;
+    /* a semi-circle wants the whole arc; rows want a slice of it */
+    $("sweepSpan").value = (v==="arc")? "100" : "60";
+    syncPatternUI();
+    resetSweep();
+  });
+  ["sweepStops","sweepSpan","sweepTiltRows","sweepTiltSpan"].forEach(function(id){
+    $(id).addEventListener("change",resetSweep);
+  });
+
+  function clampInt(v,lo,hi,dflt){
+    var n=parseInt(v,10);
+    if(!isFinite(n)) return dflt;
+    return Math.max(lo,Math.min(hi,n));
+  }
+  function snapTo(v,caps){
+    if(!caps) return v;
+    var step=caps.step||1;
+    var n=caps.min+Math.round((v-caps.min)/step)*step;
+    return Math.max(caps.min,Math.min(caps.max,n));
+  }
+
+  /* Stops are laid out around the camera's mechanical centre so a sweep is
+     repeatable — not around wherever it happened to be pointing. */
+  function buildStops(){
+    if(!panCaps) return [];
+    var n=clampInt($("sweepStops").value,2,20,5);
+    var pct=Math.max(5,Math.min(100,parseFloat($("sweepSpan").value)||60))/100;
+    var pc=(panCaps.min+panCaps.max)/2, pspan=(panCaps.max-panCaps.min)*pct;
+    var pans=[];
+    for(var i=0;i<n;i++) pans.push(pc-pspan/2+pspan*(i/(n-1)));
+
+    if($("sweepPattern").value!=="grid" || !tiltCaps)
+      return pans.map(function(p){ return {pan:p,tilt:null}; });
+
+    var rows=clampInt($("sweepTiltRows").value,1,5,2);
+    var tpct=Math.max(5,Math.min(100,parseFloat($("sweepTiltSpan").value)||35))/100;
+    var tc=(tiltCaps.min+tiltCaps.max)/2, tspan=(tiltCaps.max-tiltCaps.min)*tpct;
+    var out=[];
+    for(var r=0;r<rows;r++){
+      var t=(rows===1)? tc : tc-tspan/2+tspan*(r/(rows-1));
+      /* serpentine: each tilt row starts where the previous one ended */
+      var seq=(r%2===0)? pans : pans.slice().reverse();
+      seq.forEach(function(p){ out.push({pan:p,tilt:t}); });
+    }
+    return out;
+  }
+
+  function resetSweep(){
+    sweep.stops=[]; sweep.idx=0; sweep.dir=1; sweep.moving=false;
+    sweep.seen=Object.create(null); sweep.perStop=[]; sweep.startedAt=0;
+    if(sweepStopList) sweepStopList.innerHTML="";
+  }
+
+  function sweepGoTo(i){
+    if(!ptzTrack||!sweep.stops.length) return;
+    var s=sweep.stops[Math.max(0,Math.min(sweep.stops.length-1,i))];
+    var c={};
+    if(s.pan!=null) c.pan=snapTo(s.pan,panCaps);
+    if(s.tilt!=null && tiltCaps) c.tilt=snapTo(s.tilt,tiltCaps);
+    sweep.moving=true;
+    ptzTrack.applyConstraints({advanced:[c]}).catch(function(e){
+      sweepStatus.textContent="The camera refused to pan: "+e.name+" — "+e.message+". Sweep stopped.";
+      sweepOnBox.checked=false;
+    }).then(function(){
+      setTimeout(function(){ sweep.moving=false; sweep.arrivedAt=Date.now(); },SWEEP_SETTLE_MS);
+    });
+  }
+
+  function renderSweepStops(){
+    if(!sweep.stops.length) return;
+    if(sweepStopList.childNodes.length!==sweep.stops.length){
+      sweepStopList.innerHTML="";
+      sweep.stops.forEach(function(s,i){
+        var chip=el("span");
+        chip.style.cssText="border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:.78rem;background:#f4f5f9";
+        chip.id="swchip"+i;
+        sweepStopList.appendChild(chip);
+      });
+    }
+    sweep.stops.forEach(function(s,i){
+      var chip=$("swchip"+i); if(!chip) return;
+      var n=sweep.perStop[i]? Object.keys(sweep.perStop[i]).length : 0;
+      chip.textContent=(i+1)+": "+n;
+      var here=(i===sweep.idx);
+      chip.style.background=here? "#e8b93a" : (n? "var(--good-soft)" : "#f4f5f9");
+      chip.style.fontWeight=here? "800" : "600";
+    });
+  }
+
+  /* A sweep that leaves gaps between stops loses boys silently, which is the
+     one failure this whole thing exists to avoid. Two things give it away
+     without needing to know the camera's field of view in degrees: adjacent
+     stops that never share a code (nothing straddles the seam), and stops that
+     saw nothing at all (the arc is aimed wider than the seating). */
+  function coverageAdvice(){
+    var per=sweep.perStop, n=sweep.stops.length, tips=[];
+    var pairs=0, overlapping=0, empty=[];
+    for(var i=0;i<n;i++){
+      if(!per[i]||!Object.keys(per[i]).length) empty.push(i+1);
+    }
+    for(i=0;i<n-1;i++){
+      if(!per[i]||!per[i+1]) continue;
+      var a=Object.keys(per[i]);
+      if(!a.length||!Object.keys(per[i+1]).length) continue;
+      pairs++;
+      for(var k=0;k<a.length;k++){ if(per[i+1][a[k]]){ overlapping++; break; } }
+    }
+    if(pairs&&overlapping===0){
+      tips.push("No code was seen at two stops in a row, so the stops probably do not overlap — "+
+        "anything sitting between them is invisible. Add stops, or narrow the arc.");
+    }
+    if(empty.length&&empty.length<n){
+      tips.push("Stop"+(empty.length>1?"s":"")+" "+empty.join(", ")+" saw nothing — "+
+        "the arc is aimed wider than the seating. Narrowing it spends the same time on fewer, better stops.");
+    }
+    return tips.join(" ");
+  }
+
+  function finishTraverse(){
+    var uniq=Object.keys(sweep.seen).length;
+    var secs=sweep.startedAt? (Date.now()-sweep.startedAt)/1000 : 0;
+    var advice=coverageAdvice();
+    $("sSweep").textContent=String(uniq);
+    sweepStatus.textContent="Sweep complete — "+uniq+" code"+(uniq===1?"":"s")+
+      " across "+sweep.stops.length+" stops in "+secs.toFixed(1)+"s."+
+      (advice? "  ⚠ "+advice : "  Starting the next pass.");
+    sweep.seen=Object.create(null);
+    sweep.perStop=[];
+    sweep.startedAt=Date.now();
+  }
+
+  function sweepTick(values){
+    if(!sweepOnBox.checked||!panCaps||!ptzTrack) return;
+    if(!sweep.stops.length){
+      sweep.stops=buildStops();
+      if(!sweep.stops.length){ sweepOnBox.checked=false; return; }
+      sweep.idx=0; sweep.dir=1; sweep.seen=Object.create(null); sweep.perStop=[];
+      sweep.startedAt=Date.now();
+      sweepGoTo(0);
+      return;
+    }
+    if(sweep.moving) return;
+
+    if(!sweep.perStop[sweep.idx]) sweep.perStop[sweep.idx]=Object.create(null);
+    values.forEach(function(v){ sweep.seen[v]=true; sweep.perStop[sweep.idx][v]=true; });
+    renderSweepStops();
+
+    sweepStatus.textContent="Stop "+(sweep.idx+1)+" of "+sweep.stops.length+
+      " — "+Object.keys(sweep.perStop[sweep.idx]).length+" here, "+
+      Object.keys(sweep.seen).length+" unique so far this pass.";
+
+    var dwell=clampInt($("sweepDwell").value,150,5000,700);
+    if(Date.now()-sweep.arrivedAt<dwell) return;
+
+    var next=sweep.idx+sweep.dir;
+    if(next>=sweep.stops.length||next<0){
+      finishTraverse();
+      sweep.dir=-sweep.dir;                 /* ping-pong: no long run back to the start */
+      next=sweep.idx+sweep.dir;
+      if(next<0||next>=sweep.stops.length) next=sweep.idx;
+    }
+    sweep.idx=next;
+    sweepGoTo(next);
+  }
+
+  /* Sweeping and auto-zoom would fight each other — auto-zoom would resize on
+     whichever slice of the room it happened to be pointed at. */
+  sweepOnBox.addEventListener("change",function(){
+    if(sweepOnBox.checked){
+      autoZoomBox.checked=false;
+      resetSweep();
+    } else {
+      sweepStatus.textContent="Sweep off.";
+    }
+  });
+  autoZoomBox.addEventListener("change",function(){
+    if(autoZoomBox.checked && sweepOnBox.checked){
+      sweepOnBox.checked=false;
+      sweepStatus.textContent="Sweep off — auto-zoom took over.";
+    }
+  });
+
   stopBtn.addEventListener("click",function(){
     stopLoop();
     stopStream();
     zoomWrap.hidden=true; zoomNone.hidden=true; zoomCaps=null; zoomTrack=null;
+    sweepWrap.hidden=true; sweepNone.hidden=true; panCaps=null; tiltCaps=null; ptzTrack=null;
+    sweepOnBox.checked=false; resetSweep();
     octx.clearRect(0,0,ov.width,ov.height);
     startBtn.disabled=false;
     stopBtn.disabled=true;
@@ -691,6 +951,7 @@
     if(uniq>maxAtOnce){ maxAtOnce=uniq; sMax.textContent=String(uniq); }
     $("sSize").textContent = boxes.length? Math.round(smallest)+"px" : "–";
     autoZoomStep(boxes,W,H);
+    sweepTick(Object.keys(seen));
     if(logDirty) renderLog();
   }
 
