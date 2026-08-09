@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>SPIKE — Google Drive backup (tier 2)</title>
+<style>
+  :root {
+    --bg: #12151b; --panel: #1b1f27; --line: #2b3140; --ink: #e6e9ef;
+    --dim: #98a1b3; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24;
+    --accent: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 10px; letter-spacing: .02em; text-transform: uppercase; color: var(--dim); }
+  p { margin: 0 0 10px; }
+  .sub { color: var(--dim); margin-bottom: 20px; }
+  .banner {
+    background: #3b1d1d; border: 1px solid #7f2d2d; border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 20px;
+  }
+  .banner b { color: #fca5a5; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  code, .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; }
+  .copybox {
+    display: flex; gap: 8px; align-items: center; margin: 6px 0 12px;
+  }
+  .copybox input {
+    flex: 1; background: #0d1016; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 10px; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px;
+  }
+  button {
+    background: #273043; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 13px; font-size: 14px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #313c53; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: #1d4ed8; border-color: #2563eb; }
+  button.primary:hover:not(:disabled) { background: #2563eb; }
+  button.danger { background: #7f1d1d; border-color: #991b1b; }
+  button.danger:hover:not(:disabled) { background: #991b1b; }
+  .steps { display: flex; flex-wrap: wrap; gap: 8px; }
+  .kv { display: grid; grid-template-columns: 190px 1fr; gap: 4px 12px; font-size: 14px; }
+  .kv dt { color: var(--dim); }
+  .kv dd { margin: 0; }
+  #log {
+    background: #0d1016; border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px; height: 300px; overflow-y: auto;
+    font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .t-ok { color: var(--ok); } .t-bad { color: var(--bad); }
+  .t-warn { color: var(--warn); } .t-dim { color: var(--dim); }
+  .t-accent { color: var(--accent); }
+  ol { margin: 0 0 0 20px; padding: 0; } ol li { margin-bottom: 8px; }
+  .findings li { margin-bottom: 6px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; border: 1px solid var(--line); }
+  .pill.ok { background: #14321f; border-color: #2f6b43; color: var(--ok); }
+  .pill.bad { background: #331717; border-color: #7f2d2d; color: var(--bad); }
+  .pill.unknown { background: #262b36; color: var(--dim); }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="banner">
+    <b>THIS IS A SPIKE — not part of Menchmark.</b>
+    It is not linked from the app, it never touches a real roster, and it writes
+    nothing to <code>localStorage</code> under the app's key. Its only job is to
+    answer one question: <b>what does Google sign-in and re-authorisation
+    actually feel like for a rebbi on a shared Chromebook?</b> Delete it or
+    rewrite it properly once that is answered — see <code>spikes/README.md</code>.
+  </div>
+
+  <h1>Drive backup spike — tier 2 custody</h1>
+  <p class="sub">
+    <code>docs/Data_Custody_Decision.md</code> Q5 · issue #218 · next item in <code>docs/NOW.md</code>
+  </p>
+
+  <div class="panel">
+    <h2>1 · Setup (do this once)</h2>
+    <p id="cfgState"></p>
+    <ol>
+      <li>Create a throwaway project at <span class="mono">console.cloud.google.com</span>.</li>
+      <li><b>Enable the Google Drive API</b> (APIs &amp; Services → Library → Drive API).</li>
+      <li><b>OAuth consent screen</b> → External. Add scope
+        <code>https://www.googleapis.com/auth/drive.file</code> — it will be listed as
+        <b>non-sensitive</b>, which is the whole point: no verification review.
+        Add yourself as a test user. Leave it in testing mode.</li>
+      <li><b>Credentials → Create OAuth client ID → Web application.</b>
+        This page uses a redirect flow, so <b>both</b> of these must be registered
+        exactly as shown — copy them from here rather than typing them:
+        <div class="copybox">
+          <input id="originOut" readonly>
+          <button data-copy="originOut">Copy origin</button>
+        </div>
+        <div class="copybox">
+          <input id="redirectOut" readonly>
+          <button data-copy="redirectOut">Copy redirect URI</button>
+        </div>
+        No client secret is needed — the browser token flow doesn't use one.
+      </li>
+      <li>Paste the client ID into <code>CLIENT_ID</code> at the top of this
+        file's script, or into the box below to try it without editing:
+        <div class="copybox">
+          <input id="clientIdIn" placeholder="xxxxxxxx.apps.googleusercontent.com">
+          <button id="useClientId">Use it</button>
+        </div>
+      </li>
+    </ol>
+    <p class="t-dim">
+      The client ID is not a secret — it identifies the project and authorises
+      nothing on its own, the same property Firebase API keys have. The redirect
+      URI must match <em>character for character</em>, which is why this page
+      computes it for you instead of asking you to guess it.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>2 · Token status</h2>
+    <dl class="kv">
+      <dt>Client ID</dt><dd id="stClient">—</dd>
+      <dt>Access token</dt><dd id="stToken">none</dd>
+      <dt>Expires</dt><dd id="stExp">—</dd>
+      <dt>Granted scope</dt><dd id="stScope">—</dd>
+      <dt>Silent re-auth works?</dt><dd id="stSilent"><span class="pill unknown">untested</span></dd>
+    </dl>
+  </div>
+
+  <div class="panel">
+    <h2>3 · Run the steps in order</h2>
+    <div class="steps">
+      <button id="bSignIn" class="primary">① Sign in (redirect)</button>
+      <button id="bFolder">② Find / create folder</button>
+      <button id="bWrite">③ Write backup JSON</button>
+      <button id="bRead">④ Read it back &amp; verify</button>
+      <button id="bSilent">⑤ Test silent re-auth</button>
+      <button id="bBreak" class="danger">⑥ Break token (force a real 401)</button>
+      <button id="bFull" class="primary">▶ Run ②–④ end to end</button>
+    </div>
+    <hr>
+    <p class="t-dim" style="margin:0">
+      <b>The step that matters is ⑤, and then ⑥ followed by ③.</b> Everything
+      before them only proves the API works, which was never in doubt. ⑤ asks
+      whether the app can quietly get a new token an hour into a lesson without
+      interrupting the rebbi. ⑥ then kills the token for real, so ③ has to
+      recover from a genuine 401 rather than a simulated one — that is the exact
+      moment a backup would silently stop working in a classroom.
+      <b>Run the whole thing again on a shared/logged-out Chromebook</b>; a
+      laptop where you are permanently signed into Google is the easy case and
+      will tell you almost nothing.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>4 · Log</h2>
+    <div id="log"></div>
+    <div style="margin-top:10px; display:flex; gap:8px;">
+      <button id="bCopyLog">Copy log</button>
+      <button id="bClearLog">Clear</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>5 · Findings — fill this in after running it</h2>
+    <ul class="findings">
+      <li><b>Does silent re-auth work on your own laptop?</b> <span id="fLaptop" class="pill unknown">untested</span></li>
+      <li><b>Does it work on a shared Chromebook, signed out of Google?</b> — this is the real question, and it has to be answered by hand.</li>
+      <li><b>If it fails, how many clicks does recovery take?</b> One consent click is fine. A full sign-in mid-lesson is not.</li>
+      <li><b>Does the failure announce itself?</b> A backup that silently stops is worse than one that never started — the staleness nudge in <code>docs/Daily_Backup_Spec.md</code> is the backstop, so confirm it would actually fire.</li>
+    </ul>
+    <p class="t-dim">Write the answers into <code>spikes/README.md</code> when you have them. A spike whose results live only in someone's memory has failed.</p>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ── Paste your client ID here (or use the box in step 1) ──────────────────
+  var CLIENT_ID = "";
+  // ──────────────────────────────────────────────────────────────────────────
+
+  var SCOPE      = "https://www.googleapis.com/auth/drive.file";
+  var AUTH_URL   = "https://accounts.google.com/o/oauth2/v2/auth";
+  var FOLDER_NAME = "Menchmark Backup (spike)";
+  var FILE_NAME   = "menchmark-backup.json";
+  var FOLDER_MIME = "application/vnd.google-apps.folder";
+
+  // Token lives in memory only, on purpose. Persisting an access token to
+  // localStorage is a pattern the real feature must not copy, so the spike
+  // doesn't model it.
+  var token = null, tokenExp = 0, tokenScope = "";
+  var folderId = null, fileId = null;
+  var silentVerdict = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // Redirect URI must match what's registered character for character, so it
+  // is computed rather than typed: origin + path, no query, no fragment.
+  var REDIRECT_URI = location.origin + location.pathname;
+
+  function log(msg, cls) {
+    var el = $("log");
+    var t = new Date().toTimeString().slice(0, 8);
+    var line = document.createElement("div");
+    if (cls) line.className = "t-" + cls;
+    line.textContent = "[" + t + "] " + msg;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function setPill(el, state, text) {
+    el.innerHTML = "";
+    var s = document.createElement("span");
+    s.className = "pill " + state;
+    s.textContent = text;
+    el.appendChild(s);
+  }
+
+  function refresh() {
+    $("stClient").textContent = CLIENT_ID ? CLIENT_ID.slice(0, 24) + "…" : "not set";
+    $("stToken").textContent = token ? token.slice(0, 12) + "… (in memory only)" : "none";
+    if (token && tokenExp) {
+      var left = Math.round((tokenExp - Date.now()) / 1000);
+      $("stExp").textContent = left > 0
+        ? new Date(tokenExp).toTimeString().slice(0, 8) + "  (" + left + "s left)"
+        : "EXPIRED";
+      $("stExp").className = left > 0 ? "" : "t-bad";
+    } else {
+      $("stExp").textContent = "—";
+    }
+    $("stScope").textContent = tokenScope || "—";
+    $("cfgState").innerHTML = CLIENT_ID
+      ? '<span class="pill ok">client ID set</span> — ready to run step ①.'
+      : '<span class="pill bad">no client ID yet</span> — the buttons below will not work until one is set.';
+  }
+
+  // ── OAuth: plain redirect, no library ──────────────────────────────────────
+  // Deliberately NOT Google Identity Services. GIS is a <script src> to a
+  // Google CDN, which CLAUDE.md rule 3 forbids inside app.html and which a
+  // service worker cannot reliably precache for offline use. Spiking the
+  // library route would prove something the real feature can't use.
+
+  function buildAuthUrl(silent) {
+    var nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    sessionStorage.setItem("driveSpikeNonce", nonce);
+    // "silent" rides inside state so only ONE redirect URI needs registering.
+    var state = nonce + "." + (silent ? "1" : "0");
+    var p = new URLSearchParams({
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      response_type: "token",
+      scope: SCOPE,
+      state: state,
+      include_granted_scopes: "true",
+      prompt: silent ? "none" : "consent"
+    });
+    return AUTH_URL + "?" + p.toString();
+  }
+
+  function parseFragment() {
+    if (!location.hash || location.hash.length < 2) return null;
+    var p = new URLSearchParams(location.hash.slice(1));
+    if (!p.get("access_token") && !p.get("error")) return null;
+    return {
+      accessToken: p.get("access_token"),
+      expiresIn: parseInt(p.get("expires_in") || "0", 10),
+      scope: p.get("scope") || "",
+      state: p.get("state") || "",
+      error: p.get("error"),
+      errorDesc: p.get("error_description")
+    };
+  }
+
+  function stateOk(state) {
+    var nonce = sessionStorage.getItem("driveSpikeNonce");
+    return !!nonce && state.split(".")[0] === nonce;
+  }
+
+  function adoptToken(r) {
+    token = r.accessToken;
+    tokenExp = Date.now() + (r.expiresIn * 1000);
+    tokenScope = r.scope;
+    refresh();
+    log("Token received. Lifetime " + r.expiresIn + "s (~" +
+        Math.round(r.expiresIn / 60) + " min). No refresh token — there never is one " +
+        "in a browser-only flow, which is the entire reason this spike exists.", "ok");
+  }
+
+  function signIn() {
+    if (!CLIENT_ID) { log("Set a client ID first (step 1).", "bad"); return; }
+    log("Redirecting to Google for consent…", "accent");
+    location.href = buildAuthUrl(false);
+  }
+
+  // Silent re-auth: hidden iframe with prompt=none. If Google still has a live
+  // session it returns a token with no UI at all. If it can't, it returns an
+  // error instead of prompting — which is exactly the case that decides whether
+  // "keeps your backup updated automatically" is an honest sentence.
+  function silentReauth() {
+    return new Promise(function (resolve) {
+      if (!CLIENT_ID) { resolve({ ok: false, reason: "no client id" }); return; }
+      var done = false;
+      var iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+
+      function finish(result) {
+        if (done) return;
+        done = true;
+        window.removeEventListener("message", onMsg);
+        clearTimeout(timer);
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        resolve(result);
+      }
+      function onMsg(e) {
+        if (e.origin !== location.origin) return;
+        if (!e.data || e.data.type !== "drive-spike-token") return;
+        if (e.data.error) { finish({ ok: false, reason: e.data.error }); return; }
+        if (!stateOk(e.data.state || "")) { finish({ ok: false, reason: "state mismatch" }); return; }
+        adoptToken(e.data);
+        finish({ ok: true });
+      }
+      var timer = setTimeout(function () {
+        finish({ ok: false, reason: "timed out after 12s (frame never reported back)" });
+      }, 12000);
+
+      window.addEventListener("message", onMsg);
+      iframe.src = buildAuthUrl(true);
+      document.body.appendChild(iframe);
+      log("Silent re-auth: opening hidden frame with prompt=none…", "accent");
+    });
+  }
+
+  // ── Drive REST, all via fetch ─────────────────────────────────────────────
+
+  function api(url, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ Authorization: "Bearer " + token }, opts.headers || {});
+    return fetch(url, opts).then(function (res) {
+      if (res.status === 401) {
+        var e = new Error("401 — token rejected by Google");
+        e.unauthorized = true;
+        throw e;
+      }
+      return res.text().then(function (body) {
+        if (!res.ok) throw new Error(res.status + " " + body.slice(0, 300));
+        if (!body) return null;
+        try { return JSON.parse(body); } catch (_) { return body; }
+      });
+    });
+  }
+
+  function requireToken() {
+    if (!token) throw new Error("No token — run step ① first.");
+  }
+
+  // Recovery wrapper: on a genuine 401, try silent re-auth once and retry. This
+  // is the shape the real feature would need, so the spike exercises it rather
+  // than describing it.
+  function withRecovery(fn, label) {
+    return fn().catch(function (err) {
+      if (!err.unauthorized) throw err;
+      log("401 on " + label + " — attempting silent recovery…", "warn");
+      return silentReauth().then(function (r) {
+        if (!r.ok) {
+          log("Silent recovery FAILED (" + r.reason + "). A rebbi would be " +
+              "interrupted here and asked to sign in again.", "bad");
+          setPill($("stSilent"), "bad", "no — needs a click");
+          setPill($("fLaptop"), "bad", "no");
+          silentVerdict = false;
+          throw new Error("re-auth required");
+        }
+        log("Silent recovery worked — retrying " + label + ", rebbi saw nothing.", "ok");
+        setPill($("stSilent"), "ok", "yes — invisible");
+        setPill($("fLaptop"), "ok", "yes");
+        silentVerdict = true;
+        return fn();
+      });
+    });
+  }
+
+  function findOrCreateFolder() {
+    requireToken();
+    var q = "name='" + FOLDER_NAME + "' and mimeType='" + FOLDER_MIME + "' and trashed=false";
+    var url = "https://www.googleapis.com/drive/v3/files?q=" +
+              encodeURIComponent(q) + "&fields=files(id,name)";
+    return api(url).then(function (r) {
+      if (r && r.files && r.files.length) {
+        folderId = r.files[0].id;
+        log("Folder already there: " + folderId, "ok");
+        return folderId;
+      }
+      return api("https://www.googleapis.com/drive/v3/files?fields=id,name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: FOLDER_NAME, mimeType: FOLDER_MIME })
+      }).then(function (f) {
+        folderId = f.id;
+        log("Folder created: " + folderId, "ok");
+        return folderId;
+      });
+    });
+  }
+
+  // Obviously-fake data. CLAUDE.md rule 6: no real names ever leave this repo,
+  // and that applies to anything a spike uploads too.
+  function samplePayload() {
+    return {
+      note: "Menchmark Drive spike — synthetic data, not a real class.",
+      writtenAt: new Date().toISOString(),
+      className: "Spike Test Class",
+      students: [
+        { id: "s1", firstName: "Test", lastName: "Aleph", points: 12 },
+        { id: "s2", firstName: "Test", lastName: "Beis", points: 7 }
+      ],
+      log: [{ ts: Date.now(), studentId: "s1", activity: "Sample Activity", pts: 1 }]
+    };
+  }
+
+  function writeBackup() {
+    requireToken();
+    if (!folderId) throw new Error("No folder — run step ② first.");
+    var payload = JSON.stringify(samplePayload(), null, 2);
+    var started = Date.now();
+
+    var findQ = "name='" + FILE_NAME + "' and '" + folderId + "' in parents and trashed=false";
+    var findUrl = "https://www.googleapis.com/drive/v3/files?q=" +
+                  encodeURIComponent(findQ) + "&fields=files(id,name)";
+
+    return api(findUrl).then(function (r) {
+      if (r && r.files && r.files.length) {
+        fileId = r.files[0].id;
+        // Update in place — the whole-blob overwrite the decision doc warns is
+        // fine for a backup and NOT fine as a sync layer.
+        return api("https://www.googleapis.com/upload/drive/v3/files/" + fileId +
+                   "?uploadType=media&fields=id,modifiedTime", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: payload
+        }).then(function (f) {
+          log("Backup updated in place (" + payload.length + " bytes) in " +
+              (Date.now() - started) + "ms", "ok");
+          return f;
+        });
+      }
+      var boundary = "spike" + Math.random().toString(36).slice(2);
+      var meta = { name: FILE_NAME, parents: [folderId], mimeType: "application/json" };
+      var body =
+        "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" +
+        JSON.stringify(meta) +
+        "\r\n--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" +
+        payload + "\r\n--" + boundary + "--";
+      return api("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name", {
+        method: "POST",
+        headers: { "Content-Type": "multipart/related; boundary=" + boundary },
+        body: body
+      }).then(function (f) {
+        fileId = f.id;
+        log("Backup created (" + payload.length + " bytes) in " +
+            (Date.now() - started) + "ms — id " + f.id, "ok");
+        return f;
+      });
+    });
+  }
+
+  function readBack() {
+    requireToken();
+    if (!fileId) throw new Error("No file yet — run step ③ first.");
+    return api("https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media")
+      .then(function (data) {
+        var ok = data && data.students && data.students.length === 2;
+        log(ok ? "Read back and verified — round trip intact."
+               : "Read back but content did NOT match what was written.", ok ? "ok" : "bad");
+        if (ok) log("  className=" + data.className + ", writtenAt=" + data.writtenAt, "dim");
+        return data;
+      });
+  }
+
+  function run(fn, label) {
+    return Promise.resolve()
+      .then(function () { return withRecovery(fn, label); })
+      .catch(function (err) { log(label + " failed: " + err.message, "bad"); throw err; });
+  }
+
+  // ── Wiring ────────────────────────────────────────────────────────────────
+
+  $("bSignIn").addEventListener("click", signIn);
+  $("bFolder").addEventListener("click", function () { run(findOrCreateFolder, "find/create folder").catch(function(){}); });
+  $("bWrite").addEventListener("click", function () { run(writeBackup, "write backup").catch(function(){}); });
+  $("bRead").addEventListener("click", function () { run(readBack, "read back").catch(function(){}); });
+
+  $("bFull").addEventListener("click", function () {
+    log("── running ②–④ end to end ──", "accent");
+    run(findOrCreateFolder, "find/create folder")
+      .then(function () { return run(writeBackup, "write backup"); })
+      .then(function () { return run(readBack, "read back"); })
+      .then(function () { log("End-to-end run complete.", "ok"); })
+      .catch(function () {});
+  });
+
+  $("bSilent").addEventListener("click", function () {
+    silentReauth().then(function (r) {
+      if (r.ok) {
+        log("Silent re-auth SUCCEEDED — no UI shown. On this machine the app " +
+            "could keep a backup current without ever interrupting the rebbi.", "ok");
+        setPill($("stSilent"), "ok", "yes — invisible");
+        setPill($("fLaptop"), "ok", "yes");
+        silentVerdict = true;
+      } else {
+        log("Silent re-auth FAILED: " + r.reason + ". This is the important " +
+            "result, not a bug — it means re-auth needs a real click, so " +
+            "'updates automatically' would be a promise the app cannot keep here.", "warn");
+        setPill($("stSilent"), "bad", "no — needs a click");
+        setPill($("fLaptop"), "bad", "no");
+        silentVerdict = false;
+      }
+    });
+  });
+
+  $("bBreak").addEventListener("click", function () {
+    if (!token) { log("No token to break.", "warn"); return; }
+    token = "ya29.BROKEN-ON-PURPOSE-" + Math.random().toString(36).slice(2);
+    tokenExp = Date.now() + 3600000;
+    refresh();
+    log("Token replaced with a garbage value. Google will now reject it for " +
+        "real — run ③ and watch whether recovery is invisible or interrupts.", "warn");
+  });
+
+  $("bCopyLog").addEventListener("click", function () {
+    navigator.clipboard.writeText($("log").innerText).then(function () {
+      log("Log copied to clipboard.", "dim");
+    });
+  });
+  $("bClearLog").addEventListener("click", function () { $("log").innerHTML = ""; });
+
+  $("useClientId").addEventListener("click", function () {
+    var v = $("clientIdIn").value.trim();
+    if (!v) return;
+    CLIENT_ID = v;
+    refresh();
+    log("Client ID set for this page load only. Paste it into CLIENT_ID in the " +
+        "file to make it stick.", "dim");
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-copy]"), function (b) {
+    b.addEventListener("click", function () {
+      var input = $(b.getAttribute("data-copy"));
+      input.select();
+      navigator.clipboard.writeText(input.value);
+      b.textContent = "Copied";
+      setTimeout(function () {
+        b.textContent = b.getAttribute("data-copy") === "originOut" ? "Copy origin" : "Copy redirect URI";
+      }, 1200);
+    });
+  });
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+
+  var frag = parseFragment();
+
+  // Running inside the hidden silent-re-auth frame: report up and stop.
+  if (window.parent !== window && frag) {
+    window.parent.postMessage(Object.assign({ type: "drive-spike-token" }, frag), location.origin);
+    return;
+  }
+
+  $("originOut").value = location.origin;
+  $("redirectOut").value = REDIRECT_URI;
+
+  if (location.protocol === "file:") {
+    log("Opened over file:// — the redirect flow cannot work here. Serve the " +
+        "repo over http (any static server on port 8080) and open this page " +
+        "through it.", "bad");
+  }
+
+  if (frag) {
+    history.replaceState(null, "", REDIRECT_URI);
+    if (frag.error) {
+      log("Google returned an error: " + frag.error +
+          (frag.errorDesc ? " — " + frag.errorDesc : ""), "bad");
+      if (frag.error === "redirect_uri_mismatch") {
+        log("That means the redirect URI above is not registered exactly as " +
+            "shown. Copy it from step 1 rather than typing it.", "warn");
+      }
+    } else if (!stateOk(frag.state)) {
+      log("State mismatch — ignoring this token. (CSRF guard did its job.)", "bad");
+    } else {
+      adoptToken(frag);
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 1000);
+  log("Spike loaded. Redirect URI is " + REDIRECT_URI, "dim");
+  if (!CLIENT_ID) log("No client ID set yet — do step 1.", "warn");
+})();
+</script>
+</body>
+</html>
