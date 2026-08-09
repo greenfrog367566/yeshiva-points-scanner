@@ -16,12 +16,53 @@ Attendance sends that lied about succeeding. A class that couldn't move from Bra
 
 ## Locked decisions
 
+### Data custody — two tiers (LOCKED 2026-08-09, #218)
+
+**This is now the first locked decision, because it changes the answer to
+"who is this rebuild for?" and every section below inherits from it.** Read
+`docs/Data_Custody_Decision.md` for the decision record and the risks
+accepted knowingly; read #218 for the feasibility case. In brief:
+
+- **Custody follows institutional relationship, not product tier.**
+- **Tier 1 — schools with a real relationship** (starting with Ben's own):
+  everything in this document, unchanged. Real accounts, Firestore, three
+  roles, admin oversight, view-as, security rules, converter tool.
+- **Tier 2 — an independent rebbi with no institutional agreement:** stays
+  local. localStorage exactly as today, plus a backup written to **his own**
+  Google Drive (`drive.file` scope, plain `fetch`, no SDK). Ben holds nothing.
+- **This document describes tier 1.** Nothing in it needed to change to
+  accommodate the split — it just stopped being the only option. Where a
+  locked decision below now applies to only one tier, it says so.
+
+**The consequence that matters for step 1:** the storage seam this rebuild
+has to cut anyway (whole-blob `save()` → incremental writes) now has **two
+implementations behind it, not one.** That is the whole reason the split had
+to be decided before collection design rather than after — it is a design
+conversation now and a rewrite later. Put it on the step-1 agenda ahead of
+the collections.
+
+**Accepted costs, recorded here so they are not rediscovered as surprises:**
+tier 2 gets no view-as (support reverts to "send me your backup," which the
+converter tool already handles), no cross-device sync, and no admin
+oversight — none of which exist today either. Tier 2 will also drift behind
+tier 1 by default unless someone actively prevents it; see Q1 in the decision
+record for the intent, which is that tier 2 remains the whole app as it
+stands today, not a stripped mode.
+
+**The reversal path, if two implementations prove too expensive:** promote
+tier 2 into a gated tier 1 (an explicit "I am authorized to enter student
+data" acceptance at signup plus a written deletion/breach policy) using the
+same tier-migration route Q2 describes. That is the "middle tier" Ben named
+when accepting — it stays available and is what makes this decision
+reversible. Do not unpick the architecture to get there.
+
 ### Backend and auth
 
 - **Firebase Auth + Firestore.** Firestore replaces localStorage-as-database.
 - **Two sign-in paths, both real:**
   - **Path A, provisioned (magic link):** superadmin/admin creates the account and class ahead of time; rebbi clicks a link, he's in. For individual outreach.
   - **Path B, self-serve (Google Sign-In + beta code):** rebbi taps Sign in with Google, enters a code, provisions himself on the spot. For batches and live rooms (the YBH PD). The code IS the approval — no per-person checkbox step.
+    - **Reframed by the two-tier split (2026-08-09).** Self-serve now defaults to **tier 2**, and the code is what **promotes to tier 1** — a *school's* code drops the rebbi inside that school's space, visible to its admin, from his first sign-in. No code, or a beta PIN, and he lands standalone (tier 2) with his data on his own device and his own Drive. The code stops being only an approval gate and becomes a *scoping* decision: it answers "which school does this account belong to," which is a field on the account record and a term in every security rule. The mechanic and its five sub-questions are open question 11 below — **no longer gated on the split, which is now accepted**, so it is ready to be worked at step 1.
 - **Offline promise, restated precisely:** one connected moment to log in per device, ever. After that, fully offline via Firestore's persistent local cache, syncing when connectivity returns. Most rebbeim can get wifi once; nobody needs it daily.
 - **The old approval-Sheet automation retires** for the bulk beta invite. Berel has the full beta list; the provisioning tool gets a **bulk mode** — feed the whole list in, accounts created and codes/links sent in one pass.
 
@@ -34,6 +75,7 @@ Attendance sends that lied about succeeding. A class that couldn't move from Bra
 - **Gating is enforced in Firestore security rules**, not hidden in UI. A rebbi's rules physically cannot read another class.
 - **Activity overview for superadmin:** a light dashboard — who's logged in, who's active, who hasn't touched it since the invite. Distinct from "view as."
 - **"View as this rebbi" (superadmin):** pull up a rebbi's real state to debug his actual problem instead of reconstructing it from an email. This is the single biggest killer of the support-email burden.
+- **All three roles, the activity overview and view-as are tier-1 only** (2026-08-09). For tier 2 there is no server-side copy to oversee or view, so none of it can exist by construction. Support for a tier-2 rebbi stays "send me your backup" → the converter tool. Stated here rather than left to be discovered: it is a real cost of the split, and it falls hardest on rebbeim with no colleague or IT department to ask.
 
 ### Data model (the hard part, and why)
 
@@ -70,7 +112,10 @@ The doc as first written assumed someone else always builds the roster before a 
 
 - **The file:// offline-copy download retires.** Firebase Auth cannot work from a file:// origin — hard incompatibility, confirmed. Replacement: **PWA install** (already live), which delivers the same offline promise through a real persistent install. The fresh-copy-banner branch was dropped for exactly this reason.
 - **Sheets stops being the database. Replacement: CSV export.** A download button producing a file any rebbi opens in Sheets/Excel — keeps the "I can see my own data" trust value with zero Apps Script, zero OAuth, zero redeploy pain. A live-updating Sheet is explicitly NOT in this build; if people ask for it later, it's its own project.
-- **Apps Script goes away entirely** with it — no more "redeploy and email twelve rebbeim," no version drift.
+  - **CSV export is for both tiers, ungated** (2026-08-09). A tier-2 rebbi's secretary or menahel has exactly the same need for a readable file as a tier-1 one, and the Drive-JSON backup does not cover that role — a JSON blob is a *backup*, not something a person reads. Don't let one substitute for the other.
+- **Apps Script goes away entirely** with it — no more "redeploy and email twelve rebbeim," no version drift. **Under the split this becomes true sooner and for a better reason:** tier 1 never had it, and tier 2 replaces it with the Drive backup — which also means it retires for tier 2 *without waiting on the rebuild*, as soon as the Drive spike graduates into a real feature.
+- **The fragile-storage warning and the backup-staleness nudge apply to both tiers, and matter MORE for tier 2** (2026-08-09) — there is no cloud source of truth behind it. The existing nudge (`data.lastBackupAt` / `data.backupNudgeSince`, already shipped) gets **retargeted, not redesigned**: today its endpoint is "connect a Sheet"; for tier 2 it becomes "the Drive write succeeded recently." Same UX, same staleness logic, different backend.
+- **The `file://` double-click use case survives for tier 2** — it only dies for tier 1, where Firebase Auth cannot work from a `file://` origin. See open question 1's 2026-08-07 correction.
 
 ### Gradebook visibility for admin (settled — the capstone question)
 
@@ -125,7 +170,7 @@ Phase 2 of the original 9-phase plan had four slices: 2a (tracked-item data mode
 **Issue #154 is now folded in (2026-08-04).** There is no separate sync-architecture doc — `docs/Sync_Architecture_Direction.md` does not exist and never did (verified: not on any branch, no commit history, nothing similar under another name). The Firebase thinking lived in two places:
 
 - **Issue #154** — the substantive investigation: what Firestore would replace, SDK cost against the single-file/no-build constraint, the offline queue, auth and the anonymous-UID orphaning risk, whole-blob clobbering, the 1 MiB ceiling, and the cost curve at 12 / 100 / 1000 rebbeim. Its findings are now carried here: the SDK-vs-single-file tension became open question 1, whole-blob clobbering and the 1 MiB ceiling were already locked into the incremental-write model, the retry/dedup problem became open question 3, and the two-disagreeing-caches problem from its §5 became open question 5.
-  - **Two of its findings were corrected on the way in.** (a) **The anonymous-UID orphaning risk is moot.** This doc previously flagged it as "not addressed anywhere in this scope" — but both locked sign-in paths (magic link, Google) use real identity, and anonymous auth appears nowhere in this design. The risk it describes cannot occur. (b) **The cost curve needs recomputing.** Its 12 / 100 / 1000-rebbeim write volumes were derived from the current 30-second whole-blob snapshot. The locked incremental-write model has a completely different write profile — many small writes rather than a few large ones. The *shape* of the concern survives (document limit bites first, then daily writes, then storage never); the numbers do not. Recompute during step 1.
+  - **Two of its findings were corrected on the way in.** (a) **The anonymous-UID orphaning risk is moot.** This doc previously flagged it as "not addressed anywhere in this scope" — but both locked sign-in paths (magic link, Google) use real identity, and anonymous auth appears nowhere in this design. The risk it describes cannot occur. (b) **The cost curve needs recomputing.** Its 12 / 100 / 1000-rebbeim write volumes were derived from the current 30-second whole-blob snapshot. The locked incremental-write model has a completely different write profile — many small writes rather than a few large ones. The *shape* of the concern survives (document limit bites first, then daily writes, then storage never); the numbers do not. Recompute during step 1. **And recompute against the right denominator (2026-08-09):** under the two-tier split, Firestore cost scales with **schools onboarded**, not with total rebbeim — a tier-2 rebbi costs nothing and writes nothing. That changes the curve's shape, not just its constants, and it removes the "success makes the problem worse" property the old model had.
   - **#154 can now be closed pointing here.**
 - **`docs/NOW.md` item 2, "Offline resync"** — the narrower retry-safety question: the Log dedups by ID so re-pushing is safe, but the Attendance Log has no dedup, so a retry duplicates. That asymmetry needs a real answer in the Firestore model, since incremental writes make retries routine rather than exceptional. **Proposed answer in open question 3** — the asymmetry dissolves rather than needing per-tab handling. The narrower localStorage-era investigation is still owed as written in NOW.md.
 
@@ -135,7 +180,7 @@ Phase 2 of the original 9-phase plan had four slices: 2a (tracked-item data mode
 
 Not features — the decisions the data-model session cannot start without, plus the ones that change what gets built. **Work this list at the top of step 1.** Two items that were on it are now locked and have moved into the body of this document: 2d is sequenced before step 1, and Secretary Mode folds into the rebuild.
 
-**1. Single file, or split?** `CLAUDE.md` rule 3 says `app.html` stays one file with no build step. Firebase Auth + Firestore cannot honor that untouched: the modular SDK is ESM built for bundlers, so it's either a CDN `<script type="module">` (forbidden, and breaks the offline promise) or a vendored compat bundle inlined the way the QR library already is — a few hundred KB onto a file that is already ~1.2 MB and served network-first by `sw.js`, so every deploy re-downloads all of it.
+**1. Single file, or split? — down to two candidates, and one of them is now clearly ahead.** `CLAUDE.md` rule 3 says `app.html` stays one file with no build step. Firebase Auth + Firestore cannot honor that untouched: the modular SDK is ESM built for bundlers, so it's either a CDN `<script type="module">` (forbidden, and breaks the offline promise) or a vendored compat bundle inlined the way the QR library already is — a few hundred KB onto a file that is already ~1.2 MB and served network-first by `sw.js`, so every deploy re-downloads all of it.
 
   **Two things this decision is NOT about,** both of which the old Navigation section implied it was:
   - *The back button.* Real routing needs the History API — `pushState`/`popstate` or hash routing — and that works identically in one file or twenty. Step 4 costs the same either way. Only a multi-*page* app gets "native" back, and that's the worst option here: full reload per tab switch on classroom Chromebooks, shared state through storage on every navigation.
@@ -146,6 +191,10 @@ Not features — the decisions the data-model session cannot start without, plus
   **Correction, 2026-08-07:** the "does not survive this rebuild regardless" line above was written before the two-tier split (#218) existed, when every user was assumed to authenticate through Firebase. Under that split it's only true for **tier 1**. Tier-2 rebbeim never touch Firebase Auth, so the raw-`file://`, no-server-ever, double-click use case rule 3 protects stays fully intact for them — scope this line to tier 1 only, don't read it as retiring rule 3's justification app-wide. See `docs/Data_Custody_Decision.md`.
 
   **Narrowed 2026-08-07 (maintainer requirement):** tier-1 rebbeim must be able to install and use the app as an offline-capable PWA, not just a logged-in web session — the same guarantee tier 2 already has. That rules the CDN `<script type="module">` option out for a second, independent reason beyond "forbidden by rule 3": a service worker cannot reliably guarantee a cross-origin CDN script survives offline (no precache control, opaque responses, CDN outages), so a tier-1 rebbi who lost signal mid-lesson could lose the whole app, not just Firestore sync. Both remaining options — inlining the vendored bundle into `app.html` itself, or vendoring it as a same-origin file loaded only for tier 1 and precached in `sw.js` — satisfy the PWA requirement equally. The choice between *those* two now turns entirely on deploy-size cost to tier 2 (who'd re-download the inline option's bytes for nothing), not on offline capability.
+
+  **The split is ACCEPTED as of 2026-08-09, which settles the tiebreaker above rather than merely raising it.** With custody split, tier 2 is not a hypothetical minority — it is the *default* landing place for every self-serve signup (see the Path B reframe). So "who'd re-download the inline option's bytes for nothing" is most users, permanently, on a file already ~1.2 MB served network-first. **That points hard at vendoring the SDK as a separate same-origin file, loaded only for tier 1 and precached in `sw.js`.** `app.html` stays one file for everyone, no build step is introduced (a plain local `<script src>` needs no bundler), the PWA/offline guarantee holds for both tiers, and the majority who never authenticate never pay for the SDK at all.
+
+  **Still an open question rather than a locked decision, deliberately** — it is a `CLAUDE.md` rule-3 amendment, and rule 3 is a hard rule that only Ben changes (CLAUDE.md: "Changing anything in this file's hard rules" is PROPOSE FIRST). What changed is that the option space is now two, with a clear recommendation, instead of two with a coin-flip. **Rule 3 still stands until Ben amends it, and step 1 still cannot start until this is settled.**
 
 **2. A "class" does not exist in the data model.** Students are `{id, name, group}` with a single top-level `className`. There is no class entity — `group` is a free-text label on each student. But the entire tier design rests on one ("a rebbi's rules physically cannot read another class"), and so does the motivating story of a class that couldn't move from Braun to Weinberg. Step 1 must design the entity **and** decide what existing `group` values become: separate classes, or subdivisions within one. This has roster, permission, and migration consequences and is currently unwritten anywhere.
 
@@ -165,12 +214,12 @@ Not features — the decisions the data-model session cannot start without, plus
 
 **10. Student View means something different now.** The build plan lists it among undesigned gaps. A student-facing screen under real accounts and three tiers is a fundamentally different design than one under a single shared localStorage — it becomes an access-control question, not just a UI. Revisit after step 2, not before.
 
-**11. What does the signup code actually *decide*? (raised 2026-08-07, PROPOSED — not settled.)** Path B above says "rebbi taps Sign in with Google, enters a code" and treats that code as **the approval gate** — the thing that replaces a per-person checkbox. The proposal here is that the same code does a second job it is currently silent about: it decides **where the new account lands**.
+**11. What does the signup code actually *decide*? (raised 2026-08-07, PROPOSED — not settled. UNGATED 2026-08-09: the split it was waiting on is accepted, so this is ready to work at step 1 rather than blocked.)** Path B above says "rebbi taps Sign in with Google, enters a code" and treats that code as **the approval gate** — the thing that replaces a per-person checkbox. The proposal here is that the same code does a second job it is currently silent about: it decides **where the new account lands**.
 
   - **A beta tester gets a PIN** at account creation — he has no school in the system to attach to, so the code creates a **standalone** account (which, if the two-tier split in `Data_Custody_Decision.md` is accepted, is exactly a **tier-2** account).
   - **Everyone else is included in their school** — the code he types is his *school's* code, and it drops him inside that school's space, visible to that school's admin, from his very first sign-in (tier 1).
 
-  One field on the signup screen, two outcomes, decided by which code was typed. **This is the concrete mechanic behind the "Path B reframing" that `Data_Custody_Decision.md` §3 lists as a consequence of the split** — that doc names the reframe ("self-serve defaults to tier 2, code promotes to tier 1") but deliberately leaves the mechanic to this document. It is written here as an open question rather than folded into Locked decisions above, because the same doc says the Path B amendment waits on Ben's yes to the split itself.
+  One field on the signup screen, two outcomes, decided by which code was typed. **This is the concrete mechanic behind the "Path B reframing" that `Data_Custody_Decision.md` §3 lists as a consequence of the split** — that doc names the reframe ("self-serve defaults to tier 2, code promotes to tier 1") but deliberately leaves the mechanic to this document. It was written here as an open question rather than folded into Locked decisions above, because the same doc said the Path B amendment waits on Ben's yes to the split itself. **That yes came 2026-08-09**, so the reframe itself is now locked into "Backend and auth" above. What stays open here is only the *mechanic* — the five sub-questions below, none of which the split answers on its own.
 
   **Why it is worth deciding at step 1 and not at step 2:** "which school does this account belong to" is a *field on the account record and a term in every security rule*, not a signup-screen detail. Deciding it late means either retrofitting a `schoolId` onto accounts that were created without one, or discovering that a rebbi who signed up standalone can never be adopted into his school without a migration.
 
@@ -233,8 +282,9 @@ That's "make it real."
 
 ## Build order
 
-0. **Phase 2d, first.** Locked 2026-08-04 — it pins the count value shape step 1 has to model, and un-hides the Gradebook. Not a rebuild step, but a prerequisite to one.
-1. **Data model design session** — the collections, the incremental-write shape, the migration map from the current `data` object (including tracked items), `firstName`/`lastName`, archive states, the `sharedWithAdmin` flag. **This is its own real session, the biggest single step, and everything else stands on it.** Do not compress it into a prompt. **Open the session by working the "Open questions for step 1" list above** — the class entity (question 2) and the write-id model (question 3) in particular are inputs to the collection design, not follow-ups to it.
+0. **Phase 2d, first.** Locked 2026-08-04 — it pins the count value shape step 1 has to model, and un-hides the Gradebook. Not a rebuild step, but a prerequisite to one. ✅ **Shipped 2026-08-05.**
+0b. **The Drive OAuth spike — runs in parallel, gates nothing, is gated by nothing** (added 2026-08-09 with the custody split). Sign-in → create-a-file → write-JSON → re-auth-after-expiry against a throwaway GCP project, on a page not yet wired into `app.html`. It de-risks the one genuine unknown in tier 2 (the re-auth UX on a shared Chromebook mid-lesson, not the API), and it pays off whatever else happens: it is a better backup than the Sheet today, independent of whether the rebuild has started. Needs Ben to create the GCP project + OAuth client ID. Keep it a spike — the deliverable is confidence and a little reusable `fetch` code, not a merged feature.
+1. **Data model design session** — the collections, the incremental-write shape, the migration map from the current `data` object (including tracked items), `firstName`/`lastName`, archive states, the `sharedWithAdmin` flag. **This is its own real session, the biggest single step, and everything else stands on it.** Do not compress it into a prompt. **Open the session by working the "Open questions for step 1" list above** — and open *that* with the two-tier split's consequence: the storage seam has **two implementations**, which shapes every collection decision after it. The class entity (question 2) and the write-id model (question 3) are likewise inputs to the collection design, not follow-ups to it.
 2. **Auth + tiers + security rules** — both sign-in paths, the three tiers, gating proven with no real UI yet.
 3. **The converter tool** — both modes plus bulk. Prove the migration carries a real class (with gradebook data) on a throwaway account.
 4. **Real routing / back button.**
