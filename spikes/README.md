@@ -82,60 +82,93 @@ No SDK, no external script, plain `fetch` throughout. **The feasibility claim
 in #218 holds: `drive.file` needed no verification review, and the no-library
 route works.**
 
-### What does not work — silent re-auth, which was the whole question
+### Silent re-auth — it works, and the first run said otherwise because of a bug in this harness
 
-| Test | Result |
-|---|---|
-| ⑤ `prompt=none` in a hidden iframe | ❌ `interaction_required` |
-| ⑥ real 401 → automatic silent recovery | ❌ `interaction_required`, write abandoned |
-| ⑦ `prompt=none` as a **top-level redirect** | ❌ `interaction_required` |
+**This section replaces an earlier, wrong conclusion.** The first run reported
+`interaction_required` from every silent route and concluded that automatic
+background backup was not achievable. That was a defect in the spike, not a
+platform limit. It is recorded here rather than quietly overwritten, because
+the wrong version was committed and read.
 
-⑦ was added specifically to disambiguate ⑤, and its answer is the important
-one. Had ⑦ succeeded, the blocker would have been the third-party iframe
-context — annoying but survivable, costing a page bounce rather than a
-sign-in. **It failed too.** So the Google session will not mint a fresh token
-without the user acting, regardless of how the request is framed. This was
-measured **three minutes after a successful consent grant**, on a machine with
-a live Google session, so it is not explained by staleness or a missing prior
-grant.
+| Test | First run (no `login_hint`) | After the fix |
+|---|---|---|
+| ⑤ `prompt=none` in a hidden iframe | ❌ `interaction_required` | ✅ **new token, no UI at all** |
+| ⑥ real 401 → automatic silent recovery | ❌ write abandoned | ✅ **recovered and completed, twice** |
+| ⑦ `prompt=none` as a top-level redirect | ❌ `interaction_required` | not needed — ⑤ works |
 
-### The one confound left, and it is worth clearing before this is treated as final
+**The cause: no `login_hint`.** Google's account chooser appeared during
+sign-in and the auth URL carried `authuser=unknown` — this browser has more
+than one Google account and no default. `prompt=none` cannot succeed while
+Google is left to guess *which* account is meant, and `interaction_required`
+is the correct, documented answer to an ambiguous silent request. Naming the
+account resolves it. The first run also forced `prompt=consent` on the
+interactive sign-in, which is not what the real feature would do; fixed too.
 
-The OAuth client is in **Testing / unverified** publishing status. Google
-treats grants to testing apps as short-lived, and it is plausible — not
-established — that a **published** client with only non-sensitive scopes
-behaves differently for `prompt=none`. **Publishing the consent screen and
-re-running ⑤ and ⑦ is the single remaining test**, and it has to happen in
-Ben's Cloud Console. Until it does, read the result above as *"silent re-auth
-failed in every form tried, with one untested explanation remaining"* — not
-as *"silent re-auth is impossible."*
+The recovery loop, verbatim, with the token deliberately replaced by garbage
+so Google rejected it for real:
 
-### What this means for tier 2, if the finding holds
+```
+401 on find/create folder — attempting silent recovery…
+Silent recovery worked — retrying find/create folder, rebbi saw nothing.
+Token replaced with a garbage value.
+401 on write backup — attempting silent recovery…
+Silent recovery worked — retrying write backup, rebbi saw nothing.
+Backup updated in place (509 bytes) in 1819ms
+```
 
-**It does not sink the Drive backup — it changes what may be promised.**
+**The testing-mode confound is moot for this question** — all of the above
+happened with the client still in Testing / unverified status.
 
-- **"Automatically keeps your backup updated" is not deliverable.** Anything
-  built on a background write that survives token expiry would be a promise
-  the app cannot keep. `docs/Data_Custody_Decision.md` Q4 already said the
-  staleness nudge would be *more* load-bearing under the split; this makes
-  that concrete rather than cautionary.
-- **What is deliverable is still a large improvement on today.** One sign-in
-  buys a **60-minute window in which backups are genuinely automatic and
-  invisible**. A rebbi who opens the app and works through a period is covered
-  for that period without touching anything. Past the hour, it costs one
-  click — and compared with the Apps Script path it replaces (paste a script,
-  redeploy, "Manage deployments → New version"), that is not a close contest.
-- **Design consequence:** the app must persist pending work *before* it
-  redirects for re-auth, since the redirect discards in-memory state. The
-  spike deliberately holds its token in memory only and does not model this —
-  the real feature has to.
-- **The honest sentence** for the UI is something like *"backed up 12 minutes
-  ago — sign in again to keep it current,"* not *"backup is on."*
+### What this means for tier 2
+
+**The 60-minute token is a non-issue, provided two conditions hold.** The app
+renews silently in a hidden frame and the rebbi never sees it. "Keeps your
+backup up to date automatically" is an honest sentence again.
+
+The two conditions are not optional, and both are the app's job:
+
+1. **The app must know which Google account it is renewing for, and say so on
+   every request.** `login_hint` is mandatory, not a nicety — a rebbi with a
+   personal and a school Google account in one browser is the *normal* case,
+   and without the hint his backup silently stops renewing. Step ⑧ shows where
+   to get it: Drive's own `about.get` returns `user.emailAddress` under
+   `drive.file` with **no extra scope**. Capture it at first sign-in, persist
+   it, send it forever after. The real feature wants it visible anyway, so the
+   rebbi can see *which* account his class is backed up to.
+2. **The rebbi must still be signed into Google in that browser profile.**
+   This rides on the Google session cookie, not a refresh token — browser-only
+   OAuth cannot have one, because Google requires a `client_secret` to mint one
+   and, unlike most providers, **PKCE cannot substitute**. So a shared
+   Chromebook where he signs out at day's end needs one interactive sign-in the
+   next morning. That is a reasonable price, and it is what the interactive
+   path is for.
+
+**Neither the token lifetime nor the session length is extendable.** The 1-hour
+access token is fixed for user OAuth — the "extend to 12 hours" option that
+turns up in search results is for **service accounts** via a Cloud org policy
+(`constraints/iam.allowServiceAccountCredentialLifetimeExtension`) and does not
+apply to a rebbi's own Google account. The answer to "make it longer" is not a
+longer token; it is renewing invisibly, which now works.
+
+**Design consequences that survive the good news:**
+
+- **Silent renewal can still fail** — signed out, session expired, consent
+  revoked. The app must treat a failed renewal as a first-class state and say
+  so, rather than letting a backup stop quietly. The staleness nudge in
+  `docs/Daily_Backup_Spec.md` remains the backstop, exactly as
+  `Data_Custody_Decision.md` Q4 anticipated.
+- **Never persist the access token.** This spike holds it in memory only and
+  the real feature should too — renewal is cheap, a stored token is a liability.
+- **The interactive path still uses a redirect**, which discards in-memory
+  state, so pending work must be persisted before it runs. Only the *silent*
+  path is frame-based and state-preserving.
 
 ### Still owed
 
-- Run the whole thing on a **shared / logged-out Chromebook**. The laptop case
-  is the easy one and has now been done; the classroom case is the one the
-  decision actually rests on.
-- Publish the consent screen and re-run ⑤ and ⑦ (see the confound above).
-- Neither is a code change. Both need Ben's Google account.
+- **Run it on a shared / logged-out Chromebook.** Still the case the decision
+  rests on, now with a sharper question: not "does silent renewal work" — it
+  does — but "how often is the rebbi signed out of Google entirely, and what
+  does the app do that morning?"
+- Publishing the consent screen is no longer needed to answer the re-auth
+  question, though it is still required before real rebbeim use it.
+

@@ -133,6 +133,7 @@
       <dt>Access token</dt><dd id="stToken">none</dd>
       <dt>Expires</dt><dd id="stExp">—</dd>
       <dt>Granted scope</dt><dd id="stScope">—</dd>
+      <dt>login_hint</dt><dd id="stHint">— (run ⑧)</dd>
       <dt>Silent re-auth works?</dt><dd id="stSilent"><span class="pill unknown">untested</span></dd>
     </dl>
   </div>
@@ -147,6 +148,7 @@
       <button id="bSilent">⑤ Test silent re-auth</button>
       <button id="bBreak" class="danger">⑥ Break token (force a real 401)</button>
       <button id="bTopSilent">⑦ Silent re-auth as a top-level redirect</button>
+      <button id="bWhoAmI">⑧ Which account am I? (sets login_hint)</button>
       <button id="bFull" class="primary">▶ Run ②–④ end to end</button>
     </div>
     <hr>
@@ -189,26 +191,32 @@
   <div class="panel">
     <h2>5 · Findings — run 2026-08-09</h2>
     <p>
-      <b>The API works; silent re-auth does not.</b> Sign-in, folder creation,
-      a 509-byte write in ~1.1s, read-back and in-place update all succeeded
-      first time, with no SDK and no external script. Token lifetime came back
-      as <b>3599s</b>, exactly as documented.
+      <b>Both halves work.</b> Sign-in, folder creation, a 509-byte write in
+      ~1.1s, read-back and in-place update all succeeded first time, with no
+      SDK and no external script. Token lifetime came back as <b>3599s</b>,
+      exactly as documented — and it renews silently, so that hour is not a
+      ceiling on anything.
     </p>
     <p>
-      <b>All three silent-re-auth routes failed with <code>interaction_required</code></b>
-      — hidden frame (⑤), automatic recovery from a real 401 (⑥), and top-level
-      redirect (⑦) — on a laptop with a live Google session, three minutes
-      after a successful consent grant. ⑦ is the one that settles it: the
-      hidden frame was not the blocker, so the session genuinely will not mint
-      a token without the rebbi acting.
+      <b>Silent re-auth works — and an earlier version of this section said it
+      did not.</b> The first run reported <code>interaction_required</code> from
+      every silent route, because this page was not sending a
+      <code>login_hint</code>. Google's account chooser had appeared during
+      sign-in and the auth URL carried <code>authuser=unknown</code>: more than
+      one Google account in this browser, no default. <code>prompt=none</code>
+      cannot succeed while Google is guessing which account is meant. Once ⑧
+      captured the address and every request named it, ⑤ returned a fresh token
+      with no UI at all, and ⑥ → ③ recovered from a genuine 401 <b>twice</b>,
+      invisibly, finishing the write in 1819 ms. The testing-mode confound is
+      moot — all of that happened with the client still unverified.
     </p>
     <ul class="findings">
-      <li><b>Does silent re-auth work on your own laptop?</b> <span id="fLaptop" class="pill bad">no — every route failed</span></li>
-      <li><b>Does it work on a shared Chromebook, signed out of Google?</b> <span class="pill unknown">still untested</span> — and it can only be worse than the laptop case, which already fails.</li>
-      <li><b>One confound left:</b> this client is in <b>Testing / unverified</b> status. Publishing the consent screen and re-running ⑤ and ⑦ is the only remaining explanation to rule out. Until then this reads as <i>"failed in every form tried"</i>, not <i>"impossible"</i>.</li>
-      <li><b>What it costs:</b> one sign-in buys a <b>60-minute window</b> where backups really are automatic and invisible. Past that, one click. Still far better than the Apps Script path it replaces.</li>
-      <li><b>What it forbids:</b> promising that backups stay current on their own. The staleness nudge stops being a nicety and becomes the mechanism.</li>
-      <li><b>Design consequence:</b> the app must persist pending work <i>before</i> redirecting to re-auth — a redirect discards in-memory state. This page holds its token in memory only and deliberately does not model that.</li>
+      <li><b>Does silent re-auth work on your own laptop?</b> <span id="fLaptop" class="pill ok">yes — invisible, with login_hint</span></li>
+      <li><b>Does it work on a shared Chromebook, signed out of Google?</b> <span class="pill unknown">still untested</span> — and the question has sharpened: not <i>does renewal work</i>, but <i>how often is he signed out of Google entirely, and what happens that morning?</i></li>
+      <li><b><code>login_hint</code> is mandatory, not a nicety.</b> A rebbi with a personal and a school Google account in one browser is the normal case; without the hint his backup silently stops renewing. ⑧ gets the address from Drive's own <code>about.get</code> — no scope beyond <code>drive.file</code>.</li>
+      <li><b>The 60 minutes cannot be lengthened, and no longer needs to be.</b> Access-token lifetime is fixed for user OAuth, and a refresh token is unavailable to a browser-only app — Google requires a client secret and, unlike most providers, PKCE cannot substitute. Renewal rides the Google <i>session</i> instead, which is enough.</li>
+      <li><b>What can still fail:</b> signed out, session expired, consent revoked. A failed renewal has to be a visible state, not a quiet stop — the staleness nudge stays the backstop.</li>
+      <li><b>Design consequence:</b> never persist the access token (this page keeps it in memory only), and persist pending work before the <i>interactive</i> path, which redirects and discards in-memory state. The silent path is frame-based and preserves it.</li>
     </ul>
     <p class="t-dim">Full write-up in <code>spikes/README.md</code>. A spike whose results live only in someone's memory has failed.</p>
   </div>
@@ -300,9 +308,23 @@
       response_type: "token",
       scope: SCOPE,
       state: state,
-      include_granted_scopes: "true",
-      prompt: silent ? "none" : "consent"
+      include_granted_scopes: "true"
     });
+
+    // prompt=none for a silent attempt. For the INTERACTIVE sign-in, send no
+    // prompt at all rather than prompt=consent: forcing the consent screen on
+    // every sign-in is not what the real feature would do, and the first run
+    // of this spike did it, which muddied the silent test that followed.
+    if (silent) p.set("prompt", "none");
+
+    // login_hint is the thing the first run was missing. Google's account
+    // chooser appeared during that sign-in, which means more than one account
+    // is available in this browser — and prompt=none fails with
+    // interaction_required when Google cannot tell WHICH account is meant.
+    // Naming the account is the documented way to resolve that ambiguity.
+    var hint = sessionStorage.getItem("driveSpikeHint");
+    if (hint) p.set("login_hint", hint);
+
     return AUTH_URL + "?" + p.toString();
   }
 
@@ -573,6 +595,24 @@
     log("Token replaced with a garbage value. Google will now reject it for " +
         "real — run ③ and watch whether recovery is invisible or interrupts.", "warn");
   });
+
+  // ⑧ Ask Drive who the token belongs to, and keep it as the login_hint for
+  // every later auth request. Uses drive.file's own about.get rather than the
+  // userinfo endpoint, so it needs no extra scope — the real feature wants
+  // this anyway, to show the rebbi WHICH Google account his backup goes to.
+  function whoAmI() {
+    requireToken();
+    return api("https://www.googleapis.com/drive/v3/about?fields=user")
+      .then(function (r) {
+        var email = r && r.user && r.user.emailAddress;
+        if (!email) { log("Drive did not return an email address.", "warn"); return null; }
+        sessionStorage.setItem("driveSpikeHint", email);
+        $("stHint").textContent = email;
+        log("Signed in as " + email + " — will be sent as login_hint from now on.", "ok");
+        return email;
+      });
+  }
+  $("bWhoAmI").addEventListener("click", function () { run(whoAmI, "who am I").catch(function(){}); });
 
   // ⑦ The same prompt=none request, but top-level instead of in a frame. If
   // this returns a token when ⑤ could not, the blocker was the third-party
