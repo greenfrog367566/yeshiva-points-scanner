@@ -3989,6 +3989,30 @@ function setupRoster() {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">How the Picker Opens</h3>
+      <div class="toolbar">
+        <span style="font-weight:600">Open the Picker on:</span>
+        <span class="seg" id="setPickerMode">
+          <button data-mode="wheel" class="active">🎡 Wheel</button>
+          <button data-mode="seat">🪑 Seating chart</button>
+        </span>
+      </div>
+      <p class="view-note" style="margin:8px 0 0">Wheel by default. The Picker chooses a boy at random two ways, and this is the one it starts on every time you open it. <strong>Wheel</strong> spins a colored wheel of names and lands on one. <strong>Seating chart</strong> shows the class in their seats and flashes from desk to desk before landing on one — the same "Flash &amp; land" every boy can watch from where he's sitting. Both skip boys who already had a turn, and both use the same Instant setting, so this only changes which one is in front of you when the panel opens. You can still switch between them inside the Picker whenever you want — that switch lasts for the rest of the session and doesn't change what you set here.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Matching Games</h3>
+      <div class="toolbar">
+        <span style="font-weight:600">Match by:</span>
+        <span class="seg" id="setMatchMode">
+          <button data-mode="drag" class="active">Drag</button>
+          <button data-mode="tap">Tap</button>
+        </span>
+      </div>
+      <p class="view-note" style="margin:8px 0 0">Drag by default. This sets how both matching games in Review start out — the Pesukim/Mishnayos matching game and the Shorashim match game. <strong>Drag</strong> means picking a piece up and dropping it on the line it belongs to. <strong>Tap</strong> means tapping the piece and then tapping its line — usually easier on a touchscreen or a Smart Board, and much easier for a boy who finds dragging fiddly. Both play identically otherwise and the timer and best scores are the same either way. As with the Picker, the Drag / Tap buttons on the games themselves still switch it for the rest of the session without changing what you set here.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Hebrew Date</h3>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHebrewDate"> Show the Hebrew date next to the regular date</label>
       <p class="view-note" style="margin:8px 0 0">On by default. Computed by the browser itself — no internet connection needed. If a browser doesn't support it, the Hebrew date is simply left off and nothing else is affected.</p>
@@ -7264,7 +7288,12 @@ function setupRoster() {
   function pickerToggle(show){
     pickerOpen = (show==null) ? !pickerOpen : !!show;
     $("floatPicker").style.display = pickerOpen?"block":"none";
-    if(pickerOpen){ $("floatPicker").classList.remove("min"); renderPicker(); }
+    // setPickMode rather than renderPicker: it paints the mode bar, the two
+    // stages and the pop-out width to match pickViewMode, then renders. The
+    // mode bar's .active class is hard-coded to Wheel in the markup, so
+    // opening on the saved default of Seating chart has to repaint it — and
+    // re-opening mid-session repaints whichever mode the rebbi last chose.
+    if(pickerOpen){ $("floatPicker").classList.remove("min"); setPickMode(pickViewMode); }
   }
   makeFabDraggable($("pickerBtn"), "picker", function(){ pickerToggle(); });
   $("pkClose").addEventListener("click", function(){ pickerToggle(false); });
@@ -7354,6 +7383,47 @@ function setupRoster() {
   }
 
   /* ---------- SETTINGS ---------- */
+  /* Saved DEFAULTS for the Picker's mode bar and the two matching games'
+     Drag/Tap buttons. Both tools already had those switches; all that was
+     missing was a way to say which side they should start on, so a rebbi who
+     always works off the seating chart, or whose class plays by tapping on the
+     Smart Board, stops re-flipping the same switch every morning.
+
+     Changing it here takes effect NOW as well as next time: the session vars
+     are set alongside the saved value, so the very next time the Picker opens
+     or a game renders it already reads the new way. The switches on the tools
+     themselves stay session-only and never write back here — that is what
+     keeps this a default rather than a memory of the last thing touched. */
+  function syncPickerModeSetting(){
+    document.querySelectorAll("#setPickerMode button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.mode===data.pickerMode);
+    });
+  }
+  function syncMatchModeSetting(){
+    document.querySelectorAll("#setMatchMode button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.mode===data.matchMode);
+    });
+  }
+  document.querySelectorAll("#setPickerMode button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      data.pickerMode = (btn.dataset.mode==="seat") ? "seat" : "wheel";
+      pickViewMode = data.pickerMode;
+      save(); syncPickerModeSetting();
+      // Repaint only if the panel is open, so the change is visible immediately
+      // rather than waiting for the next time it is opened.
+      if(pickerOpen) setPickMode(pickViewMode);
+    });
+  });
+  document.querySelectorAll("#setMatchMode button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      data.matchMode = (btn.dataset.mode==="tap") ? "tap" : "drag";
+      pmMode = smMode = data.matchMode;
+      save(); syncMatchModeSetting();
+      // No repaint here: a game that is mid-play is re-rendered by its own
+      // render function when it is next opened, and yanking the interaction
+      // out from under a boy who is holding a piece would lose his progress.
+    });
+  });
   function renderSettings(){
     $("setSound").checked = !data.muted;
     $("setVoiceNotes").checked = data.voiceNotes!==false;
@@ -7365,6 +7435,8 @@ function setupRoster() {
     $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setFullWidth").checked = !!data.fullWidth;
     $("setSixSeven").checked = !!data.sixSeven;
+    syncPickerModeSetting();
+    syncMatchModeSetting();
     // Phase 1: Teach flip / quiz delay / game auto inits moved to renderTeach,
     // renderQuiz, renderGame — those controls now live on their feature panels.
     renderSerialUI();
@@ -15683,8 +15755,10 @@ nameLine
   }
   function renderPesukGame(){
     syncTeachPasukSel();
+    syncMatchSeg("pmModeSeg","pmDrag","pmTap",pmMode);
     loadPmPasuk(teachN);
   }
+  // Session state, seeded from data.matchMode at init — see the note there.
   var pmMode="drag";
   function loadPmPasuk(n){
     clearInterval(PM.timer);
@@ -15757,6 +15831,13 @@ nameLine
   }, true);
   document.addEventListener("keydown", function(e){ if(e.key==="Escape" && DND.drag) finishDnd(null); });
   function setSegActive(segId,btn){ document.querySelectorAll("#"+segId+" button").forEach(function(b){ b.classList.toggle("active", b===btn); }); }
+  // Paints a game's Drag/Tap segment from its mode var. Both games' markup has
+  // .active hard-coded on Drag, so a rebbi whose saved default is Tap needs it
+  // repainted when the game renders. Reads the var, never data — the var is
+  // what the game actually plays by, and it holds any mid-session switch.
+  function syncMatchSeg(segId,dragId,tapId,mode){
+    setSegActive(segId, $(mode==="tap"?tapId:dragId));
+  }
   function mountMatch(rowsEl, poolEl, pairs, opts){
     resetDndStuck();
     var state={placed:0,total:pairs.length,started:false,sel:null,selRow:null};
@@ -16095,8 +16176,9 @@ nameLine
   $("cardShuffle").addEventListener("click", renderCards);
 
   // --- Match (timed, drag or tap) ---
+  // smMode is session state, seeded from data.matchMode at init — see the note there.
   var SM={pairs:6,timer:null,t:0,started:false}, smMode="drag";
-  function renderMatch(){ loadMatch(); }
+  function renderMatch(){ syncMatchSeg("smModeSeg","smDrag","smTap",smMode); loadMatch(); }
   function loadMatch(){
     clearInterval(SM.timer);
     var act=activeShorashim(), want=Math.min(parseInt($("smPairs").value,10)||6, act.length);
@@ -16537,7 +16619,10 @@ nameLine
   /* ---------- PICKER: seating-chart mode (first caller of SeatPicker) ----------
      Shares pickedSet as its turn-state, so a student dimmed in the seating
      chart is the same "already had a turn" state the wheel uses. */
-  var pickViewMode="wheel";           // in-memory only — NOT persisted, so no new data field / migration
+  // Session state. The literal here is only a placeholder — init re-seeds it
+  // from data.pickerMode (the saved default) after load(), the same way
+  // standRange is. Switching mode in the panel changes this var only.
+  var pickViewMode="wheel";
   var seatPickerCtl=null;
   // Picker-only eligibility overlay {id:"out"|"passed"} — IN-MEMORY, never
   // written to attendance or localStorage (same in-memory pattern as pickedSet,
@@ -20619,6 +20704,17 @@ nameLine
     // the v2->v3 migration note. Belt-and-braces alongside that migration, so a
     // save that somehow arrives already stamped v3 without the field still gets it.
     if(typeof data.pickerSkip!=="boolean") data.pickerSkip=true;
+    // Which way each of these two tools OPENS. Purely additive strings —
+    // absent on every existing save, so they whitelist-backfill to the two
+    // values that were hard-coded before ("wheel", "drag") and nobody's app
+    // opens anywhere different than it did yesterday. No version bump: there
+    // is no old value to convert, only a new field to seed.
+    //
+    // These are the DEFAULT, not a memory of the last thing used — the mode
+    // bar inside the Picker and the Drag/Tap buttons on the two matching
+    // games still switch for the session only and never write back here.
+    if(data.pickerMode!=="seat") data.pickerMode="wheel";
+    if(data.matchMode!=="tap") data.matchMode="drag";
     if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOpts={avatarMode:"qr", showPoints:false};
     if(typeof data.seatPrintOpts.avatarMode!=="string"){
       data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
@@ -21620,6 +21716,15 @@ nameLine
   // page-level var here rather than at its declaration above, which runs
   // before load() and would only ever see the "all" literal default.
   standRange = data.standRange;
+  // Same reason, same shape: the Picker's mode bar and the two matching games'
+  // Drag/Tap buttons are session state held in page-level vars, and those vars
+  // are assigned far above load(), where they can only ever see the literal
+  // they were written with. Re-seed them here from the saved DEFAULT, once per
+  // boot. Switching mode inside the Picker or on a game changes only the var,
+  // so the rest of the session follows the rebbi and the saved default is
+  // untouched until he changes it in Settings.
+  pickViewMode = data.pickerMode;
+  pmMode = smMode = data.matchMode;
   // Scannable seating mode is ARMED STATE, not a saved preference: it resets
   // exactly once, here, on a genuine boot — a real page load, which is what a
   // hard reload or closing and reopening the app produces.

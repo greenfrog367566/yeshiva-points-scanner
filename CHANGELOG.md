@@ -12,6 +12,16 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **Settings: the Picker and the matching games now remember which way you like them.** Both of these already had a switch. Neither remembered it, so both started every session the same way regardless of how you actually work, and the first thing you did each morning was flip it back.
+
+  **How the Picker opens.** The Picker chooses a boy at random two ways: the **Wheel**, which spins a wheel of names, and the **Seating chart**, which shows the class in their seats and flashes from desk to desk before landing — the "Flash & land" every boy can follow from where he is sitting. Settings now has which of the two it opens on. If you run the Picker off the chart so the class can watch it, it opens on the chart.
+
+  **Matching games.** The two matching games in Review — the Pesukim/Mishnayos game and the Shorashim match — can be played by **dragging** a piece onto its line, or by **tapping** the piece and then tapping the line. Tapping is far easier on a Smart Board or a tablet, and easier for a boy who finds dragging fiddly. One setting sets how both games start.
+
+  **These are defaults, not memory.** The switches on the Picker and on the games themselves still work exactly as before, and still change things for the rest of the session — they simply no longer decide what you get tomorrow morning. Change your mind in Settings and it applies right away as well as next time.
+
+  **Nothing changes unless you change it.** Neither setting exists in any save made before this, so every app carries on opening on the Wheel and playing by dragging, exactly as it did — the settings are only there for whoever wants the other one.
+
 - **Print: Activities now has the same choices the student labels have.** The activity menu could only ever print one thing: every code you use, once each. Now it carries the toolbar you already know from **Print → Students**, in the same order and with the same wording.
 
   - **Sections** — narrow the sheet to one of your own code sections. The sections are the ones you name and drag codes between under **Choose codes**, so "print just my deductions", or just the Coins strip, is now one sheet instead of the whole menu with the rest cut off by hand. The printed heading names the section as well as the class, so two sheets from one class are tellable apart at a glance.
