@@ -132,6 +132,9 @@
         <label class="f">Detection interval (ms)
           <input type="number" id="intervalMs" value="150" min="30" max="2000" step="10">
         </label>
+        <label class="f">Detect width (px)
+          <input type="number" id="detWidth" value="960" min="320" max="3840" step="80">
+        </label>
         <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:1px">
           <button class="btn" id="startBtn">Start</button>
           <button class="btn sec" id="stopBtn" disabled>Stop</button>
@@ -143,6 +146,25 @@
       </p>
       <div id="support"></div>
       <div id="camInfo"></div>
+
+      <div id="zoomWrap" hidden style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="row">
+          <label class="f" style="flex:1;min-width:260px">Zoom <span id="zoomVal" style="color:var(--ink)"></span>
+            <input type="range" id="zoomSlider" min="0" max="1" step="1" value="0">
+          </label>
+          <label class="f" style="align-self:flex-end;padding-bottom:6px">
+            <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.9rem;color:var(--ink)">
+              <input type="checkbox" id="autoZoom"> Auto-zoom
+            </span>
+          </label>
+          <label class="f">Target code size (px)
+            <input type="number" id="zoomTarget" value="70" min="20" max="400" step="5">
+          </label>
+          <button class="btn sec" id="zoomReset" style="align-self:flex-end;padding-bottom:8px">Reset to 1x</button>
+        </div>
+        <div id="zoomStatus" class="hint"></div>
+      </div>
+      <div id="zoomNone" class="hint" hidden></div>
     </div>
 
     <div class="card">
@@ -156,8 +178,15 @@
         <div class="stat hot"><div class="k">Codes this pass</div><div class="v" id="sNow">–</div></div>
         <div class="stat"><div class="k">Most at once</div><div class="v" id="sMax">–</div></div>
         <div class="stat"><div class="k">Detect time</div><div class="v" id="sMs">–</div></div>
+        <div class="stat"><div class="k">Smallest code</div><div class="v" id="sSize">–</div></div>
       </div>
-      <p class="hint">Frames are downscaled to 960px wide before detection — that is what the detector actually sees, so a code that is too small here is too small in practice.</p>
+      <p class="hint"><strong>Two separate levers on range, and it matters which one you move.</strong>
+        <strong>Detect width</strong> is how wide the frame is scaled to before detection — at the default 960
+        a 1080p camera is being thrown away by half before the detector ever sees it. Raising it to 1920 costs
+        CPU but <em>no field of view</em>. <strong>Zoom</strong> makes the codes bigger by cropping, so it buys
+        range at the cost of seeing fewer boys. Try detect width first, then zoom for what is still missing.
+        "Smallest code" below is the shortest side, in detect-frame pixels, of the smallest code seen this pass —
+        it is the number that decides whether a code reads, and what auto-zoom steers on.</p>
     </div>
 
     <div class="card">
@@ -309,7 +338,17 @@
     var v={ width:{ideal:1920}, height:{ideal:1080} };
     if(id) v.deviceId={exact:id};
     startBtn.disabled=true;
-    navigator.mediaDevices.getUserMedia({video:v,audio:false}).then(function(s){
+    /* Zoom is gated behind Chrome's separate pan/tilt/zoom permission, and the
+       capability is only exposed when it was asked for up front. Ask with it,
+       and fall back to a plain request if the camera or the user says no —
+       losing zoom must never cost us the camera. */
+    var withZoom={}; for(var k in v) withZoom[k]=v[k];
+    withZoom.zoom=true;
+    ptzRequested=true;
+    navigator.mediaDevices.getUserMedia({video:withZoom,audio:false}).catch(function(e){
+      ptzRequested=false; ptzDenied=e.name;
+      return navigator.mediaDevices.getUserMedia({video:v,audio:false});
+    }).then(function(s){
       stream=s;
       vid.srcObject=s;
       return vid.play().catch(function(){ /* autoplay policies — muted video should be fine */ });
@@ -317,6 +356,7 @@
       stopBtn.disabled=false;
       listCams();          /* labels are available now that permission is granted */
       showTrackInfo();
+      setupZoom();
       sizeOverlay();
       startLoop();
     }).catch(function(e){
@@ -325,9 +365,157 @@
     });
   });
 
+  /* ---------- zoom (UVC digital zoom, e.g. the Insta360 Link's 4x) ---------- */
+  var zoomWrap=$("zoomWrap"), zoomNone=$("zoomNone"), zoomSlider=$("zoomSlider"),
+      zoomVal=$("zoomVal"), zoomStatus=$("zoomStatus"), autoZoomBox=$("autoZoom");
+  var zoomCaps=null, zoomTrack=null, zoomNow=null, zoomBusy=false, zoomHunt=0;
+  var ptzRequested=false, ptzDenied=null;
+  var ZOOM_SETTLE_MS=650;   /* the camera needs time to move and the loop to see it */
+
+  function zoomSteps(){
+    if(!zoomCaps) return [];
+    var step=zoomCaps.step||((zoomCaps.max-zoomCaps.min)/20)||1;
+    var out=[],x=zoomCaps.min;
+    while(x<=zoomCaps.max+1e-6 && out.length<200){ out.push(Math.round(x*1000)/1000); x+=step; }
+    return out;
+  }
+
+  function setupZoom(){
+    zoomCaps=null; zoomTrack=null; zoomNow=null; zoomHunt=0;
+    zoomWrap.hidden=true; zoomNone.hidden=true;
+    if(!stream) return;
+    var t=stream.getVideoTracks()[0];
+    if(!t||!t.getCapabilities){ showNoZoom("This browser cannot report camera capabilities, so zoom cannot be driven."); return; }
+    var caps={};
+    try{ caps=t.getCapabilities()||{}; }catch(e){}
+    if(!caps.zoom || typeof caps.zoom.max!=="number" || caps.zoom.max<=caps.zoom.min){
+      showNoZoom("This camera exposes no zoom control to the browser"+
+        (ptzDenied? " — the pan/tilt/zoom permission was refused ("+ptzDenied+"), so the camera opened without it." :
+         ptzRequested? " — the permission was granted, but the camera itself reports no zoom range." :
+         ".")+
+        " Insta360's own Link Controller app applies zoom outside the browser; if you zoom there, this page simply "+
+        "sees an already-zoomed picture and everything below still measures correctly.");
+      return;
+    }
+    zoomCaps=caps.zoom; zoomTrack=t;
+    var settings={}; try{ settings=t.getSettings()||{}; }catch(e){}
+    zoomNow=(typeof settings.zoom==="number")? settings.zoom : zoomCaps.min;
+    var steps=zoomSteps();
+    zoomSlider.min=0; zoomSlider.max=Math.max(0,steps.length-1); zoomSlider.step=1;
+    zoomSlider.value=String(nearestStepIndex(zoomNow));
+    zoomWrap.hidden=false;
+    updateZoomLabel("ready");
+  }
+
+  function showNoZoom(msg){
+    zoomNone.hidden=false;
+    zoomNone.textContent=msg;
+    autoZoomBox.checked=false;
+  }
+
+  function nearestStepIndex(v){
+    var steps=zoomSteps(), best=0, bd=Infinity;
+    for(var i=0;i<steps.length;i++){ var d=Math.abs(steps[i]-v); if(d<bd){bd=d;best=i;} }
+    return best;
+  }
+
+  function updateZoomLabel(why){
+    if(!zoomCaps) return;
+    var ratio=zoomCaps.min>0 ? (zoomNow/zoomCaps.min) : zoomNow;
+    zoomVal.textContent="— "+(Math.round(ratio*100)/100)+"x  (raw "+zoomNow+
+      ", range "+zoomCaps.min+"–"+zoomCaps.max+(zoomCaps.step?" step "+zoomCaps.step:"")+")";
+    if(why) zoomStatus.textContent=why;
+  }
+
+  function applyZoom(v,why){
+    if(!zoomCaps||!zoomTrack||zoomBusy) return;
+    v=Math.max(zoomCaps.min,Math.min(zoomCaps.max,v));
+    if(zoomNow!=null && Math.abs(v-zoomNow)<1e-6) return;
+    zoomBusy=true;
+    zoomTrack.applyConstraints({advanced:[{zoom:v}]}).then(function(){
+      zoomNow=v;
+      zoomSlider.value=String(nearestStepIndex(v));
+      updateZoomLabel(why);
+    }).catch(function(e){
+      zoomStatus.textContent="Zoom refused by the camera: "+e.name+" — "+e.message;
+    }).then(function(){
+      setTimeout(function(){ zoomBusy=false; },ZOOM_SETTLE_MS);
+    });
+  }
+
+  zoomSlider.addEventListener("input",function(){
+    var steps=zoomSteps(), i=parseInt(zoomSlider.value,10)||0;
+    autoZoomBox.checked=false;
+    applyZoom(steps[i],"set by hand");
+  });
+  $("zoomReset").addEventListener("click",function(){
+    if(!zoomCaps) return;
+    autoZoomBox.checked=false;
+    applyZoom(zoomCaps.min,"reset to widest");
+  });
+  autoZoomBox.addEventListener("change",function(){
+    zoomHunt=0;
+    zoomStatus.textContent=autoZoomBox.checked? "Auto-zoom on — steering on the smallest code in frame." : "Auto-zoom off.";
+  });
+
+  /* One step per settle window, steering the SMALLEST code towards the target
+     size. Zooming in is what buys distance; the guard against overdoing it is
+     that a code drifting near the frame edge is about to be lost entirely. */
+  function autoZoomStep(boxes,W,H){
+    if(!autoZoomBox.checked||!zoomCaps||zoomBusy) return;
+    var steps=zoomSteps(), i=nearestStepIndex(zoomNow);
+    var target=parseInt($("zoomTarget").value,10); if(!isFinite(target)||target<20) target=70;
+
+    if(!boxes.length){
+      zoomHunt++;
+      if(zoomHunt<6) return;                       /* a brief dropout is not a reason to move */
+      zoomHunt=0;
+      if(i<steps.length-1){ applyZoom(steps[i+1],"nothing in frame — zooming in to hunt"); }
+      else { applyZoom(steps[0],"nothing found at full zoom — back to widest and hunting again"); }
+      return;
+    }
+    zoomHunt=0;
+
+    var minSide=Infinity, edge=false;
+    var ux0=Infinity,uy0=Infinity,ux1=-Infinity,uy1=-Infinity;
+    var m=Math.max(6,Math.round(W*0.02));
+    boxes.forEach(function(b){
+      minSide=Math.min(minSide,Math.min(b.w,b.h));
+      if(b.x<m||b.y<m||b.x+b.w>W-m||b.y+b.h>H-m) edge=true;
+      ux0=Math.min(ux0,b.x); uy0=Math.min(uy0,b.y);
+      ux1=Math.max(ux1,b.x+b.w); uy1=Math.max(uy1,b.y+b.h);
+    });
+    var coverage=Math.max((ux1-ux0)/W,(uy1-uy0)/H);
+
+    if(edge||coverage>0.9){
+      if(i>0) applyZoom(steps[i-1],"a code is at the edge — zooming out so it is not lost");
+      else updateZoomLabel("already at the widest, and codes still reach the edge");
+      return;
+    }
+    if(minSide<target*0.9 && coverage<0.65){
+      if(i<steps.length-1) applyZoom(steps[i+1],"smallest code "+Math.round(minSide)+"px, want "+target+"px — zooming in");
+      else updateZoomLabel("at full zoom; smallest code still only "+Math.round(minSide)+"px — the cards need to be bigger");
+      return;
+    }
+    if(minSide>target*1.6 && coverage<0.5){
+      if(i>0) applyZoom(steps[i-1],"codes are comfortably large — zooming out to widen the view");
+      return;
+    }
+    if(minSide<target*0.9){
+      /* Wanted to zoom in and deliberately did not: the codes already fill the
+         frame, so going closer would start pushing boys out of view. This is
+         the honest answer to "why is it not reaching my target". */
+      updateZoomLabel("holding at "+Math.round(coverage*100)+"% of frame — zooming in would push codes out of view. "+
+        "Smallest is "+Math.round(minSide)+"px, target "+target+"px: the cards have to get bigger, or the camera closer.");
+    } else {
+      updateZoomLabel("holding — smallest code "+Math.round(minSide)+"px, target "+target+"px");
+    }
+  }
+
   stopBtn.addEventListener("click",function(){
     stopLoop();
     stopStream();
+    zoomWrap.hidden=true; zoomNone.hidden=true; zoomCaps=null; zoomTrack=null;
     octx.clearRect(0,0,ov.width,ov.height);
     startBtn.disabled=false;
     stopBtn.disabled=true;
@@ -410,7 +598,7 @@
   function stopLoop(){
     running=false;
     if(timer){ clearTimeout(timer); timer=null; }
-    sFps.textContent="–"; sNow.textContent="–"; sMs.textContent="–";
+    sFps.textContent="–"; sNow.textContent="–"; sMs.textContent="–"; $("sSize").textContent="–";
   }
   function schedule(){
     if(!running) return;
@@ -422,7 +610,10 @@
     var vw=vid.videoWidth, vh=vid.videoHeight;
     if(!vw||!vh){ schedule(); return; }
 
-    var W=Math.min(960,vw), H=Math.round(vh*(W/vw));
+    var want=parseInt($("detWidth").value,10);
+    if(!isFinite(want)||want<320) want=320;
+    if(want>3840) want=3840;
+    var W=Math.min(want,vw), H=Math.round(vh*(W/vw));
     if(work.width!==W||work.height!==H){ work.width=W; work.height=H; }
     wctx.drawImage(vid,0,0,W,H);
 
@@ -455,10 +646,14 @@
     octx.clearRect(0,0,ov.width,ov.height);
     var sx=ov.width/W, sy=ov.height/H;
 
-    var seen={}, uniq=0, now=Date.now();
+    var seen={}, uniq=0, now=Date.now(), boxes=[], smallest=Infinity;
     codes.forEach(function(c){
       var val=c.rawValue==null? "" : String(c.rawValue);
       if(!seen[val]){ seen[val]=true; uniq++; noteRead(val,now); }
+
+      /* measured in detect-frame pixels — the units auto-zoom steers on */
+      var bb=boxOf(c);
+      if(bb){ boxes.push(bb); smallest=Math.min(smallest,Math.min(bb.w,bb.h)); }
 
       var pts=c.cornerPoints;
       octx.lineWidth=3;
@@ -493,7 +688,23 @@
 
     sNow.textContent=String(uniq);
     if(uniq>maxAtOnce){ maxAtOnce=uniq; sMax.textContent=String(uniq); }
+    $("sSize").textContent = boxes.length? Math.round(smallest)+"px" : "–";
+    autoZoomStep(boxes,W,H);
     if(logDirty) renderLog();
+  }
+
+  /* Axis-aligned bounds of a detection, in detect-canvas pixels. */
+  function boxOf(c){
+    var pts=c.cornerPoints;
+    if(pts&&pts.length){
+      var xs=[],ys=[];
+      pts.forEach(function(p){ xs.push(p.x); ys.push(p.y); });
+      var x0=Math.min.apply(null,xs), x1=Math.max.apply(null,xs);
+      var y0=Math.min.apply(null,ys), y1=Math.max.apply(null,ys);
+      return {x:x0,y:y0,w:x1-x0,h:y1-y0};
+    }
+    if(c.boundingBox) return {x:c.boundingBox.x,y:c.boundingBox.y,w:c.boundingBox.width,h:c.boundingBox.height};
+    return null;
   }
 
   /* ---------- read log ---------- */
