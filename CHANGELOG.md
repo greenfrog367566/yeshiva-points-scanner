@@ -98,6 +98,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
   **Setting the snack length works the same way.** Pressing ✎ next to the snack button now types straight into the timer instead of opening a separate pop-up box, and it accepts the same things — **7**, **7:30**, **450s**. It used to ask for minutes only, so seven and a half minutes had to be entered as "7.5". The old pop-up box also could not be used at all once the timer was popped out — it would have opened behind whatever program you had switched to, making the timer look frozen — so this is what lets the snack length be changed from the popped-out window like everything else.
 
+- **`hadroom-camera-test.html` — a workbench page, not part of the app.** Nothing in Menchmark changed and nothing you use touches it. It is a throwaway diagnostic that asks one question before any of it gets built for real: can a webcam pointed at the room read several boys' QR cards *at once*, from where a rebbi actually stands, and how big would those cards have to be. It reads and writes none of your data, and is deliberately linked from nowhere. Delete it once the question is answered.
+
 ### Changed
 
 - **Corrections you make on the Attendance, Homework, Passes and Tracker tabs are now kept alongside your scans, not just on the tab you made them on.** Until now, scanning a boy recorded his mark in two places, but *fixing* it on the tab afterwards only moved one of them. Nothing you could see was wrong, because the one screen that reads the second copy — the Gradebook — is still switched off. But it meant the two could disagree, and that disagreement was the last thing keeping the Gradebook off.
