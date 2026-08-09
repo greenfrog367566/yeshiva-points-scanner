@@ -180,6 +180,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #backupNudge.show{display:flex}
   #backupNudge b{color:#4d3706}
   #backupNudge .bn-spacer{flex:1 1 auto}
+  /* Shown inside a downloaded offline copy when its built-in snapshot was held
+     back because this browser already had saved work. Amber, not red, like
+     #backupNudge: nothing is broken and nothing was lost — the rebbi is being
+     told which of two versions he is looking at. Same slot as the others. */
+  #offlineSeedWarn{display:none;background:#fdf6e3;color:#6b4d09;border:1px solid #ecd9a4;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem;align-items:center;gap:12px;flex-wrap:wrap}
+  #offlineSeedWarn.show{display:flex}
+  #offlineSeedWarn b{color:#4d3706}
+  #offlineSeedWarn .os-spacer{flex:1 1 auto}
 
   /* ======= SCAN VIEW ======= */
   .scan-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start}
@@ -1890,6 +1898,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <span class="bn-spacer"></span>
     <button class="btn btn-sm btn-primary" id="backupNudgeGo">Back up now</button>
     <button class="btn btn-sm" id="backupNudgeLater">Not now</button>
+  </div>
+
+  <!-- Only ever appears inside a downloaded offline copy, and only when that
+       copy's built-in snapshot was deliberately NOT loaded because saved work
+       was already here. Hidden and empty otherwise. -->
+  <div id="offlineSeedWarn">
+    <span id="offlineSeedWarnText"></span>
+    <span class="os-spacer"></span>
+    <button class="btn btn-sm btn-primary" id="offlineSeedKeep">Keep my work</button>
+    <button class="btn btn-sm" id="offlineSeedGet">Download this file's snapshot</button>
   </div>
 
   <!-- ============ SCAN ============ -->
@@ -20569,6 +20587,11 @@ nameLine
   // existing "QR codes need an internet connection this one time" note
   // elsewhere in the app.
   var QR_CDN_URL="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+  // Records WHICH downloaded copy seeded this browser. Deliberately a separate
+  // key rather than a field inside `data`: it describes the file, not the class,
+  // it must survive a backup restore, and nesting it into `data` would break
+  // 2a's byte-identity guarantee. Never read by anything but the seed guard.
+  var SEED_STAMP_KEY="qrOfflineSeedStamp_v1";
   function offlineCopyBaseHTML(){
     return fetch(location.href, {cache:"reload"}).then(function(r){
       if(!r.ok) throw new Error("HTTP "+r.status);
@@ -20593,7 +20616,35 @@ nameLine
           return html;
         });
     }).then(function(html){
-      var seed="<script>try{localStorage.setItem("+JSON.stringify(KEY)+", "+JSON.stringify(JSON.stringify(data))+");}catch(e){}<"+"/script>\n";
+      // ⚠️ THIS SEED IS GUARDED, AND THE GUARD IS THE WHOLE POINT — do not
+      // simplify it back to a bare setItem().
+      //
+      // It used to be exactly that: an unconditional
+      // `localStorage.setItem(KEY, <snapshot>)` injected after <body>. But this
+      // script runs on EVERY open of the downloaded file, not just the first —
+      // so every time a rebbi reopened his offline copy, the snapshot frozen at
+      // download time overwrote everything he had scanned since. Silently, and
+      // completely. Confirmed by reproduction, not inferred.
+      //
+      // So: seed only when there is nothing to lose. Three cases —
+      //   1. Nothing stored yet  → seed it, and stamp it. The normal first open.
+      //   2. Stored, same stamp  → this file already seeded this browser. Do
+      //      NOTHING. This is the reopen case, and the bug.
+      //   3. Stored, other stamp → a different download opening over existing
+      //      work (or a second copy on file://, where every downloaded file
+      //      shares one localStorage). Never clobber: hand the snapshot to the
+      //      app so it can offer it, and let the rebbi choose.
+      var seedStamp="seed-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
+      var seed="<script>try{"
+        +"var k="+JSON.stringify(KEY)+","
+        +"sk="+JSON.stringify(SEED_STAMP_KEY)+","
+        +"st="+JSON.stringify(seedStamp)+","
+        +"d="+JSON.stringify(JSON.stringify(data))+";"
+        +"var ex=localStorage.getItem(k);"
+        +"if(ex===null){localStorage.setItem(k,d);localStorage.setItem(sk,st);}"
+        +"else if(localStorage.getItem(sk)!==st){"
+        +"window.__offlineSeedHeld={stamp:st,json:d,made:"+JSON.stringify(new Date().toISOString())+"};}"
+        +"}catch(e){}<"+"/script>\n";
       var bodyTagRe=/<body([^>]*)>/;
       html = bodyTagRe.test(html) ? html.replace(bodyTagRe, function(m,attrs){ return "<body"+attrs+">\n"+seed; }) : seed+html;
       download("yeshiva-points-scanner-offline-"+stamp()+".html", html, "text/html");
@@ -20604,6 +20655,40 @@ nameLine
       btn.disabled=false; btn.textContent=origText;
     });
   });
+  // Case 3 from the seed guard above: this downloaded copy carried a snapshot,
+  // but saved work was already here, so the snapshot was held back rather than
+  // written over it. Nothing is broken and nothing was lost — but the rebbi is
+  // now looking at a different version than the file he just opened contains,
+  // and that must never be silent. Both ways out are non-destructive.
+  (function(){
+    var held = window.__offlineSeedHeld;
+    if(!held) return;
+    var bar=$("offlineSeedWarn");
+    if(!bar) return;
+    var madeTxt="";
+    try{
+      if(held.made){
+        var d=new Date(held.made);
+        if(!isNaN(d)) madeTxt=" (made "+d.toLocaleDateString()+")";
+      }
+    }catch(e){}
+    $("offlineSeedWarnText").innerHTML =
+      "<b>Your saved work was kept — nothing was overwritten.</b> This downloaded copy "+
+      "carries its own snapshot of a class"+madeTxt+", but this browser already had "+
+      "work saved here, so the snapshot was <b>not</b> loaded. You are looking at your "+
+      "own saved work. If you meant to start from the snapshot instead, download it "+
+      "first so you keep both, then restore it from Backup &amp; Sheets.";
+    bar.classList.add("show");
+    $("offlineSeedKeep").addEventListener("click", function(){
+      // Records the decision so this copy stops asking on every open.
+      try{ localStorage.setItem(SEED_STAMP_KEY, held.stamp); }catch(e){}
+      bar.classList.remove("show");
+    });
+    $("offlineSeedGet").addEventListener("click", function(){
+      download("menchmark-snapshot-from-offline-copy-"+stamp()+".json", held.json, "application/json");
+    });
+  })();
+
   $("exportCsv").addEventListener("click", function(){
     var rows=[["Rank","Name","Group","Points"]];
     data.students.slice().map(function(s){return{s:s,sc:score(s.id)};})
