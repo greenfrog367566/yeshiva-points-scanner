@@ -1154,41 +1154,89 @@
       return;
     }
     brSetStatus("Pick the Insta360 Link Controller window in the dialog …");
-    navigator.mediaDevices.getDisplayMedia({video:{frameRate:5},audio:false}).then(function(st){
+    /* Ask for real resolution. Left to itself Chrome will hand back a
+       downscaled window, and a downscaled QR is an unreadable QR. */
+    navigator.mediaDevices.getDisplayMedia({
+      video:{ width:{ideal:3840}, height:{ideal:2160}, frameRate:{ideal:8} },
+      audio:false
+    }).then(function(st){
+      /* The video MUST be in the document to produce frames — a detached one,
+         or one hidden with display:none, can sit at videoWidth 0 forever. */
       var v=document.createElement("video");
-      v.srcObject=st; v.muted=true; v.playsInline=true;
+      v.muted=true; v.playsInline=true; v.autoplay=true;
+      v.style.cssText="position:fixed;left:-10000px;top:0;width:320px;height:180px;opacity:0.01;pointer-events:none";
+      document.body.appendChild(v);
+      v.srcObject=st;
+
       var cvs=document.createElement("canvas"), ctx=cvs.getContext("2d",{willReadFrequently:true});
-      var tries=0, stopped=false;
+      var big=document.createElement("canvas"), bctx=big.getContext("2d",{willReadFrequently:true});
+      var tries=0, stopped=false, sawAnyQr=false, lastDims="unknown";
+
       function finish(msg){
         if(stopped) return;
         stopped=true;
         st.getTracks().forEach(function(t){ t.stop(); });
+        if(v.parentNode) v.parentNode.removeChild(v);
         if(msg) brSetStatus(msg);
       }
-      st.getVideoTracks()[0].addEventListener("ended",function(){ finish("Window sharing ended."); });
-      v.play().catch(function(){}).then(function(){
-        (function scan(){
-          if(stopped) return;
-          if(++tries>90){ finish("Could not find a pairing code in that window after 30s. Is the QR code showing?"); return; }
-          var w=v.videoWidth, h=v.videoHeight;
-          if(!w||!h){ setTimeout(scan,300); return; }
-          if(cvs.width!==w){ cvs.width=w; cvs.height=h; }
-          ctx.drawImage(v,0,0,w,h);
-          detector.detect(cvs).then(function(codes){
-            for(var i=0;i<codes.length;i++){
-              if(maybePair(codes[i].rawValue)){
-                finish(null);
-                brSetStatus("Read the code from the shared window — connecting …");
-                setTimeout(brConnect,150);
-                return;
-              }
+      st.getVideoTracks()[0].addEventListener("ended",function(){ finish("Window sharing stopped."); });
+
+      function tryDetect(canvas){ return detector.detect(canvas); }
+
+      function scan(){
+        if(stopped) return;
+        if(++tries>100){
+          finish("Gave up after 30s. Shared window was "+lastDims+" and "+
+            (sawAnyQr? "a QR code was visible but never a pairing code — is that the right window?"
+                     : "no QR code was ever visible in it. Make sure the pairing code is actually on screen in the window you shared, and try sharing the whole screen instead of just the window."));
+          return;
+        }
+        var w=v.videoWidth, h=v.videoHeight;
+        if(!w||!h){ setTimeout(scan,250); return; }
+        lastDims=w+"x"+h;
+        if(cvs.width!==w){ cvs.width=w; cvs.height=h; }
+        ctx.drawImage(v,0,0,w,h);
+        if(tries%6===1) brSetStatus("Looking for the code in the shared window ("+lastDims+") …");
+
+        tryDetect(cvs).then(function(codes){
+          if(codes.length) sawAnyQr=true;
+          for(var i=0;i<codes.length;i++){
+            if(maybePair(codes[i].rawValue)){
+              finish(null);
+              brSetStatus("Read the code from the shared window — connecting …");
+              setTimeout(brConnect,150);
+              return;
             }
-            if(codes.length && tries%10===0)
-              brSetStatus("Seeing a QR code but it is not a pairing code — is that the right window?");
-            setTimeout(scan,300);
-          }).catch(function(){ setTimeout(scan,400); });
-        })();
-      });
+          }
+          /* Nothing at native size. A QR that is small on a big desktop can
+             sit at barely 2px per module; doubling it costs one draw and
+             often tips it over the line. */
+          if(w<2600){
+            if(big.width!==w*2){ big.width=w*2; big.height=h*2; }
+            bctx.imageSmoothingEnabled=false;
+            bctx.drawImage(cvs,0,0,w*2,h*2);
+            tryDetect(big).then(function(c2){
+              if(c2.length) sawAnyQr=true;
+              for(var j=0;j<c2.length;j++){
+                if(maybePair(c2[j].rawValue)){
+                  finish(null);
+                  brSetStatus("Read the code from the shared window (upscaled) — connecting …");
+                  setTimeout(brConnect,150);
+                  return;
+                }
+              }
+              setTimeout(scan,250);
+            }).catch(function(){ setTimeout(scan,300); });
+            return;
+          }
+          setTimeout(scan,250);
+        }).catch(function(){ setTimeout(scan,300); });
+      }
+
+      if(v.readyState>=2) scan();
+      else v.addEventListener("loadedmetadata",function(){ scan(); });
+      v.play().catch(function(){});
+      setTimeout(function(){ if(!tries) scan(); },1200);   /* belt and braces */
     }).catch(function(e){
       brSetStatus(e.name==="NotAllowedError"
         ? "Window sharing was cancelled."
