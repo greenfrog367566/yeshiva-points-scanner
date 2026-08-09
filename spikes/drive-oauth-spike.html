@@ -146,6 +146,7 @@
       <button id="bRead">④ Read it back &amp; verify</button>
       <button id="bSilent">⑤ Test silent re-auth</button>
       <button id="bBreak" class="danger">⑥ Break token (force a real 401)</button>
+      <button id="bTopSilent">⑦ Silent re-auth as a top-level redirect</button>
       <button id="bFull" class="primary">▶ Run ②–④ end to end</button>
     </div>
     <hr>
@@ -160,6 +161,20 @@
       laptop where you are permanently signed into Google is the easy case and
       will tell you almost nothing.
     </p>
+    <p class="t-dim" style="margin:10px 0 0">
+      <b>⑦ exists to disambiguate a failure in ⑤, and only matters if ⑤ failed.</b>
+      <code>interaction_required</code> has two very different causes with
+      opposite consequences. Either <i>(a)</i> the Google session genuinely
+      cannot issue a token without the rebbi doing something — in which case
+      automatic backup is impossible — or <i>(b)</i> the session is perfectly
+      alive and only the <b>hidden frame</b> was blocked, because an iframe to
+      <code>accounts.google.com</code> is a third-party context and Chrome
+      restricts third-party cookies. ⑦ runs the identical <code>prompt=none</code>
+      request as a <b>top-level redirect</b> instead of in a frame. If it comes
+      back with a token and no visible sign-in, the cause was (b): re-auth needs
+      no typing, only a page bounce that costs the app its in-memory state.
+      That is a far better position than (a) and points at a different design.
+    </p>
   </div>
 
   <div class="panel">
@@ -172,14 +187,30 @@
   </div>
 
   <div class="panel">
-    <h2>5 · Findings — fill this in after running it</h2>
+    <h2>5 · Findings — run 2026-08-09</h2>
+    <p>
+      <b>The API works; silent re-auth does not.</b> Sign-in, folder creation,
+      a 509-byte write in ~1.1s, read-back and in-place update all succeeded
+      first time, with no SDK and no external script. Token lifetime came back
+      as <b>3599s</b>, exactly as documented.
+    </p>
+    <p>
+      <b>All three silent-re-auth routes failed with <code>interaction_required</code></b>
+      — hidden frame (⑤), automatic recovery from a real 401 (⑥), and top-level
+      redirect (⑦) — on a laptop with a live Google session, three minutes
+      after a successful consent grant. ⑦ is the one that settles it: the
+      hidden frame was not the blocker, so the session genuinely will not mint
+      a token without the rebbi acting.
+    </p>
     <ul class="findings">
-      <li><b>Does silent re-auth work on your own laptop?</b> <span id="fLaptop" class="pill unknown">untested</span></li>
-      <li><b>Does it work on a shared Chromebook, signed out of Google?</b> — this is the real question, and it has to be answered by hand.</li>
-      <li><b>If it fails, how many clicks does recovery take?</b> One consent click is fine. A full sign-in mid-lesson is not.</li>
-      <li><b>Does the failure announce itself?</b> A backup that silently stops is worse than one that never started — the staleness nudge in <code>docs/Daily_Backup_Spec.md</code> is the backstop, so confirm it would actually fire.</li>
+      <li><b>Does silent re-auth work on your own laptop?</b> <span id="fLaptop" class="pill bad">no — every route failed</span></li>
+      <li><b>Does it work on a shared Chromebook, signed out of Google?</b> <span class="pill unknown">still untested</span> — and it can only be worse than the laptop case, which already fails.</li>
+      <li><b>One confound left:</b> this client is in <b>Testing / unverified</b> status. Publishing the consent screen and re-running ⑤ and ⑦ is the only remaining explanation to rule out. Until then this reads as <i>"failed in every form tried"</i>, not <i>"impossible"</i>.</li>
+      <li><b>What it costs:</b> one sign-in buys a <b>60-minute window</b> where backups really are automatic and invisible. Past that, one click. Still far better than the Apps Script path it replaces.</li>
+      <li><b>What it forbids:</b> promising that backups stay current on their own. The staleness nudge stops being a nicety and becomes the mechanism.</li>
+      <li><b>Design consequence:</b> the app must persist pending work <i>before</i> redirecting to re-auth — a redirect discards in-memory state. This page holds its token in memory only and deliberately does not model that.</li>
     </ul>
-    <p class="t-dim">Write the answers into <code>spikes/README.md</code> when you have them. A spike whose results live only in someone's memory has failed.</p>
+    <p class="t-dim">Full write-up in <code>spikes/README.md</code>. A spike whose results live only in someone's memory has failed.</p>
   </div>
 
 </div>
@@ -189,7 +220,12 @@
   "use strict";
 
   // ── Paste your client ID here (or use the box in step 1) ──────────────────
-  var CLIENT_ID = "";
+  // Throwaway spike project, testing mode, drive.file only. Not a secret — a
+  // client ID identifies the project and authorises nothing on its own. It is
+  // hardcoded rather than typed because the redirect flow reloads this page,
+  // which would otherwise lose an ID entered into the box and break the
+  // silent-re-auth test. DELETE THE GCP PROJECT when the spike is finished.
+  var CLIENT_ID = "946052490406-f75ngccgmv3ddn6jebjifbnji0mi8c1i.apps.googleusercontent.com";
   // ──────────────────────────────────────────────────────────────────────────
 
   var SCOPE      = "https://www.googleapis.com/auth/drive.file";
@@ -538,6 +574,17 @@
         "real — run ③ and watch whether recovery is invisible or interrupts.", "warn");
   });
 
+  // ⑦ The same prompt=none request, but top-level instead of in a frame. If
+  // this returns a token when ⑤ could not, the blocker was the third-party
+  // iframe context, not the Google session — see the note next to the buttons.
+  $("bTopSilent").addEventListener("click", function () {
+    if (!CLIENT_ID) { log("Set a client ID first.", "bad"); return; }
+    sessionStorage.setItem("driveSpikeTopSilent", "1");
+    log("Top-level prompt=none redirect — leaving the page. Watch whether " +
+        "Google shows anything before it comes back.", "accent");
+    location.href = buildAuthUrl(true);
+  });
+
   $("bCopyLog").addEventListener("click", function () {
     navigator.clipboard.writeText($("log").innerText).then(function () {
       log("Log copied to clipboard.", "dim");
@@ -585,8 +632,25 @@
         "through it.", "bad");
   }
 
+  var wasTopSilent = sessionStorage.getItem("driveSpikeTopSilent") === "1";
+  sessionStorage.removeItem("driveSpikeTopSilent");
+
   if (frag) {
     history.replaceState(null, "", REDIRECT_URI);
+    if (wasTopSilent) {
+      if (frag.error) {
+        log("⑦ TOP-LEVEL prompt=none ALSO failed: " + frag.error + ". So the " +
+            "Google session itself cannot mint a token without the rebbi " +
+            "acting — the hidden frame was not the problem. Automatic " +
+            "background backup is not achievable this way.", "bad");
+      } else {
+        log("⑦ TOP-LEVEL prompt=none SUCCEEDED with no sign-in UI. The session " +
+            "was alive all along and ⑤ failed only because a hidden frame to " +
+            "accounts.google.com is a blocked third-party context. Re-auth " +
+            "therefore costs a page bounce, not a sign-in — which the app must " +
+            "survive by persisting pending work before redirecting.", "ok");
+      }
+    }
     if (frag.error) {
       log("Google returned an error: " + frag.error +
           (frag.errorDesc ? " — " + frag.errorDesc : ""), "bad");

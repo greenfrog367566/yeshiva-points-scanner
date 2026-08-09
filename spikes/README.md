@@ -58,5 +58,84 @@ token read from the URL fragment, and every Drive call made with `fetch`.
 
 **Setup and results live in the page itself** — open it and read the top.
 
-**Status:** written 2026-08-09, **not yet run against a real client ID.**
-Findings go in the page's own Findings section once it has been.
+---
+
+## Findings — run 2026-08-09
+
+**Conditions:** Windows 11, Chrome, on Rabbi Steinerman's own laptop, signed
+into Google, served over `http://localhost:8080`. OAuth client publishing
+status **Testing (unverified)**, scope `drive.file` only. This is the *easy*
+case — a machine where the user is permanently signed in. It has not yet been
+run on a shared or logged-out Chromebook.
+
+### What works — the entire API surface, first time
+
+| Step | Result |
+|---|---|
+| Sign-in (redirect → consent → token) | ✅ token issued, lifetime **3599s (~60 min)** |
+| Create folder in the rebbi's own Drive | ✅ |
+| Write backup JSON (multipart create) | ✅ **509 bytes in 1084 ms** |
+| Read back and verify round trip | ✅ content intact |
+| Update in place on a second run | ✅ found the existing file, patched it |
+
+No SDK, no external script, plain `fetch` throughout. **The feasibility claim
+in #218 holds: `drive.file` needed no verification review, and the no-library
+route works.**
+
+### What does not work — silent re-auth, which was the whole question
+
+| Test | Result |
+|---|---|
+| ⑤ `prompt=none` in a hidden iframe | ❌ `interaction_required` |
+| ⑥ real 401 → automatic silent recovery | ❌ `interaction_required`, write abandoned |
+| ⑦ `prompt=none` as a **top-level redirect** | ❌ `interaction_required` |
+
+⑦ was added specifically to disambiguate ⑤, and its answer is the important
+one. Had ⑦ succeeded, the blocker would have been the third-party iframe
+context — annoying but survivable, costing a page bounce rather than a
+sign-in. **It failed too.** So the Google session will not mint a fresh token
+without the user acting, regardless of how the request is framed. This was
+measured **three minutes after a successful consent grant**, on a machine with
+a live Google session, so it is not explained by staleness or a missing prior
+grant.
+
+### The one confound left, and it is worth clearing before this is treated as final
+
+The OAuth client is in **Testing / unverified** publishing status. Google
+treats grants to testing apps as short-lived, and it is plausible — not
+established — that a **published** client with only non-sensitive scopes
+behaves differently for `prompt=none`. **Publishing the consent screen and
+re-running ⑤ and ⑦ is the single remaining test**, and it has to happen in
+Ben's Cloud Console. Until it does, read the result above as *"silent re-auth
+failed in every form tried, with one untested explanation remaining"* — not
+as *"silent re-auth is impossible."*
+
+### What this means for tier 2, if the finding holds
+
+**It does not sink the Drive backup — it changes what may be promised.**
+
+- **"Automatically keeps your backup updated" is not deliverable.** Anything
+  built on a background write that survives token expiry would be a promise
+  the app cannot keep. `docs/Data_Custody_Decision.md` Q4 already said the
+  staleness nudge would be *more* load-bearing under the split; this makes
+  that concrete rather than cautionary.
+- **What is deliverable is still a large improvement on today.** One sign-in
+  buys a **60-minute window in which backups are genuinely automatic and
+  invisible**. A rebbi who opens the app and works through a period is covered
+  for that period without touching anything. Past the hour, it costs one
+  click — and compared with the Apps Script path it replaces (paste a script,
+  redeploy, "Manage deployments → New version"), that is not a close contest.
+- **Design consequence:** the app must persist pending work *before* it
+  redirects for re-auth, since the redirect discards in-memory state. The
+  spike deliberately holds its token in memory only and does not model this —
+  the real feature has to.
+- **The honest sentence** for the UI is something like *"backed up 12 minutes
+  ago — sign in again to keep it current,"* not *"backup is on."*
+
+### Still owed
+
+- Run the whole thing on a **shared / logged-out Chromebook**. The laptop case
+  is the easy one and has now been done; the classroom case is the one the
+  decision actually rests on.
+- Publish the consent screen and re-run ⑤ and ⑦ (see the confound above).
+- Neither is a code change. Both need Ben's Google account.
