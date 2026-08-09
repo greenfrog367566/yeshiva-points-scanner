@@ -112,6 +112,12 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
   **Two smaller things it does on purpose.** The shaded block never runs past a full hour: beyond that it would lap the face and stop meaning anything, so the block fills and the number underneath tells you the real figure. And on the stopwatch (Count up) the Disc steps aside for the number, because a disc that shrinks needs a length to shrink from and a stopwatch has none — your choice is remembered, and the Disc comes straight back when you switch to Count down.
 
+- **The timer turns red for the last thirty seconds, and you can pick the colour it uses before that.** Two small round buttons next to Digits/Disc/Clock choose **green** or **blue**. Whichever you pick, the timer switches to **red with thirty seconds to go**.
+
+  That is the part worth having. A boy who cannot yet read the number still gets told to start wrapping up, and he gets told from across the room — no announcement needed, nothing interrupting the shiur.
+
+  The colour carries across all three faces and the number itself, so the warning can never turn up on one and not another.
+
 ### Changed
 
 - **Corrections you make on the Attendance, Homework, Passes and Tracker tabs are now kept alongside your scans, not just on the tab you made them on.** Until now, scanning a boy recorded his mark in two places, but *fixing* it on the tab afterwards only moved one of them. Nothing you could see was wrong, because the one screen that reads the second copy — the Gradebook — is still switched off. But it meant the two could disagree, and that disagreement was the last thing keeping the Gradebook off.
