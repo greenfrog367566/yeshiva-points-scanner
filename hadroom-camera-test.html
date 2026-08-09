@@ -219,6 +219,8 @@
           <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:1px">
             <button class="btn" id="brConnect">Connect</button>
             <button class="btn sec" id="brDisconnect" disabled>Disconnect</button>
+            <button class="btn sec" id="brPick">Choose a screenshot…</button>
+            <input type="file" id="brFile" accept="image/*" style="display:none">
           </div>
         </div>
         <div class="row" style="margin-top:10px">
@@ -1083,21 +1085,71 @@
     return true;
   }
 
-  document.addEventListener("paste",function(ev){
-    var items=ev.clipboardData&&ev.clipboardData.items;
-    if(!items||!supported) return;
-    for(var i=0;i<items.length;i++){
-      if(items[i].type.indexOf("image")===-1) continue;
-      var blob=items[i].getAsFile(); if(!blob) continue;
-      brSetStatus("Reading the pasted screenshot …");
-      createImageBitmap(blob).then(function(bmp){ return detector.detect(bmp); })
-        .then(function(codes){
-          for(var k=0;k<codes.length;k++){ if(maybePair(codes[k].rawValue)) return; }
-          brSetStatus("No pairing QR code found in that image.");
-        })
-        .catch(function(e){ brSetStatus("Could not read that image: "+e.message); });
+  /* Reading a pairing code out of a picture, however it arrives. Every branch
+     reports what it saw: a silent "nothing happened" is the one outcome that
+     leaves nobody any way to work out why. */
+  function pairFromImage(blob,how){
+    if(!supported||!detector){
+      brSetStatus("Cannot read images here — the barcode detector never loaded (no internet on first load?).");
       return;
     }
+    if(!blob){ brSetStatus("That "+how+" carried no image."); return; }
+    brSetStatus("Reading the "+how+" ("+Math.round(blob.size/1024)+" KB) …");
+    createImageBitmap(blob).then(function(bmp){
+      return detector.detect(bmp).then(function(codes){
+        if(!codes.length){
+          brSetStatus("No QR code found in that "+how+" ("+bmp.width+"x"+bmp.height+"). "+
+            "Crop it tighter around the code, or hold the code up to the camera instead.");
+          return;
+        }
+        for(var k=0;k<codes.length;k++){ if(maybePair(codes[k].rawValue)) return; }
+        /* Found a code but it is not a pairing URL — show what it says, because
+           knowing what Link Controller actually encodes IS the diagnosis. */
+        var t=String(codes[0].rawValue||"");
+        brSetStatus("Read a QR code, but it carries no port and token. It says: "+
+          (t.length>120? t.slice(0,120)+"…" : t));
+      });
+    }).catch(function(e){
+      brSetStatus("Could not read that "+how+": "+(e.name||"")+" "+(e.message||e));
+    });
+  }
+
+  document.addEventListener("paste",function(ev){
+    var cd=ev.clipboardData;
+    if(!cd) return;
+    var items=cd.items||[];
+    for(var i=0;i<items.length;i++){
+      if(items[i].type.indexOf("image")===0){
+        pairFromImage(items[i].getAsFile(),"pasted screenshot");
+        return;
+      }
+    }
+    /* Not an image — maybe the pairing link itself was copied as text. */
+    var txt="";
+    try{ txt=cd.getData("text")||""; }catch(e){}
+    if(txt){
+      if(maybePair(txt)) return;
+      brSetStatus("Pasted text had no port and token in it.");
+      return;
+    }
+    brSetStatus("Nothing usable on the clipboard — copy the code as an image "+
+      "(Windows: Win+Shift+S), or use “Choose a screenshot…”.");
+  });
+
+  $("brPick").addEventListener("click",function(){ $("brFile").click(); });
+  $("brFile").addEventListener("change",function(){
+    var f=$("brFile").files&&$("brFile").files[0];
+    pairFromImage(f,"chosen image");
+    $("brFile").value="";
+  });
+
+  /* Drag a screenshot straight onto the page. */
+  document.addEventListener("dragover",function(ev){ ev.preventDefault(); });
+  document.addEventListener("drop",function(ev){
+    var f=ev.dataTransfer&&ev.dataTransfer.files&&ev.dataTransfer.files[0];
+    if(!f) return;
+    ev.preventDefault();
+    pairFromImage(f,"dropped image");
   });
 
   stopBtn.addEventListener("click",function(){
