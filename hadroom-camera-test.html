@@ -11,6 +11,13 @@
      read several QR cards at once, at classroom distance, and how big do the
      cards have to be. Safe to delete once that question is answered. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- BarcodeDetector polyfill (ZXing-C++ compiled to WASM). Desktop Windows Chrome
+     and Edge ship no BarcodeDetector at all, so without this the whole test is
+     dead on this machine. It defines window.BarcodeDetector only when the browser
+     has none, so Android/ChromeOS/macOS keep the faster native implementation and
+     the detection loop below never needs to know which one it got.
+     Pulls a few hundred KB of .wasm from the CDN on first use, then caches. -->
+<script src="https://fastly.jsdelivr.net/npm/barcode-detector@3/dist/iife/polyfill.min.js"></script>
 <style>
   :root{
     --ink:#1b2440;
@@ -340,22 +347,23 @@
   /* ================= DETECTION ================= */
 
   var support=$("support");
-  var detector=null, supported=false;
+  var detector=null, supported=false, engineIsNative=true;
 
   (function checkSupport(){
     if(!("BarcodeDetector" in window)){
       var b=el("div","bad-box");
-      b.innerHTML="<strong>This browser has no Barcode Detection API — QR detection cannot run.</strong><br>"+
-        "Try <strong>Chrome</strong> or <strong>Edge</strong>. Be aware that this is not purely a browser choice: "+
-        "<code>BarcodeDetector</code> is backed by a platform library, and it has been present on Android, ChromeOS "+
-        "and macOS while absent on <strong>desktop Windows</strong>. Chrome 150 on Windows 11 does not have it "+
-        "(checked 2026-08-09). If Chrome and Edge both show this message, that is itself the answer: this route is "+
-        "not viable on this machine, and detection would have to come from a decoder bundled into the page instead."+
+      b.innerHTML="<strong>No Barcode Detection API, and the polyfill did not load.</strong><br>"+
+        "Desktop Windows Chrome and Edge ship no native <code>BarcodeDetector</code>, so this page loads a WASM "+
+        "polyfill from jsDelivr instead — and that script did not arrive. Almost always this means <strong>no "+
+        "internet connection</strong> (or something blocking jsDelivr). Reconnect and reload."+
         "<br><br>The camera picker and live preview below still work, so the camera and its framing can be "+
         "checked — only the detection loop, boxes and stats are off.";
       support.appendChild(b);
       return;
     }
+    /* Native implementations report "[native code]"; the polyfill is real JS.
+       Worth naming, because the two are nowhere near the same speed. */
+    engineIsNative=/\[native code\]/.test(String(window.BarcodeDetector));
     supported=true;
     try{ detector=new window.BarcodeDetector({formats:["qr_code"]}); }
     catch(e){
@@ -364,11 +372,14 @@
         " Camera preview still works; detection is off."));
       return;
     }
-    var g=el("div","good-box","Barcode Detection API available — qr_code detector created.");
+    var engine=engineIsNative
+      ? "native BarcodeDetector (the browser's own — fastest)"
+      : "WASM polyfill (ZXing-C++), because this browser has no native one — expect slower passes, and a pause on the very first detect while the .wasm downloads";
+    var g=el("div","good-box","Detection ready — using the "+engine+".");
     support.appendChild(g);
     if(window.BarcodeDetector.getSupportedFormats){
       window.BarcodeDetector.getSupportedFormats().then(function(fs){
-        g.textContent="Barcode Detection API available. Formats this browser can read: "+fs.join(", ");
+        g.textContent="Detection ready — using the "+engine+". Formats available: "+fs.join(", ");
         if(fs.indexOf("qr_code")===-1){
           g.className="bad-box";
           g.textContent="This browser's BarcodeDetector does NOT list qr_code as a supported format: "+fs.join(", ");
