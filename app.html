@@ -15856,13 +15856,18 @@ nameLine
     return json.text;
   }
 
-  // Run an already-fetched list of verses through the AI proxy in small batches
-  // (8 pesukim at a time, like the wizard auto-flow) so a long stretch can't blow
-  // the proxy's timeout. Returns the combined CSV, header kept once. Throws if the
-  // proxy can't be reached so the caller can fall back. `onStatus(part,total)`
-  // fires before each batch for progress messages.
+  // Run an already-fetched list of verses through the AI proxy in batches so a
+  // long stretch can't blow the proxy's timeout. Returns the combined CSV, header
+  // kept once. Throws if the proxy can't be reached so the caller can fall back.
+  // `onStatus(part,total)` fires before each batch for progress messages.
+  //
+  // The batch is 20 pesukim, not a handful: Gemini's context easily holds a whole
+  // chapter, so the old small batches only multiplied the number of proxy calls —
+  // which is exactly what trips the free tier's per-minute rate limit. Fewer,
+  // fuller calls means most chapters go in one or two requests. (The worker also
+  // caches by passage, so a passage anyone has generated before costs zero calls.)
   async function generateFromVerses(verses, kind, hebrewOnly, refLabel, onStatus){
-    var BATCH=8, batches=[], parts=[];
+    var BATCH=20, batches=[], parts=[];
     for(var i=0;i<verses.length;i+=BATCH) batches.push(verses.slice(i,i+BATCH));
     // A whole chapter (× several chapters) fires many proxy calls in a row, and the
     // Gemini free tier can rate-limit a later one. Give each batch a single retry
