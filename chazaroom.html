@@ -163,6 +163,24 @@
   .rebbi{display:grid;grid-template-columns:minmax(240px,1fr) minmax(220px,1fr);gap:16px;align-items:start}
   @media(max-width:760px){ .rebbi{grid-template-columns:1fr} }
 
+  /* manual aim pad (PTZ bridge) */
+  .ptzpad{display:flex;gap:14px;align-items:center;margin-top:10px;flex-wrap:wrap}
+  .ptzpad .pad{display:grid;grid-template-columns:repeat(3,42px);grid-auto-rows:42px;gap:4px}
+  .pbtn{border:1px solid var(--line);background:#fff;border-radius:9px;font-size:1.05rem;color:var(--ink);display:flex;align-items:center;justify-content:center;padding:0;touch-action:none;user-select:none}
+  .pbtn:hover{background:#f4f5f9}
+  .pbtn:active{background:var(--gold);border-color:var(--brass)}
+  .ptzpad .up{grid-column:2;grid-row:1} .ptzpad .left{grid-column:1;grid-row:2}
+  .ptzpad .home{grid-column:2;grid-row:2} .ptzpad .right{grid-column:3;grid-row:2}
+  .ptzpad .down{grid-column:2;grid-row:3}
+  .zoomcol{display:flex;flex-direction:column;gap:4px;align-items:center}
+  .zoomcol .pbtn{width:42px;height:42px}
+  .zoomcol .zlbl{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+
+  /* collapsible card sections keep the page uncluttered */
+  details.fold>summary{cursor:pointer;font-weight:700;font-size:1.02rem}
+  details.fold>summary .hint{font-weight:400}
+  details.fold[open]>summary{margin-bottom:10px}
+
   /* print cards */
   #cardsheet{display:flex;flex-wrap:wrap;gap:0;margin-top:14px}
   .stu-sheet{width:100%;break-after:page;page-break-after:always;margin-bottom:20px}
@@ -217,17 +235,22 @@
       </div>
       <div id="sweepSetup" class="note" hidden style="margin-top:12px">
         <div class="row">
-          <label class="f" style="align-self:flex-end;padding-bottom:6px">
+          <label class="f" style="margin:0">
             <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.9rem;color:var(--ink)">
               <input type="checkbox" id="sweepOn"> <strong>Sweep the room</strong>
             </span>
           </label>
-          <label class="f">Stops <input id="sweepStops" type="number" value="4" min="2" max="12"></label>
-          <label class="f">Arc (°) <input id="sweepSpan" type="number" value="120" min="20" max="280"></label>
-          <label class="f">Dwell (ms) <input id="sweepDwell" type="number" value="900" min="300" max="4000" step="100"></label>
           <span class="hint" id="sweepDetected" style="margin:0;align-self:center"></span>
         </div>
-        <p class="hint" style="margin-bottom:0">When the answer countdown ends, the Insta360 pans across the room once to read every raised card, then reveals — so a big class fits and each boy is counted once. During the <em>visibility check</em> it sweeps continuously. Needs <code>ptz-bridge.ps1</code> running.</p>
+        <p class="hint">When the countdown ends, the camera pans across the room once to read every raised card — so a big class fits and each boy is counted once.</p>
+        <details style="margin-top:6px">
+          <summary class="hint" style="cursor:pointer;margin:0;display:list-item">Sweep settings</summary>
+          <div class="row" style="margin-top:8px">
+            <label class="f">Stops <input id="sweepStops" type="number" value="4" min="2" max="12"></label>
+            <label class="f">Arc (°) <input id="sweepSpan" type="number" value="120" min="20" max="280"></label>
+            <label class="f">Dwell (ms) <input id="sweepDwell" type="number" value="900" min="300" max="4000" step="100"></label>
+          </div>
+        </details>
       </div>
       <div class="row" style="margin-top:12px">
         <button class="btn gold big" id="startBtn">Start camera</button>
@@ -295,6 +318,21 @@
             <video id="vid" playsinline muted autoplay></video>
             <canvas class="ov" id="ov" width="10" height="10"></canvas>
           </div>
+          <div id="ptzPad" class="ptzpad" hidden>
+            <div class="pad">
+              <button class="pbtn up" data-nudge="tilt,5" title="Tilt up">▲</button>
+              <button class="pbtn left" data-nudge="pan,-10" title="Pan left">◀</button>
+              <button class="pbtn home" id="ptzHomeBtn" title="Recenter and zoom out">⌂</button>
+              <button class="pbtn right" data-nudge="pan,10" title="Pan right">▶</button>
+              <button class="pbtn down" data-nudge="tilt,-5" title="Tilt down">▼</button>
+            </div>
+            <div class="zoomcol">
+              <button class="pbtn" data-nudge="zoom,25" title="Zoom in">+</button>
+              <span class="zlbl">Zoom</span>
+              <button class="pbtn" data-nudge="zoom,-25" title="Zoom out">−</button>
+            </div>
+            <div class="hint" style="margin:0;flex:1;min-width:110px">Aim the camera — hold a button to keep moving.</div>
+          </div>
           <div class="statrow">
             <div class="stat"><div class="k" id="seenK">Cards seen</div><div class="v" id="sSeen">0</div></div>
             <div class="stat"><div class="k">Detects/s</div><div class="v" id="sFps">–</div></div>
@@ -303,7 +341,7 @@
             <button class="btn sec" id="calibToggleBtn">Re-check visibility</button>
             <button class="btn sec" id="stopBtn">Stop camera</button>
             <label class="f" id="sweepGameWrap" hidden style="align-self:center;margin:0">
-              <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.95rem;color:#cfd5ea">
+              <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.95rem;color:var(--ink)">
                 <input type="checkbox" id="sweepOnGame"> Sweep the room
               </span>
             </label>
@@ -351,7 +389,8 @@
     </div>
 
     <div class="card">
-      <h2>Import questions <span class="hint" style="font-weight:400">— Kahoot-style CSV</span></h2>
+      <details class="fold">
+      <summary>Import questions <span class="hint" style="font-weight:400">— Kahoot-style CSV</span></summary>
       <p class="hint" style="margin-top:0">One question per row:
         <code>Question, Answer&nbsp;A, Answer&nbsp;B, Answer&nbsp;C, Answer&nbsp;D, [time], Correct</code>
         — where <strong>Correct</strong> is <strong>1–4</strong> (or A–D). It's the Kahoot quiz-spreadsheet
@@ -365,10 +404,12 @@
         <button class="btn" id="csvImportBtn">Import rows</button>
         <div id="csvStatus" class="hint" style="margin:0;align-self:center"></div>
       </div>
+      </details>
     </div>
 
     <div class="card">
-      <h2>Make an AI prompt <span class="hint" style="font-weight:400">— for ChatGPT, Gemini or Claude</span></h2>
+      <details class="fold">
+      <summary>Make an AI prompt <span class="hint" style="font-weight:400">— for ChatGPT, Gemini or Claude</span></summary>
       <p class="hint" style="margin-top:0">Paste your learning and this writes a ready-to-run prompt. Copy it into any
         chatbot; it answers in the exact CSV format above — paste that back into the box above and <strong>Import</strong>.
         No account or proxy needed.</p>
@@ -386,6 +427,7 @@
         <button class="btn" id="copyPromptBtn">Copy prompt</button>
         <div id="copyStatus" class="hint" style="margin:0;align-self:center"></div>
       </div>
+      </details>
     </div>
 
     <div class="card">
@@ -704,15 +746,38 @@
     h.textContent=questions.length+" question"+(questions.length>1?"s":"")+" ready · "+m+" Print the cards, aim the camera, and Start.";
   }
 
-  /* ---- local PTZ bridge (ptz-bridge.ps1) for the room sweep ---- */
-  var ptzhttp={url:"http://localhost:8787",ok:false,pan:[-145,145],tilt:[-90,100]};
+  /* ---- local PTZ bridge (ptz-bridge.ps1): room sweep + manual aim ---- */
+  var ptzhttp={url:"http://localhost:8787",ok:false,pan:[-145,145],tilt:[-90,100],zoom:[100,400],cur:{pan:0,tilt:0,zoom:100}};
+  function ptzRemember(j){ ["pan","tilt","zoom"].forEach(function(k){ if(j&&typeof j[k]==="number") ptzhttp.cur[k]=j[k]; }); return j; }
   function probePtzHttp(){
     return fetch(ptzhttp.url+"/status",{cache:"no-store"}).then(function(r){ return r.json(); })
-      .then(function(j){ ptzhttp.ok=true; if(j.panRange) ptzhttp.pan=j.panRange; if(j.tiltRange) ptzhttp.tilt=j.tiltRange; return true; })
+      .then(function(j){ ptzhttp.ok=true; if(j.panRange) ptzhttp.pan=j.panRange; if(j.tiltRange) ptzhttp.tilt=j.tiltRange; if(j.zoomRange) ptzhttp.zoom=j.zoomRange; ptzRemember(j); return true; })
       .catch(function(){ ptzhttp.ok=false; return false; });
   }
-  function ptzSet(p){ var qs=Object.keys(p).map(function(k){ return k+"="+Math.round(p[k]); }).join("&"); return fetch(ptzhttp.url+"/set?"+qs,{cache:"no-store"}); }
-  function showSweepSetup(){ if(ptzhttp.ok){ $("sweepSetup").hidden=false; $("sweepDetected").textContent="PTZ bridge found ✓"; $("sweepGameWrap").hidden=false; } }
+  function ptzSet(p){ var qs=Object.keys(p).map(function(k){ return k+"="+Math.round(p[k]); }).join("&");
+    return fetch(ptzhttp.url+"/set?"+qs,{cache:"no-store"}).then(function(r){ return r.json(); }).then(ptzRemember); }
+  function showSweepSetup(){ if(ptzhttp.ok){ $("sweepSetup").hidden=false; $("sweepDetected").textContent="PTZ bridge found ✓"; $("sweepGameWrap").hidden=false; $("ptzPad").hidden=false; } }
+
+  /* ---- manual aim pad: absolute nudges from the tracked position. A nudge
+     pauses a continuous sweep (it would fight the rebbi's hand) but leaves the
+     sweep checkbox on, so the end-of-countdown scan pass still runs. ---- */
+  function ptzNudge(axis,delta){
+    if(!ptzhttp.ok) return;
+    if(sweep.on){ sweep.on=false; sweep.stops=[]; $("sweepStatusLine").textContent="Sweep paused while you aim — Re-check visibility resumes it."; }
+    var r=ptzhttp[axis], p={};
+    p[axis]=Math.max(r[0],Math.min(r[1],ptzhttp.cur[axis]+delta));
+    ptzSet(p).catch(function(){});
+  }
+  (function(){
+    var rep=null;
+    function stopRep(){ if(rep){ clearInterval(rep); rep=null; } }
+    Array.prototype.forEach.call(document.querySelectorAll("#ptzPad button[data-nudge]"),function(b){
+      var parts=b.getAttribute("data-nudge").split(","), axis=parts[0], delta=parseInt(parts[1],10);
+      b.addEventListener("pointerdown",function(e){ e.preventDefault(); stopRep(); ptzNudge(axis,delta); rep=setInterval(function(){ ptzNudge(axis,delta); },300); });
+      ["pointerup","pointerleave","pointercancel"].forEach(function(ev){ b.addEventListener(ev,stopRep); });
+    });
+    $("ptzHomeBtn").addEventListener("click",function(){ if(ptzhttp.ok) ptzSet({pan:0,tilt:0,zoom:ptzhttp.zoom[0]}).catch(function(){}); });
+  })();
 
   /* ---- sweep engine: absolute pan stops via the bridge, ping-pong ---- */
   var sweep={on:false,stops:[],idx:0,dir:1,moving:false,arrivedAt:0}, SWEEP_SETTLE=380;
@@ -803,7 +868,7 @@
           if(liveNow[s.id]) c.style.boxShadow="0 0 0 2px var(--good)"; }                                          /* extra ring = in view right now */
         c.appendChild(el("span",null,s.name)); grid.appendChild(c); });
       $("calibCount").textContent=seenN+" / "+roster.length;
-      $("calibHint").innerHTML=(seenN>=roster.length&&roster.length? "<strong>Everyone's been seen.</strong> " : "")+"Have the boys hold up <strong>any</strong> card — each lights green once the camera reads him and <strong>stays green</strong> for the rest of this check, so a sweep can add them up across the room. Adjust the camera"+(ptzhttp.ok?", zoom, or sweep":"")+" until all "+roster.length+" are green.";
+      $("calibHint").innerHTML=(seenN>=roster.length&&roster.length? "<strong>Everyone's been seen.</strong> " : "")+"Have the boys hold up <strong>any</strong> card — each lights green once the camera reads him and <strong>stays green</strong> for the rest of this check, so a sweep can add them up across the room. "+(ptzhttp.ok?"Aim and zoom with the pad under the video":"Adjust the camera")+" until all "+roster.length+" are green.";
     } else {
       $("calibGrid").innerHTML="";
       var n=tallyNow.A+tallyNow.B+tallyNow.C+tallyNow.D;
