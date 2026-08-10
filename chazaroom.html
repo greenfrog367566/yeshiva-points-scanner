@@ -336,6 +336,7 @@
           <div class="controls">
             <button class="btn gold" id="revealBtn">Reveal answer</button>
             <button class="btn sec" id="nextBtn" disabled>Next →</button>
+            <button class="btn gold" id="againBtn" hidden>↺ Play again</button>
           </div>
         </div>
         <div id="revealResult" class="note" hidden></div>
@@ -767,6 +768,9 @@
   var qphase="ready", lastGain={};
   var passTimes=[];
   var tallyNow={A:0,B:0,C:0,D:0};   /* anonymous current-frame letter counts    */
+  var tallyPeak={A:0,B:0,C:0,D:0};  /* anonymous: highest simultaneous count per letter
+                                       this question — a sweep or a dropped card must
+                                       never erase a scan that already completed */
   var studentAnswer={};             /* id -> {L}  latched for the question       */
   var seatMap={};                   /* id -> learned pan bearing (deg) — every decode
                                        notes the gimbal's pan + the card's offset in
@@ -934,14 +938,19 @@
 
   /* ---- question board + tiles ---- */
   function loadQuestion(i){
-    qIndex=i; revealed=false; scannedThisQ=false; capturing=false; dismissed=false; hideLift(); qStartedAt=Date.now(); tallyNow={A:0,B:0,C:0,D:0}; studentAnswer={}; lastGain={};
+    qIndex=i; revealed=false; scannedThisQ=false; capturing=false; dismissed=false; hideLift(); qStartedAt=Date.now(); tallyNow={A:0,B:0,C:0,D:0}; tallyPeak={A:0,B:0,C:0,D:0}; studentAnswer={}; lastGain={};
     if(ptzhttp.ok && $("sweepOn").checked) ptzSet({pan:0,tilt:0});   /* centre for the countdown */
     var q=questions[i]||{q:"—",opts:{},correct:""};
     $("qNum").textContent="Question "+(i+1)+" of "+questions.length;
     $("qBig").textContent=q.q;
     $("boardScore").hidden=true; $("boardPodium").hidden=true;
     renderTiles();
-    $("revealResult").hidden=true; $("revealBtn").disabled=false; $("nextBtn").disabled=true; $("nextBtn").textContent="Next →";
+    /* One gold button always says what to press: Show answers now → Reveal answer →
+       Scoreboard/Next question → Podium → Play again. */
+    $("revealResult").hidden=true;
+    $("revealBtn").disabled=false; $("revealBtn").className="btn gold"; $("revealBtn").textContent="Show answers now →";
+    $("nextBtn").disabled=true; $("nextBtn").className="btn sec"; $("nextBtn").textContent="Next →";
+    $("againBtn").hidden=true;
     /* Kahoot's get-ready beat: the question alone first — read it, then pick a card up */
     qphase="ready"; $("tiles").hidden=true; $("readyLine").hidden=false;
     startReady(q);
@@ -960,11 +969,14 @@
   function beginAnswerPhase(){
     if(mode!=="game"||qphase!=="ready") return;
     qphase="answer"; $("readyLine").hidden=true; $("tiles").hidden=false;
-    tallyNow={A:0,B:0,C:0,D:0}; studentAnswer={}; qStartedAt=Date.now();
+    $("revealBtn").textContent="Reveal answer";
+    qStartedAt=Date.now();
+    /* deliberately no reset here: a card scanned during get-ready already counts —
+       a completed scan must always show, even if the card drops before the tiles do */
     renderTiles(); startTimer();
   }
   function snapshot(){
-    if(!perStudent){ var t=tallyNow; return {counts:{A:t.A,B:t.B,C:t.C,D:t.D}, answered:t.A+t.B+t.C+t.D, byLetter:null}; }
+    if(!perStudent){ var t=tallyPeak; return {counts:{A:t.A,B:t.B,C:t.C,D:t.D}, answered:t.A+t.B+t.C+t.D, byLetter:null}; }
     var counts={A:0,B:0,C:0,D:0}, byLetter={A:[],B:[],C:[],D:[]}, answered=0;
     Object.keys(studentAnswer).forEach(function(id){ var L=studentAnswer[id].L; counts[L]++; byLetter[L].push(id); answered++; });
     return {counts:counts, answered:answered, byLetter:byLetter};
@@ -1070,8 +1082,8 @@
       $("liftCount").textContent=answered.length+" of "+roster.length+" answered";
     } else {
       $("liftList").innerHTML="";
-      var n=tallyNow.A+tallyNow.B+tallyNow.C+tallyNow.D;
-      $("liftCount").textContent=n+" card"+(n===1?"":"s")+" up";
+      var n=tallyPeak.A+tallyPeak.B+tallyPeak.C+tallyPeak.D;
+      $("liftCount").textContent=n+" card"+(n===1?"":"s")+" counted";
     }
   }
   function onCountdownEnd(){
@@ -1123,7 +1135,10 @@
       var rate=total?Math.round(100*(counts[q.correct]||0)/total):0;
       rr.innerHTML="<strong>Correct: "+q.correct+"</strong> — "+(counts[q.correct]||0)+" of "+total+" chose it ("+rate+"%). "+(majority===q.correct?"The class had it.":"Most missed it.");
     }
-    $("revealBtn").disabled=true; $("nextBtn").disabled=false;
+    $("revealBtn").disabled=true; $("revealBtn").className="btn sec";
+    $("nextBtn").disabled=false; $("nextBtn").className="btn gold";
+    var last=qIndex+1>=questions.length;
+    $("nextBtn").textContent = perStudent ? "Scoreboard →" : (last ? "Finish →" : "Next question →");
   }
   /* Next walks the Kahoot beats: result -> scoreboard (roster mode) -> next
      question, and after the last question -> podium. The rebbi paces every step. */
@@ -1150,8 +1165,9 @@
       ol.appendChild(li);
     });
     $("boardScore").hidden=false;
-    $("revealBtn").disabled=true; $("nextBtn").disabled=false;
-    $("nextBtn").textContent= final ? "Podium →" : "Next →";
+    $("revealBtn").disabled=true; $("revealBtn").className="btn sec";
+    $("nextBtn").disabled=false; $("nextBtn").className="btn gold";
+    $("nextBtn").textContent= final ? "Podium →" : "Next question →";
   }
   function showPodium(){
     qphase="podium"; hideLift(); stopTimer();
@@ -1175,10 +1191,13 @@
     } else {
       $("qBig").textContent="Class had it on "+game.right+" of "+game.asked+" questions";
     }
-    $("revealBtn").disabled=true; $("nextBtn").disabled=true; $("nextBtn").textContent="Next →";
+    $("revealBtn").disabled=true; $("revealBtn").className="btn sec";
+    $("nextBtn").disabled=true; $("nextBtn").className="btn sec"; $("nextBtn").textContent="Next →";
+    $("againBtn").hidden=false;   /* the podium is never a dead end */
   }
   $("revealBtn").addEventListener("click",doReveal);
   $("nextBtn").addEventListener("click",goNext);
+  $("againBtn").addEventListener("click",function(){ resetGame(); });   /* back through the lobby; points kept */
 
   /* Game-master control cards: hold CTRL:REVEAL / CTRL:NEXT up to the camera to
      run the game hands-free. Debounced so holding one up fires once. */
@@ -1231,7 +1250,7 @@
       else if(mA){ L=mA[1].toUpperCase(); if(perStudent) return; }
       else return;
       count[L]++; total++;
-      if(sid){ seenLive[sid]=now; if(mode==="calib") calibSeen[sid]=true; if(mode==="game"&&qphase!=="ready") studentAnswer[sid]={L:L}; }   /* no answering during get-ready, like Kahoot */
+      if(sid){ seenLive[sid]=now; if(mode==="calib") calibSeen[sid]=true; if(mode==="game"&&!revealed) studentAnswer[sid]={L:L}; }   /* latched from question load until the reveal — a completed scan always counts */
       /* Privacy: the overlay shows only WHO was scanned — a neutral box and the
          boy's name, never which letter he chose (no colour-coding by choice). */
       var pts=c.cornerPoints;
@@ -1252,6 +1271,7 @@
       }
     });
     if(!perStudent) tallyNow=count;
+    if(mode==="game"&&!revealed){ LETTERS.forEach(function(L){ if(count[L]>tallyPeak[L]) tallyPeak[L]=count[L]; }); }
     $("sSeen").textContent=String(total);
     if(mode==="calib") sweepAdvance();     /* continuous sweep only while checking visibility */
     if(mode==="calib") renderCalib(); else renderTiles();
