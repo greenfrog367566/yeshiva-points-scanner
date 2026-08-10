@@ -66,6 +66,32 @@ tier 2 into a gated tier 1 — not to unpick the architecture.
   than a Firebase project with rules and a deletion process. What the split
   genuinely fixes is that Ben stops holding records for schools he has never
   spoken to.
+- **Ben does hold a little tier-2 data after all — account metadata** (added
+  2026-08-09 with universal sign-in, below): email, display name, tier,
+  created-at. Deliberate and small, but it means "Ben holds nothing for tier
+  2" is no longer literally true and should not be said that way. It is
+  ordinary SaaS ground — a consenting adult's own contact details, not a
+  child's record — and it carries one obligation: the plain-language privacy
+  note owed alongside Q3, needed before *any* self-serve signup in *either*
+  tier.
+
+### Amendment, 2026-08-09 — identity is universal; only custody is tiered
+
+Ben's reaction to the tier-2 story as first written: *"it looks half baked and
+not professional … something real besides jsons in drives."* The audit agreed,
+and located the fault: **the storage design was sound, but tier 2 had been
+sketched as anonymous**, and the anonymity is what read as cheap. Identity and
+custody are separable, and this document had quietly fused them.
+
+**Accepted: every rebbi signs in, both tiers, same Google button. The tier
+decides where his CLASS DATA lives — not whether he exists.** Full reasoning,
+the comparison against ClassDojo / PBIS Rewards / LiveSchool, and the rejected
+alternative are in `docs/Universal_SignIn_Proposal.md` (ACCEPTED 2026-08-09).
+
+Nothing in §1 above is reversed by this. Tier 2's student records still never
+leave the rebbi's device and his own Drive; what Firestore gains is an account
+row. Every "Q" below still stands as answered, with one addendum to Q1 and one
+new required deliverable, both marked in place.
 
 ---
 
@@ -101,6 +127,25 @@ built yet is not the same as a feature being degraded. Tier 2 isn't degraded
 tier 1 — it's the app as it exists today, continuing to exist, with a better
 backup story than it has now.
 
+**Addendum 2026-08-09 — "everything Menchmark is today" now means that PLUS a
+sign-in.** Universal sign-in (see the amendment in §1) changes this answer in
+one direction only: tier 2 gains a real account, so the feature line is *the
+whole app as it stands today, plus identity, plus the Drive backup*. It loses
+nothing. The recommendation above was written when tier 2 was going to be
+anonymous, and "not a stripped-down mode" is now true in a stronger sense than
+originally meant — a tier-2 rebbi is a fully-fledged signed-in user of the
+product, and the only things he lacks are the ones that need a server-side
+copy of his class to exist at all.
+
+**And one new required deliverable, which is Ben's condition on accepting it:
+existing beta rebbeim must be able to get their current class into their new
+account themselves.** They onboarded on v0.9.0 (2026-07-18) and have real data
+in `localStorage` now, so sign-in without an upload path would be a downgrade
+for exactly the people who trusted the app first. Specified in
+`Universal_SignIn_Proposal.md` §10 and carried into
+`Firebase_Rebuild_Scope.md` ("Bringing the existing cohort in", build order
+step 3b). It **gates the sign-in rollout** — not a follow-up to it.
+
 ### Q2 — Tier migration: does the converter tool already cover it? — ADOPTED AS RECOMMENDED (verification owed)
 
 A tier-2 rebbi whose school later signs on has to move his data into
@@ -119,6 +164,16 @@ open question — the fix is making sure the converter's input formats include
 "raw localStorage export," which tier 2 already produces via the existing
 `sample-backup.json`-shaped download.
 
+**Two changes 2026-08-09, both from universal sign-in.** First, **the account
+half of tier migration has collapsed to a field flip** — the rebbi already has
+an account, so adoption sets `schoolId` rather than creating anything (see
+`Firebase_Rebuild_Scope.md` open question 11, sub-question 4). The *data* half
+below is unchanged and its verification is still owed. Second, **this same
+converter path is now also the beta cohort's way in**, which raises its
+priority sharply and means it must be **self-serve for own-account restore**
+rather than superadmin-gated. Verifying it therefore stops being "a one-line
+check once the tool exists" and becomes part of a real verification harness.
+
 ### Q3 — What does a school have to agree to, to become tier 1? — STILL OPEN, ON BEN
 
 Not a code question — a real-world one that gates onboarding school #2 (school
@@ -134,6 +189,16 @@ forgotten, not attempting to answer it. **This is the one question of the
 five that should stay explicitly on Ben, not get a technical recommendation**
 — it's a liability and relationship question, not an architecture one.
 
+**A smaller sibling, added 2026-08-09 with universal sign-in — and this one
+gates more than Q3 does.** Q3 gates onboarding *school #2*. The account record
+now created for **every** rebbi in **both** tiers (email, display name, tier,
+created-at) needs a plain-language privacy note before **any** self-serve
+signup happens at all — including the very first tier-2 rebbi, and including
+Ben's own school. It is a much smaller piece of writing than Q3's agreement:
+what is stored, why, that it is never sold or shared, and how to have it
+deleted. But it is the earlier gate of the two, so don't let it ride along
+behind the school agreement.
+
 ### Q4 — Does tier 2 still get the fragile-storage warning and CSV export? — ADOPTED AS RECOMMENDED
 
 **Recommendation: yes to both, and more load-bearing than they are today, not
@@ -147,6 +212,12 @@ true for tier 2 under this proposal. Two changes fall out of the split:
   write succeeded recently" — same UX, same staleness logic
   (`data.lastBackupAt` / `data.backupNudgeSince`), different backend behind
   it. No new nudge design needed; retarget the existing one.
+  - **And it is built behind the account** (2026-08-09): the backup UI always
+    names *which* Google account holds the file. That is not decoration —
+    the Drive spike proved silent token renewal only works when the app sends
+    a `login_hint`, so the account is load-bearing for the backup continuing
+    to work at all, and a rebbi with a personal and a school Google account
+    in one browser is the normal case, not an edge case.
 - **CSV export doesn't change at all.** The issue is explicit that Drive-JSON
   covers backup only, not the readable role a menahel or secretary needs —
   CSV export stays exactly as scoped for tier 1 *and* tier 2 alike, since a
