@@ -290,15 +290,27 @@ function codeSections(){
   }
   return data.codeSections;
 }
-function seedShulchaniCoinCodes(revalueStarters){
+// The starter re-value follows the mode in both directions — see app.html.
+// Not reached by load2fix() (a routine load never re-values), but kept here so
+// the harness's copy of the seeder matches app.html's shape.
+function applyStarterValuesForMode(toShulchani){
+  data.activities.forEach(function(a){
+    var st=SHULCHANI_STARTER_VALUES[a.id];
+    if(!st || a.tracked || a.name!==st.name) return;
+    if(toShulchani){
+      if(a.pts===1 && typeof a.ptsBeforeCoins!=="number"){
+        a.ptsBeforeCoins=a.pts;
+        a.pts=st.pts;
+      }
+    } else if(typeof a.ptsBeforeCoins==="number"){
+      if(a.pts===st.pts) a.pts=a.ptsBeforeCoins;
+      delete a.ptsBeforeCoins;
+    }
+  });
+}
+function seedShulchaniCoinCodes(){
   if(data.shulchaniCoinsSeeded) return;
   data.shulchaniCoinsSeeded=true;
-  if(revalueStarters){
-    data.activities.forEach(function(a){
-      var st=SHULCHANI_STARTER_VALUES[a.id];
-      if(st && !a.tracked && a.name===st.name && a.pts===1) a.pts=st.pts;
-    });
-  }
   COINS.forEach(function(c){
     data.activities.push({id:nextActId(), name:"+ "+c.name, pts:c.prutot,  coin:c.abbr, groups:[]});
     data.activities.push({id:nextActId(), name:"− "+c.name, pts:-c.prutot, coin:c.abbr, groups:[], hidden:true});
@@ -859,11 +871,38 @@ if(typeof data.spinListOpen!=="boolean") data.spinListOpen=true;
 if(typeof data.shulchaniMode!=="boolean") data.shulchaniMode=false;
 if(typeof data.shulchaniCoinsSeeded!=="boolean") data.shulchaniCoinsSeeded=false;
 // A rebbi ALREADY in Shulchani Mode before coin codes existed never passes
-// through the mode switch again, so he would never get them. Seed here too —
-// but with revalueStarters false: he has been scanning with whatever his
-// activities are worth, and a routine load is not the moment to change that
-// under him. Additive either way; nothing existing is renamed or removed.
-if(data.shulchaniMode && !data.shulchaniCoinsSeeded) seedShulchaniCoinCodes(false);
+// through the mode switch again, so he would never get them. Seed here too.
+// Minting only — a routine load never re-values anything, which is why the
+// starter values are applied at the switch and not here.
+if(data.shulchaniMode && !data.shulchaniCoinsSeeded) seedShulchaniCoinCodes();
+// One-shot: stamp the starters that the OLD seeding re-valued before
+// a.ptsBeforeCoins existed, so they can be restored on the way back out.
+// Without this the restore only helps rebbeim who enter Shulchani Mode
+// from here on — everyone the one-way re-value already hit stays stuck at
+// 8/32/32 in points mode, which is the whole bug.
+//
+// Deliberately narrow. It only fires for a save that has actually been
+// through seeding (shulchaniCoinsSeeded), and only on an activity still
+// sitting at EXACTLY the value seeding would have set — which is the one
+// state the old code could have produced, since it only ever re-valued an
+// activity worth 1. A rebbi who has since changed the number is not
+// touched, and nothing is stamped twice.
+//
+// The residual risk is a rebbi who set one of these to 8/32 by hand and
+// would rather keep it: he gets it restored to 1 on a future switch back
+// to points, and has to type his number again. That is a visible, one-
+// field, self-correcting outcome — against leaving every affected rebbi
+// permanently mis-valued with no way back. No value is changed HERE; this
+// only records what to put back later.
+if(typeof data.shulchaniStarterStamped!=="boolean") data.shulchaniStarterStamped=false;
+if(data.shulchaniCoinsSeeded && !data.shulchaniStarterStamped){
+  data.activities.forEach(function(a){
+    var st=SHULCHANI_STARTER_VALUES[a.id];
+    if(!st || a.tracked || a.name!==st.name) return;
+    if(a.pts===st.pts && typeof a.ptsBeforeCoins!=="number") a.ptsBeforeCoins=1;
+  });
+}
+data.shulchaniStarterStamped=true;
 if(typeof data.showPrutot!=="boolean") data.showPrutot=false;
 if(typeof data.snackSeconds!=="number" || data.snackSeconds<=0) data.snackSeconds=420;
 // What the floating timer opens at. Purely additive: 300 is the value the

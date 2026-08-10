@@ -310,6 +310,18 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Fixed
 
+- **Turning Shulchani Mode off now puts your activity values back.** If you tried Shulchani Mode and then switched back to ordinary points, three of your activities were quietly left at their coin values — and stayed there.
+
+  **What was happening.** Coins only make sense if a scan is worth a real coin: at one Prutah each, a Darkon is 1,536 scans away and almost the whole currency is out of reach. So the first time you switched to Shulchani Mode the app raised the three activities it ships with — **On time** from 1 to 8 (one Isar), and **Davening nicely** and **Learning nicely** from 1 to 32 (one Maah each). That part is right, and it still happens.
+
+  What was wrong is that switching **back** to points did not undo it. The mode went back to points; the values did not. So "Learning nicely" carried on awarding **32 points a scan instead of 1**, and there was nothing on the screen connecting that to a switch you had already flipped back. Turning the mode on and off a few times to see what it looked like was enough to do it, and because the raise only ever happened on the *first* switch, the change did not line up with anything you had just done — it simply looked as though the numbers had drifted on their own.
+
+  **What changed.** The three values now follow the mode in both directions. Switch to Shulchani and they go up to their coin values; switch back to points and they return to exactly what they were before, every time, however often you go back and forth.
+
+  **Anything you set yourself is left alone — that rule got stricter, not looser.** The app only ever touches an activity it has not been asked about: one still called by its original name and still sitting at the value the app itself put there. If you have set "On time" to 16, that is your number and switching modes will not move it — and from then on the app stops managing that activity's value altogether rather than putting a change back later.
+
+  **If this already happened to you, it repairs itself.** Saves where the values are already stuck are recognised on the next load and the original value is recorded, so the next time you switch back to points they return to 1 as they should. **Nothing is changed when the app loads** — loading only makes a note; the values move when *you* move the switch. Activities you created yourself were never affected, and no scores, history or scanned codes are touched by any of this.
+
 - **The downloaded offline copy no longer wipes your work every time you open it.** This is the most serious thing fixed so far, and it only ever affected the **"Download separate offline copy"** file — not the normal app, not the installed app, not anyone's Google Sheet.
 
   **What was happening.** That downloaded file carries a snapshot of your class inside it, so it opens ready to use instead of blank. But the line that loaded the snapshot ran **every single time the file was opened**, not just the first time. So it put your class back exactly as it was on the day you downloaded the file — and everything you had scanned since was overwritten. Close the file at the end of the day, open it the next morning, and the day was gone. Silently, with nothing to tell you it had happened.

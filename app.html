@@ -8115,26 +8115,54 @@ function setupRoster() {
     a2:{name:"Davening nicely", pts:32},  // 1 Maah
     a3:{name:"Learning nicely", pts:32}   // 1 Maah
   };
+  // The starter re-value FOLLOWS THE MODE, in both directions. It used to ride
+  // inside seedShulchaniCoinCodes(), which runs exactly once — so entering
+  // Shulchani Mode pushed "Learning nicely" from 1 to 32 and switching back to
+  // points left it at 32 forever. A rebbi who tried the mode and changed his
+  // mind was quietly left awarding 32 points a scan, with nothing on screen
+  // connecting that to a toggle he had already flipped back.
+  //
+  // Going in, the old value is stamped on the activity as a.ptsBeforeCoins;
+  // coming out, it is put back and the stamp cleared. The stamp is the whole
+  // mechanism — absent means "this app never touched this value", which is why
+  // it needs no load2fix() default and why an activity the rebbi created
+  // himself is never in scope.
+  //
+  // Hand-edits win, always. Coming out we only restore an activity still
+  // sitting at exactly the value we set; if the rebbi has since made "On time"
+  // worth 16, that is his number and we keep it — and we drop the stamp, so
+  // the app stops managing that activity from then on rather than waiting to
+  // spring a restore on him later.
+  function applyStarterValuesForMode(toShulchani){
+    data.activities.forEach(function(a){
+      var st=SHULCHANI_STARTER_VALUES[a.id];
+      if(!st || a.tracked || a.name!==st.name) return;
+      if(toShulchani){
+        // Only an untouched starter — one still at its shipped value, and not
+        // already stamped by an earlier trip through the mode.
+        if(a.pts===1 && typeof a.ptsBeforeCoins!=="number"){
+          a.ptsBeforeCoins=a.pts;
+          a.pts=st.pts;
+        }
+      } else if(typeof a.ptsBeforeCoins==="number"){
+        if(a.pts===st.pts) a.pts=a.ptsBeforeCoins;
+        delete a.ptsBeforeCoins;
+      }
+    });
+  }
   // Mints one scannable code per denomination, positive and negative, the first
   // time a rebbi lands in Shulchani Mode. Runs ONCE (data.shulchaniCoinsSeeded)
   // and is purely additive: nothing existing is renamed, re-valued or removed,
   // and switching back to points never deletes what this made — the codes carry
   // a.coin and are simply scoped out of the other mode by actInCurrentMode().
   //
-  // revalueStarters is false on the load-time backfill for a rebbi ALREADY in
-  // Shulchani Mode: he has been scanning with whatever his activities are worth,
-  // and quietly changing their values under him on a routine load is not a thing
-  // to do. Only a deliberate switch into the mode — where the dialog has already
-  // said balances are changing — re-values the untouched starters.
-  function seedShulchaniCoinCodes(revalueStarters){
+  // Minting is all this does now. The starter re-value moved out to
+  // applyStarterValuesForMode(), because the two have different lifetimes:
+  // the codes are minted once and kept, the values have to follow every
+  // switch. Callers run both — mint once, re-value each time.
+  function seedShulchaniCoinCodes(){
     if(data.shulchaniCoinsSeeded) return;
     data.shulchaniCoinsSeeded=true;
-    if(revalueStarters){
-      data.activities.forEach(function(a){
-        var st=SHULCHANI_STARTER_VALUES[a.id];
-        if(st && !a.tracked && a.name===st.name && a.pts===1) a.pts=st.pts;
-      });
-    }
     // Largest-first, the same order COINS uses on every other surface, each
     // denomination's give/take pair kept together. Deductions seed hidden:
     // fourteen tiles is more than the Record tab wants, and taking a Darkon
@@ -8233,9 +8261,10 @@ function setupRoster() {
       data.scores={}; data.log=[];
     }
     data.shulchaniMode=newMode;
-    // Set the mode FIRST: seeding pushes a "Coins" section and re-values the
-    // starters, and both read isShulchani() on the way through.
-    if(newMode) seedShulchaniCoinCodes(true);
+    // Set the mode FIRST: seeding pushes a "Coins" section, and it reads
+    // isShulchani() on the way through.
+    applyStarterValuesForMode(newMode);
+    if(newMode) seedShulchaniCoinCodes();
     save();
     $("shulchaniModal").style.display="none";
     $("shulchaniConvert").style.display="none";
@@ -8581,7 +8610,7 @@ function setupRoster() {
         $("shulchaniClear").onclick=function(){ doShulchaniSwitch(false, false); };
         $("shulchaniModal").style.display="flex";
       } else {
-        data.shulchaniMode=false; save();
+        data.shulchaniMode=false; applyStarterValuesForMode(false); save();
         renderShulchaniStatus(); renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities(); renderActButtons();
       }
       return;
@@ -8596,7 +8625,7 @@ function setupRoster() {
       $("shulchaniClear").onclick=function(){ doShulchaniSwitch(true, false); };
       $("shulchaniModal").style.display="flex";
     } else {
-      data.shulchaniMode=true; seedShulchaniCoinCodes(true); save();
+      data.shulchaniMode=true; applyStarterValuesForMode(true); seedShulchaniCoinCodes(); save();
       renderShulchaniStatus(); renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities(); renderActButtons();
     }
   });
@@ -21464,11 +21493,38 @@ nameLine
     if(typeof data.shulchaniMode!=="boolean") data.shulchaniMode=false;
     if(typeof data.shulchaniCoinsSeeded!=="boolean") data.shulchaniCoinsSeeded=false;
     // A rebbi ALREADY in Shulchani Mode before coin codes existed never passes
-    // through the mode switch again, so he would never get them. Seed here too —
-    // but with revalueStarters false: he has been scanning with whatever his
-    // activities are worth, and a routine load is not the moment to change that
-    // under him. Additive either way; nothing existing is renamed or removed.
-    if(data.shulchaniMode && !data.shulchaniCoinsSeeded) seedShulchaniCoinCodes(false);
+    // through the mode switch again, so he would never get them. Seed here too.
+    // Minting only — a routine load never re-values anything, which is why the
+    // starter values are applied at the switch and not here.
+    if(data.shulchaniMode && !data.shulchaniCoinsSeeded) seedShulchaniCoinCodes();
+    // One-shot: stamp the starters that the OLD seeding re-valued before
+    // a.ptsBeforeCoins existed, so they can be restored on the way back out.
+    // Without this the restore only helps rebbeim who enter Shulchani Mode
+    // from here on — everyone the one-way re-value already hit stays stuck at
+    // 8/32/32 in points mode, which is the whole bug.
+    //
+    // Deliberately narrow. It only fires for a save that has actually been
+    // through seeding (shulchaniCoinsSeeded), and only on an activity still
+    // sitting at EXACTLY the value seeding would have set — which is the one
+    // state the old code could have produced, since it only ever re-valued an
+    // activity worth 1. A rebbi who has since changed the number is not
+    // touched, and nothing is stamped twice.
+    //
+    // The residual risk is a rebbi who set one of these to 8/32 by hand and
+    // would rather keep it: he gets it restored to 1 on a future switch back
+    // to points, and has to type his number again. That is a visible, one-
+    // field, self-correcting outcome — against leaving every affected rebbi
+    // permanently mis-valued with no way back. No value is changed HERE; this
+    // only records what to put back later.
+    if(typeof data.shulchaniStarterStamped!=="boolean") data.shulchaniStarterStamped=false;
+    if(data.shulchaniCoinsSeeded && !data.shulchaniStarterStamped){
+      data.activities.forEach(function(a){
+        var st=SHULCHANI_STARTER_VALUES[a.id];
+        if(!st || a.tracked || a.name!==st.name) return;
+        if(a.pts===st.pts && typeof a.ptsBeforeCoins!=="number") a.ptsBeforeCoins=1;
+      });
+    }
+    data.shulchaniStarterStamped=true;
     if(typeof data.showPrutot!=="boolean") data.showPrutot=false;
     if(typeof data.snackSeconds!=="number" || data.snackSeconds<=0) data.snackSeconds=420;
     // What the floating timer opens at. Purely additive: 300 is the value the
