@@ -671,6 +671,7 @@
   var tallyNow={A:0,B:0,C:0,D:0};   /* anonymous current-frame letter counts    */
   var studentAnswer={};             /* id -> {L}  latched for the question       */
   var seenLive={};                  /* id -> ts   currently visible (calibration)*/
+  var calibSeen={};                 /* id -> true seen at any point THIS calibration scan (sticky) */
   var game={asked:0,right:0};
   var CALIB_TTL=1600;
 
@@ -749,7 +750,7 @@
   });
   function setMode(m){
     mode=m; $("calibPanel").hidden=(m!=="calib"); $("gameBoard").hidden=(m!=="game");
-    if(m==="calib"){ stopTimer(); renderCalib(); if($("sweepOn").checked && ptzhttp.ok && running) sweepStart(); }
+    if(m==="calib"){ stopTimer(); calibSeen={}; renderCalib(); if($("sweepOn").checked && ptzhttp.ok && running) sweepStart(); }
     else { sweepStopFn(false); qIndex=0; loadQuestion(0); }
   }
   $("calibDoneBtn").addEventListener("click",function(){ setMode("game"); });
@@ -781,11 +782,14 @@
   function renderCalib(){
     if(perStudent){
       $("calibAnon").textContent="";
-      var vis=liveVisible(), set={}; vis.forEach(function(id){ set[id]=true; });
-      var grid=$("calibGrid"); grid.innerHTML="";
-      roster.forEach(function(s){ var c=el("div","chip"); if(set[s.id]){ c.style.background="var(--good-soft)"; c.style.borderColor="var(--good)"; } c.appendChild(el("span",null,s.name)); grid.appendChild(c); });
-      $("calibCount").textContent=vis.length+" / "+roster.length;
-      $("calibHint").innerHTML=(vis.length>=roster.length&&roster.length? "<strong>Everyone's visible.</strong> " : "")+"Have the boys hold up <strong>any</strong> card — each lights green when the camera reads him. Adjust the camera"+(ptzhttp.ok?", zoom, or sweep":"")+" until all "+roster.length+" are green.";
+      var liveNow={}; liveVisible().forEach(function(id){ liveNow[id]=true; });   /* in view this instant */
+      var grid=$("calibGrid"); grid.innerHTML=""; var seenN=0;
+      roster.forEach(function(s){ var c=el("div","chip");
+        if(calibSeen[s.id]){ seenN++; c.style.background="var(--good-soft)"; c.style.borderColor="var(--good)";   /* seen at any point this scan — stays green */
+          if(liveNow[s.id]) c.style.boxShadow="0 0 0 2px var(--good)"; }                                          /* extra ring = in view right now */
+        c.appendChild(el("span",null,s.name)); grid.appendChild(c); });
+      $("calibCount").textContent=seenN+" / "+roster.length;
+      $("calibHint").innerHTML=(seenN>=roster.length&&roster.length? "<strong>Everyone's been seen.</strong> " : "")+"Have the boys hold up <strong>any</strong> card — each lights green once the camera reads him and <strong>stays green</strong> for the rest of this check, so a sweep can add them up across the room. Adjust the camera"+(ptzhttp.ok?", zoom, or sweep":"")+" until all "+roster.length+" are green.";
     } else {
       $("calibGrid").innerHTML="";
       var n=tallyNow.A+tallyNow.B+tallyNow.C+tallyNow.D;
@@ -1001,7 +1005,7 @@
       else if(mA){ L=mA[1].toUpperCase(); if(perStudent) return; }
       else return;
       count[L]++; total++;
-      if(sid){ seenLive[sid]=now; if(mode==="game") studentAnswer[sid]={L:L}; }
+      if(sid){ seenLive[sid]=now; if(mode==="calib") calibSeen[sid]=true; if(mode==="game") studentAnswer[sid]={L:L}; }
       /* Privacy: the overlay shows only WHO was scanned — a neutral box and the
          boy's name, never which letter he chose (no colour-coding by choice). */
       var pts=c.cornerPoints;
