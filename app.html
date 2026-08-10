@@ -1808,7 +1808,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div class="fs-body" id="fsBody">
     <div class="fs-acts" id="fsActs"></div>
     <div class="toolbar" style="margin:0 0 8px;gap:6px">
-      <input id="fsCustomAmt" type="number" min="0" step="1" value="1" class="field" style="width:56px;text-align:center;flex:0 0 auto">
+      <input id="fsCustomAmt" type="number" min="0" max="1000" step="1" value="1" class="field" style="width:56px;text-align:center;flex:0 0 auto">
       <button class="btn btn-sm" id="fsCustomAdd">+Custom</button>
       <button class="btn btn-sm" id="fsCustomSub">−Custom</button>
       <span class="grow"></span>
@@ -1978,7 +1978,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <div class="custom-row">
             <div>
               <label class="lbl">Custom amount</label>
-              <input type="number" id="customAmt" class="field" value="1" min="0" step="1">
+              <input type="number" id="customAmt" class="field" value="1" min="0" max="1000" step="1">
             </div>
             <button class="act-btn" id="customAdd" type="button">
               <span class="an">Custom (add)</span>
@@ -7397,16 +7397,18 @@ function setupRoster() {
   $("fsClose").addEventListener("click", function(){ if(pipWin && pipPanelId==="floatScan"){ pipWin.close(); } else { fpToggle(false); } });
   $("fsMin").addEventListener("click", function(){ $("floatScan").classList.toggle("min"); });
   $("fsCompact").addEventListener("click", function(){ data.fpCompact=!data.fpCompact; save(); this.classList.toggle("on", data.fpCompact); fpRenderNames(); });
-  $("fsCustomAdd").addEventListener("click", function(){
-    var n=Math.abs(parseInt($("fsCustomAmt").value,10)||0);
-    fpCustomAct={label:"Custom", delta:n}; fpRenderActs();
-    fpFlash(true, "Now scoring: Custom  "+fmt(n)); beep(true);
-  });
-  $("fsCustomSub").addEventListener("click", function(){
-    var n=Math.abs(parseInt($("fsCustomAmt").value,10)||0);
-    fpCustomAct={label:"Custom", delta:-n}; fpRenderActs();
-    fpFlash(true, "Now scoring: Custom  "+fmt(-n)); beep(true);
-  });
+  // Same guard as armCustom(): junk in the box must not arm Custom 0, and the
+  // box always ends up showing the number that was actually armed.
+  function fpArmCustom(sign){
+    var f=$("fsCustomAmt");
+    var n=normCustomAmt(f.value);
+    if(n>0) lastGoodCustomAmt=n; else n=lastGoodCustomAmt;
+    f.value=n;
+    fpCustomAct={label:"Custom", delta:sign*n}; fpRenderActs();
+    fpFlash(true, "Now scoring: Custom  "+fmt(sign*n)); beep(true);
+  }
+  $("fsCustomAdd").addEventListener("click", function(){ fpArmCustom(1); });
+  $("fsCustomSub").addEventListener("click", function(){ fpArmCustom(-1); });
   $("fsCustomAmt").addEventListener("focus", function(){ this.select(); });
   $("fsUndo").addEventListener("click", function(){
     if(!fpLastLogId){ fpFlash(false,"Nothing to undo yet"); beep(false); return; }
@@ -9821,7 +9823,8 @@ function setupRoster() {
       var pcs=studentById(pcsid);
       if(!pcs){ flash(false,"Unknown personal code","","\u201C"+code+"\u201D"); beep(false); return; }
       var camt=$("customAmt");
-      var n=Math.abs(parseInt(camt?camt.value:1,10)||0);
+      var n=normCustomAmt(camt?camt.value:1);
+      if(!(n>0)) n=lastGoodCustomAmt;
       awardWith(pcs, "Custom", n);
       return;
     }
@@ -12208,7 +12211,8 @@ function setupRoster() {
     if(c==="CTRL:GIVEALL"){ giveArmedToAll(); return; }
     if(c==="CTRL:CUSTOM+" || c==="CTRL:CUSTOM-"){
       var camt2=$("customAmt");
-      var n2=Math.abs(parseInt(camt2?camt2.value:1,10)||0);
+      var n2=normCustomAmt(camt2?camt2.value:1);
+      if(!(n2>0)) n2=lastGoodCustomAmt;
       var neg2 = c==="CTRL:CUSTOM-";
       setArmed("Custom", neg2?-n2:n2);
       flash(true,"Now scoring","Custom  "+fmt(neg2?-n2:n2),"Scan a student next");
@@ -12296,7 +12300,7 @@ function setupRoster() {
 
     var body=el("div");
     body.appendChild(el("label","lbl","Points"));
-    var amtIn=el("input","field"); amtIn.type="number"; amtIn.min="0"; amtIn.step="1";
+    var amtIn=el("input","field"); amtIn.type="number"; amtIn.min="0"; amtIn.max="1000"; amtIn.step="1";
     var camt=$("customAmt");
     amtIn.value = camt ? camt.value : "1";
     amtIn.style.marginBottom="14px";
@@ -12306,7 +12310,8 @@ function setupRoster() {
     var addBtn=el("button","btn btn-primary","+ Add");
     var subBtn=el("button","btn btn-bad","− Subtract");
     function applyAmt(){
-      var n=Math.abs(parseInt(amtIn.value,10)||0);
+      var n=normCustomAmt(amtIn.value);
+      if(!(n>0)) n=lastGoodCustomAmt;
       if(camt) camt.value=n;
       return n;
     }
@@ -12439,10 +12444,24 @@ function setupRoster() {
     $("scanInput").focus();
   });
 
+  // ONE parse for every place a custom amount enters the app — the box itself,
+  // the two arm buttons, a PC: personal-code scan, a CTRL:CUSTOM QR, and the
+  // tap-panel's Give points dialog all go through here. It used to be the same
+  // bare Math.abs(parseInt(...)) copy-pasted at each site, which is how
+  // 999999999 became a legal award: nothing anywhere bounded the magnitude. The
+  // cap is deliberately generous — Shulchani balances are integer prutot, so a
+  // three-digit award is ordinary — but a fat-fingered extra digit or a barcode
+  // burst that survives as digits now tops out at something a rebbi can undo,
+  // not something that ends the class economy.
+  var CUSTOM_AMT_MAX=1000;
+  function normCustomAmt(raw){
+    var n=Math.abs(parseInt(raw,10)||0);
+    return n>CUSTOM_AMT_MAX ? CUSTOM_AMT_MAX : n;
+  }
   // custom amount — buttons behave like activity buttons (dataset.label/delta drives the
   // "armed" highlight in setArmed), with the live-typed amount kept in sync on every input.
   function syncCustomButtons(){
-    var n=Math.abs(parseInt($("customAmt").value,10)||0);
+    var n=normCustomAmt($("customAmt").value);
     var addBtn=$("customAdd"), subBtn=$("customSub");
     addBtn.dataset.label="Custom"; addBtn.dataset.delta=n;
     subBtn.dataset.label="Custom"; subBtn.dataset.delta=-n;
@@ -12465,8 +12484,14 @@ function setupRoster() {
   // the buttons and the next scan can never disagree with the box.
   function commitCustomAmt(){
     var f=$("customAmt");
-    var n=Math.abs(parseInt(f.value,10)||0);
-    if(n>0) lastGoodCustomAmt=n; else { n=lastGoodCustomAmt; f.value=n; }
+    var n=normCustomAmt(f.value);
+    if(n>0) lastGoodCustomAmt=n; else n=lastGoodCustomAmt;
+    // ALWAYS write the committed number back into the box — not only on the
+    // empty-box fallback. "-5", "007" and an over-cap amount all commit as
+    // something other than what was typed, and the box showing one number while
+    // the pill arms another is exactly the disagreement this function exists to
+    // prevent.
+    f.value=n;
     if(armed && armed.label==="Custom") setArmed("Custom", armed.delta<0 ? -n : n);
     syncCustomButtons();
   }
@@ -12480,7 +12505,7 @@ function setupRoster() {
     // every way out goes through commitCustomAmt(): Enter, leaving the field,
     // and the scan branch below.
     syncCustomButtons();
-    var n=Math.abs(parseInt(this.value,10)||0);
+    var n=normCustomAmt(this.value);
     if(n>0) lastGoodCustomAmt=n;
   });
   $("customAmt").addEventListener("focus", function(){ this.select(); });
@@ -12528,11 +12553,17 @@ function setupRoster() {
   // box. Scanning without touching the amount still works — see the burst
   // handling above, which is what makes leaving the cursor here safe.
   function armCustom(sign){
-    var n=Math.abs(parseInt($("customAmt").value,10)||0);
-    if(n>0) lastGoodCustomAmt=n;
+    var f=$("customAmt");
+    var n=normCustomAmt(f.value);
+    // A box holding "abc" (a scanner burst's leftovers) or "0" used to arm
+    // Custom 0 here — and a 0-point scan writes a log entry that moves no
+    // score, which is invisible on screen but still eats an "Undo last scan"
+    // press. Same fallback the commit path has always used.
+    if(n>0) lastGoodCustomAmt=n; else n=lastGoodCustomAmt;
+    f.value=n;
     setArmed("Custom", sign<0 ? -n : n);
     syncCustomButtons();
-    var f=$("customAmt"); f.focus(); f.select();
+    f.focus(); f.select();
   }
   $("customAdd").addEventListener("click", function(){ armCustom(1); });
   $("customSub").addEventListener("click", function(){ armCustom(-1); });
