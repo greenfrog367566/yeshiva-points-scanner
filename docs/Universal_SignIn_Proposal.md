@@ -1,11 +1,15 @@
-# Universal sign-in — proposal (identity for everyone, custody still tiered)
+# Universal sign-in — decision record (identity for everyone, custody still tiered)
 
-**Status: PROPOSED, 2026-08-09 — awaiting Rabbi Steinerman's decision.**
+**Status: ACCEPTED, 2026-08-09.** Rabbi Steinerman took it — *"take it — make
+sure to include a data upload for current beta rebbeim"* — so §10 is now a
+**required part of the accepted design**, not an enhancement, and the doc is a
+decision record rather than a proposal.
+
 Written in response to Ben's reaction to the tier-2 data story: *"it looks
 half baked and not professional … maybe some sort of sign in for everyone or a
 pin? something real besides jsons in drives."* This doc audits the current
 setup honestly, grounds the comparison in what similar products actually do,
-and proposes one change — **everyone signs in** — that fixes the
+and takes one change — **everyone signs in** — that fixes the
 unprofessional feel without reversing the custody decision taken two days ago.
 
 Related records: `Data_Custody_Decision.md` (the ACCEPTED split),
@@ -153,7 +157,7 @@ Three different things hide in that word — they need three different answers:
    *less* professional than what exists today, and no comparable product does
    it. Google sign-in is the same one-tap gesture and brings a real identity.
 
-## 7. The alternative, so it is decided rather than drifted past
+## 7. The alternative, considered and NOT taken (2026-08-09)
 
 If the true objection is not "anonymous" but "two storage implementations,"
 the honest alternative is the **middle tier now**: one Firestore backend for
@@ -183,12 +187,23 @@ cannot sign in to anything, ever. So sign-in must be **default, not wall**:
   gets *more* urgent under this proposal, not less, because it is the only
   net under the one cohort sign-in can't cover.
 
-## 9. If accepted — the concrete edits (all PROPOSE-FIRST diffs)
+## 9. Accepted — the edits this now owes
+
+**⚠️ Sequencing, and it is the reason these are not in this PR.** Items 1 and 2
+below rewrite `Firebase_Rebuild_Scope.md` and `Data_Custody_Decision.md` —
+**the same two files PR #242 rewrites, and #242 is still open.** On `main`
+today `Data_Custody_Decision.md` still reads *PROPOSED* and the rebuild scope
+has no custody section at all, so writing these edits from a `main`-based
+branch would produce a guaranteed conflict and two contradictory versions of
+the same decision. **Merge #242 first; these land immediately after, in one
+clean pass.** Nothing here is blocked on anything else.
 
 1. `Firebase_Rebuild_Scope.md`: "Tiers and gating" gains **"identity is
    universal; tier gates where class data lives"**; the tier-2 bullet in the
    custody section gains the account-record line; open question 11 absorbs
-   the account-exists-before-tier framing (its sub-question 4 shrinks).
+   the account-exists-before-tier framing (its sub-question 4 shrinks); the
+   converter-tool section gains **self-serve restore** (§10.2) and the
+   build order gains the beta upload path **ahead of** any sign-in rollout.
 2. `Data_Custody_Decision.md`: a dated addendum — Q1's "tier 2 is everything
    Menchmark is today" now *plus a sign-in*; the account-metadata liability
    note lands under §1's risk list.
@@ -200,10 +215,100 @@ cannot sign in to anything, ever. So sign-in must be **default, not wall**:
 5. No `DATA_VERSION` bump anywhere in this — account state is additive
    (`load2fix()` backfill for a `data.account` stub or a separate key,
    decided at build time with the migration diff shown first, per CLAUDE.md).
+6. **§10's upload path gets its own build slice with a verification harness**,
+   not a bullet inside another step. It is the largest data migration in the
+   project's history after 2c, and open question 6 already notes the rebuild
+   has *no* Firestore analogue to `test-migration.html`. Whatever proves the
+   converter correct must prove this correct too — same harness, same gate.
 
-## 10. What this doc does not decide
+## 10. Bringing the current beta cohort in — REQUIRED, and it gates sign-in itself
 
-- Whether Ben takes it. §4 is the case; §7 is the alternative; his call.
+**Ben's condition on accepting: *"make sure to include a data upload for
+current beta rebbeim."*** This section is that requirement.
+
+**Why it is a gate rather than a nice-to-have.** The beta cohort onboarded on
+v0.9.0 (2026-07-18) and has real classes in `localStorage` **today** — scores,
+attendance, homework, Shulchani balances, months of history. Universal
+sign-in makes signing in the front door of the app. If a rebbi signs in and
+his class is not there, sign-in is a **downgrade**, and we will have taken the
+one thing he trusts and hidden it behind a new screen. **So the upload path
+ships before any beta rebbi is asked to sign in — not after, not alongside.**
+
+### The three ways his data gets in
+
+**1. Same-device adoption — the common case, and the one to make excellent.**
+Most beta rebbeim will sign in on the very machine they already teach with,
+where the class is already in `localStorage`. That needs **no file and no
+export**: the app detects a local class at sign-in and offers to claim it.
+
+> *"This device has a class — Sample Class 1, 24 boys, last scan today. Add it
+> to your account?"*
+
+One button, no round trip. Anything more than that will lose people.
+
+**2. Backup-file upload — new device, recovery, and the `file://` cohort.**
+He downloads a backup (the existing `downloadBackupFile()`), signs in
+anywhere, uploads the JSON. This is the converter tool's **backup-upload
+mode**, with one change that is the actual scope addition: **it must be
+self-serve.** `Firebase_Rebuild_Scope.md` currently scopes the converter as
+"Superadmin-gated at minimum." A rebbi restoring *his own* class into *his
+own* account must not need Ben to run it for him — that is exactly the
+"email me your backup file" support burden this rebuild exists to end. Keep
+the superadmin bulk/provisioning modes gated; ungate self-restore.
+
+**3. Drive restore — tier 2, once the Drive backup ships.** *"Found a backup
+in your Drive from Aug 9 — restore it?"* This is what makes the account feel
+like an account on a new machine, and it is the cheap win noted in §4.
+
+### Safety properties — non-negotiable, and each one is a lesson already paid for
+
+- **Never silently overwrite a class already in the account.** If the account
+  holds data and the upload differs, that is the rebbi's choice, not an
+  automatic action. **Exactly the #244 seed-guard shape** — the offline copy
+  destroyed months of work by writing a snapshot over live data without
+  asking. Do not rebuild that bug in the cloud.
+- **Idempotent.** Uploading the same backup twice must not duplicate students,
+  log entries, or tracked rows. Tier 1 gets this from the rebuild's
+  deterministic write IDs (open question 3); **tier 2 needs the same
+  discipline explicitly**, since it has no server-side dedup.
+- **Non-destructive until verified.** The scope says "old localStorage retires
+  on conversion" with a one-time *"your class has moved"* screen. That screen
+  **must not fire until the data is provably in the account** — read it back
+  and compare counts, then retire. A conversion that half-succeeded and then
+  cleared the local copy is the worst outcome available.
+- **A stored receipt**, in the shape this codebase already uses
+  (`data.attConversion`, `data.mirrorBackfill`): what was uploaded, when, and
+  from where. It makes a second run safe and gives support something to read.
+- **Carry the WHOLE class, not the obvious half.** Students and scores are the
+  easy part. It must also carry activities, the log, tracked items and
+  `trackedData`, Shulchani balances, raffle/prize history, seating, and
+  settings. **A partial import that reports success is worse than a clean
+  failure** — the rebbi trusts it and finds the hole in November.
+
+### What "upload" means per tier — the counterintuitive half
+
+- **Tier 1:** upload → Firestore collections, via the converter path. Data
+  genuinely moves to the server.
+- **Tier 2:** the data **does not go anywhere.** It stays on his device, as
+  designed. "Upload" here means *claim it under his account and start backing
+  it up to his Drive* — the class becomes his account's class, with a backup
+  behind it. Nothing about custody changes; §3's table still holds.
+
+### The cohort this cannot reach, stated plainly
+
+Rebbeim running the downloaded `file://` copy hold their class in a **separate
+origin's storage** that same-device adoption cannot see, and some of them are
+never online at all. For them the only route is: export a backup from inside
+that copy, carry the file to a connected machine, upload it there. That works,
+but it is manual and it will not happen by itself — it needs Ben to walk them
+through it, and it is one more reason the `file://` path should be an
+explicitly-labeled emergency mode (§8) rather than a distribution channel.
+
+## 11. What this doc does not decide
+
+- ~~Whether Ben takes it.~~ **Taken 2026-08-09** — §4 was the case, §7 the
+  alternative, and the alternative was **not** chosen. Left visible so nobody
+  re-derives the comparison from scratch.
 - Anything about Firestore collection design — that stays step 1 of the
   rebuild, which this proposal feeds but does not preempt.
 - The screen-lock PIN (§6.2) — someday-list, separate.
