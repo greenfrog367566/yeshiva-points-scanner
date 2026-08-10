@@ -143,6 +143,19 @@
   #revealResult{background:rgba(232,179,33,.12);border:1px solid #41507f;border-left:4px solid var(--gold);border-radius:10px;color:#eef1f8;font-size:1.05rem;padding:12px 14px;margin-top:16px}
   #revealResult strong{color:var(--gold)}
 
+  /* "lift up your cards" popup */
+  .lift-modal{position:fixed;inset:0;background:rgba(15,20,36,.86);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
+  .lift-box{background:var(--ink);border:2px solid var(--gold);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.5);padding:26px 30px;max-width:760px;width:100%;text-align:center;color:#fff;max-height:92vh;overflow:auto}
+  .lift-title{font-family:var(--serif);font-size:clamp(2rem,5vw,3.2rem);font-weight:700;color:var(--gold)}
+  .lift-title .arrow{display:inline-block;animation:bob 1s ease-in-out infinite}
+  @keyframes bob{50%{transform:translateY(-8px)}}
+  .lift-sub{color:#c2c9e4;font-size:1.1rem;margin-top:6px}
+  .lift-count{font-size:1.6rem;font-weight:800;margin:14px 0 4px}
+  .lift-list{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:10px 0 18px}
+  .lift-list .chip{font-size:1rem;padding:6px 14px;background:#26315a;border-color:#41507f;color:#cfd5ea}
+  .lift-list .chip.in{background:var(--good);border-color:var(--good);color:#fff;font-weight:700}
+  .lift-box .btn.big{width:100%;max-width:340px}
+
   /* compact rebbi strip */
   .rebbi{display:grid;grid-template-columns:minmax(240px,1fr) minmax(220px,1fr);gap:16px;align-items:start}
   @media(max-width:760px){ .rebbi{grid-template-columns:1fr} }
@@ -222,6 +235,24 @@
     </div>
 
     <div id="playArea" hidden>
+      <!-- "Lift up your cards" popup, shown when the countdown hits 0 -->
+      <div id="liftModal" class="lift-modal" hidden>
+        <div class="lift-box">
+          <div class="lift-title"><span class="arrow">⬆</span> Lift up your cards!</div>
+          <div class="lift-sub" id="liftSub">Hold your answer up to the camera.</div>
+          <div class="lift-count" id="liftCount"></div>
+          <div class="lift-list" id="liftList"></div>
+          <div class="row" style="justify-content:center;gap:16px">
+            <label class="f" style="align-self:center">
+              <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.95rem;color:#cfd5ea">
+                <input type="checkbox" id="liftAuto" checked> Auto-reveal
+              </span>
+            </label>
+            <button class="btn gold big" id="liftRevealBtn">Reveal answer →</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Calibration: is everyone visible? -->
       <div id="calibPanel" class="card" hidden>
         <h2>Quick check — can the camera see everyone?</h2>
@@ -626,7 +657,7 @@
   var camSel=$("camSel"), startBtn=$("startBtn"), stopBtn=$("stopBtn"),
       vid=$("vid"), ov=$("ov"), octx=ov.getContext("2d");
   var stream=null, detector=null, supported=false, running=false, loopT=null;
-  var qIndex=0, revealed=false, perStudent=false, mode="calib";
+  var qIndex=0, revealed=false, perStudent=false, mode="calib", capturing=false;
   var passTimes=[];
   var tallyNow={A:0,B:0,C:0,D:0};   /* anonymous current-frame letter counts    */
   var studentAnswer={};             /* id -> {L}  latched for the question       */
@@ -739,7 +770,7 @@
 
   /* ---- question board + tiles ---- */
   function loadQuestion(i){
-    qIndex=i; revealed=false; scannedThisQ=false; tallyNow={A:0,B:0,C:0,D:0}; studentAnswer={};
+    qIndex=i; revealed=false; scannedThisQ=false; capturing=false; hideLift(); tallyNow={A:0,B:0,C:0,D:0}; studentAnswer={};
     if(ptzhttp.ok && $("sweepOn").checked) ptzSet({pan:0,tilt:0});   /* centre for the countdown */
     var q=questions[i]||{q:"—",opts:{},correct:""};
     $("qNum").textContent="Question "+(i+1)+" of "+questions.length;
@@ -815,15 +846,32 @@
     if($("sweepOn").checked && ptzhttp.ok && !scannedThisQ){ scannedThisQ=true; $("revealBtn").disabled=true; scanPass(function(){ finishReveal(); }); return; }
     finishReveal();
   }
+  /* "Lift up your cards" popup + who-answered list */
+  function showLift(){ $("liftAuto").checked=$("autoReveal").checked; $("liftModal").hidden=false; renderLiftList(); }
+  function hideLift(){ $("liftModal").hidden=true; }
+  function renderLiftList(){
+    if(perStudent){
+      var answered=Object.keys(studentAnswer), set={}; answered.forEach(function(id){ set[id]=true; });
+      var list=$("liftList"); list.innerHTML="";
+      roster.forEach(function(s){ var c=el("div","chip"+(set[s.id]?" in":"")); c.appendChild(el("span",null,s.name)); list.appendChild(c); });
+      $("liftCount").textContent=answered.length+" of "+roster.length+" answered";
+    } else {
+      $("liftList").innerHTML="";
+      var n=tallyNow.A+tallyNow.B+tallyNow.C+tallyNow.D;
+      $("liftCount").textContent=n+" card"+(n===1?"":"s")+" up";
+    }
+  }
   function onCountdownEnd(){
     if(mode!=="game" || revealed) return;
-    if($("sweepOn").checked && ptzhttp.ok && !scannedThisQ){
-      scannedThisQ=true; $("revealBtn").disabled=true;
-      scanPass(function(){ if($("autoReveal").checked) finishReveal(); else { $("revealBtn").disabled=false; $("sweepStatusLine").textContent="Room scanned — reveal when ready."; } });
-    } else if($("autoReveal").checked){ finishReveal(); }
+    capturing=true; showLift();
+    var afterCapture=function(){ if(revealed) return; capturing=false; renderLiftList(); if($("liftAuto").checked) finishReveal(); else $("liftSub").textContent="Everyone who answered is shown — reveal when ready."; };
+    if($("sweepOn").checked && ptzhttp.ok && !scannedThisQ){ scannedThisQ=true; scanPass(afterCapture); }
+    else { setTimeout(afterCapture, 4000); }   /* fixed-camera lift window */
   }
+  $("liftRevealBtn").addEventListener("click",function(){ capturing=false; finishReveal(); });
+  $("liftAuto").addEventListener("change",function(){ $("autoReveal").checked=this.checked; if(this.checked && !capturing && !revealed && mode==="game") finishReveal(); });
   function finishReveal(){
-    if(revealed) return; revealed=true; stopTimer();
+    if(revealed) return; revealed=true; stopTimer(); capturing=false; hideLift();
     var q=questions[qIndex], snap=snapshot(), counts=snap.counts, total=counts.A+counts.B+counts.C+counts.D;
     LETTERS.forEach(function(L){ var t=$("tile-"+L); if(L===q.correct) t.classList.add("correct"); else t.classList.add("wrong"); });
     game.asked++;
@@ -920,6 +968,7 @@
     $("sSeen").textContent=String(total);
     if(mode==="calib") sweepAdvance();     /* continuous sweep only while checking visibility */
     if(mode==="calib") renderCalib(); else renderTiles();
+    if(capturing) renderLiftList();
   }
   function nameKnown(id){ for(var i=0;i<roster.length;i++){ if(roster[i].id===id) return true; } return false; }
 
