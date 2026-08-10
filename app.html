@@ -1216,6 +1216,27 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* A recorded value whose code is blank ("unchecked"). Distinct from gb-blank,
      which is the "·" shown when nothing was ever recorded. */
   .gb-tbl td.gb-empty{background:var(--card)}
+  /* An editable cell (currently attendance only — see gbCellEditor). Marked on
+     the SCREEN grid only; the printed pages are built by the same function with
+     editing off, so paper never shows a cursor or a focus ring. Deliberately
+     quiet: a faint dotted underline that firms up on hover, so a dense grid
+     does not turn into a wall of buttons. */
+  .gb-tbl td.gb-edit{cursor:pointer;position:relative}
+  .gb-tbl td.gb-edit::after{content:"";position:absolute;left:4px;right:4px;bottom:3px;border-bottom:1px dotted var(--muted);opacity:.5}
+  .gb-tbl td.gb-edit:hover{background:var(--gb-hover,#eef2ff)}
+  .gb-tbl td.gb-edit:hover::after{opacity:1;border-bottom-style:solid}
+  .gb-tbl td.gb-edit:focus{outline:2px solid var(--ink);outline-offset:-2px}
+  /* The little status picker. Fixed-positioned against the viewport because the
+     grid scrolls in both directions inside its own box — an absolutely
+     positioned menu would scroll away from the cell it belongs to. */
+  .gb-pick{position:fixed;z-index:60;background:var(--card);border:1px solid var(--line);
+    border-radius:10px;box-shadow:0 8px 24px rgba(16,24,40,.16);padding:6px;min-width:150px}
+  .gb-pick button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+    background:none;border:0;border-radius:7px;padding:7px 9px;font-size:.9rem;cursor:pointer;color:var(--ink)}
+  .gb-pick button:hover{background:var(--gb-hover,#eef2ff)}
+  .gb-pick button[aria-checked="true"]{font-weight:700}
+  .gb-pick .gb-pick-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:var(--muted)}
+  .gb-pick .gb-pick-head{font-size:.74rem;color:var(--muted);padding:3px 9px 6px;line-height:1.3}
   .gb-note{margin-top:12px;font-size:.84rem;color:var(--muted);line-height:1.6}
   .gb-warn{margin-top:10px;font-size:.82rem;color:var(--bad);font-weight:600}
   /* Built on every render but only ever shown on paper. */
@@ -17443,6 +17464,98 @@ nameLine
     return {text:String(keys.length), label:keys.length+" in total"};
   }
   // itemId -> studentId -> dateKey -> [entries], clipped to the visible range.
+  /* ---------- 2c: the Gradebook's WRITE side (#227) ----------------------
+   *
+   * WHY ONLY ATTENDANCE, TODAY. A Gradebook cell is one boy on one DAY, so
+   * editing one means calling that store's setter FOR THAT DAY — and only
+   * attendance can be told which day. setAttendance(sid, status, dateKey)
+   * takes a dateKey; setHw() writes to the hwDate the Homework tab happens to
+   * be showing, setPass() is today-only and keeps no per-use history to
+   * correct, and trackerLogAdd() stamps Date.now(). So "the Gradebook can
+   * write" is four features, not one, and this is the first — see #227.
+   *
+   * ROUTED THROUGH THE LEGACY SETTER, NEVER STRAIGHT AT data.trackedData.
+   * That is the whole mirror rule: the legacy store owns the value and the
+   * mirror transcribes it. Writing the mirror here would make the grid and the
+   * Attendance tab disagree — the exact gap that kept the Gradebook hidden
+   * (#185) until it was closed. setAttendance() is already "the one place
+   * attendance reaches the Gradebook", so one call buys the legacy write, the
+   * mirror row, the History row, the Sheet correction re-sync, and save().
+   *
+   * WHAT IS DELIBERATELY NOT OFFERED: clearing a cell back to "no record".
+   * setAttendance() writes a status; there is no unset, and inventing one
+   * would mean deleting from data.attendance AND unmirroring, which is the
+   * deletion half of #227 and wants its own decision. A rebbi can always move
+   * the mark to the right status; he cannot un-take the roll from here.
+   */
+  var GB_EDIT_ITEM="ti-attendance";
+  function gbCanEdit(item){ return !!item && item.id===GB_EDIT_ITEM; }
+  // Only ever ONE picker on screen, and it is torn down before another opens.
+  var gbPickEl=null;
+  function gbClosePicker(){
+    if(gbPickEl && gbPickEl.parentNode) gbPickEl.parentNode.removeChild(gbPickEl);
+    gbPickEl=null;
+    document.removeEventListener("mousedown", gbPickAway, true);
+    document.removeEventListener("keydown", gbPickKey, true);
+  }
+  function gbPickAway(e){ if(gbPickEl && !gbPickEl.contains(e.target)) gbClosePicker(); }
+  function gbPickKey(e){ if(e.key==="Escape"){ e.preventDefault(); gbClosePicker(); } }
+  /* Opens the status picker for one boy on one day and writes the choice.
+   * `td` is only used to position the menu and to take focus back afterwards. */
+  function gbOpenPicker(td, sid, dateKey){
+    gbClosePicker();
+    var s=studentById(sid);
+    if(!s) return;
+    var cur=attStatusOn(dateKey, sid);
+    var marked=attMarkedRec(dateKey, sid);
+    var box=el("div","gb-pick");
+    box.setAttribute("role","menu");
+    var head=el("div","gb-pick-head",(s.name||"")+" · "+gbDateLabel(dateKey)+" "+gbDowLabel(dateKey));
+    box.appendChild(head);
+    attCycleOrder().forEach(function(st){
+      var b=document.createElement("button");
+      b.type="button";
+      b.setAttribute("role","menuitemradio");
+      // Only a REAL record counts as the current value. An unmarked boy reads
+      // as "present" under absence-first, and showing that as already-chosen
+      // would tell the rebbi a roll had been taken when none had.
+      b.setAttribute("aria-checked", (marked && cur===st) ? "true" : "false");
+      var dot=el("span","gb-pick-dot");
+      var tone=gbToneClass(st);
+      if(tone) dot.classList.add(tone);
+      b.appendChild(dot);
+      b.appendChild(document.createTextNode(ATT_LABEL[st]||st));
+      b.addEventListener("click", function(){
+        gbClosePicker();
+        // Returns false when nothing changed, in which case there is nothing to
+        // re-render and nothing to say.
+        if(setAttendance(sid, st, dateKey)){
+          flash(st!=="absent", s.name, ATT_LABEL[st]||st, gbDateLabel(dateKey)+" — corrected from the Gradebook");
+          if($("view-attendance") && $("view-attendance").classList.contains("active")){
+            if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
+          }
+          refreshLiveViews();
+          renderGbTable();
+        }
+      });
+      box.appendChild(b);
+    });
+    document.body.appendChild(box);
+    // Positioned after insertion so the real height is known, and clamped so a
+    // cell near the bottom or right edge does not open a menu off-screen.
+    var r=td.getBoundingClientRect(), bw=box.offsetWidth, bh=box.offsetHeight;
+    var left=Math.min(r.left, window.innerWidth-bw-8);
+    var top=(r.bottom+bh+8>window.innerHeight) ? Math.max(8, r.top-bh-4) : r.bottom+4;
+    box.style.left=Math.max(8,left)+"px";
+    box.style.top=top+"px";
+    gbPickEl=box;
+    var first=box.querySelector("button");
+    if(first) first.focus();
+    // Capture phase, so a click anywhere else closes this before it does
+    // anything else — including a click on another editable cell.
+    document.addEventListener("mousedown", gbPickAway, true);
+    document.addEventListener("keydown", gbPickKey, true);
+  }
   function gbCollect(items, studs, r){
     var out={};
     items.forEach(function(it){
@@ -17502,7 +17615,11 @@ nameLine
    * critically the code maps — built across ALL selected items, so a code means
    * the same thing on the screen grid and on every printed page.
    */
-  function gbBuildTable(items, studs, ctx){
+  /* `editable` is a PARAMETER rather than a field on ctx because ctx is shared
+   * between the screen grid and every printed page — setting it there would
+   * have to be unset again before the print loop, and forgetting once would put
+   * focus rings and pointer cursors on paper. */
+  function gbBuildTable(items, studs, ctx, editable){
     var collected=ctx.collected, codeMaps=ctx.codeMaps, datesByItem=ctx.datesByItem;
     var initials=ctx.initials||{};
     var tbl=el("table","gb-tbl");
@@ -17611,6 +17728,22 @@ nameLine
           // has to be carried explicitly.
           td.setAttribute("aria-label", spoken);
           if(has) td.title=spoken;
+          // The write side (#227). Screen only, attendance only — see
+          // gbOpenPicker for why those are the limits today. A cell with NO
+          // record is editable too: "he was missed on Monday" is the correction
+          // a rebbi most often comes to the Gradebook to make.
+          if(editable && gbCanEdit(it)){
+            td.classList.add("gb-edit");
+            td.tabIndex=0;
+            td.setAttribute("role","button");
+            td.setAttribute("aria-label", spoken+" — press to change");
+            (function(sid,key){
+              td.addEventListener("click", function(){ gbOpenPicker(this, sid, key); });
+              td.addEventListener("keydown", function(e){
+                if(e.key==="Enter"||e.key===" "){ e.preventDefault(); gbOpenPicker(this, sid, key); }
+              });
+            })(s.id,k);
+          }
           tr.appendChild(td);
         });
         if(ds.length>1){
@@ -17658,6 +17791,10 @@ nameLine
     });
   }
   function renderGbTable(){
+    // Any open picker belongs to a cell that is about to be thrown away, and it
+    // lives on <body> rather than inside the table, so it would otherwise
+    // survive the re-render pointing at nothing.
+    gbClosePicker();
     var tbl=$("gbTable"), legend=$("gbLegend"), note=$("gbNote"), warn=$("gbWarn");
     var pages=$("gbPrintPages");
     tbl.innerHTML=""; legend.innerHTML=""; pages.innerHTML="";
@@ -17692,7 +17829,9 @@ nameLine
              initials:gbBuildInitials(studs)};
 
     // Screen: the one combined grid. It scrolls, so width is not a problem here.
-    var built=gbBuildTable(items, studs, ctx);
+    // `true` is the write side — the printed pages below deliberately pass
+    // nothing, so paper is never editable.
+    var built=gbBuildTable(items, studs, ctx, true);
     while(built.firstChild) tbl.appendChild(built.firstChild);
     gbBuildLegend(items, codeMaps, legend);
 
