@@ -211,7 +211,7 @@
         <label class="f">Answer countdown (sec)<input id="timerSecs" type="number" value="10" min="0" max="300"></label>
         <label class="f" style="align-self:flex-end;padding-bottom:6px">
           <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.9rem;color:var(--ink)">
-            <input type="checkbox" id="autoReveal" checked> Auto-reveal at 0
+            <input type="checkbox" id="autoReveal"> Auto-reveal at 0
           </span>
         </label>
       </div>
@@ -249,7 +249,7 @@
           <div class="row" style="justify-content:center;gap:12px">
             <label class="f" style="align-self:center">
               <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.95rem;color:#cfd5ea">
-                <input type="checkbox" id="liftAuto" checked> Auto-reveal
+                <input type="checkbox" id="liftAuto"> Auto-reveal
               </span>
             </label>
             <button class="btn sec big" id="liftPanBtn">↻ Pan the room</button>
@@ -299,9 +299,14 @@
             <div class="stat"><div class="k" id="seenK">Cards seen</div><div class="v" id="sSeen">0</div></div>
             <div class="stat"><div class="k">Detects/s</div><div class="v" id="sFps">–</div></div>
           </div>
-          <div class="row" style="margin-top:10px">
+          <div class="row" style="margin-top:10px;align-items:center">
             <button class="btn sec" id="calibToggleBtn">Re-check visibility</button>
             <button class="btn sec" id="stopBtn">Stop camera</button>
+            <label class="f" id="sweepGameWrap" hidden style="align-self:center;margin:0">
+              <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.95rem;color:#cfd5ea">
+                <input type="checkbox" id="sweepOnGame"> Sweep the room
+              </span>
+            </label>
           </div>
           <div id="sweepStatusLine" class="hint"></div>
         </div>
@@ -707,7 +712,7 @@
       .catch(function(){ ptzhttp.ok=false; return false; });
   }
   function ptzSet(p){ var qs=Object.keys(p).map(function(k){ return k+"="+Math.round(p[k]); }).join("&"); return fetch(ptzhttp.url+"/set?"+qs,{cache:"no-store"}); }
-  function showSweepSetup(){ if(ptzhttp.ok){ $("sweepSetup").hidden=false; $("sweepDetected").textContent="PTZ bridge found ✓"; } }
+  function showSweepSetup(){ if(ptzhttp.ok){ $("sweepSetup").hidden=false; $("sweepDetected").textContent="PTZ bridge found ✓"; $("sweepGameWrap").hidden=false; } }
 
   /* ---- sweep engine: absolute pan stops via the bridge, ping-pong ---- */
   var sweep={on:false,stops:[],idx:0,dir:1,moving:false,arrivedAt:0}, SWEEP_SETTLE=380;
@@ -722,7 +727,15 @@
     var dwell=clampInt($("sweepDwell").value,300,4000,900); if(Date.now()-sweep.arrivedAt<dwell) return;
     var next=sweep.idx+sweep.dir; if(next>=sweep.stops.length||next<0){ sweep.dir=-sweep.dir; next=sweep.idx+sweep.dir; }
     sweep.idx=next; sweepGo(next); }
-  $("sweepOn").addEventListener("change",function(){ if(this.checked){ if(running && mode==="calib") sweepStart(); } else sweepStopFn(true); });
+  /* One sweep toggle, two mirrored checkboxes: the setup panel (#sweepOn) and the
+     in-game rebbi strip (#sweepOnGame). Either flips the shared state. */
+  function applySweepToggle(on){
+    $("sweepOn").checked=on; $("sweepOnGame").checked=on;
+    if(on){ if(running && mode==="calib") sweepStart(); }
+    else sweepStopFn(true);
+  }
+  $("sweepOn").addEventListener("change",function(){ applySweepToggle(this.checked); });
+  $("sweepOnGame").addEventListener("change",function(){ applySweepToggle(this.checked); });
 
   /* ---- start / stop / mode ---- */
   startBtn.addEventListener("click",function(){
@@ -738,6 +751,7 @@
       $("scoreTitle").textContent = perStudent? "Leaderboard" : "Game so far";
       $("lbWrap").hidden=!perStudent; $("anonStats").hidden=perStudent;
       $("resetScoresPlayBtn").hidden=!perStudent;
+      $("sweepOnGame").checked=$("sweepOn").checked;
       game={asked:0,right:0}; seenLive={}; if(perStudent) renderLeaderboard();
       sizeOverlay(); startLoop();
       setMode("calib");                 /* starts continuous sweep too, if enabled */
