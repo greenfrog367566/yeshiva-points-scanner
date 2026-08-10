@@ -13,8 +13,10 @@ Menchmark is a free, open-source classroom assistant for Yeshiva and Jewish Day 
 | File | Purpose |
 |---|---|
 | `app.html` | The Menchmark app (~22,450 lines of vanilla JS, all logic in one IIFE) |
-| `index.html` | Site front door — the scroll-driven GSAP brand-story intro, with Skip → `home.html` |
-| `home.html` | The landing/marketing page (Tailwind CDN) — was `index.html` before the intro swap |
+| `index.html` | The landing/marketing page (Tailwind CDN), served at `/` — was `home.html` until the SEO swap; carries the canonical meta description and the `SoftwareApplication` JSON-LD |
+| `intro.html` | The scroll-driven GSAP brand-story intro, served at `/intro` — was `index.html` (the site front door) until the SEO swap. Skip → `/` |
+| `_redirects` | Cloudflare Pages 301s. Points `/home`, `/home.html`, `/index.html` at `/` so every pre-swap address survives — Cloudflare's own clean-URL rewrite is only a 307, which does not consolidate search signals |
+| `robots.txt` + `sitemap.xml` | SEO. **Read the `robots.txt` caveat below before assuming what is served** |
 | `setup.html` | Onboarding wizard for first-time users |
 | `quick-start.html` | 15-minute zero-to-first-scan guide for beta rebbeim (linked from the app header) |
 | `beta.html` | Beta signup form → posts to `apps-script/beta-signup.gs` |
@@ -78,6 +80,31 @@ it a minute before believing a zero.
 `sw.js` serves HTML network-first, so once a deploy is out it reaches installed
 users immediately; bump `CACHE_VERSION` in `sw.js` on a release to purge the
 stale *offline* copy.
+
+### ⚠️ `/robots.txt` lies about whether it exists
+
+Cloudflare injects a **managed Content Signals `robots.txt`** when the origin
+has none. Before this repo had its own, `GET /robots.txt` returned **200 with
+1,248 bytes** — which reads exactly like a healthy file — but the body was
+*entirely comments*: no `User-agent`, no `Allow`, no `Sitemap`. Meanwhile
+`HEAD /robots.txt` returned **404**, the origin's real answer.
+
+So a plain status check on that path proves nothing either way. **Read the body
+and look for a directive**, don't trust the code:
+
+```bash
+# does the live robots.txt actually contain our rules, or just Cloudflare's comments?
+curl -sL --ssl-no-revoke https://menchmark.app/robots.txt | grep -c '^Sitemap:'
+```
+
+The repo now ships `robots.txt`, which should win as a real origin asset — but
+whether Cloudflare serves it verbatim, appends its content signals to it, or
+overrides it is **unverified**, and only observable against the live site after
+a deploy. Check the body, not the status code.
+
+(`--ssl-no-revoke` is needed on this machine — without it curl fails the TLS
+revocation check and reports `http=000`, which is indistinguishable from a dead
+deploy.)
 
 ## 🔴 BRANCH RULES (CRITICAL — READ FIRST)
 
