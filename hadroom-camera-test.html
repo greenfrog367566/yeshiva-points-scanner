@@ -1009,10 +1009,14 @@
       var f=pbRead(new Uint8Array(ev.data));
       if(f[10]&&f[10].length){                       /* deviceInfoNotify */
         var inner=pbRead(f[10][0]);
-        if(inner[1]&&inner[1].length){
-          var sn=pbUtf8Decode(inner[1][0]);
-          if(sn&&sn!==bridge.serial){ bridge.serial=sn; brEnable(true); brSetStatus("Camera reported: "+sn); }
-        }
+        /* The device serial (curDeviceSerialNum) is field 2 here — field 1 is
+           the DeviceInfo submessage, whose own field 2 is the same serial.
+           Verified against a real Link 2 Pro; the earlier field-1 read decoded
+           the whole submessage as garbage and addressed no device. */
+        var sn="";
+        if(inner[2]&&inner[2].length) sn=pbUtf8Decode(inner[2][0]);
+        if(!sn && inner[1]&&inner[1].length){ var di=pbRead(inner[1][0]); if(di[2]&&di[2].length) sn=pbUtf8Decode(di[2][0]); }
+        if(sn&&sn!==bridge.serial){ bridge.serial=sn; brEnable(true); brSetStatus("Camera reported: "+sn); }
       }
       if(f[12]&&f[12].length){                       /* controlResponse */
         var cr=pbRead(f[12][0]);
@@ -1036,6 +1040,7 @@
   }
 
   function brDisconnect(quiet){
+    if(bridge.moveTimer){ clearInterval(bridge.moveTimer); bridge.moveTimer=null; }
     if(bridge.hb){ clearInterval(bridge.hb); bridge.hb=null; }
     if(bridge.ws){ try{ bridge.ws.close(); }catch(e){} bridge.ws=null; }
     bridge.connected=false; bridge.serial="";
@@ -1043,23 +1048,37 @@
     if(!quiet){ brSetStatus("Disconnected."); refreshSweepAvailability(); }
   }
 
-  /* The gimbal command is a VELOCITY, not a distance: it keeps moving until a
-     stop is sent. So a "move" is speed for a while, then zero. */
+  /* Relative pan/tilt is a per-message NUDGE, not a move-until-stop velocity —
+     verified against a real Link 2 Pro, where a single message moved the gimbal
+     an imperceptible step. To travel, the command must be resent continuously,
+     exactly as the phone remote does while a button is held. So a "move" is a
+     train of identical pulses for the duration, then a zero. */
   function brSend(data){
     if(!bridge.ws||bridge.ws.readyState!==1) return;
     bridge.ws.send(encPanTilt(bridge.serial,data));
   }
-  function brStop(){ brSend([0,0,0,0]); }
+  function brStop(){
+    if(bridge.moveTimer){ clearInterval(bridge.moveTimer); bridge.moveTimer=null; }
+    brSend([0,0,0,0]);
+  }
+  var BR_PULSE_MS=60;
   function brMove(dx,dy,ms,done){
     if(!bridge.connected) return;
     var sp=clampInt($("brSpeed").value,1,30,20);
     var dur=ms||clampInt($("brMove").value,50,3000,350);
-    brSend([dx>0?1:dx<0?255:0, dx?sp:0, dy>0?1:dy<0?255:0, dy?Math.min(20,sp):0]);
-    if(bridge.moveTimer) clearTimeout(bridge.moveTimer);
-    bridge.moveTimer=setTimeout(function(){
-      brStop();
-      if(done) done();
-    },dur);
+    var pulse=[dx>0?1:dx<0?255:0, dx?sp:0, dy>0?1:dy<0?255:0, dy?Math.min(20,sp):0];
+    if(bridge.moveTimer){ clearInterval(bridge.moveTimer); bridge.moveTimer=null; }
+    var until=Date.now()+dur;
+    brSend(pulse);
+    bridge.moveTimer=setInterval(function(){
+      if(Date.now()>=until){
+        clearInterval(bridge.moveTimer); bridge.moveTimer=null;
+        brSend([0,0,0,0]);
+        if(done) done();
+        return;
+      }
+      brSend(pulse);
+    },BR_PULSE_MS);
   }
 
   $("brConnect").addEventListener("click",brConnect);
