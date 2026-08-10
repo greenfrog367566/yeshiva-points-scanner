@@ -22552,6 +22552,8 @@ nameLine
         content: function(){
           return '<h2 style="font-family:Georgia,serif;margin:0 0 12px">About Menchmark</h2>' +
             '<p><strong>Menchmark</strong> is a classroom assistant for Yeshiva and Jewish Day School rebbeim &mdash; middos and derech eretz, attendance, homework, and learning, all from one scan.</p>' +
+            '<p style="color:#64748b;font-size:.9rem">Version <strong>' + (window.MENCHMARK_APP_VERSION || '—') + '</strong>' +
+              (location.protocol === 'file:' ? ' &mdash; downloaded copy' : '') + '</p>' +
             '<p>Built with ❤️ by Rabbi B. Steinerman.</p>' +
             '<p><a href="https://github.com/greenfrog367566/yeshiva-points-scanner" target="_blank" style="color:#2563eb">View on GitHub</a></p>' +
             '<hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb">' +
@@ -23568,6 +23570,15 @@ The app remembers the last serial connection and will try to reconnect automatic
 (function(){
   var isFileProto = location.protocol === "file:";
 
+  /* The version THIS file was shipped as. Bump it in the same commit that bumps
+     the released version in CHANGELOG.md and in version.json at the site root —
+     the three are compared against each other and mean nothing apart. Exposed on
+     window so the Help → About tab can show it; a rebbi reporting a problem can
+     then say which copy he is actually running, which until now nothing in the
+     app could tell him. */
+  var APP_VERSION = "0.9.0";
+  window.MENCHMARK_APP_VERSION = APP_VERSION;
+
   // 1) Service worker — only over http/https (a file:// offline copy can't use one).
   if("serviceWorker" in navigator && !isFileProto){
     window.addEventListener("load", function(){
@@ -23628,6 +23639,116 @@ The app remembers the last serial connection and will try to reconnect automatic
     t.appendChild(span); t.appendChild(btn);
     document.body.appendChild(t);
   }
+
+  /* 4) Update check — tell a rebbi when the copy he is running is behind the
+        live one. Two different problems wear one check here:
+
+        - The PWA / http copy can already fix itself. The service worker above
+          serves HTML network-first and offers a Reload when it sees a new
+          app.html, so this check deliberately STAYS OUT OF ITS WAY and speaks
+          up only when no service worker is in control — a browser that blocks
+          them, or app.html opened over plain http with none registered.
+        - The DOWNLOADED file:// copy cannot fix itself, ever. It gets no
+          service worker, no network-first HTML, no update path of any kind.
+          The only honest thing to tell that rebbi is "download a fresh copy",
+          with a link, because nothing the app does can update the file for him.
+
+        WHAT THIS DOES NOT DO, so nobody expects it to: it cannot reach a copy
+        downloaded BEFORE it shipped. Such a file contains no checking code, so
+        it will never ask. This makes every FUTURE stale copy self-announcing;
+        the copies already out there still have to be told by a person.
+
+        Fails silent by design. Offline, blocked, 404, malformed JSON and a
+        version string we can't parse all mean SAY NOTHING — a false "you are
+        out of date" teaches a rebbi to ignore the banner that matters. */
+  var VERSION_URL = "https://menchmark.app/version.json";
+
+  // Numeric dotted compare. Returns >0 when a is newer than b. Non-numeric or
+  // missing parts count as 0, so "0.9" and "0.9.0" compare equal.
+  function cmpVersion(a, b){
+    var pa = String(a).split("."), pb = String(b).split("."), n = Math.max(pa.length, pb.length);
+    for(var i = 0; i < n; i++){
+      var x = parseInt(pa[i], 10), y = parseInt(pb[i], 10);
+      if(isNaN(x)) x = 0;
+      if(isNaN(y)) y = 0;
+      if(x !== y) return x - y;
+    }
+    return 0;
+  }
+
+  // Only ask when the answer could actually help. A controlled PWA already has
+  // its own, better path (the toast above), and asking there would mean two
+  // notices for one fact.
+  function updateCheckApplies(){
+    if(isFileProto) return true;
+    return !(navigator.serviceWorker && navigator.serviceWorker.controller);
+  }
+
+  function showOutdatedBanner(latest, downloadUrl){
+    if(document.getElementById("mmUpdateBanner")) return;
+    // Dismissal is per session, not permanent: a rebbi who waves it away today
+    // should still be told tomorrow, because the copy is still out of date.
+    try { if(sessionStorage.getItem("mmUpdateDismissed") === latest) return; } catch(e){}
+
+    var bar = document.createElement("div");
+    bar.id = "mmUpdateBanner";
+    bar.setAttribute("role", "status");
+    // Sticky and IN THE FLOW, not fixed. A fixed bar sat on top of the app
+    // header and hid the class name behind it; in-flow means the page simply
+    // starts lower, with no padding compensation to keep in sync and nothing
+    // to undo when it is dismissed. `body` is a plain block box that scrolls
+    // with the document, so sticky pins it correctly here.
+    bar.style.cssText = "position:sticky;top:0;z-index:9998;background:#e8b321;color:#1b2440;padding:9px 14px;box-shadow:0 2px 12px rgba(20,26,46,.25);font:600 .88rem system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap";
+
+    var msg = document.createElement("span");
+    msg.textContent = isFileProto
+      ? "You're using a downloaded copy (version " + APP_VERSION + "). Version " + latest + " is out — a downloaded copy can't update itself."
+      : "Menchmark " + latest + " is available. You're running " + APP_VERSION + ".";
+    bar.appendChild(msg);
+
+    if(isFileProto){
+      var link = document.createElement("a");
+      link.href = downloadUrl || "https://menchmark.app/app.html";
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "Download the new copy";
+      link.style.cssText = "background:#1b2440;color:#fff;border-radius:8px;padding:5px 12px;font-weight:700;text-decoration:none";
+      bar.appendChild(link);
+    } else {
+      var reload = document.createElement("button");
+      reload.textContent = "Reload";
+      reload.style.cssText = "background:#1b2440;color:#fff;border:none;border-radius:8px;padding:5px 12px;font-weight:700;cursor:pointer";
+      reload.addEventListener("click", function(){ location.reload(); });
+      bar.appendChild(reload);
+    }
+
+    var x = document.createElement("button");
+    x.textContent = "✕";
+    x.setAttribute("aria-label", "Dismiss");
+    x.style.cssText = "background:transparent;border:none;color:#1b2440;font-weight:700;cursor:pointer;font-size:1rem;line-height:1";
+    x.addEventListener("click", function(){
+      try { sessionStorage.setItem("mmUpdateDismissed", latest); } catch(e){}
+      if(bar.parentNode) bar.parentNode.removeChild(bar);
+    });
+    bar.appendChild(x);
+
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+
+  function checkForUpdate(){
+    if(!updateCheckApplies() || typeof fetch !== "function") return;
+    fetch(VERSION_URL, { cache: "no-store", mode: "cors", credentials: "omit" })
+      .then(function(res){ return res && res.ok ? res.json() : null; })
+      .then(function(info){
+        if(!info || typeof info.version !== "string") return;
+        if(cmpVersion(info.version, APP_VERSION) > 0) showOutdatedBanner(info.version, info.downloadUrl);
+      })
+      .catch(function(){ /* offline or blocked — say nothing, by design */ });
+  }
+
+  // After load, and unhurried: nothing here is worth competing with startup,
+  // and a rebbi mid-scan should not have a bar appear under his hands.
+  window.addEventListener("load", function(){ setTimeout(checkForUpdate, 2500); });
 })();
 </script>
 </body>

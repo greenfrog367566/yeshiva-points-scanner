@@ -12,6 +12,18 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **The app now tells you when you are running an old copy of it.** Until now there was no way to find out. Two rebbeim could be using Menchmark side by side, months apart in version, and nothing on either screen would say so — including to whoever was trying to help them.
+
+  **Help → About now shows your version number.** That alone answers the question that used to be unanswerable: "which Menchmark am I actually running?" If you ever report a problem, that number is the single most useful thing you can send.
+
+  **And if a newer one is out, a yellow bar appears across the top.** What it offers depends on how you use Menchmark, because the two ways behave completely differently:
+
+  - **If you use it from the web or installed it as an app**, it can fix itself. The bar offers **Reload**, and you are on the new version a second later. (Most of the time you will not even see the bar — this way of using Menchmark already updates itself quietly whenever you open it.)
+  - **If you downloaded the file and open it from your own computer**, it *cannot* fix itself, and pretending otherwise would be the wrong thing to do. There is no way for a file sitting on your machine to change itself. So the bar says exactly that, and gives you a **Download the new copy** link instead.
+
+  **It stays quiet unless it is certain.** No internet, school wifi blocking it, or anything at all unexpected in the answer, and it says nothing whatsoever. A bar that cried wolf about being out of date would teach you to ignore the one that matters. You can also dismiss it with the ✕; it will leave you alone until the next time you open the app, because until you actually update, the copy is still old.
+
+  **One thing it honestly cannot do, so nobody is surprised by it later:** it cannot reach a copy that was downloaded *before* this change. That file has no idea any of this exists, and it never will. This makes every future downloaded copy able to speak up for itself — it does not reach back to the ones already out there. Those still have to be told by a person.
 - **Menchmark can now back itself up to a folder, by itself, with no internet.** This is for the rebbi whose classroom computer never goes online — and it is the first automatic backup he has ever been able to have.
 
   Until now, backing up without internet meant *remembering* to press **Download backup file**. The Google Sheet needs internet. So a rebbi working offline had one copy of his whole year sitting in one browser on one computer, and the only thing standing between him and losing it was his own memory.
