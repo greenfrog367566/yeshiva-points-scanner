@@ -12,6 +12,20 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **The Gradebook can now fix attendance, right in the grid.** Until now the Gradebook was something you could only read. If you spotted a boy marked absent on Monday who had actually been there, you had to leave the grid, go to the Attendance tab, move its date picker back to Monday, find him in the list, and change it there — then come back to check it looked right.
+
+  Now you click the cell. A small menu opens showing **Present, Late, Absent**, with his name and the day at the top so there is no doubt which square you are changing, and you pick the right one. The grid updates underneath you.
+
+  **A blank square works too**, and that is the correction this is really for — a boy nobody marked on a day the rest of the class was taken. Click his empty square for that day and mark him.
+
+  **It changes attendance in exactly one place, so everything agrees.** The Attendance tab, the Gradebook, the History list and your Google Sheet are all fed by the same single write — and if that day had already been sent to your Sheet, the correction is sent on its own straight away, so you do not have to resend the whole day. There is no second copy of attendance to get out of step.
+
+  **What it deliberately will not do:** it cannot turn a square back into "never marked". You can move a mark to the right status, but taking the roll back off a day is not something the grid will do — that needs its own careful thinking, and a button that quietly erased a record would be exactly the wrong thing here.
+
+  **Printing is unchanged.** The printed Gradebook pages are built by the same code with editing switched off, so nothing on paper gains a cursor or a highlight.
+
+  **Attendance only, for now.** Homework, Passes and the Tracker columns stay read-only in the grid — each of those stores has to be taught to accept a correction for a *past* day before its column can be made editable, and they are being done one at a time on purpose.
+
 - **Settings: the Picker and the matching games now remember which way you like them.** Both of these already had a switch. Neither remembered it, so both started every session the same way regardless of how you actually work, and the first thing you did each morning was flip it back.
 
   **How the Picker opens.** The Picker chooses a boy at random two ways: the **Wheel**, which spins a wheel of names, and the **Seating chart**, which shows the class in their seats and flashes from desk to desk before landing — the "Flash & land" every boy can follow from where he is sitting. Settings now has which of the two it opens on. If you run the Picker off the chart so the class can watch it, it opens on the chart.
