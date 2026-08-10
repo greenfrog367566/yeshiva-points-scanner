@@ -40,7 +40,9 @@ Its phase mapping was reconciled against the code on 2026-08-04 and it now carri
 
 **1. The app update check — fully designed, not started, blocked on one call.**
 
-A `version.json` served next to the app plus an `APP_VERSION` constant in it, and **two different banners, because the two copies fail differently**: the PWA gets "reload to update", the downloaded `file://` copy gets "download a fresh copy" — it can never update itself. **This is the only channel that reaches a rebbi still running the pre-#244 copy**, which is what moves it above #227. Blocked only on the CORS route — see "Waiting on Ben".
+A `version.json` served next to the app plus an `APP_VERSION` constant in it, and **two different banners, because the two copies fail differently**: the PWA can reload itself, the downloaded `file://` copy can only be told to download a fresh one. **Built — PR #252, open as a draft.** The CORS route is settled (`_headers`, scoped to that one path); the one thing that cannot be checked before merging is whether the header actually comes back off the live site, so run the `curl` in that PR once it lands.
+
+⚠️ **It cannot reach a copy downloaded before it ships.** That file contains no checking code and never will. This makes every *future* stale copy self-announcing — it does nothing for the ones already on rebbeim's machines. An earlier version of this line claimed the opposite and it was wrong; the re-download message below is still the only thing that reaches them.
 
 **2. Finish Phase 2c: the remaining Gradebook writers, then drop the four old tabs (#227)** — the biggest build item left.
 
@@ -64,7 +66,7 @@ What is left of the old "small standalone features" item once Freeze and the raf
 
 Roughly in the order of what they unblock. Nothing below is a task Claude can take.
 
-1. **Tell rebbeim holding an old offline copy to re-download** (#244). The only item on this page with real data at risk, and no code substitutes for it until the update check ships.
+1. **Tell rebbeim holding an old offline copy to re-download** (#244). The only item on this page with real data at risk, and **nothing in code can ever substitute for it** — the update check in #252 cannot reach a file that was downloaded before the check existed. This one is a message from a person or it does not happen.
 2. **The privacy note for the account record** (item 0 above). The earliest gate in the whole sign-in plan — it blocks any self-serve signup in *either* tier, including Ben's own school.
 3. **The rule-3 / Firebase SDK call.** Recommendation: vendor the SDK as a same-origin file, tier 1 only. **Rebuild step 1 stays blocked until this is settled** — see `Firebase_Rebuild_Scope.md` open question 1 and the conflict note in `CLAUDE.md`.
 4. **The CORS route for the update check** — a `_headers` file (recommended) or a `<script src>`. Blocks item 1 of "Next, in order" and nothing else.
