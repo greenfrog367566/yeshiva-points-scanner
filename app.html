@@ -180,6 +180,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #backupNudge.show{display:flex}
   #backupNudge b{color:#4d3706}
   #backupNudge .bn-spacer{flex:1 1 auto}
+  /* Shown inside a downloaded offline copy when its built-in snapshot was held
+     back because this browser already had saved work. Amber, not red, like
+     #backupNudge: nothing is broken and nothing was lost — the rebbi is being
+     told which of two versions he is looking at. Same slot as the others. */
+  #offlineSeedWarn{display:none;background:#fdf6e3;color:#6b4d09;border:1px solid #ecd9a4;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem;align-items:center;gap:12px;flex-wrap:wrap}
+  #offlineSeedWarn.show{display:flex}
+  #offlineSeedWarn b{color:#4d3706}
+  #offlineSeedWarn .os-spacer{flex:1 1 auto}
 
   /* ======= SCAN VIEW ======= */
   .scan-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start}
@@ -994,7 +1002,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .ft-display{display:block;width:100%;border:none;background:none;padding:0;cursor:pointer;font-family:var(--serif);font-size:2.5rem;font-weight:700;text-align:center;letter-spacing:1px;margin-bottom:10px;font-variant-numeric:tabular-nums;color:inherit}
   .ft-display:hover{color:var(--brass)}
   .ft-display.done{color:var(--bad);animation:ftPulse 1s ease-in-out infinite}
-  .ft-display.running{color:var(--brass)}
+  .ft-display.running{color:var(--ft-accent,var(--brass))}
   @keyframes ftPulse{0%,100%{opacity:1}50%{opacity:.35}}
   .ft-edit{font-family:var(--serif);font-size:2rem;font-weight:700;text-align:center;letter-spacing:1px;margin-bottom:10px;font-variant-numeric:tabular-nums}
   .ft-presets{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:2px}
@@ -1002,12 +1010,30 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .ft-chip:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
   .ft-row{display:flex;gap:6px;margin-top:8px}
   .ft-row .btn{flex:1;padding:7px 4px}
+  /* Face picker: how the timer is DRAWN, independent of what it is counting.
+     Digits is the default, so an existing timer looks exactly as it did. */
+  .ft-faces{display:flex;gap:4px;margin-bottom:8px}
+  .ft-face{flex:1;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:4px 2px;font-size:.72rem;font-weight:700;color:var(--muted);cursor:pointer}
+  .ft-face:hover{border-color:var(--ink);color:var(--ink)}
+  .ft-face.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .ft-swatch{flex:0 0 18px;width:18px;height:auto;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
+  .ft-swatch.on{border-color:var(--ink)}
+  .ft-svg{display:block;width:100%;height:auto;margin-bottom:6px}
+  .ft-now{text-align:center;font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:3px;font-variant-numeric:tabular-nums}
+  .float-timer.in-pip .ft-now{font-size:min(4.6vw,3.4vh)}
+  /* With a face drawn, the number shrinks to a caption under it. It stays
+     visible on purpose: it is still the tap target for typing a time, AND on
+     the clock it is the only thing separating a capped block from exactly an
+     hour, since both shade the whole face. */
+  .float-timer.face-disc .ft-display,.float-timer.face-clock .ft-display{font-size:1.15rem;margin-bottom:6px}
   /* Popped out, the OS owns the window size, so the panel fills it and the
      number scales to whatever the rebbi drags the window to — the point of
      the pop-out is being readable from the back of the room. */
   .float-timer.in-pip{border:none;border-radius:0;box-shadow:none}
   .float-timer.in-pip .ft-display{font-size:min(24vw,17vh);line-height:1.05;margin-bottom:4px}
   .float-timer.in-pip .ft-edit{font-size:min(14vw,10vh)}
+  .float-timer.in-pip .ft-svg{max-height:58vh}
+  .float-timer.in-pip.face-disc .ft-display,.float-timer.in-pip.face-clock .ft-display{font-size:min(8vw,6vh)}
   .float-timer.min .ft-body{display:none}
   .float-timer.min{width:auto}
   .float-timer.min .ft-grip{cursor:grab}
@@ -1190,6 +1216,27 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* A recorded value whose code is blank ("unchecked"). Distinct from gb-blank,
      which is the "·" shown when nothing was ever recorded. */
   .gb-tbl td.gb-empty{background:var(--card)}
+  /* An editable cell (currently attendance only — see gbCellEditor). Marked on
+     the SCREEN grid only; the printed pages are built by the same function with
+     editing off, so paper never shows a cursor or a focus ring. Deliberately
+     quiet: a faint dotted underline that firms up on hover, so a dense grid
+     does not turn into a wall of buttons. */
+  .gb-tbl td.gb-edit{cursor:pointer;position:relative}
+  .gb-tbl td.gb-edit::after{content:"";position:absolute;left:4px;right:4px;bottom:3px;border-bottom:1px dotted var(--muted);opacity:.5}
+  .gb-tbl td.gb-edit:hover{background:var(--gb-hover,#eef2ff)}
+  .gb-tbl td.gb-edit:hover::after{opacity:1;border-bottom-style:solid}
+  .gb-tbl td.gb-edit:focus{outline:2px solid var(--ink);outline-offset:-2px}
+  /* The little status picker. Fixed-positioned against the viewport because the
+     grid scrolls in both directions inside its own box — an absolutely
+     positioned menu would scroll away from the cell it belongs to. */
+  .gb-pick{position:fixed;z-index:60;background:var(--card);border:1px solid var(--line);
+    border-radius:10px;box-shadow:0 8px 24px rgba(16,24,40,.16);padding:6px;min-width:150px}
+  .gb-pick button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+    background:none;border:0;border-radius:7px;padding:7px 9px;font-size:.9rem;cursor:pointer;color:var(--ink)}
+  .gb-pick button:hover{background:var(--gb-hover,#eef2ff)}
+  .gb-pick button[aria-checked="true"]{font-weight:700}
+  .gb-pick .gb-pick-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:var(--muted)}
+  .gb-pick .gb-pick-head{font-size:.74rem;color:var(--muted);padding:3px 9px 6px;line-height:1.3}
   .gb-note{margin-top:12px;font-size:.84rem;color:var(--muted);line-height:1.6}
   .gb-warn{margin-top:10px;font-size:.82rem;color:var(--bad);font-weight:600}
   /* Built on every render but only ever shown on paper. */
@@ -1715,6 +1762,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <button class="ft-btn" id="ftClose" title="Close">✕</button>
   </div>
   <div class="ft-body" id="ftBody">
+    <div class="ft-faces" id="ftFaces">
+      <button class="ft-face" data-face="digits" title="Just the number">Digits</button>
+      <button class="ft-face" data-face="disc" title="A coloured disc that shrinks as the time runs down">Disc</button>
+      <button class="ft-face" data-face="clock" title="A real clock face, with the timer's block shaded across it">Clock</button>
+      <button class="ft-swatch" data-color="green" title="Green until the last 30 seconds, then red" style="background:#2f8f4e"></button>
+      <button class="ft-swatch" data-color="blue" title="Blue until the last 30 seconds, then red" style="background:#2f5fa8"></button>
+    </div>
+    <svg class="ft-svg" id="ftFace" viewBox="0 0 200 200" style="display:none" aria-hidden="true"></svg>
+    <div class="ft-now" id="ftNow" style="display:none"></div>
     <button class="ft-display" id="ftDisplay" title="Tap to type a time — 12, 12:30, 1:05:00, 90s. It also becomes the length the timer opens at.">05:00</button>
     <input id="ftEdit" class="field ft-edit" style="display:none" autocomplete="off" placeholder="12:30" aria-label="Type a time">
     <div class="ft-presets" id="ftPresets"></div>
@@ -1863,6 +1919,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <span class="bn-spacer"></span>
     <button class="btn btn-sm btn-primary" id="backupNudgeGo">Back up now</button>
     <button class="btn btn-sm" id="backupNudgeLater">Not now</button>
+  </div>
+
+  <!-- Only ever appears inside a downloaded offline copy, and only when that
+       copy's built-in snapshot was deliberately NOT loaded because saved work
+       was already here. Hidden and empty otherwise. -->
+  <div id="offlineSeedWarn">
+    <span id="offlineSeedWarnText"></span>
+    <span class="os-spacer"></span>
+    <button class="btn btn-sm btn-primary" id="offlineSeedKeep">Keep my work</button>
+    <button class="btn btn-sm" id="offlineSeedGet">Download this file's snapshot</button>
   </div>
 
   <!-- ============ SCAN ============ -->
@@ -3986,6 +4052,30 @@ function setupRoster() {
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Header Shortcuts</h3>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHeaderShortcuts"> Show the Points / Timer / Picker floating buttons</label>
       <p class="view-note" style="margin:8px 0 0">On by default. These three float on top of the screen wherever you scroll, and can be dragged anywhere — drop one wherever it's out of your way. Turn this off to hide all three if you don't use the floating points scanner, timer, or picker wheel — the class dropdown and sound button stay either way, and you can always turn this back on here.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">How the Picker Opens</h3>
+      <div class="toolbar">
+        <span style="font-weight:600">Open the Picker on:</span>
+        <span class="seg" id="setPickerMode">
+          <button data-mode="wheel" class="active">🎡 Wheel</button>
+          <button data-mode="seat">🪑 Seating chart</button>
+        </span>
+      </div>
+      <p class="view-note" style="margin:8px 0 0">Wheel by default. The Picker chooses a boy at random two ways, and this is the one it starts on every time you open it. <strong>Wheel</strong> spins a colored wheel of names and lands on one. <strong>Seating chart</strong> shows the class in their seats and flashes from desk to desk before landing on one — the same "Flash &amp; land" every boy can watch from where he's sitting. Both skip boys who already had a turn, and both use the same Instant setting, so this only changes which one is in front of you when the panel opens. You can still switch between them inside the Picker whenever you want — that switch lasts for the rest of the session and doesn't change what you set here.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Matching Games</h3>
+      <div class="toolbar">
+        <span style="font-weight:600">Match by:</span>
+        <span class="seg" id="setMatchMode">
+          <button data-mode="drag" class="active">Drag</button>
+          <button data-mode="tap">Tap</button>
+        </span>
+      </div>
+      <p class="view-note" style="margin:8px 0 0">Drag by default. This sets how both matching games in Review start out — the Pesukim/Mishnayos matching game and the Shorashim match game. <strong>Drag</strong> means picking a piece up and dropping it on the line it belongs to. <strong>Tap</strong> means tapping the piece and then tapping its line — usually easier on a touchscreen or a Smart Board, and much easier for a boy who finds dragging fiddly. Both play identically otherwise and the timer and best scores are the same either way. As with the Picker, the Drag / Tap buttons on the games themselves still switch it for the rest of the session without changing what you set here.</p>
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
@@ -6733,10 +6823,163 @@ function setupRoster() {
     function pad(n){ return (n<10?"0":"")+n; }
     function fmtTime(sec){ sec=Math.max(0,Math.round(sec)); var h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60; return h>0?(h+":"+pad(m)+":"+pad(s)):(pad(m)+":"+pad(s)); }
     function curVal(){ return mode==="down"?remaining:elapsed; }
+    /* ---- faces: how the timer is DRAWN ----
+       Two things were being conflated — what it counts (a duration, or the
+       time of day) and how it is drawn (a number, or a face). Digits and Disc
+       both show a duration; Clock shows the time of day with the timer's block
+       shaded across it, which is a different statement: not "5:00 left" but
+       "you have until 1:15". Clock with no timer running is simply a wall
+       clock, so those are one face, not two.
+
+       Own namespace constant rather than the shared SVGNS: this IIFE is
+       evaluated before that var is assigned, and a namespace of undefined
+       yields elements that are not SVG at all. polar() is a function
+       declaration so it IS hoisted, and is reused rather than re-derived. */
+    var FT_SVGNS="http://www.w3.org/2000/svg";
+    function ftEl(tag,attrs){ var e=document.createElementNS(FT_SVGNS,tag); for(var k in attrs) e.setAttribute(k,attrs[k]); return e; }
+    // Wedge sweeping `ang` degrees clockwise from `startDeg` (0 = 12 o'clock).
+    // A full circle CANNOT be an arc — start and end points coincide and it
+    // draws nothing — so it degenerates to a plain circle.
+    function ftWedge(cx,cy,r,startDeg,ang,fill){
+      if(ang<=0) return null;
+      if(ang>=359.9) return ftEl("circle",{cx:cx,cy:cy,r:r,fill:fill});
+      var p0=polar(cx,cy,r,startDeg), p1=polar(cx,cy,r,startDeg+ang), laf=ang>180?1:0;
+      return ftEl("path",{d:"M "+cx+" "+cy+" L "+p0[0].toFixed(2)+" "+p0[1].toFixed(2)
+        +" A "+r+" "+r+" 0 "+laf+" 1 "+p1[0].toFixed(2)+" "+p1[1].toFixed(2)+" Z", fill:fill});
+    }
+    function curFace(){
+      var f=(data&&data.timerFace)||"digits";
+      return (f==="disc"||f==="clock")?f:"digits";
+    }
+    /* ---- colour ----
+       One accent drives the disc, the clock's block and the running digits, so
+       the warning cannot show up on one and not another. It turns red for the
+       last 30 seconds — the point being that a boy who cannot yet read the
+       number still gets told to wrap up. */
+    var FT_WARN_SECS=30;
+    var FT_COLORS={green:"#2f8f4e", blue:"#2f5fa8", red:"#c9433f"};
+    function baseColorName(){ return (data&&data.timerColor==="blue")?"blue":"green"; }
+    function inWarning(){ return mode==="down" && remaining>0 && remaining<=FT_WARN_SECS; }
+    function activeColor(){ return inWarning() ? FT_COLORS.red : FT_COLORS[baseColorName()]; }
+    function drawDisc(host){
+      var cx=100, cy=100, r=88;
+      host.appendChild(ftEl("circle",{cx:cx,cy:cy,r:r,fill:"#eef0f6",stroke:"#d8dbe4","stroke-width":3}));
+      // Remaining as a share of the length that was set — the Time Timer idea.
+      var frac = (mode==="down" && baseSet>0) ? Math.max(0,Math.min(1,remaining/baseSet)) : 0;
+      // The colour always ENDS at 12 o'clock and the moving edge is its start,
+      // so as time runs down that edge sweeps 12 → 3 → 6 → 9 — the way a hand
+      // travels. Anchoring the start at 12 instead (the obvious way to write
+      // it) leaves the moving edge retreating 9 → 6 → 3 → 12, which reads as
+      // the disc running backwards.
+      var w=ftWedge(cx,cy,r,(1-frac)*360,frac*360,activeColor());
+      if(w) host.appendChild(w);
+    }
+    function drawClock(host){
+      var cx=100, cy=100, r=88, now=new Date();
+      host.appendChild(ftEl("circle",{cx:cx,cy:cy,r:r,fill:"var(--card,#fff)",stroke:"var(--ink,#141a2e)","stroke-width":3}));
+      var mins=now.getMinutes()+now.getSeconds()/60;
+      // Shade from where the minute hand is now to where it will be at zero.
+      // Capped at one hour: past that the block laps the face and stops
+      // meaning anything. The digits under the face say what the real figure
+      // is, which is the only thing telling a capped block from exactly 60.
+      if(mode==="down" && remaining>0){
+        // Same accent as everywhere else, at 30% so the hands and ticks stay
+        // readable through it. "4D" is that alpha as a hex pair.
+        var w=ftWedge(cx,cy,r-4, mins*6, (Math.min(remaining,3600)/3600)*360, activeColor()+"4D");
+        if(w) host.appendChild(w);
+      }
+      for(var i=0;i<60;i++){
+        var big=(i%5===0), p0=polar(cx,cy,r-(big?14:7),i*6), p1=polar(cx,cy,r-2,i*6);
+        host.appendChild(ftEl("line",{x1:p0[0].toFixed(2),y1:p0[1].toFixed(2),x2:p1[0].toFixed(2),y2:p1[1].toFixed(2),
+          stroke:big?"var(--ink,#141a2e)":"#b9bfd0","stroke-width":big?3:1.5,"stroke-linecap":"round"}));
+      }
+      // Numerals, inside the ticks. Drawn after the shaded block so they stay
+      // readable through it, and before the hands so the hands pass over them.
+      // A face with no numbers is a harder read for exactly the boys this is
+      // meant to help.
+      for(var n=1;n<=12;n++){
+        var np=polar(cx,cy,r*0.70,n*30);
+        var nt=ftEl("text",{x:np[0].toFixed(2),y:np[1].toFixed(2),"text-anchor":"middle",
+          "dominant-baseline":"central","font-size":"18","font-weight":"700",fill:"var(--ink,#141a2e)"});
+        nt.textContent=n;
+        host.appendChild(nt);
+      }
+      var hp=polar(cx,cy,r*0.52,(now.getHours()%12)*30 + now.getMinutes()*0.5);
+      host.appendChild(ftEl("line",{x1:cx,y1:cy,x2:hp[0].toFixed(2),y2:hp[1].toFixed(2),stroke:"var(--ink,#141a2e)","stroke-width":7,"stroke-linecap":"round"}));
+      var mp=polar(cx,cy,r*0.78,mins*6);
+      host.appendChild(ftEl("line",{x1:cx,y1:cy,x2:mp[0].toFixed(2),y2:mp[1].toFixed(2),stroke:"var(--ink,#141a2e)","stroke-width":4.5,"stroke-linecap":"round"}));
+      host.appendChild(ftEl("circle",{cx:cx,cy:cy,r:5,fill:"var(--bad,#c9433f)"}));
+    }
+    function renderFace(){
+      var host=$("ftFace"); if(!host) return;
+      var face=curFace();
+      var picker=$("ftFaces");
+      // The picker always shows what is SAVED, so the rebbi's choice is never
+      // silently rewritten — only what gets drawn changes below.
+      if(picker) [].forEach.call(picker.children, function(b){
+        if(b.dataset.face) b.classList.toggle("on", b.dataset.face===face);
+        if(b.dataset.color) b.classList.toggle("on", b.dataset.color===baseColorName());
+      });
+      // Everything that carries the accent reads this one property, digits
+      // included — so the 30-second warning can never appear on the face and
+      // not on the number.
+      ft.style.setProperty("--ft-accent", activeColor());
+      // Counting up there is no total to shrink against, so a disc would sit
+      // at empty forever and read as broken. It falls back to the number for
+      // as long as that is true, exactly as the +/- row and presets do, and
+      // comes back untouched on the way to count-down. A clock is still a
+      // clock either way, so it stays.
+      if(face==="disc" && mode!=="down") face="digits";
+      ft.classList.toggle("face-disc", face==="disc");
+      ft.classList.toggle("face-clock", face==="clock");
+      // The time in words, only on the clock — that is the face that claims to
+      // be telling you the time, so it should say it plainly too. When a timer
+      // is running it also names the moment it ends, which is the whole point
+      // of shading the block rather than counting down: not "3:55 left" but
+      // "you have until 1:36".
+      var nowEl=$("ftNow");
+      if(nowEl){
+        if(face!=="clock") nowEl.style.display="none";
+        else {
+          nowEl.style.display="";
+          var t=Date.now();
+          // "until X" only while actually RUNNING. Paused, `remaining` is
+          // frozen while the clock is not, so now+remaining creeps forward a
+          // second at a time — naming an end time that keeps receding and was
+          // never real. Stopped, it is just a wall clock.
+          nowEl.textContent = (running && mode==="down" && remaining>0)
+            ? (fmtClockTime(t)+"  →  until "+fmtClockTime(t+remaining*1000))
+            : fmtClockTime(t);
+        }
+      }
+      if(face==="digits"){ host.style.display="none"; host.innerHTML=""; return; }
+      host.style.display="";
+      host.innerHTML="";
+      if(face==="disc") drawDisc(host); else drawClock(host);
+    }
+    /* The clock has to keep moving when NO timer is running — it is a wall
+       clock then, and tickIv only exists while counting. Self-cancelling in
+       the same shape as the other timed views in this file, so it can never
+       outlive the thing it is drawing. */
+    var clockIv=null;
+    function panelShowing(){
+      if(pipWin && pipPanelId==="floatTimer") return true;
+      return ft.style.display==="block";
+    }
+    function syncClockTick(){
+      var want = curFace()==="clock" && panelShowing();
+      if(want && !clockIv){
+        clockIv=setInterval(function(){
+          if(!(curFace()==="clock" && panelShowing())){ clearInterval(clockIv); clockIv=null; return; }
+          if(!running) renderFace();   // while running, tick() already redraws
+        },1000);
+      } else if(!want && clockIv){ clearInterval(clockIv); clockIv=null; }
+    }
     function render(){
       var disp=$("ftDisplay"); disp.textContent=fmtTime(curVal());
       disp.classList.toggle("running", running && !(mode==="down"&&remaining<=0));
       disp.classList.toggle("done", mode==="down"&&remaining<=0 && !running);
+      renderFace(); syncClockTick();
       $("ftStart").textContent=running?"Pause":"Start";
       $("ftMode").innerHTML=mode==="down"?"Count&nbsp;down":"Count&nbsp;up";
       $("ftSetRow").style.display=mode==="down"?"flex":"none";
@@ -6854,6 +7097,13 @@ function setupRoster() {
       render();
     }
     $("ftDisplay").addEventListener("click", function(){ editOpen("length"); });
+    $("ftFaces").addEventListener("click", function(e){
+      var b=e.target.closest("button"); if(!b) return;
+      if(b.dataset.face && data){ data.timerFace=b.dataset.face; save(); }
+      else if(b.dataset.color && data){ data.timerColor=b.dataset.color; save(); }
+      else return;
+      render();
+    });
     $("ftEdit").addEventListener("keydown", function(e){
       if(e.key==="Enter"){ e.preventDefault(); editClose(true); }
       else if(e.key==="Escape"){ e.preventDefault(); editClose(false); }
@@ -7264,7 +7514,12 @@ function setupRoster() {
   function pickerToggle(show){
     pickerOpen = (show==null) ? !pickerOpen : !!show;
     $("floatPicker").style.display = pickerOpen?"block":"none";
-    if(pickerOpen){ $("floatPicker").classList.remove("min"); renderPicker(); }
+    // setPickMode rather than renderPicker: it paints the mode bar, the two
+    // stages and the pop-out width to match pickViewMode, then renders. The
+    // mode bar's .active class is hard-coded to Wheel in the markup, so
+    // opening on the saved default of Seating chart has to repaint it — and
+    // re-opening mid-session repaints whichever mode the rebbi last chose.
+    if(pickerOpen){ $("floatPicker").classList.remove("min"); setPickMode(pickViewMode); }
   }
   makeFabDraggable($("pickerBtn"), "picker", function(){ pickerToggle(); });
   $("pkClose").addEventListener("click", function(){ pickerToggle(false); });
@@ -7354,6 +7609,47 @@ function setupRoster() {
   }
 
   /* ---------- SETTINGS ---------- */
+  /* Saved DEFAULTS for the Picker's mode bar and the two matching games'
+     Drag/Tap buttons. Both tools already had those switches; all that was
+     missing was a way to say which side they should start on, so a rebbi who
+     always works off the seating chart, or whose class plays by tapping on the
+     Smart Board, stops re-flipping the same switch every morning.
+
+     Changing it here takes effect NOW as well as next time: the session vars
+     are set alongside the saved value, so the very next time the Picker opens
+     or a game renders it already reads the new way. The switches on the tools
+     themselves stay session-only and never write back here — that is what
+     keeps this a default rather than a memory of the last thing touched. */
+  function syncPickerModeSetting(){
+    document.querySelectorAll("#setPickerMode button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.mode===data.pickerMode);
+    });
+  }
+  function syncMatchModeSetting(){
+    document.querySelectorAll("#setMatchMode button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.mode===data.matchMode);
+    });
+  }
+  document.querySelectorAll("#setPickerMode button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      data.pickerMode = (btn.dataset.mode==="seat") ? "seat" : "wheel";
+      pickViewMode = data.pickerMode;
+      save(); syncPickerModeSetting();
+      // Repaint only if the panel is open, so the change is visible immediately
+      // rather than waiting for the next time it is opened.
+      if(pickerOpen) setPickMode(pickViewMode);
+    });
+  });
+  document.querySelectorAll("#setMatchMode button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      data.matchMode = (btn.dataset.mode==="tap") ? "tap" : "drag";
+      pmMode = smMode = data.matchMode;
+      save(); syncMatchModeSetting();
+      // No repaint here: a game that is mid-play is re-rendered by its own
+      // render function when it is next opened, and yanking the interaction
+      // out from under a boy who is holding a piece would lose his progress.
+    });
+  });
   function renderSettings(){
     $("setSound").checked = !data.muted;
     $("setVoiceNotes").checked = data.voiceNotes!==false;
@@ -7365,6 +7661,8 @@ function setupRoster() {
     $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setFullWidth").checked = !!data.fullWidth;
     $("setSixSeven").checked = !!data.sixSeven;
+    syncPickerModeSetting();
+    syncMatchModeSetting();
     // Phase 1: Teach flip / quiz delay / game auto inits moved to renderTeach,
     // renderQuiz, renderGame — those controls now live on their feature panels.
     renderSerialUI();
@@ -15683,8 +15981,10 @@ nameLine
   }
   function renderPesukGame(){
     syncTeachPasukSel();
+    syncMatchSeg("pmModeSeg","pmDrag","pmTap",pmMode);
     loadPmPasuk(teachN);
   }
+  // Session state, seeded from data.matchMode at init — see the note there.
   var pmMode="drag";
   function loadPmPasuk(n){
     clearInterval(PM.timer);
@@ -15757,6 +16057,13 @@ nameLine
   }, true);
   document.addEventListener("keydown", function(e){ if(e.key==="Escape" && DND.drag) finishDnd(null); });
   function setSegActive(segId,btn){ document.querySelectorAll("#"+segId+" button").forEach(function(b){ b.classList.toggle("active", b===btn); }); }
+  // Paints a game's Drag/Tap segment from its mode var. Both games' markup has
+  // .active hard-coded on Drag, so a rebbi whose saved default is Tap needs it
+  // repainted when the game renders. Reads the var, never data — the var is
+  // what the game actually plays by, and it holds any mid-session switch.
+  function syncMatchSeg(segId,dragId,tapId,mode){
+    setSegActive(segId, $(mode==="tap"?tapId:dragId));
+  }
   function mountMatch(rowsEl, poolEl, pairs, opts){
     resetDndStuck();
     var state={placed:0,total:pairs.length,started:false,sel:null,selRow:null};
@@ -16095,8 +16402,9 @@ nameLine
   $("cardShuffle").addEventListener("click", renderCards);
 
   // --- Match (timed, drag or tap) ---
+  // smMode is session state, seeded from data.matchMode at init — see the note there.
   var SM={pairs:6,timer:null,t:0,started:false}, smMode="drag";
-  function renderMatch(){ loadMatch(); }
+  function renderMatch(){ syncMatchSeg("smModeSeg","smDrag","smTap",smMode); loadMatch(); }
   function loadMatch(){
     clearInterval(SM.timer);
     var act=activeShorashim(), want=Math.min(parseInt($("smPairs").value,10)||6, act.length);
@@ -16537,7 +16845,10 @@ nameLine
   /* ---------- PICKER: seating-chart mode (first caller of SeatPicker) ----------
      Shares pickedSet as its turn-state, so a student dimmed in the seating
      chart is the same "already had a turn" state the wheel uses. */
-  var pickViewMode="wheel";           // in-memory only — NOT persisted, so no new data field / migration
+  // Session state. The literal here is only a placeholder — init re-seeds it
+  // from data.pickerMode (the saved default) after load(), the same way
+  // standRange is. Switching mode in the panel changes this var only.
+  var pickViewMode="wheel";
   var seatPickerCtl=null;
   // Picker-only eligibility overlay {id:"out"|"passed"} — IN-MEMORY, never
   // written to attendance or localStorage (same in-memory pattern as pickedSet,
@@ -17153,6 +17464,98 @@ nameLine
     return {text:String(keys.length), label:keys.length+" in total"};
   }
   // itemId -> studentId -> dateKey -> [entries], clipped to the visible range.
+  /* ---------- 2c: the Gradebook's WRITE side (#227) ----------------------
+   *
+   * WHY ONLY ATTENDANCE, TODAY. A Gradebook cell is one boy on one DAY, so
+   * editing one means calling that store's setter FOR THAT DAY — and only
+   * attendance can be told which day. setAttendance(sid, status, dateKey)
+   * takes a dateKey; setHw() writes to the hwDate the Homework tab happens to
+   * be showing, setPass() is today-only and keeps no per-use history to
+   * correct, and trackerLogAdd() stamps Date.now(). So "the Gradebook can
+   * write" is four features, not one, and this is the first — see #227.
+   *
+   * ROUTED THROUGH THE LEGACY SETTER, NEVER STRAIGHT AT data.trackedData.
+   * That is the whole mirror rule: the legacy store owns the value and the
+   * mirror transcribes it. Writing the mirror here would make the grid and the
+   * Attendance tab disagree — the exact gap that kept the Gradebook hidden
+   * (#185) until it was closed. setAttendance() is already "the one place
+   * attendance reaches the Gradebook", so one call buys the legacy write, the
+   * mirror row, the History row, the Sheet correction re-sync, and save().
+   *
+   * WHAT IS DELIBERATELY NOT OFFERED: clearing a cell back to "no record".
+   * setAttendance() writes a status; there is no unset, and inventing one
+   * would mean deleting from data.attendance AND unmirroring, which is the
+   * deletion half of #227 and wants its own decision. A rebbi can always move
+   * the mark to the right status; he cannot un-take the roll from here.
+   */
+  var GB_EDIT_ITEM="ti-attendance";
+  function gbCanEdit(item){ return !!item && item.id===GB_EDIT_ITEM; }
+  // Only ever ONE picker on screen, and it is torn down before another opens.
+  var gbPickEl=null;
+  function gbClosePicker(){
+    if(gbPickEl && gbPickEl.parentNode) gbPickEl.parentNode.removeChild(gbPickEl);
+    gbPickEl=null;
+    document.removeEventListener("mousedown", gbPickAway, true);
+    document.removeEventListener("keydown", gbPickKey, true);
+  }
+  function gbPickAway(e){ if(gbPickEl && !gbPickEl.contains(e.target)) gbClosePicker(); }
+  function gbPickKey(e){ if(e.key==="Escape"){ e.preventDefault(); gbClosePicker(); } }
+  /* Opens the status picker for one boy on one day and writes the choice.
+   * `td` is only used to position the menu and to take focus back afterwards. */
+  function gbOpenPicker(td, sid, dateKey){
+    gbClosePicker();
+    var s=studentById(sid);
+    if(!s) return;
+    var cur=attStatusOn(dateKey, sid);
+    var marked=attMarkedRec(dateKey, sid);
+    var box=el("div","gb-pick");
+    box.setAttribute("role","menu");
+    var head=el("div","gb-pick-head",(s.name||"")+" · "+gbDateLabel(dateKey)+" "+gbDowLabel(dateKey));
+    box.appendChild(head);
+    attCycleOrder().forEach(function(st){
+      var b=document.createElement("button");
+      b.type="button";
+      b.setAttribute("role","menuitemradio");
+      // Only a REAL record counts as the current value. An unmarked boy reads
+      // as "present" under absence-first, and showing that as already-chosen
+      // would tell the rebbi a roll had been taken when none had.
+      b.setAttribute("aria-checked", (marked && cur===st) ? "true" : "false");
+      var dot=el("span","gb-pick-dot");
+      var tone=gbToneClass(st);
+      if(tone) dot.classList.add(tone);
+      b.appendChild(dot);
+      b.appendChild(document.createTextNode(ATT_LABEL[st]||st));
+      b.addEventListener("click", function(){
+        gbClosePicker();
+        // Returns false when nothing changed, in which case there is nothing to
+        // re-render and nothing to say.
+        if(setAttendance(sid, st, dateKey)){
+          flash(st!=="absent", s.name, ATT_LABEL[st]||st, gbDateLabel(dateKey)+" — corrected from the Gradebook");
+          if($("view-attendance") && $("view-attendance").classList.contains("active")){
+            if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
+          }
+          refreshLiveViews();
+          renderGbTable();
+        }
+      });
+      box.appendChild(b);
+    });
+    document.body.appendChild(box);
+    // Positioned after insertion so the real height is known, and clamped so a
+    // cell near the bottom or right edge does not open a menu off-screen.
+    var r=td.getBoundingClientRect(), bw=box.offsetWidth, bh=box.offsetHeight;
+    var left=Math.min(r.left, window.innerWidth-bw-8);
+    var top=(r.bottom+bh+8>window.innerHeight) ? Math.max(8, r.top-bh-4) : r.bottom+4;
+    box.style.left=Math.max(8,left)+"px";
+    box.style.top=top+"px";
+    gbPickEl=box;
+    var first=box.querySelector("button");
+    if(first) first.focus();
+    // Capture phase, so a click anywhere else closes this before it does
+    // anything else — including a click on another editable cell.
+    document.addEventListener("mousedown", gbPickAway, true);
+    document.addEventListener("keydown", gbPickKey, true);
+  }
   function gbCollect(items, studs, r){
     var out={};
     items.forEach(function(it){
@@ -17212,7 +17615,11 @@ nameLine
    * critically the code maps — built across ALL selected items, so a code means
    * the same thing on the screen grid and on every printed page.
    */
-  function gbBuildTable(items, studs, ctx){
+  /* `editable` is a PARAMETER rather than a field on ctx because ctx is shared
+   * between the screen grid and every printed page — setting it there would
+   * have to be unset again before the print loop, and forgetting once would put
+   * focus rings and pointer cursors on paper. */
+  function gbBuildTable(items, studs, ctx, editable){
     var collected=ctx.collected, codeMaps=ctx.codeMaps, datesByItem=ctx.datesByItem;
     var initials=ctx.initials||{};
     var tbl=el("table","gb-tbl");
@@ -17321,6 +17728,22 @@ nameLine
           // has to be carried explicitly.
           td.setAttribute("aria-label", spoken);
           if(has) td.title=spoken;
+          // The write side (#227). Screen only, attendance only — see
+          // gbOpenPicker for why those are the limits today. A cell with NO
+          // record is editable too: "he was missed on Monday" is the correction
+          // a rebbi most often comes to the Gradebook to make.
+          if(editable && gbCanEdit(it)){
+            td.classList.add("gb-edit");
+            td.tabIndex=0;
+            td.setAttribute("role","button");
+            td.setAttribute("aria-label", spoken+" — press to change");
+            (function(sid,key){
+              td.addEventListener("click", function(){ gbOpenPicker(this, sid, key); });
+              td.addEventListener("keydown", function(e){
+                if(e.key==="Enter"||e.key===" "){ e.preventDefault(); gbOpenPicker(this, sid, key); }
+              });
+            })(s.id,k);
+          }
           tr.appendChild(td);
         });
         if(ds.length>1){
@@ -17368,6 +17791,10 @@ nameLine
     });
   }
   function renderGbTable(){
+    // Any open picker belongs to a cell that is about to be thrown away, and it
+    // lives on <body> rather than inside the table, so it would otherwise
+    // survive the re-render pointing at nothing.
+    gbClosePicker();
     var tbl=$("gbTable"), legend=$("gbLegend"), note=$("gbNote"), warn=$("gbWarn");
     var pages=$("gbPrintPages");
     tbl.innerHTML=""; legend.innerHTML=""; pages.innerHTML="";
@@ -17402,7 +17829,9 @@ nameLine
              initials:gbBuildInitials(studs)};
 
     // Screen: the one combined grid. It scrolls, so width is not a problem here.
-    var built=gbBuildTable(items, studs, ctx);
+    // `true` is the write side — the printed pages below deliberately pass
+    // nothing, so paper is never editable.
+    var built=gbBuildTable(items, studs, ctx, true);
     while(built.firstChild) tbl.appendChild(built.firstChild);
     gbBuildLegend(items, codeMaps, legend);
 
@@ -20297,6 +20726,11 @@ nameLine
   // existing "QR codes need an internet connection this one time" note
   // elsewhere in the app.
   var QR_CDN_URL="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+  // Records WHICH downloaded copy seeded this browser. Deliberately a separate
+  // key rather than a field inside `data`: it describes the file, not the class,
+  // it must survive a backup restore, and nesting it into `data` would break
+  // 2a's byte-identity guarantee. Never read by anything but the seed guard.
+  var SEED_STAMP_KEY="qrOfflineSeedStamp_v1";
   function offlineCopyBaseHTML(){
     return fetch(location.href, {cache:"reload"}).then(function(r){
       if(!r.ok) throw new Error("HTTP "+r.status);
@@ -20321,7 +20755,35 @@ nameLine
           return html;
         });
     }).then(function(html){
-      var seed="<script>try{localStorage.setItem("+JSON.stringify(KEY)+", "+JSON.stringify(JSON.stringify(data))+");}catch(e){}<"+"/script>\n";
+      // ⚠️ THIS SEED IS GUARDED, AND THE GUARD IS THE WHOLE POINT — do not
+      // simplify it back to a bare setItem().
+      //
+      // It used to be exactly that: an unconditional
+      // `localStorage.setItem(KEY, <snapshot>)` injected after <body>. But this
+      // script runs on EVERY open of the downloaded file, not just the first —
+      // so every time a rebbi reopened his offline copy, the snapshot frozen at
+      // download time overwrote everything he had scanned since. Silently, and
+      // completely. Confirmed by reproduction, not inferred.
+      //
+      // So: seed only when there is nothing to lose. Three cases —
+      //   1. Nothing stored yet  → seed it, and stamp it. The normal first open.
+      //   2. Stored, same stamp  → this file already seeded this browser. Do
+      //      NOTHING. This is the reopen case, and the bug.
+      //   3. Stored, other stamp → a different download opening over existing
+      //      work (or a second copy on file://, where every downloaded file
+      //      shares one localStorage). Never clobber: hand the snapshot to the
+      //      app so it can offer it, and let the rebbi choose.
+      var seedStamp="seed-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
+      var seed="<script>try{"
+        +"var k="+JSON.stringify(KEY)+","
+        +"sk="+JSON.stringify(SEED_STAMP_KEY)+","
+        +"st="+JSON.stringify(seedStamp)+","
+        +"d="+JSON.stringify(JSON.stringify(data))+";"
+        +"var ex=localStorage.getItem(k);"
+        +"if(ex===null){localStorage.setItem(k,d);localStorage.setItem(sk,st);}"
+        +"else if(localStorage.getItem(sk)!==st){"
+        +"window.__offlineSeedHeld={stamp:st,json:d,made:"+JSON.stringify(new Date().toISOString())+"};}"
+        +"}catch(e){}<"+"/script>\n";
       var bodyTagRe=/<body([^>]*)>/;
       html = bodyTagRe.test(html) ? html.replace(bodyTagRe, function(m,attrs){ return "<body"+attrs+">\n"+seed; }) : seed+html;
       download("yeshiva-points-scanner-offline-"+stamp()+".html", html, "text/html");
@@ -20332,6 +20794,40 @@ nameLine
       btn.disabled=false; btn.textContent=origText;
     });
   });
+  // Case 3 from the seed guard above: this downloaded copy carried a snapshot,
+  // but saved work was already here, so the snapshot was held back rather than
+  // written over it. Nothing is broken and nothing was lost — but the rebbi is
+  // now looking at a different version than the file he just opened contains,
+  // and that must never be silent. Both ways out are non-destructive.
+  (function(){
+    var held = window.__offlineSeedHeld;
+    if(!held) return;
+    var bar=$("offlineSeedWarn");
+    if(!bar) return;
+    var madeTxt="";
+    try{
+      if(held.made){
+        var d=new Date(held.made);
+        if(!isNaN(d)) madeTxt=" (made "+d.toLocaleDateString()+")";
+      }
+    }catch(e){}
+    $("offlineSeedWarnText").innerHTML =
+      "<b>Your saved work was kept — nothing was overwritten.</b> This downloaded copy "+
+      "carries its own snapshot of a class"+madeTxt+", but this browser already had "+
+      "work saved here, so the snapshot was <b>not</b> loaded. You are looking at your "+
+      "own saved work. If you meant to start from the snapshot instead, download it "+
+      "first so you keep both, then restore it from Backup &amp; Sheets.";
+    bar.classList.add("show");
+    $("offlineSeedKeep").addEventListener("click", function(){
+      // Records the decision so this copy stops asking on every open.
+      try{ localStorage.setItem(SEED_STAMP_KEY, held.stamp); }catch(e){}
+      bar.classList.remove("show");
+    });
+    $("offlineSeedGet").addEventListener("click", function(){
+      download("menchmark-snapshot-from-offline-copy-"+stamp()+".json", held.json, "application/json");
+    });
+  })();
+
   $("exportCsv").addEventListener("click", function(){
     var rows=[["Rank","Name","Group","Points"]];
     data.students.slice().map(function(s){return{s:s,sc:score(s.id)};})
@@ -20619,6 +21115,17 @@ nameLine
     // the v2->v3 migration note. Belt-and-braces alongside that migration, so a
     // save that somehow arrives already stamped v3 without the field still gets it.
     if(typeof data.pickerSkip!=="boolean") data.pickerSkip=true;
+    // Which way each of these two tools OPENS. Purely additive strings —
+    // absent on every existing save, so they whitelist-backfill to the two
+    // values that were hard-coded before ("wheel", "drag") and nobody's app
+    // opens anywhere different than it did yesterday. No version bump: there
+    // is no old value to convert, only a new field to seed.
+    //
+    // These are the DEFAULT, not a memory of the last thing used — the mode
+    // bar inside the Picker and the Drag/Tap buttons on the two matching
+    // games still switch for the session only and never write back here.
+    if(data.pickerMode!=="seat") data.pickerMode="wheel";
+    if(data.matchMode!=="tap") data.matchMode="drag";
     if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOpts={avatarMode:"qr", showPoints:false};
     if(typeof data.seatPrintOpts.avatarMode!=="string"){
       data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
@@ -20968,6 +21475,14 @@ nameLine
     // timer was hardcoded to before this was configurable, so an existing save
     // that has never seen this field behaves exactly as it did.
     if(typeof data.timerDefaultSeconds!=="number" || data.timerDefaultSeconds<=0) data.timerDefaultSeconds=300;
+    // How the timer is drawn. Anything that isn't a face we know falls back to
+    // "digits", which is what the timer has always looked like — so an
+    // existing save, and a value from some later version, both land somewhere
+    // sensible rather than on a blank panel.
+    if(data.timerFace!=="disc" && data.timerFace!=="clock") data.timerFace="digits";
+    // The timer's base colour, which turns red for the last 30 seconds. Same
+    // whitelist shape as the face above, for the same reason.
+    if(data.timerColor!=="blue") data.timerColor="green";
     if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerExcluded={};
     if(!Array.isArray(data.spinnerSavedLists)) data.spinnerSavedLists=[];
     // Attendance / Tracker / Homework tools
@@ -21620,6 +22135,15 @@ nameLine
   // page-level var here rather than at its declaration above, which runs
   // before load() and would only ever see the "all" literal default.
   standRange = data.standRange;
+  // Same reason, same shape: the Picker's mode bar and the two matching games'
+  // Drag/Tap buttons are session state held in page-level vars, and those vars
+  // are assigned far above load(), where they can only ever see the literal
+  // they were written with. Re-seed them here from the saved DEFAULT, once per
+  // boot. Switching mode inside the Picker or on a game changes only the var,
+  // so the rest of the session follows the rebbi and the saved default is
+  // untouched until he changes it in Settings.
+  pickViewMode = data.pickerMode;
+  pmMode = smMode = data.matchMode;
   // Scannable seating mode is ARMED STATE, not a saved preference: it resets
   // exactly once, here, on a genuine boot — a real page load, which is what a
   // hard reload or closing and reopening the app produces.

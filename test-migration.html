@@ -522,6 +522,17 @@ if(typeof data.raffleInstant!=="boolean") data.raffleInstant=false;
 // the v2->v3 migration note. Belt-and-braces alongside that migration, so a
 // save that somehow arrives already stamped v3 without the field still gets it.
 if(typeof data.pickerSkip!=="boolean") data.pickerSkip=true;
+// Which way each of these two tools OPENS. Purely additive strings —
+// absent on every existing save, so they whitelist-backfill to the two
+// values that were hard-coded before ("wheel", "drag") and nobody's app
+// opens anywhere different than it did yesterday. No version bump: there
+// is no old value to convert, only a new field to seed.
+//
+// These are the DEFAULT, not a memory of the last thing used — the mode
+// bar inside the Picker and the Drag/Tap buttons on the two matching
+// games still switch for the session only and never write back here.
+if(data.pickerMode!=="seat") data.pickerMode="wheel";
+if(data.matchMode!=="tap") data.matchMode="drag";
 if(!data.seatPrintOpts || typeof data.seatPrintOpts!=="object") data.seatPrintOpts={avatarMode:"qr", showPoints:false};
 if(typeof data.seatPrintOpts.avatarMode!=="string"){
   data.seatPrintOpts.avatarMode = (data.seatPrintOpts.showQR===false) ? "none" : "qr";
@@ -859,6 +870,14 @@ if(typeof data.snackSeconds!=="number" || data.snackSeconds<=0) data.snackSecond
 // timer was hardcoded to before this was configurable, so an existing save
 // that has never seen this field behaves exactly as it did.
 if(typeof data.timerDefaultSeconds!=="number" || data.timerDefaultSeconds<=0) data.timerDefaultSeconds=300;
+// How the timer is drawn. Anything that isn't a face we know falls back to
+// "digits", which is what the timer has always looked like — so an
+// existing save, and a value from some later version, both land somewhere
+// sensible rather than on a blank panel.
+if(data.timerFace!=="disc" && data.timerFace!=="clock") data.timerFace="digits";
+// The timer's base colour, which turns red for the last 30 seconds. Same
+// whitelist shape as the face above, for the same reason.
+if(data.timerColor!=="blue") data.timerColor="green";
 if(!data.spinnerExcluded||typeof data.spinnerExcluded!=="object") data.spinnerExcluded={};
 if(!Array.isArray(data.spinnerSavedLists)) data.spinnerSavedLists=[];
 // Attendance / Tracker / Homework tools
@@ -1499,6 +1518,26 @@ function runBuiltInTests() {
   assert("pickerSkip non-boolean coerced to ON", d3f.pickerSkip===true, "got: "+d3f.pickerSkip);
   // Brand-new installs get it on too.
   assert("Empty→pickerSkip defaults ON", d1.pickerSkip===true, "got: "+d1.pickerSkip);
+
+  // --- Test 3d2: saved OPENING mode for the Picker and the matching games ---
+  // Additive strings, no version bump. The whole safety argument is that an
+  // existing save has neither field, so both must land on exactly the values
+  // that were hard-coded before — otherwise a rebbi's Picker would quietly
+  // start opening somewhere he never asked it to.
+  assert("Empty→pickerMode defaults to the wheel", d1.pickerMode==="wheel", "got: "+d1.pickerMode);
+  assert("Empty→matchMode defaults to drag", d1.matchMode==="drag", "got: "+d1.matchMode);
+  var d3d2 = runMigration({ version:2, students:[{id:"s1",name:"Dovid",group:""}], scores:{s1:10} });
+  assert("Old save→pickerMode seeded to wheel (opens as it always did)", d3d2.pickerMode==="wheel", "got: "+d3d2.pickerMode);
+  assert("Old save→matchMode seeded to drag (plays as it always did)", d3d2.matchMode==="drag", "got: "+d3d2.matchMode);
+  // A rebbi who chose the other side keeps it — this is the whole point.
+  var d3d3 = runMigration({ version:DATA_VERSION, pickerMode:"seat", matchMode:"tap" });
+  assert("pickerMode='seat' is preserved", d3d3.pickerMode==="seat", "got: "+d3d3.pickerMode);
+  assert("matchMode='tap' is preserved", d3d3.matchMode==="tap", "got: "+d3d3.matchMode);
+  // Anything else is not a mode these tools can render, so it falls back
+  // rather than leaving the Picker or a game with nothing to draw.
+  var d3d4 = runMigration({ version:DATA_VERSION, pickerMode:"spiral", matchMode:42 });
+  assert("Junk pickerMode falls back to wheel", d3d4.pickerMode==="wheel", "got: "+d3d4.pickerMode);
+  assert("Junk matchMode falls back to drag", d3d4.matchMode==="drag", "got: "+d3d4.matchMode);
 
   // --- Test 3g: v3 -> v4 Bathroom Pass seeded as an activity ---
   // It needs an id so the Record-tab button and its ACT:/PA: QR codes can be

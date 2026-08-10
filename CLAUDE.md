@@ -13,8 +13,10 @@ Menchmark is a free, open-source classroom assistant for Yeshiva and Jewish Day 
 | File | Purpose |
 |---|---|
 | `app.html` | The Menchmark app (~22,450 lines of vanilla JS, all logic in one IIFE) |
-| `index.html` | Site front door — the scroll-driven GSAP brand-story intro, with Skip → `home.html` |
-| `home.html` | The landing/marketing page (Tailwind CDN) — was `index.html` before the intro swap |
+| `index.html` | The landing/marketing page (Tailwind CDN), served at `/` — was `home.html` until the SEO swap; carries the canonical meta description and the `SoftwareApplication` JSON-LD |
+| `intro.html` | The scroll-driven GSAP brand-story intro, served at `/intro` — was `index.html` (the site front door) until the SEO swap. Skip → `/` |
+| `_redirects` | Cloudflare Pages 301s. Points `/home`, `/home.html`, `/index.html` at `/` so every pre-swap address survives — Cloudflare's own clean-URL rewrite is only a 307, which does not consolidate search signals |
+| `robots.txt` + `sitemap.xml` | SEO. **Read the `robots.txt` caveat below before assuming what is served** |
 | `setup.html` | Onboarding wizard for first-time users |
 | `quick-start.html` | 15-minute zero-to-first-scan guide for beta rebbeim (linked from the app header) |
 | `beta.html` | Beta signup form → posts to `apps-script/beta-signup.gs` |
@@ -78,6 +80,41 @@ it a minute before believing a zero.
 `sw.js` serves HTML network-first, so once a deploy is out it reaches installed
 users immediately; bump `CACHE_VERSION` in `sw.js` on a release to purge the
 stale *offline* copy.
+
+### `/robots.txt` — check the body, not the status code
+
+**Current state (verified live 2026-08-10): the repo ships `robots.txt`, it is
+what Cloudflare serves, and `HEAD` and `GET` now agree at 200.** Nothing here
+needs acting on — this section exists so the next person doesn't re-derive it.
+
+**The trap it came from.** Cloudflare injects a **managed Content Signals
+`robots.txt`** when the origin has none. Before this repo had its own,
+`GET /robots.txt` returned **200 with 1,248 bytes** — which reads exactly like a
+healthy file — but the body was *entirely comments*: no `User-agent`, no
+`Allow`, no `Sitemap`. Meanwhile `HEAD /robots.txt` returned **404**, the
+origin's real answer. A status check alone could not tell those apart, which is
+the habit worth keeping:
+
+```bash
+# does the live robots.txt actually contain our rules, or just Cloudflare's comments?
+curl -sL --ssl-no-revoke https://menchmark.app/robots.txt | grep -c '^Sitemap:'
+```
+
+**Settled 2026-08-10, measured against the live site after the #245 deploy: the
+repo's own `robots.txt` wins, and Cloudflare serves it verbatim.** The managed
+Content Signals file is a *fallback for a missing origin file*, not an overlay —
+once `robots.txt` exists in the repo, the content-signals comments are gone
+entirely and the body is exactly what this repo ships, `User-agent` / `Allow` /
+`Sitemap` intact. Nothing is appended, nothing is rewritten. So the injection
+described above only ever applies while the origin has no `robots.txt`; don't
+re-litigate it, and don't expect a merged block.
+
+Still read the body rather than the status code, for the reason above — the
+200-vs-404 split is a property of that path, not of what we ship.
+
+(`--ssl-no-revoke` is needed on this machine — without it curl fails the TLS
+revocation check and reports `http=000`, which is indistinguishable from a dead
+deploy.)
 
 ## 🔴 BRANCH RULES (CRITICAL — READ FIRST)
 
@@ -419,7 +456,7 @@ These docs in `docs/` are the settled design. They answer most "should we..." qu
 - **Offline_NoComputer_Secretary_Spec.md** — Offline Mode, Batch Import parser (spec'd against real scanner data), Secretary Mode.
 - **Positioning.md** — settled copy decisions: the canonical self-description, "classroom economy" rejected as positioning (with its one permitted exception), "rebbeim" not "teachers", no licensing/free-forever language in user-facing copy, no AI framing. **Check it before writing or editing any user-facing copy.**
 - **Firebase_Rebuild_Scope.md** — the settled scope for the upcoming Firebase/Firestore rebuild: real accounts, Firestore replacing localStorage-as-database, three tiers (rebbi/admin/superadmin), the incremental-write data model (not one JSON blob per class), the converter tool, what retires (file:// offline copy, Sheets-as-database, Apps Script), and the 8-step build order. **Not started — build order step 1 (data model design session) hasn't begun**, and **Phase 2d is locked to run before it.** Read before touching anything auth/sync/data-model shaped, and before assuming the current localStorage-only architecture described elsewhere in this file is the long-term plan. Its phase mapping was reconciled against the code on 2026-08-04; it now carries an **"Open questions for step 1"** list that has to be worked before the data-model session starts.
-  - ⚠️ **Open conflict, unresolved by design — decide before step 1.** That rebuild needs the Firebase SDK, which cannot coexist with **rule 3 above** (single file, no build step) untouched: the modular SDK is ESM-for-bundlers, so it is either a forbidden CDN `<script src>` or a vendored compat bundle inlined into an already ~1.2 MB file. Neither rule wins by default. Per the conflict rule below, CLAUDE.md wins until a human decides otherwise — so **rule 3 stands, and the rebuild cannot start step 1 until this is settled.** The trade-offs are written up in the rebuild doc's open question 1; note that the back button and app security do *not* depend on this choice, though earlier drafts implied they did. **Narrowed 2026-08-07:** tier-1 rebbeim must get PWA/offline capability too, which rules the CDN option out for a second reason (a service worker can't reliably precache a cross-origin script) and leaves inline-vendored vs. same-origin-file-vendored as the only two live options — see the rebuild doc's open question 1 for the full narrowing, and `docs/Data_Custody_Decision.md` for why that choice is gated on the two-tier split rather than decided here.
+  - ⚠️ **Open conflict, unresolved by design — decide before step 1.** That rebuild needs the Firebase SDK, which cannot coexist with **rule 3 above** (single file, no build step) untouched: the modular SDK is ESM-for-bundlers, so it is either a forbidden CDN `<script src>` or a vendored compat bundle inlined into an already ~1.2 MB file. Neither rule wins by default. Per the conflict rule below, CLAUDE.md wins until a human decides otherwise — so **rule 3 stands, and the rebuild cannot start step 1 until this is settled.** The trade-offs are written up in the rebuild doc's open question 1; note that the back button and app security do *not* depend on this choice, though earlier drafts implied they did. **Narrowed 2026-08-07:** tier-1 rebbeim must get PWA/offline capability too, which rules the CDN option out for a second reason (a service worker can't reliably precache a cross-origin script) and leaves inline-vendored vs. same-origin-file-vendored as the only two live options. **Narrowed again 2026-08-09 — the two-tier custody split is ACCEPTED** (`docs/Data_Custody_Decision.md`), which was the thing that choice was gated on. Tier 2 never loads the SDK at all, and self-serve signup now *defaults* to tier 2, so the inline option would grow the file permanently for most users to no benefit. That points at **vendoring the SDK as a separate same-origin file, loaded only for tier 1 and precached in `sw.js`** — one `app.html` for everyone, no build step, offline intact for both tiers. **Still a recommendation, not a decision: it amends rule 3, so only Ben makes it**, and step 1 stays blocked until he does.
 
 If a spec and this CLAUDE.md ever conflict, **CLAUDE.md wins**; flag the conflict to the maintainer.
 
