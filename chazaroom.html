@@ -314,6 +314,11 @@
             <input type="checkbox" id="autoReveal"> Auto-reveal at 0
           </span>
         </label>
+        <label class="f" style="align-self:flex-end;padding-bottom:6px" title="Open the board in its own window for the projector, and keep this screen for yourself">
+          <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.9rem;color:var(--ink)">
+            <input type="checkbox" id="secondScreen"> Second screen
+          </span>
+        </label>
       </div>
       <div id="sweepSetup" class="note" hidden style="margin-top:12px">
         <div class="row">
@@ -595,13 +600,14 @@
 
   /* ---------------- state + persistence ---------------- */
   var LS_KEY="hadroom_mvp_v2";
-  var questions=[], roster=[], scores={};
-  function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify({questions:questions,roster:roster,scores:scores})); }catch(e){} }
+  var questions=[], roster=[], scores={}, opts={secondScreen:false};
+  function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify({questions:questions,roster:roster,scores:scores,opts:opts})); }catch(e){} }
   function load(){
     try{ var d=JSON.parse(localStorage.getItem(LS_KEY)||"{}");
       if(Array.isArray(d.questions)) questions=d.questions;
       if(Array.isArray(d.roster)) roster=d.roster;
       if(d.scores&&typeof d.scores==="object") scores=d.scores;
+      if(d.opts&&typeof d.opts==="object" && typeof d.opts.secondScreen==="boolean") opts.secondScreen=d.opts.secondScreen;
     }catch(e){}
   }
   function hasRoster(){ return roster.length>0; }
@@ -923,6 +929,9 @@
   startBtn.addEventListener("click",function(){
     if(!supported) return;
     if(!questions.length){ show("Q"); return; }
+    /* The projector window opens HERE, synchronously inside the click, because a
+       pop-up only survives a real user gesture — it can never be opened on load. */
+    if(opts.secondScreen && !(present.win && !present.win.closed)) presentOpen();
     perStudent=hasRoster();
     var v={ width:{ideal:1920}, height:{ideal:1080} }; if(camSel.value) v.deviceId={exact:camSel.value};
     startBtn.disabled=true;
@@ -1423,11 +1432,25 @@
     if(!present.win || present.win.closed) return;
     try{ window.__chazPresent(present.win.document); }catch(e){}
   }
-  $("presentBtn").addEventListener("click",function(){ if(present.win&&!present.win.closed) presentClose(); else presentOpen(); });
-  $("boardPresentBtn").addEventListener("click",presentOpen);
+  /* Pressing the button IS choosing the option — tick the box and it sticks, so
+     a rebbi who always teaches on a projector never presses it again. */
+  $("presentBtn").addEventListener("click",function(){
+    if(present.win&&!present.win.closed){ presentClose(); opts.secondScreen=false; }
+    else { presentOpen(); opts.secondScreen=!!(present.win&&!present.win.closed); }
+    $("secondScreen").checked=opts.secondScreen; save();
+  });
+  $("boardPresentBtn").addEventListener("click",function(){ presentOpen(); if(present.win&&!present.win.closed){ opts.secondScreen=true; $("secondScreen").checked=true; save(); } });
+  $("secondScreen").addEventListener("change",function(){
+    opts.secondScreen=this.checked; save();
+    if(this.checked && running) presentOpen();      /* mid-game tick: open it now */
+    else if(!this.checked) presentClose();
+  });
 
   /* ---------- boot ---------- */
   load();
+  $("secondScreen").checked=opts.secondScreen;
+  if(opts.secondScreen) $("presentHint").innerHTML="Second screen is on — the board opens on its own window when you press <strong>Start camera</strong>. Drag it to the projector and press <strong>F11</strong>.";
+  $("presentHint").style.display=opts.secondScreen?"block":"";
   listCams();
   renderQList();
   updateSetupHint();
