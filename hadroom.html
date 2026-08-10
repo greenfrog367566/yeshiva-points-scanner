@@ -4,26 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hadroom — class review game</title>
-<!-- Hadroom MVP. Standalone, single file, no build step — same shape as the
-     Menchmark app. A whole-class review game: the rebbi asks a multiple-choice
-     question, every boy holds up a printed A/B/C/D card, and the camera reads
-     the whole room at once into a live tally. No devices for the boys, no
-     roster, no accounts. Questions are typed or drafted by AI from pasted
-     text. Deliberately anonymous — it counts letters, not who held them.
-     Reuses the multi-QR detection proven in hadroom-camera-test.html. -->
+<!-- Hadroom MVP. Standalone, single file, no build step, no accounts, no
+     Menchmark data. A whole-class review game: the rebbi asks a multiple-choice
+     question, every boy holds up a printed answer card, and the camera reads
+     the whole room at once. Two modes, chosen automatically:
+       • No class list  -> anonymous A/B/C/D cards, live letter tally.
+       • Class list set  -> per-student cards (id + answer), points + leaderboard.
+     Questions are typed, imported from a Kahoot-style CSV, or drafted with any
+     chatbot via a copy-paste prompt. Reuses the multi-QR detection proven in
+     hadroom-camera-test.html. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<!-- BarcodeDetector polyfill (ZXing-C++ WASM). Desktop Windows Chrome/Edge have
-     no native BarcodeDetector; this defines it only when missing, so other
-     platforms keep the faster native one. Multi-QR needs this. -->
 <script src="https://fastly.jsdelivr.net/npm/barcode-detector@3/dist/iife/polyfill.min.js"></script>
 <style>
   :root{
     --ink:#1b2440; --paper:#eceef3; --card:#ffffff; --line:#d8dbe4; --muted:#6a7187;
     --brass:#a8772a; --gold:#e8b321;
-    --a:#2b6ca3; --a-soft:#e2eef7;
-    --b:#1f8a5b; --b-soft:#e3f3ea;
-    --c:#a8772a; --c-soft:#f3e9d4;
-    --d:#8a3fb0; --d-soft:#efe3f6;
+    --a:#2b6ca3; --a-soft:#e2eef7; --b:#1f8a5b; --b-soft:#e3f3ea;
+    --c:#a8772a; --c-soft:#f3e9d4; --d:#8a3fb0; --d-soft:#efe3f6;
     --good:#1f8a5b; --good-soft:#e3f3ea; --bad:#b04432; --bad-soft:#f6e6e2;
     --shadow:0 1px 2px rgba(27,36,64,.06),0 8px 24px rgba(27,36,64,.07);
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -40,7 +37,7 @@
   header .logo{width:34px;height:34px;border-radius:9px;background:var(--gold);color:#1b1400;font-family:var(--serif);font-weight:700;font-size:1.2rem;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
   header .ttl{font-family:var(--serif);font-size:1.3rem;font-weight:600}
   header .sub{font-size:.76rem;color:#aeb6d2;letter-spacing:.4px;text-transform:uppercase}
-  nav.views{margin-left:auto;display:flex;gap:6px}
+  nav.views{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
   nav.views button{background:transparent;border:1px solid #41507f;color:#cfd5ea;border-radius:8px;padding:7px 14px;font-size:.9rem}
   nav.views button:hover{background:#26315a}
   nav.views button.active{background:var(--gold);border-color:var(--brass);color:#1b1400;font-weight:700}
@@ -63,8 +60,9 @@
   .hint{font-size:.83rem;color:var(--muted);margin:8px 0 0}
   .note{background:#f4f5f9;border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:8px;padding:10px 12px;font-size:.85rem;margin:10px 0 0}
   .bad-box{background:var(--bad-soft);border:1px solid #e0bcb3;border-left:3px solid var(--bad);border-radius:8px;padding:12px 14px;font-size:.9rem;margin:10px 0 0}
+  code{font-family:var(--mono);font-size:.85em;background:#eef0f5;padding:1px 4px;border-radius:4px}
+  textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;resize:vertical;font-family:inherit}
 
-  /* ---- Play view ---- */
   .stage{position:relative;display:inline-block;line-height:0;background:#000;border-radius:10px;overflow:hidden;max-width:100%}
   .stage video{display:block;width:100%;max-width:760px;height:auto}
   .stage canvas.ov{position:absolute;left:0;top:0;pointer-events:none}
@@ -80,7 +78,6 @@
   .lt.A{background:var(--a)} .lt.B{background:var(--b)} .lt.C{background:var(--c)} .lt.D{background:var(--d)}
   .qbar .opt.correct{background:var(--good-soft);border-color:var(--good);font-weight:600}
 
-  /* live tally */
   .tally{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
   .ty{border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;transition:background .15s}
   .ty .lt{width:34px;height:34px;border-radius:8px;color:#fff;font-weight:800;font-size:1.1rem;display:inline-flex;align-items:center;justify-content:center;margin-bottom:6px}
@@ -96,7 +93,16 @@
   .stat .v{font-size:1.15rem;font-weight:800;font-variant-numeric:tabular-nums}
   .statrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 
-  /* ---- Questions editor ---- */
+  /* leaderboard */
+  ol.lb{list-style:none;margin:10px 0 0;padding:0;counter-reset:rank}
+  ol.lb li{counter-increment:rank;display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid #eef0f5;font-size:.95rem}
+  ol.lb li:last-child{border-bottom:none}
+  ol.lb li::before{content:counter(rank);width:24px;height:24px;border-radius:50%;background:#f4f5f9;color:var(--muted);font-weight:800;font-size:.8rem;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+  ol.lb li.top::before{background:var(--gold);color:#1b1400}
+  ol.lb li .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  ol.lb li .pts{font-weight:800;font-variant-numeric:tabular-nums}
+  ol.lb li .just{color:var(--good);font-weight:700;font-size:.82rem}
+
   ul.qlist{list-style:none;margin:12px 0 0;padding:0}
   ul.qlist li{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start}
   ul.qlist li .n{font-weight:800;color:var(--muted);flex:0 0 auto}
@@ -105,10 +111,16 @@
   ul.qlist li .a{font-size:.85rem;color:var(--muted);margin-top:2px}
   ul.qlist li .a b{color:var(--good)}
   ul.qlist li .x{background:none;border:none;color:var(--bad);font-size:1.1rem;flex:0 0 auto}
-  textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;resize:vertical}
 
-  /* ---- Print cards ---- */
+  .students{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:.85rem;background:#f4f5f9;display:flex;gap:6px;align-items:center}
+  .chip .id{color:var(--muted);font-size:.75rem}
+
+  /* print cards */
   #cardsheet{display:flex;flex-wrap:wrap;gap:0;margin-top:14px}
+  .stu-sheet{width:100%;break-after:page;page-break-after:always;margin-bottom:20px}
+  .stu-sheet .who{font-family:var(--serif);font-weight:700;font-size:1.4rem;margin:0 0 6px}
+  .stu-cards{display:flex;flex-wrap:wrap;gap:0}
   .qr-cell{border:1px dashed #9aa0b0;padding:.12in;margin:.06in;text-align:center;break-inside:avoid;page-break-inside:avoid}
   .qr-cell .lbl{font-weight:800;font-size:34pt;font-family:var(--serif);margin-bottom:4px}
   .qr-cell .cap{font-family:var(--mono);font-size:10px;margin-top:4px;color:var(--muted)}
@@ -134,6 +146,7 @@
   <nav class="views">
     <button id="navPlay" class="active">Play</button>
     <button id="navQ">Questions</button>
+    <button id="navClass">Class</button>
     <button id="navCards">Answer cards</button>
   </nav>
 </header>
@@ -151,7 +164,7 @@
         <div style="align-self:flex-end;padding-bottom:1px"><button class="btn gold big" id="startBtn">Start camera</button></div>
       </div>
       <div id="support"></div>
-      <p class="hint" id="qCountHint"></p>
+      <p class="hint" id="setupHint"></p>
     </div>
 
     <div id="playArea" hidden>
@@ -168,11 +181,11 @@
             <canvas class="ov" id="ov" width="10" height="10"></canvas>
           </div>
           <div class="statrow">
-            <div class="stat"><div class="k">Cards seen</div><div class="v" id="sSeen">0</div></div>
+            <div class="stat"><div class="k" id="seenK">Cards seen</div><div class="v" id="sSeen">0</div></div>
             <div class="stat"><div class="k">Most at once</div><div class="v" id="sMax">0</div></div>
             <div class="stat"><div class="k">Detects/s</div><div class="v" id="sFps">–</div></div>
           </div>
-          <p class="hint">Hold the frame steady on the class. Every A/B/C/D card in view is counted live. It counts <em>how many</em> of each — not who.</p>
+          <p class="hint" id="playHint">Hold the frame steady on the class. Every card in view is read live.</p>
         </div>
 
         <div>
@@ -187,12 +200,6 @@
             </div>
             <div class="row" style="margin-top:8px">
               <button class="btn sec" id="stopBtn">Stop camera</button>
-              <label class="f" style="margin-left:auto">Freeze count
-                <select id="freezeMode">
-                  <option value="live">Live (keep counting)</option>
-                  <option value="peak">Peak (highest seen)</option>
-                </select>
-              </label>
             </div>
             <div id="revealResult" class="note" hidden></div>
           </div>
@@ -200,11 +207,11 @@
       </div>
 
       <div class="card" id="scoreCard">
-        <h2>Game so far</h2>
-        <div class="statrow">
+        <h2 id="scoreTitle">Game so far</h2>
+        <div id="lbWrap" hidden><ol class="lb" id="leaderboard"></ol></div>
+        <div class="statrow" id="anonStats">
           <div class="stat"><div class="k">Questions asked</div><div class="v" id="gAsked">0</div></div>
-          <div class="stat"><div class="k">Class got right</div><div class="v" id="gRight">0</div></div>
-          <div class="stat"><div class="k">Best answer rate</div><div class="v" id="gRate">–</div></div>
+          <div class="stat"><div class="k">Class had it</div><div class="v" id="gRight">0</div></div>
         </div>
       </div>
     </div>
@@ -231,20 +238,45 @@
         </label>
         <div style="align-self:flex-end;padding-bottom:1px"><button class="btn" id="addQBtn">Add question</button></div>
       </div>
-      <p class="hint">Options are optional — a plain question with just A/B/C/D letters works too. The correct answer is what "Reveal" checks against.</p>
+      <p class="hint">Options are optional — a plain question checked against A/B/C/D works too.</p>
     </div>
 
     <div class="card">
-      <h2>Draft questions with AI</h2>
-      <label class="f">Paste this week's learning (Gemara text, a summary, notes…)
-        <textarea id="aiText" rows="5" placeholder="Paste the material here and AI will draft multiple-choice review questions from it."></textarea>
+      <h2>Import questions <span class="hint" style="font-weight:400">— Kahoot-style CSV</span></h2>
+      <p class="hint" style="margin-top:0">One question per row:
+        <code>Question, Answer&nbsp;A, Answer&nbsp;B, Answer&nbsp;C, Answer&nbsp;D, [time], Correct</code>
+        — where <strong>Correct</strong> is <strong>1–4</strong> (or A–D). It's the Kahoot quiz-spreadsheet
+        layout, so a Kahoot export drops straight in. Header row fine; the time column is ignored.</p>
+      <label class="f">Paste rows here, or choose a .csv file
+        <textarea id="csvText" rows="4" placeholder='"According to Rashi, who…","Moshe","Dovid","Shlomo","Yosef","20","1"'></textarea>
       </label>
       <div class="row" style="margin-top:8px">
-        <label class="f">How many <input id="aiCount" type="number" value="5" min="1" max="20"></label>
-        <div style="align-self:flex-end;padding-bottom:1px"><button class="btn gold" id="aiBtn">Draft questions</button></div>
-        <div id="aiStatus" class="hint" style="margin:0;align-self:flex-end;padding-bottom:6px"></div>
+        <input type="file" id="csvFile" accept=".csv,text/csv" style="display:none">
+        <button class="btn sec" id="csvPickBtn">Choose file…</button>
+        <button class="btn" id="csvImportBtn">Import rows</button>
+        <div id="csvStatus" class="hint" style="margin:0;align-self:center"></div>
       </div>
-      <p class="hint">Drafts are added to the list below for you to review and edit before playing. Always check them — AI can misread a source.</p>
+    </div>
+
+    <div class="card">
+      <h2>Make an AI prompt <span class="hint" style="font-weight:400">— for ChatGPT, Gemini or Claude</span></h2>
+      <p class="hint" style="margin-top:0">Paste your learning and this writes a ready-to-run prompt. Copy it into any
+        chatbot; it answers in the exact CSV format above — paste that back into the box above and <strong>Import</strong>.
+        No account or proxy needed.</p>
+      <label class="f">Paste this week's learning (Gemara text, a summary, notes…)
+        <textarea id="promptText" rows="4" placeholder="Paste the material and it becomes a prompt."></textarea>
+      </label>
+      <div class="row" style="margin-top:8px">
+        <label class="f">How many <input id="promptCount" type="number" value="8" min="1" max="30"></label>
+        <div style="align-self:flex-end;padding-bottom:1px"><button class="btn gold" id="makePromptBtn">Make the prompt</button></div>
+      </div>
+      <label class="f" id="promptOutWrap" hidden style="margin-top:10px">Copy this into your chatbot
+        <textarea id="promptOut" rows="7" readonly></textarea>
+      </label>
+      <div class="row" id="promptCopyRow" hidden style="margin-top:8px">
+        <button class="btn" id="copyPromptBtn">Copy prompt</button>
+        <div id="copyStatus" class="hint" style="margin:0;align-self:center"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -254,24 +286,47 @@
     </div>
   </section>
 
+  <!-- =============== CLASS =============== -->
+  <section id="viewClass" hidden>
+    <div class="card">
+      <h2>Class list</h2>
+      <p class="hint" style="margin-top:0">Paste one boy's name per line. Each gets his own printed cards (his id + A/B/C/D),
+        so the camera records <strong>who</strong> answered <strong>what</strong> and keeps points. Leave this empty to play
+        anonymously with shared A/B/C/D cards instead.</p>
+      <label class="f">Names (one per line)
+        <textarea id="rosterText" rows="6" placeholder="Levi&#10;Shimon&#10;Yehuda&#10;…"></textarea>
+      </label>
+      <div class="row" style="margin-top:8px">
+        <button class="btn gold" id="setRosterBtn">Set class list</button>
+        <div id="rosterStatus" class="hint" style="margin:0;align-self:center"></div>
+      </div>
+    </div>
+    <div class="card" id="rosterCard" hidden>
+      <h2>Class <span class="hint" style="font-weight:400" id="rosterCount"></span></h2>
+      <div class="row">
+        <button class="btn sec" id="resetScoresBtn">Reset points</button>
+        <button class="btn sec" id="clearRosterBtn">Remove class list</button>
+      </div>
+      <div class="students" id="studentsWrap"></div>
+    </div>
+  </section>
+
   <!-- =============== ANSWER CARDS =============== -->
   <section id="viewCards" hidden>
     <div class="card noprint">
       <h2>Printable answer cards</h2>
-      <p class="hint" style="margin-top:0">Print one set, laminate them, hand them out. Each boy gets four cards (A, B, C, D) — or share a class set. He holds up his choice; the camera reads the whole room.</p>
+      <p class="hint" id="cardsMode" style="margin-top:0"></p>
       <div class="row">
         <label class="f">Card size (inches) <input id="cardSize" type="number" value="5" min="1" max="8" step="0.25"></label>
-        <label class="f">Sets to print <input id="cardSets" type="number" value="1" min="1" max="40"></label>
+        <label class="f" id="setsLabel">Sets to print <input id="cardSets" type="number" value="1" min="1" max="40"></label>
         <div style="align-self:flex-end;padding-bottom:1px;display:flex;gap:8px">
           <button class="btn" id="genCardsBtn">Generate</button>
           <button class="btn sec" id="printCardsBtn">Print</button>
         </div>
       </div>
-      <div class="note">Field-tested sizing: <strong>5" cards read to about 22 feet</strong> with a fixed camera. Bigger cards reach further (~1" of card per ~4½ ft). Print at <strong>100% / actual size</strong>, not "fit to page".</div>
+      <div class="note">Field-tested: <strong>5" cards read to about 22 feet</strong> with a fixed camera (~1" of card per ~4½ ft further). Print at <strong>100% / actual size</strong>, not "fit to page".</div>
     </div>
-    <div class="card">
-      <div id="cardsheet"></div>
-    </div>
+    <div class="card"><div id="cardsheet"></div></div>
   </section>
 
 </div>
@@ -282,68 +337,65 @@
   function $(id){ return document.getElementById(id); }
   function el(tag,cls,txt){ var n=document.createElement(tag); if(cls) n.className=cls; if(txt!=null) n.textContent=txt; return n; }
 
-  var AI_PROXY_URL="https://pesukim-ai-proxy.bsteinerman.workers.dev/";
   var LETTERS=["A","B","C","D"];
-  var ANSWER_PREFIX="ANS:";          /* card QR content: ANS:A ... ANS:D */
+  var ANON_PREFIX="ANS:";            /* anonymous card:  ANS:A .. ANS:D          */
+  var STU_PREFIX="HAD:";             /* per-student card: HAD:<id>:A .. HAD:<id>:D */
+  var ANSWER_TTL=4000;               /* a card not seen for this long = put down  */
+  var PTS_PER_CORRECT=1;
 
-  /* ---------------- persistence (questions only) ---------------- */
-  var LS_KEY="hadroom_mvp_v1";
-  var questions=[];
-  function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify({questions:questions})); }catch(e){} }
+  /* ---------------- state + persistence ---------------- */
+  var LS_KEY="hadroom_mvp_v2";
+  var questions=[], roster=[], scores={};
+  function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify({questions:questions,roster:roster,scores:scores})); }catch(e){} }
   function load(){
-    try{ var d=JSON.parse(localStorage.getItem(LS_KEY)||"{}"); if(Array.isArray(d.questions)) questions=d.questions; }catch(e){}
+    try{ var d=JSON.parse(localStorage.getItem(LS_KEY)||"{}");
+      if(Array.isArray(d.questions)) questions=d.questions;
+      if(Array.isArray(d.roster)) roster=d.roster;
+      if(d.scores&&typeof d.scores==="object") scores=d.scores;
+    }catch(e){}
   }
+  function hasRoster(){ return roster.length>0; }
+  function nameOf(id){ for(var i=0;i<roster.length;i++){ if(roster[i].id===id) return roster[i].name; } return "#"+id; }
 
-  /* ---------------- view switching ---------------- */
-  var views={ Play:"viewPlay", Q:"viewQ", Cards:"viewCards" };
+  /* ---------------- views ---------------- */
+  var views={ Play:"viewPlay", Q:"viewQ", Class:"viewClass", Cards:"viewCards" };
   function show(which){
-    Object.keys(views).forEach(function(k){
-      $(views[k]).hidden = (k!==which);
-      $("nav"+k).classList.toggle("active", k===which);
-    });
-    if(which==="Cards" && !$("cardsheet").firstChild) buildCards();
+    Object.keys(views).forEach(function(k){ $(views[k]).hidden=(k!==which); $("nav"+k).classList.toggle("active",k===which); });
+    if(which==="Cards") buildCards();
     if(which==="Q") renderQList();
-    if(which==="Play") updateQCountHint();
+    if(which==="Class") renderRoster();
+    if(which==="Play") updateSetupHint();
   }
   $("navPlay").addEventListener("click",function(){ show("Play"); });
   $("navQ").addEventListener("click",function(){ show("Q"); });
+  $("navClass").addEventListener("click",function(){ show("Class"); });
   $("navCards").addEventListener("click",function(){ show("Cards"); });
 
   /* ================= QUESTIONS ================= */
   function renderQList(){
     var list=$("qlist"); list.innerHTML="";
     $("qListCount").textContent = questions.length ? ("("+questions.length+")") : "";
-    if(!questions.length){ list.appendChild(el("li",null,"No questions yet. Add one above, draft with AI, or load the samples.")); return; }
+    if(!questions.length){ list.appendChild(el("li",null,"No questions yet. Add one, import a CSV, make an AI prompt, or load the samples.")); return; }
     questions.forEach(function(q,i){
       var li=el("li");
       li.appendChild(el("span","n",(i+1)+"."));
       var body=el("div","body");
       body.appendChild(el("div","q",q.q||"(untitled)"));
-      var opts=LETTERS.filter(function(L){ return q.opts && q.opts[L]; })
-                      .map(function(L){ return L+") "+q.opts[L]; }).join("   ");
-      var a=el("div","a");
-      a.innerHTML = (opts? opts+" · " : "") + "correct: <b>"+(q.correct||"?")+"</b>";
-      body.appendChild(a);
-      li.appendChild(body);
+      var opts=LETTERS.filter(function(L){ return q.opts && q.opts[L]; }).map(function(L){ return L+") "+q.opts[L]; }).join("   ");
+      var a=el("div","a"); a.innerHTML=(opts? opts+" · " : "")+"correct: <b>"+(q.correct||"?")+"</b>";
+      body.appendChild(a); li.appendChild(body);
       var x=el("button","x","✕"); x.title="Remove";
       x.addEventListener("click",function(){ questions.splice(i,1); save(); renderQList(); });
-      li.appendChild(x);
-      list.appendChild(li);
+      li.appendChild(x); list.appendChild(li);
     });
   }
   $("addQBtn").addEventListener("click",function(){
-    var q=$("qInput").value.trim();
-    if(!q){ $("qInput").focus(); return; }
-    var opts={A:$("optA").value.trim(),B:$("optB").value.trim(),C:$("optC").value.trim(),D:$("optD").value.trim()};
-    questions.push({q:q,opts:opts,correct:$("correctSel").value});
+    var q=$("qInput").value.trim(); if(!q){ $("qInput").focus(); return; }
+    questions.push({q:q,opts:{A:$("optA").value.trim(),B:$("optB").value.trim(),C:$("optC").value.trim(),D:$("optD").value.trim()},correct:$("correctSel").value});
     save(); renderQList();
-    ["qInput","optA","optB","optC","optD"].forEach(function(id){ $(id).value=""; });
-    $("qInput").focus();
+    ["qInput","optA","optB","optC","optD"].forEach(function(id){ $(id).value=""; }); $("qInput").focus();
   });
-  $("clearQBtn").addEventListener("click",function(){
-    if(!questions.length) return;
-    if(confirm("Remove all "+questions.length+" questions?")){ questions=[]; save(); renderQList(); }
-  });
+  $("clearQBtn").addEventListener("click",function(){ if(questions.length&&confirm("Remove all "+questions.length+" questions?")){ questions=[]; save(); renderQList(); } });
   $("sampleBtn").addEventListener("click",function(){
     [{q:"Which of these is one of the Arba Minim?",opts:{A:"Apple",B:"Esrog",C:"Potato",D:"Grape"},correct:"B"},
      {q:"How many days is Sukkos (in Eretz Yisrael)?",opts:{A:"1",B:"7",C:"8",D:"40"},correct:"B"},
@@ -352,73 +404,139 @@
     save(); renderQList();
   });
 
-  /* ---- AI drafting via the shared Gemini proxy ---- */
-  $("aiBtn").addEventListener("click", async function(){
-    var text=$("aiText").value.trim();
-    var n=Math.max(1,Math.min(20,parseInt($("aiCount").value,10)||5));
-    var statusEl=$("aiStatus"), btn=this;
-    if(!text){ statusEl.textContent="Paste some material first."; return; }
-    btn.disabled=true; statusEl.textContent="Drafting "+n+" questions…";
-    var prompt=
-      "You are helping a rebbi make a multiple-choice review game from the text below. "+
-      "Write exactly "+n+" review questions. Each has 4 options labelled A, B, C, D, with exactly one correct. "+
-      "Base them ONLY on the text; keep questions short and clear. "+
-      "Return ONLY a JSON array, no prose, each item: "+
-      '{"q":"...","opts":{"A":"...","B":"...","C":"...","D":"..."},"correct":"A"}. '+
-      "\n\nTEXT:\n"+text;
-    try{
-      var res=await fetch(AI_PROXY_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:prompt})});
-      var json=await res.json().catch(function(){ return null; });
-      if(!res.ok) throw new Error((json&&json.error)||("HTTP "+res.status));
-      if(!json||!json.text) throw new Error("empty response");
-      var arr=parseAIQuestions(json.text);
-      if(!arr.length) throw new Error("could not read questions from the reply");
-      arr.forEach(function(q){ questions.push(q); });
-      save(); renderQList();
-      statusEl.textContent="Added "+arr.length+" — review them below.";
-      $("aiText").value="";
-    }catch(e){
-      var cors = /failed to fetch|networkerror/i.test(e.message);
-      statusEl.textContent = cors
-        ? "Couldn't reach the AI service from this page (its origin isn't allowed yet). Type questions by hand for now — AI drafting works once the proxy permits this site."
-        : ("AI draft failed: "+e.message);
-    }finally{ btn.disabled=false; }
+  /* ---- Kahoot-style CSV import ---- */
+  function parseCSV(text){
+    var rows=[], row=[], field="", inQ=false; text=text.replace(/\r\n/g,"\n").replace(/\r/g,"\n");
+    for(var i=0;i<text.length;i++){ var ch=text[i];
+      if(inQ){ if(ch==='"'){ if(text[i+1]==='"'){ field+='"'; i++; } else inQ=false; } else field+=ch; }
+      else { if(ch==='"') inQ=true; else if(ch===','){ row.push(field); field=""; } else if(ch==='\n'){ row.push(field); rows.push(row); row=[]; field=""; } else field+=ch; } }
+    if(field.length||row.length){ row.push(field); rows.push(row); }
+    return rows.filter(function(r){ return r.some(function(c){ return c.trim()!==""; }); });
+  }
+  function correctFrom(cell, opts){
+    var s=String(cell||"").trim().toUpperCase();
+    var m=s.match(/[1-4]/); if(m) return LETTERS[parseInt(m[0],10)-1];
+    if(LETTERS.indexOf(s.charAt(0))>=0) return s.charAt(0);
+    for(var k=0;k<LETTERS.length;k++){ if(opts[LETTERS[k]] && opts[LETTERS[k]].toUpperCase()===s) return LETTERS[k]; }
+    return "A";
+  }
+  function rowsToQuestions(rows){
+    var out=[];
+    rows.forEach(function(r,idx){
+      if(idx===0){ var f0=(r[0]||"").trim().toLowerCase(); if(f0==="question"||f0==="questions") return; }
+      var q=(r[0]||"").trim(); if(!q) return;
+      var opts={A:(r[1]||"").trim(),B:(r[2]||"").trim(),C:(r[3]||"").trim(),D:(r[4]||"").trim()};
+      out.push({ q:q, opts:opts, correct:correctFrom(r[r.length-1], opts) });
+    });
+    return out;
+  }
+  function importCSV(){
+    var text=$("csvText").value.trim();
+    if(!text){ $("csvStatus").textContent="Paste some rows, or choose a file, first."; return; }
+    var qs=rowsToQuestions(parseCSV(text));
+    if(!qs.length){ $("csvStatus").textContent="No questions found — check the columns."; return; }
+    qs.forEach(function(q){ questions.push(q); });
+    save(); renderQList();
+    $("csvStatus").textContent="Imported "+qs.length+" question"+(qs.length>1?"s":"")+".";
+    $("csvText").value="";
+  }
+  $("csvImportBtn").addEventListener("click",importCSV);
+  $("csvPickBtn").addEventListener("click",function(){ $("csvFile").click(); });
+  $("csvFile").addEventListener("change",function(){
+    var f=this.files&&this.files[0]; if(!f) return;
+    var rd=new FileReader(); rd.onload=function(){ $("csvText").value=rd.result||""; importCSV(); }; rd.readAsText(f); this.value="";
   });
-  function parseAIQuestions(txt){
-    var s=String(txt);
-    var i=s.indexOf("["), j=s.lastIndexOf("]");
-    if(i>=0 && j>i) s=s.slice(i,j+1);
-    var arr=[]; try{ arr=JSON.parse(s); }catch(e){ return []; }
-    if(!Array.isArray(arr)) return [];
-    return arr.filter(function(o){ return o&&o.q; }).map(function(o){
-      var opts=o.opts||{};
-      var correct=(o.correct||"A").toString().trim().toUpperCase().charAt(0);
-      if(LETTERS.indexOf(correct)<0) correct="A";
-      return {q:String(o.q), opts:{A:opts.A||"",B:opts.B||"",C:opts.C||"",D:opts.D||""}, correct:correct};
+
+  /* ---- AI prompt maker ---- */
+  $("makePromptBtn").addEventListener("click",function(){
+    var text=$("promptText").value.trim(); if(!text){ $("promptText").focus(); return; }
+    var n=Math.max(1,Math.min(30,parseInt($("promptCount").value,10)||8));
+    var prompt=
+      "You are helping a rebbi build a multiple-choice review game from the source text below.\n"+
+      "Write "+n+" clear review questions, each with four answer options and exactly one correct. "+
+      "Base them ONLY on the text; keep each question and option short.\n"+
+      "IMPORTANT: vary WHERE the correct answer sits — spread the correct option as evenly as you can "+
+      "across positions 1, 2, 3 and 4 over the whole set, and never let it fall on the same position more "+
+      "than about a quarter of the time. (Language models tend to make the answer 'B'/position 2 — do not.) "+
+      "Put the real answer in a random position and fill the other three with plausible wrong options.\n\n"+
+      "Output ONLY CSV — one question per line, no header row, no commentary. "+
+      "Each line has exactly 7 fields and EVERY field must be wrapped in double quotes:\n"+
+      "\"Question\",\"Option A\",\"Option B\",\"Option C\",\"Option D\",\"20\",\"<correct option number 1-4>\"\n\n"+
+      "Example line:\n"+
+      "\"How many days is Sukkos in Eretz Yisrael?\",\"1\",\"7\",\"8\",\"40\",\"20\",\"2\"\n\n"+
+      "TEXT:\n"+text;
+    $("promptOut").value=prompt; $("promptOutWrap").hidden=false; $("promptCopyRow").hidden=false; $("copyStatus").textContent="";
+  });
+  $("copyPromptBtn").addEventListener("click",function(){
+    var ta=$("promptOut"); ta.focus(); ta.select();
+    function done(ok){ $("copyStatus").textContent=ok?"Copied — paste it into your chatbot, then bring its CSV back up top.":"Select the text and press Ctrl+C."; }
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(ta.value).then(function(){done(true);},function(){done(false);}); }
+    else { try{ done(document.execCommand("copy")); }catch(e){ done(false); } }
+  });
+
+  /* ================= CLASS / ROSTER ================= */
+  function renderRoster(){
+    if(hasRoster() && !$("rosterText").value.trim()) $("rosterText").value=roster.map(function(s){ return s.name; }).join("\n");
+    $("rosterCard").hidden=!hasRoster();
+    $("rosterCount").textContent=hasRoster()?("("+roster.length+")"):"";
+    var w=$("studentsWrap"); w.innerHTML="";
+    roster.forEach(function(s){
+      var c=el("div","chip");
+      c.appendChild(el("span",null,s.name));
+      c.appendChild(el("span","id","#"+s.id+(scores[s.id]?(" · "+scores[s.id]+"pt"):"")));
+      w.appendChild(c);
     });
   }
+  $("setRosterBtn").addEventListener("click",function(){
+    var names=$("rosterText").value.split("\n").map(function(s){ return s.trim(); }).filter(Boolean);
+    if(!names.length){ $("rosterStatus").textContent="Paste at least one name."; return; }
+    /* keep points for names that carry over; ids are stable by position */
+    var newRoster=[], newScores={};
+    names.forEach(function(nm,i){
+      var id=String(i+1);
+      newRoster.push({id:id,name:nm});
+      var prev=roster[i];
+      if(prev && scores[prev.id]!=null) newScores[id]=scores[prev.id];
+    });
+    roster=newRoster; scores=newScores; save();
+    renderRoster();
+    $("rosterStatus").textContent="Class set — "+roster.length+" boys. Print their cards on the Answer cards tab.";
+  });
+  $("resetScoresBtn").addEventListener("click",function(){ if(confirm("Reset everyone's points to zero?")){ scores={}; save(); renderRoster(); } });
+  $("clearRosterBtn").addEventListener("click",function(){
+    if(confirm("Remove the class list and go back to anonymous play?")){ roster=[]; scores={}; $("rosterText").value=""; save(); renderRoster(); buildCards(); }
+  });
 
   /* ================= ANSWER CARDS ================= */
+  var colorFor={A:"#2b6ca3",B:"#1f8a5b",C:"#a8772a",D:"#8a3fb0"};
+  function qrInto(holder,text,px){ try{ new window.QRCode(holder,{text:text,width:px,height:px,correctLevel:QRCode.CorrectLevel.M}); }catch(e){ holder.appendChild(el("div","cap","(QR error)")); } }
+  function cardCell(letter,codeText,px,sizeIn){
+    var cell=el("div","qr-cell"); cell.style.setProperty("--qs",sizeIn+"in");
+    var lbl=el("div","lbl",letter); lbl.style.color=colorFor[letter]; cell.appendChild(lbl);
+    var holder=el("div"); cell.appendChild(holder); qrInto(holder,codeText,px);
+    cell.appendChild(el("div","cap",codeText+" · "+sizeIn+'"'));
+    return cell;
+  }
   function buildCards(){
     var sheet=$("cardsheet"); sheet.innerHTML="";
-    if(typeof window.QRCode==="undefined"){
-      sheet.appendChild(el("div","bad-box","The QR library did not load (needs an internet connection). Reload connected to print cards."));
-      return;
-    }
+    if(typeof window.QRCode==="undefined"){ sheet.appendChild(el("div","bad-box","The QR library did not load (needs internet). Reload connected to print.")); return; }
     var size=parseFloat($("cardSize").value)||5;
-    var sets=Math.max(1,Math.min(40,parseInt($("cardSets").value,10)||1));
     var px=Math.max(150,Math.min(1400,Math.round(size*220)));
-    var colors={A:"var(--a)",B:"var(--b)",C:"var(--c)",D:"var(--d)"};
-    for(var s=0;s<sets;s++){
-      LETTERS.forEach(function(L){
-        var cell=el("div","qr-cell"); cell.style.setProperty("--qs",size+"in");
-        var lbl=el("div","lbl",L); lbl.style.color=colors[L]; cell.appendChild(lbl);
-        var holder=el("div"); cell.appendChild(holder);
-        try{ new window.QRCode(holder,{text:ANSWER_PREFIX+L,width:px,height:px,correctLevel:QRCode.CorrectLevel.M}); }
-        catch(e){ cell.appendChild(el("div","cap","(QR error)")); }
-        cell.appendChild(el("div","cap",ANSWER_PREFIX+L+" · "+size+'"'));
-        sheet.appendChild(cell);
+    if(hasRoster()){
+      $("cardsMode").innerHTML="<strong>Per-student cards.</strong> Each boy gets his own sheet (his four cards, coded to his id) — so the camera records who answered what. "+roster.length+" sheet"+(roster.length>1?"s":"")+".";
+      $("setsLabel").style.display="none";
+      roster.forEach(function(s){
+        var sh=el("div","stu-sheet");
+        sh.appendChild(el("div","who",s.name+"  (#"+s.id+")"));
+        var cc=el("div","stu-cards");
+        LETTERS.forEach(function(L){ cc.appendChild(cardCell(L, STU_PREFIX+s.id+":"+L, px, size)); });
+        sh.appendChild(cc); sheet.appendChild(sh);
       });
+    } else {
+      $("cardsMode").innerHTML="<strong>Shared A/B/C/D cards (anonymous).</strong> Print a set per boy, or one class set. Set a class list on the <em>Class</em> tab to switch to per-student cards with points.";
+      $("setsLabel").style.display="";
+      var sets=Math.max(1,Math.min(40,parseInt($("cardSets").value,10)||1));
+      for(var i=0;i<sets;i++){ LETTERS.forEach(function(L){ sheet.appendChild(cardCell(L, ANON_PREFIX+L, px, size)); }); }
     }
   }
   $("genCardsBtn").addEventListener("click",buildCards);
@@ -427,19 +545,14 @@
   /* ================= PLAY ================= */
   var camSel=$("camSel"), startBtn=$("startBtn"), stopBtn=$("stopBtn"),
       vid=$("vid"), ov=$("ov"), octx=ov.getContext("2d");
-  var stream=null, detector=null, supported=false;
-  var running=false, timer=null;
-  var qIndex=0, revealed=false;
-  var tallyNow={A:0,B:0,C:0,D:0}, tallyPeak={A:0,B:0,C:0,D:0}, seenMax=0;
-  var passTimes=[];
-  var game={asked:0,right:0,bestRate:0};
+  var stream=null, detector=null, supported=false, running=false, timer=null;
+  var qIndex=0, revealed=false, perStudent=false;
+  var tallyNow={A:0,B:0,C:0,D:0}, seenMax=0, passTimes=[];
+  var studentAnswer={};           /* id -> {L, ts}  (per-student mode) */
+  var game={asked:0,right:0};
 
-  /* ----- detector support ----- */
   (function(){
-    if(!("BarcodeDetector" in window)){
-      $("support").appendChild(el("div","bad-box","This browser has no QR detection and the polyfill did not load — check the internet connection, or use Chrome/Edge."));
-      startBtn.disabled=true; return;
-    }
+    if(!("BarcodeDetector" in window)){ $("support").appendChild(el("div","bad-box","This browser has no QR detection and the polyfill did not load — use Chrome/Edge with an internet connection.")); startBtn.disabled=true; return; }
     try{ detector=new window.BarcodeDetector({formats:["qr_code"]}); supported=true; }
     catch(e){ $("support").appendChild(el("div","bad-box","QR detector unavailable: "+e.message)); startBtn.disabled=true; }
   })();
@@ -447,203 +560,169 @@
   function listCams(){
     if(!navigator.mediaDevices||!navigator.mediaDevices.enumerateDevices) return Promise.resolve();
     return navigator.mediaDevices.enumerateDevices().then(function(devs){
-      var cams=devs.filter(function(d){ return d.kind==="videoinput"; });
-      var keep=camSel.value; camSel.innerHTML="";
+      var cams=devs.filter(function(d){ return d.kind==="videoinput"; }), keep=camSel.value; camSel.innerHTML="";
       if(!cams.length){ camSel.appendChild(el("option","","(no cameras found)")); return; }
-      cams.forEach(function(d,i){
-        var o=el("option"); o.value=d.deviceId;
-        o.textContent=d.label||("Camera "+(i+1));
-        camSel.appendChild(o);
-      });
+      cams.forEach(function(d,i){ var o=el("option"); o.value=d.deviceId; o.textContent=d.label||("Camera "+(i+1)); camSel.appendChild(o); });
       if(keep) camSel.value=keep;
     });
   }
-
-  function updateQCountHint(){
-    var h=$("qCountHint");
-    if(!questions.length){ h.innerHTML="No questions yet — add some on the <strong>Questions</strong> tab first (or load the samples)."; }
-    else h.textContent = questions.length+" question"+(questions.length>1?"s":"")+" ready. Print the answer cards, point the camera at the class, and Start.";
+  function updateSetupHint(){
+    var h=$("setupHint");
+    if(!questions.length){ h.innerHTML="No questions yet — add some on the <strong>Questions</strong> tab first (or load the samples)."; return; }
+    var mode= hasRoster()? (roster.length+" boys — per-student cards, points kept.") : "anonymous A/B/C/D (set a class list for per-student points).";
+    h.textContent=questions.length+" question"+(questions.length>1?"s":"")+" ready · "+mode+" Print the cards, aim the camera, and Start.";
   }
 
   startBtn.addEventListener("click",function(){
     if(!supported) return;
     if(!questions.length){ show("Q"); return; }
-    var v={ width:{ideal:1920}, height:{ideal:1080} };
-    if(camSel.value) v.deviceId={exact:camSel.value};
+    perStudent=hasRoster();
+    var v={ width:{ideal:1920}, height:{ideal:1080} }; if(camSel.value) v.deviceId={exact:camSel.value};
     startBtn.disabled=true;
-    navigator.mediaDevices.getUserMedia({video:v,audio:false}).then(function(s){
-      stream=s; vid.srcObject=s;
-      return vid.play().catch(function(){});
-    }).then(function(){
+    navigator.mediaDevices.getUserMedia({video:v,audio:false}).then(function(s){ stream=s; vid.srcObject=s; return vid.play().catch(function(){}); })
+    .then(function(){
       listCams();
       $("playSetup").hidden=true; $("playArea").hidden=false;
-      qIndex=0; game={asked:0,right:0,bestRate:0}; updateGameStats();
-      loadQuestion(0);
+      $("seenK").textContent = perStudent? "Answered" : "Cards seen";
+      $("scoreTitle").textContent = perStudent? "Leaderboard" : "Game so far";
+      $("lbWrap").hidden=!perStudent; $("anonStats").hidden=perStudent;
+      qIndex=0; game={asked:0,right:0};
+      loadQuestion(0); if(perStudent) renderLeaderboard();
       sizeOverlay(); startLoop();
-    }).catch(function(e){
-      startBtn.disabled=false;
-      $("support").appendChild(el("div","bad-box","Could not open the camera: "+e.name+" — "+e.message));
-    });
+    }).catch(function(e){ startBtn.disabled=false; $("support").appendChild(el("div","bad-box","Could not open the camera: "+e.name+" — "+e.message)); });
   });
   stopBtn.addEventListener("click",function(){
-    stopLoop();
-    if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream=null; }
-    vid.srcObject=null;
-    $("playArea").hidden=true; $("playSetup").hidden=false; startBtn.disabled=false;
+    stopLoop(); if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream=null; }
+    vid.srcObject=null; $("playArea").hidden=true; $("playSetup").hidden=false; startBtn.disabled=false;
   });
 
   function sizeOverlay(){ var w=vid.clientWidth,h=vid.clientHeight; if(w&&h&&(ov.width!==w||ov.height!==h)){ ov.width=w; ov.height=h; } }
   window.addEventListener("resize",sizeOverlay);
   vid.addEventListener("loadedmetadata",sizeOverlay);
 
-  /* ----- question flow ----- */
   function loadQuestion(i){
-    qIndex=i; revealed=false;
-    resetTally();
+    qIndex=i; revealed=false; tallyNow={A:0,B:0,C:0,D:0}; seenMax=0; studentAnswer={}; $("sMax").textContent="0";
     var q=questions[i]||{q:"—",opts:{},correct:""};
     $("qNum").textContent="Question "+(i+1)+" of "+questions.length;
     $("qText").textContent=q.q;
     var opts=$("qOpts"); opts.innerHTML="";
-    LETTERS.forEach(function(L){
-      var o=el("div","opt"); o.id="opt-"+L;
-      o.appendChild(el("span","lt "+L,L));
-      o.appendChild(el("span",null, (q.opts&&q.opts[L])? q.opts[L] : "" ));
-      opts.appendChild(o);
-    });
-    $("revealResult").hidden=true;
-    $("revealBtn").disabled=false;
-    $("nextBtn").disabled=true;
+    LETTERS.forEach(function(L){ var o=el("div","opt"); o.id="opt-"+L; o.appendChild(el("span","lt "+L,L)); o.appendChild(el("span",null,(q.opts&&q.opts[L])?q.opts[L]:"")); opts.appendChild(o); });
+    $("revealResult").hidden=true; $("revealBtn").disabled=false; $("nextBtn").disabled=true;
     renderTally();
   }
+
+  /* the current per-letter counts + who (per-student), pruning stale answers */
+  function snapshot(){
+    if(!perStudent){ var t=tallyNow; return {counts:{A:t.A,B:t.B,C:t.C,D:t.D}, answered:t.A+t.B+t.C+t.D, byLetter:null}; }
+    var now=Date.now(), counts={A:0,B:0,C:0,D:0}, byLetter={A:[],B:[],C:[],D:[]}, answered=0;
+    Object.keys(studentAnswer).forEach(function(id){ var e=studentAnswer[id]; if(now-e.ts>ANSWER_TTL) return; counts[e.L]++; byLetter[e.L].push(id); answered++; });
+    return {counts:counts, answered:answered, byLetter:byLetter};
+  }
+  function renderTally(){
+    var t=$("tally");
+    if(t.childNodes.length!==4){ t.innerHTML=""; LETTERS.forEach(function(L){ var d=el("div","ty "+L); d.id="ty-"+L; d.appendChild(el("div","lt "+L,L)); d.appendChild(el("div","cnt","0")); t.appendChild(d); }); }
+    var snap=snapshot(), counts=snap.counts, total=counts.A+counts.B+counts.C+counts.D;
+    var lead=LETTERS.reduce(function(a,L){ return counts[L]>counts[a]?L:a; },"A");
+    LETTERS.forEach(function(L){ var ty=$("ty-"+L); ty.querySelector(".cnt").textContent=counts[L];
+      if(!revealed){ ty.classList.remove("reveal-correct","reveal-wrong"); ty.classList.toggle("win", total>0 && counts[L]===counts[lead] && counts[lead]>0); } });
+    $("bigcount").textContent = perStudent
+      ? (snap.answered+" of "+roster.length+" answered")
+      : (total? (total+" card"+(total===1?"":"s")+" up") : "waiting for cards…");
+  }
+
   $("revealBtn").addEventListener("click",function(){
-    if(revealed) return;
-    revealed=true;
-    var q=questions[qIndex];
-    var counts=currentCounts();
-    // mark tally + option
-    LETTERS.forEach(function(L){
-      var ty=$("ty-"+L); ty.classList.remove("win");
-      if(L===q.correct){ ty.classList.add("reveal-correct"); $("opt-"+L).classList.add("correct"); }
-      else ty.classList.add("reveal-wrong");
-    });
-    var total=counts.A+counts.B+counts.C+counts.D;
-    var right=counts[q.correct]||0;
-    var rate= total? Math.round(100*right/total) : 0;
+    if(revealed) return; revealed=true;
+    var q=questions[qIndex], snap=snapshot(), counts=snap.counts, total=counts.A+counts.B+counts.C+counts.D;
+    LETTERS.forEach(function(L){ var ty=$("ty-"+L); ty.classList.remove("win");
+      if(L===q.correct){ ty.classList.add("reveal-correct"); $("opt-"+L).classList.add("correct"); } else ty.classList.add("reveal-wrong"); });
     game.asked++;
-    /* "class got it right" = the majority of raised cards picked the correct
-       letter (anonymous, so this is the class-level score). */
-    var majority = LETTERS.reduce(function(a,L){ return counts[L]>counts[a]?L:a; },"A");
-    if(majority===q.correct && total>0) game.right++;
-    if(rate>game.bestRate) game.bestRate=rate;
-    updateGameStats();
     var rr=$("revealResult"); rr.hidden=false;
-    rr.innerHTML="<strong>Correct answer: "+q.correct+"</strong> — "+
-      right+" of "+total+" card"+(total===1?"":"s")+" chose it ("+rate+"%)."+
-      (majority===q.correct? " The class had it." : " Most of the class missed it.");
-    $("revealBtn").disabled=true;
-    $("nextBtn").disabled=false;
+    if(perStudent){
+      var right=0, answered=snap.answered;
+      LETTERS.forEach(function(L){ if(L===q.correct){ (snap.byLetter[L]||[]).forEach(function(id){ scores[id]=(scores[id]||0)+PTS_PER_CORRECT; right++; }); } });
+      save(); renderLeaderboard();
+      rr.innerHTML="<strong>Correct answer: "+q.correct+"</strong> — "+right+" of "+answered+" who answered got it. "+
+        (answered<roster.length? ("("+(roster.length-answered)+" didn't answer.)") : "Everyone answered.");
+    } else {
+      var majority=LETTERS.reduce(function(a,L){ return counts[L]>counts[a]?L:a; },"A");
+      if(majority===q.correct && total>0) game.right++;
+      $("gAsked").textContent=game.asked; $("gRight").textContent=game.right;
+      var rate=total?Math.round(100*(counts[q.correct]||0)/total):0;
+      rr.innerHTML="<strong>Correct answer: "+q.correct+"</strong> — "+(counts[q.correct]||0)+" of "+total+" chose it ("+rate+"%). "+(majority===q.correct?"The class had it.":"Most missed it.");
+    }
+    $("revealBtn").disabled=true; $("nextBtn").disabled=false;
   });
   $("nextBtn").addEventListener("click",function(){
     if(qIndex+1>=questions.length){
-      // wrap-up
       var rr=$("revealResult"); rr.hidden=false;
-      rr.innerHTML="<strong>That was the last question.</strong> Class got the majority right on "+game.right+" of "+game.asked+". Press Stop, or add more questions.";
-      $("nextBtn").disabled=true;
-      return;
+      rr.innerHTML= perStudent
+        ? "<strong>That was the last question.</strong> Final standings are on the leaderboard. Press Stop, or add more questions."
+        : ("<strong>That was the last question.</strong> Class had the majority on "+game.right+" of "+game.asked+".");
+      $("nextBtn").disabled=true; return;
     }
     loadQuestion(qIndex+1);
   });
 
-  /* ----- tally ----- */
-  function resetTally(){ tallyNow={A:0,B:0,C:0,D:0}; tallyPeak={A:0,B:0,C:0,D:0}; seenMax=0; $("sMax").textContent="0"; }
-  function currentCounts(){ return ($("freezeMode").value==="peak")? tallyPeak : tallyNow; }
-  function renderTally(){
-    var t=$("tally");
-    if(t.childNodes.length!==4){
-      t.innerHTML="";
-      LETTERS.forEach(function(L){
-        var d=el("div","ty "+L); d.id="ty-"+L;
-        d.appendChild(el("div","lt "+L,L));
-        d.appendChild(el("div","cnt","0"));
-        t.appendChild(d);
-      });
-    }
-    var counts=currentCounts();
-    var total=counts.A+counts.B+counts.C+counts.D;
-    var lead=LETTERS.reduce(function(a,L){ return counts[L]>counts[a]?L:a; },"A");
-    LETTERS.forEach(function(L){
-      var ty=$("ty-"+L);
-      ty.querySelector(".cnt").textContent=counts[L];
-      if(!revealed){
-        ty.classList.remove("reveal-correct","reveal-wrong");
-        ty.classList.toggle("win", total>0 && counts[L]===counts[lead] && counts[lead]>0);
-      }
+  function renderLeaderboard(){
+    var ol=$("leaderboard"); ol.innerHTML="";
+    var ranked=roster.slice().sort(function(a,b){ return (scores[b.id]||0)-(scores[a.id]||0); });
+    var top=ranked.length?(scores[ranked[0].id]||0):0;
+    ranked.forEach(function(s){
+      var li=el("li"); var p=scores[s.id]||0; if(p>0&&p===top) li.className="top";
+      li.appendChild(el("span","nm",s.name));
+      li.appendChild(el("span","pts",p+" pt"+(p===1?"":"s")));
+      ol.appendChild(li);
     });
-    $("bigcount").textContent = total? (total+" card"+(total===1?"":"s")+" up"+($("freezeMode").value==="peak"?" (peak this question)":"")) : "waiting for cards…";
   }
 
-  /* ----- detection loop ----- */
+  /* ----- detection loop (reused engine) ----- */
   function startLoop(){ if(running||!supported) return; running=true; passTimes=[]; onePass(); }
   function stopLoop(){ running=false; if(timer){ clearTimeout(timer); timer=null; } $("sFps").textContent="–"; }
   var work=document.createElement("canvas"), wctx=work.getContext("2d",{willReadFrequently:true});
   function onePass(){
     if(!running) return;
-    var vw=vid.videoWidth, vh=vid.videoHeight;
-    if(!vw||!vh){ timer=setTimeout(onePass,150); return; }
-    var W=Math.min(1920,vw), H=Math.round(vh*(W/vw));
-    if(work.width!==W){ work.width=W; work.height=H; }
+    var vw=vid.videoWidth, vh=vid.videoHeight; if(!vw||!vh){ timer=setTimeout(onePass,150); return; }
+    var W=Math.min(1920,vw), H=Math.round(vh*(W/vw)); if(work.width!==W){ work.width=W; work.height=H; }
     wctx.drawImage(vid,0,0,W,H);
     detector.detect(work).then(function(codes){ handleCodes(codes||[],W,H); }).catch(function(){}).then(function(){
-      var now=performance.now(); passTimes.push(now);
-      while(passTimes.length && now-passTimes[0]>2000) passTimes.shift();
+      var now=performance.now(); passTimes.push(now); while(passTimes.length && now-passTimes[0]>2000) passTimes.shift();
       if(passTimes.length>1){ var span=(now-passTimes[0])/1000; $("sFps").textContent=span>0?((passTimes.length-1)/span).toFixed(1):"–"; }
       if(running) timer=setTimeout(onePass,150);
     });
   }
   function handleCodes(codes,W,H){
-    sizeOverlay();
-    octx.clearRect(0,0,ov.width,ov.height);
-    var sx=ov.width/W, sy=ov.height/H;
+    sizeOverlay(); octx.clearRect(0,0,ov.width,ov.height);
+    var sx=ov.width/W, sy=ov.height/H, now=Date.now();
     var count={A:0,B:0,C:0,D:0}, total=0;
-    var colorFor={A:"#2b6ca3",B:"#1f8a5b",C:"#a8772a",D:"#8a3fb0"};
     codes.forEach(function(c){
-      var v=String(c.rawValue||"");
-      if(v.indexOf(ANSWER_PREFIX)!==0) return;
-      var L=v.slice(ANSWER_PREFIX.length).trim().toUpperCase().charAt(0);
-      if(LETTERS.indexOf(L)<0) return;
+      var v=String(c.rawValue||""), L=null, sid=null;
+      var mS=/^HAD:([^:]+):([ABCD])$/i.exec(v), mA=/^ANS:([ABCD])$/i.exec(v);
+      if(mS){ sid=mS[1]; L=mS[2].toUpperCase(); if(!perStudent) return; if(!nameKnown(sid)) return; }
+      else if(mA){ L=mA[1].toUpperCase(); if(perStudent) return; }
+      else return;
       count[L]++; total++;
+      if(sid) studentAnswer[sid]={L:L,ts:now};
       var pts=c.cornerPoints;
       if(pts&&pts.length){
-        octx.lineWidth=3; octx.strokeStyle=colorFor[L]; octx.fillStyle="rgba(0,0,0,0)";
-        octx.beginPath();
-        var bx,by;
+        octx.lineWidth=3; octx.strokeStyle=colorFor[L]; octx.beginPath(); var bx,by;
         pts.forEach(function(p,i){ var x=p.x*sx,y=p.y*sy; if(i===0){octx.moveTo(x,y);bx=x;by=y;}else{octx.lineTo(x,y); if(y<by){bx=x;by=y;}} });
         octx.closePath(); octx.stroke();
-        octx.fillStyle=colorFor[L]; octx.font="bold 20px sans-serif";
-        octx.fillText(L, bx, Math.max(18,by-6));
+        octx.fillStyle=colorFor[L]; octx.font="bold 18px sans-serif";
+        octx.fillText(sid? (nameOf(sid)+" "+L) : L, bx, Math.max(16,by-6));
       }
     });
-    tallyNow=count;
-    LETTERS.forEach(function(L){ if(count[L]>tallyPeak[L]) tallyPeak[L]=count[L]; });
+    if(!perStudent) tallyNow=count;
     if(total>seenMax){ seenMax=total; $("sMax").textContent=String(total); }
-    $("sSeen").textContent=String(total);
-    if(!revealed || $("freezeMode").value==="peak") renderTally();
-    else renderTally();
+    $("sSeen").textContent = perStudent? String(snapshot().answered) : String(total);
+    renderTally();
   }
-
-  $("freezeMode").addEventListener("change",renderTally);
-
-  function updateGameStats(){
-    $("gAsked").textContent=game.asked;
-    $("gRight").textContent=game.right;
-    $("gRate").textContent=game.asked? game.bestRate+"%" : "–";
-  }
+  function nameKnown(id){ for(var i=0;i<roster.length;i++){ if(roster[i].id===id) return true; } return false; }
 
   /* ---------- boot ---------- */
   load();
   listCams();
   renderQList();
-  updateQCountHint();
+  updateSetupHint();
 })();
 </script>
 </body>
