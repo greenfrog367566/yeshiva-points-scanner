@@ -20444,12 +20444,30 @@ nameLine
   // pushSnapshot() already uses, and it is exactly the weakness that let a
   // failed send stamp _sentAt in the first place — worth knowing before relying
   // on it for anything stricter.
+  // Almost every caller fires and forgets, so a failure here must be handled
+  // HERE: without the internal catch below, each failed send — including the
+  // everyday case of auto-sync switched on before a sheet link is saved —
+  // surfaces as an unhandled promise rejection on every single scan, undo,
+  // note and attendance mark. The catch is a branch off the returned promise,
+  // not a replacement for it, so the one caller that chains its own
+  // .then/.catch (the attendance re-send) still sees the rejection itself.
+  var pushToSheetWarned = {};
   function pushToSheet(payload){
     var url=(data.sheetUrl||"").trim();
-    if(!url) return Promise.reject(new Error("no sheet url"));
-    try{
-      return fetch(url, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)});
-    }catch(e){ return Promise.reject(e); }
+    var p;
+    if(!url) p = Promise.reject(new Error("no sheet url"));
+    else{
+      try{
+        p = fetch(url, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)});
+      }catch(e){ p = Promise.reject(e); }
+    }
+    p.catch(function(e){
+      var reason = (e && e.message) || String(e);
+      if(pushToSheetWarned[reason]) return;
+      pushToSheetWarned[reason] = true;
+      console.warn("Sheet sync failed ("+reason+") — scans are safe locally; check the sheet link under Backup & Sheets. Further identical failures won't be logged this session.");
+    });
+    return p;
   }
   function standingsRows(){
     return data.students.slice().map(function(s){ return {s:s, sc:score(s.id)}; })
