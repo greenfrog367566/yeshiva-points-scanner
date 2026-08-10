@@ -481,6 +481,14 @@
         <button class="btn gold" id="setRosterBtn">Set class list</button>
         <div id="rosterStatus" class="hint" style="margin:0;align-self:center"></div>
       </div>
+      <div class="note" style="margin-top:12px">
+        <div class="row">
+          <strong style="font-size:.9rem">No names? Just numbers.</strong>
+          <label class="f" style="margin:0">Boys <input id="numCount" type="number" value="15" min="1" max="60"></label>
+          <button class="btn sec" id="numRosterBtn">Create numbered class</button>
+        </div>
+        <p class="hint" style="margin-bottom:0">Makes a class of #1…#N — each boy gets his own printed cards with just his number, so points and the leaderboard still work without typing any names. Assign the numbers however you like (or let each boy keep his card set).</p>
+      </div>
     </div>
     <div class="card" id="rosterCard" hidden>
       <h2>Class <span class="hint" style="font-weight:400" id="rosterCount"></span></h2>
@@ -684,6 +692,15 @@
     renderRoster();
     $("rosterStatus").textContent="Class set — "+roster.length+" boys. Print their cards on the Answer cards tab.";
   });
+  $("numRosterBtn").addEventListener("click",function(){
+    var n=clampInt($("numCount").value,1,60,15);
+    if(hasRoster() && !confirm("Replace the current class list ("+roster.length+" boys)? Points reset too.")) return;
+    roster=[]; scores={};
+    for(var i=1;i<=n;i++) roster.push({id:String(i),name:"#"+i});
+    $("rosterText").value=roster.map(function(s){ return s.name; }).join("\n");
+    save(); renderRoster();
+    $("rosterStatus").textContent="Numbered class set — #1 to #"+n+". Print the cards on the Answer cards tab.";
+  });
   $("resetScoresBtn").addEventListener("click",function(){ if(confirm("Reset everyone's points to zero?")){ scores={}; save(); renderRoster(); } });
   $("clearRosterBtn").addEventListener("click",function(){
     if(confirm("Remove the class list and go back to anonymous play?")){ roster=[]; scores={}; $("rosterText").value=""; save(); renderRoster(); buildCards(); }
@@ -709,7 +726,7 @@
       $("setsLabel").style.display="none";
       roster.forEach(function(s){
         var sh=el("div","stu-sheet");
-        sh.appendChild(el("div","who",s.name+"  (#"+s.id+")"));
+        sh.appendChild(el("div","who",s.name==="#"+s.id ? s.name : s.name+"  (#"+s.id+")"));
         var cc=el("div","stu-cards");
         LETTERS.forEach(function(L){ cc.appendChild(cardCell(L, STU_PREFIX+s.id+":"+L, px, size)); });
         sh.appendChild(cc); sheet.appendChild(sh);
@@ -751,6 +768,9 @@
   var passTimes=[];
   var tallyNow={A:0,B:0,C:0,D:0};   /* anonymous current-frame letter counts    */
   var studentAnswer={};             /* id -> {L}  latched for the question       */
+  var seatMap={};                   /* id -> learned pan bearing (deg) — every decode
+                                       notes the gimbal's pan + the card's offset in
+                                       frame, so the lobby scan builds the seat map */
   var seenLive={};                  /* id -> ts   currently visible (calibration)*/
   var calibSeen={};                 /* id -> true seen at any point THIS calibration scan (sticky) */
   var game={asked:0,right:0};
@@ -1001,9 +1021,36 @@
     var dwell=clampInt($("sweepDwell").value,300,4000,900), k=0;
     $("sweepStatusLine").textContent="Scanning the room…";
     (function step(){
-      if(k>=stops.length){ ptzSet({pan:0}); $("sweepStatusLine").textContent=""; done(); return; }
+      if(k>=stops.length){ huntMissing(function(){ ptzSet({pan:0}).catch(function(){}); $("sweepStatusLine").textContent=""; done(); }); return; }
       ptzSet({pan:stops[k]}).then(function(){ setTimeout(function(){ k++; step(); }, dwell+SWEEP_SETTLE); })
         .catch(function(){ $("sweepStatusLine").textContent=""; done(); });
+    })();
+  }
+  /* ---- seat-memory hunt: after the sweep, go looking for whoever is still
+     missing — drive the gimbal to each missing boy's learned bearing, zoom in,
+     and give his card a moment to decode. Capped so the game never stalls. ---- */
+  var HFOV_BASE=67, HUNT_DWELL=1600, HUNT_MAX=8000, HUNT_ZOOM=180;
+  function huntMissing(done){
+    if(!ptzhttp.ok || !perStudent || mode!=="game"){ done(); return; }
+    var missing=roster.filter(function(s){ return !studentAnswer[s.id] && seatMap[s.id]!=null; })
+                      .sort(function(a,b){ return seatMap[a.id]-seatMap[b.id]; });
+    if(!missing.length){ done(); return; }
+    var t0=Date.now(), k=0;
+    (function nextBoy(){
+      if(k>=missing.length || Date.now()-t0>HUNT_MAX){
+        ptzSet({pan:0,tilt:0,zoom:100}).catch(function(){});
+        $("sweepStatusLine").textContent="";
+        done(); return;
+      }
+      var s=missing[k++];
+      if(studentAnswer[s.id]){ nextBoy(); return; }        /* found since the sweep */
+      $("sweepStatusLine").textContent="Looking for "+s.name+"…";
+      ptzSet({pan:seatMap[s.id],zoom:HUNT_ZOOM}).catch(function(){});
+      var w0=Date.now();
+      (function waitRead(){
+        if(studentAnswer[s.id] || Date.now()-w0>HUNT_DWELL){ nextBoy(); return; }
+        setTimeout(waitRead,200);
+      })();
     })();
   }
   function doReveal(){
@@ -1188,6 +1235,13 @@
       /* Privacy: the overlay shows only WHO was scanned — a neutral box and the
          boy's name, never which letter he chose (no colour-coding by choice). */
       var pts=c.cornerPoints;
+      if(sid && ptzhttp.ok && pts && pts.length){
+        /* learn where he sits: gimbal pan + the card's angular offset in frame */
+        var cxs=0; pts.forEach(function(p){ cxs+=p.x; }); cxs/=pts.length;
+        var hfov=HFOV_BASE/Math.max(1,(ptzhttp.cur.zoom||100)/100);
+        var bearing=ptzhttp.cur.pan+((cxs/W)-0.5)*hfov;
+        seatMap[sid]=Math.max(ptzhttp.pan[0],Math.min(ptzhttp.pan[1],bearing));
+      }
       if(pts&&pts.length){
         octx.lineWidth=3; octx.strokeStyle="#e8b321"; octx.beginPath(); var bx,by;
         pts.forEach(function(p,i){ var x=p.x*sx,y=p.y*sy; if(i===0){octx.moveTo(x,y);bx=x;by=y;}else{octx.lineTo(x,y); if(y<by){bx=x;by=y;}} });
