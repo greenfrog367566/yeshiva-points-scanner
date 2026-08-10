@@ -600,18 +600,60 @@
   var SWEEP_SETTLE_MS=420;      /* gimbal travel before the picture is worth reading */
   var sweep={stops:[],idx:0,dir:1,moving:false,arrivedAt:0,seen:null,perStop:[],startedAt:0};
 
+  /* ---- Local PTZ bridge (ptz-bridge.ps1) ----
+     The Link's pan/tilt are a vendor extension unit no browser can reach, but
+     they ARE standard DirectShow camera controls, which a tiny local PowerShell
+     server exposes over http. If it is running, the sweep drives the REAL gimbal
+     directly with ABSOLUTE angles — no Link Controller app, no token, no QR. */
+  var ptzhttp={ url:"http://localhost:8787", ok:false, device:"",
+                pan:[-145,145], tilt:[-90,100], zoom:[100,400] };
+  function probePtzHttp(){
+    return fetch(ptzhttp.url+"/status",{cache:"no-store"}).then(function(r){ return r.json(); })
+      .then(function(j){
+        ptzhttp.ok=true; ptzhttp.device=j.device||"camera";
+        if(j.panRange) ptzhttp.pan=j.panRange;
+        if(j.tiltRange) ptzhttp.tilt=j.tiltRange;
+        if(j.zoomRange) ptzhttp.zoom=j.zoomRange;
+        return true;
+      }).catch(function(){ ptzhttp.ok=false; return false; });
+  }
+  function ptzHttpSet(params){
+    var qs=Object.keys(params).map(function(k){ return k+"="+Math.round(params[k]); }).join("&");
+    return fetch(ptzhttp.url+"/set?"+qs,{cache:"no-store"}).then(function(r){ return r.json(); });
+  }
+  /* Precedence: the local bridge (deliberate, absolute, most reliable) wins;
+     then the camera's own pan if Chrome exposes it; then Link Controller. */
+  function sweepTransport(){
+    if(ptzhttp.ok) return "ptzhttp";
+    if(panCaps&&ptzTrack) return "native";
+    if(bridge.connected) return "ws";
+    return null;
+  }
+  function sweepPanRange(){
+    if(ptzhttp.ok) return {min:ptzhttp.pan[0],max:ptzhttp.pan[1],step:1};
+    if(panCaps) return panCaps;
+    return null;
+  }
+  function sweepTiltRange(){
+    if(ptzhttp.ok) return {min:ptzhttp.tilt[0],max:ptzhttp.tilt[1],step:1};
+    if(tiltCaps) return tiltCaps;
+    return null;
+  }
+
   /* Sweep can be driven two ways — the camera's own pan, or the Link Controller
      bridge — so its panel appears when EITHER is available, and reappears if the
      bridge connects later. */
   function refreshSweepAvailability(){
-    if(panCaps&&ptzTrack) return;                 /* native already showing */
-    if(bridge.connected){
+    if(panCaps&&ptzTrack && !ptzhttp.ok) return;  /* native already showing, no bridge to prefer */
+    if(ptzhttp.ok || bridge.connected){
       sweepNone.hidden=true;
       sweepWrap.hidden=false;
       $("ptzHint").hidden=true;
       syncPatternUI();
       if(!sweepOnBox.checked)
-        sweepStatus.textContent="Driving the gimbal through Link Controller. Stops are relative moves, so it starts from wherever the camera is aimed now.";
+        sweepStatus.textContent = ptzhttp.ok
+          ? "Local PTZ bridge connected ("+ptzhttp.device+") — sweep drives the real gimbal directly, at absolute angles. Turn the Link's AI tracking off first."
+          : "Driving the gimbal through Link Controller. Stops are relative moves, so it starts from wherever the camera is aimed now.";
     } else {
       sweepWrap.hidden=true;
       sweepOnBox.checked=false;
@@ -626,18 +668,21 @@
     resetSweep();
     var p=caps.pan;
     if(!p || typeof p.max!=="number" || p.max<=p.min){
-      ptzTrack=t;                                  /* remembered so the bridge can still sweep */
+      ptzTrack=t;                                  /* remembered so a bridge can still sweep */
       sweepNone.hidden=true;
+      /* A fresh probe in case the local bridge was started after page load;
+         when it answers, re-render so the sweep panel appears on its own. */
+      probePtzHttp().then(function(ok){ if(ok) refreshSweepAvailability(); });
       refreshSweepAvailability();
       if(sweepWrap.hidden) sweepNone.hidden=false;
       sweepNone.innerHTML="<strong>Sweep needs pan control, and this camera exposes none to the browser"+
         (ptzDenied? " (the pan/tilt/zoom permission was refused)." : ".")+"</strong><br>"+
-        "On the Insta360 Link this is expected rather than a fault: its <em>zoom</em> is a standard UVC control, "+
-        "which is why the zoom panel above works, but <em>pan and tilt</em> are vendor extension-unit commands, "+
-        "and browsers deliberately cannot reach those. The gimbal is only steerable through Insta360's own Link "+
-        "Controller app — so use the <strong>Link Controller bridge</strong> below: pair it with the app's QR code, "+
-        "connect, and sweep switches itself on using the gimbal through that instead. "+
-        "Whatever aims the camera, turn the Link's AI tracking off first, or it will fight it.";
+        "On the Insta360 Link this is expected: <em>zoom</em> is a standard control (so the zoom panel works), but "+
+        "<em>pan and tilt</em> are a vendor extension unit the browser cannot reach. Two ways to sweep anyway:<br>"+
+        "<strong>1. Local PTZ bridge (recommended)</strong> — run <code>ptz-bridge.ps1</code> and this page drives "+
+        "the real gimbal directly, at absolute angles. It is not detected right now; start it and press Start again.<br>"+
+        "<strong>2. Link Controller bridge</strong> — pair with the app's QR code below. "+
+        "Either way, turn the Link's AI tracking off first, or it will fight the sweep.";
       sweepOnBox.checked=false;
       return;
     }
@@ -651,9 +696,10 @@
 
   function syncPatternUI(){
     var grid=$("sweepPattern").value==="grid";
-    $("tiltRowsLabel").hidden=!(grid&&tiltCaps);
-    $("tiltSpanLabel").hidden=!(grid&&tiltCaps);
-    if(grid&&!tiltCaps) sweepStatus.textContent="This camera reports no tilt, so a grid sweep will pan only.";
+    var haveTilt=!!sweepTiltRange();
+    $("tiltRowsLabel").hidden=!(grid&&haveTilt);
+    $("tiltSpanLabel").hidden=!(grid&&haveTilt);
+    if(grid&&!haveTilt) sweepStatus.textContent="This camera reports no tilt, so a grid sweep will pan only.";
   }
   $("sweepPattern").addEventListener("change",function(){
     var v=$("sweepPattern").value;
@@ -682,25 +728,27 @@
      repeatable — not around wherever it happened to be pointing. */
   function buildStops(){
     var n=clampInt($("sweepStops").value,2,20,5);
-    /* Bridge mode has no absolute positions to aim at — a "stop" is just one
-       relative move further along, so the list is placeholders. */
-    if(!panCaps){
+    var pr=sweepPanRange();   /* native OR local bridge — both absolute */
+    /* Only the Link Controller WebSocket path is relative; there a "stop" is one
+       move further along, so the list is placeholders. */
+    if(!pr){
       if(!bridge.connected) return [];
       var out=[];
       for(var k=0;k<n;k++) out.push({pan:null,tilt:null});
       return out;
     }
     var pct=Math.max(5,Math.min(100,parseFloat($("sweepSpan").value)||60))/100;
-    var pc=(panCaps.min+panCaps.max)/2, pspan=(panCaps.max-panCaps.min)*pct;
+    var pc=(pr.min+pr.max)/2, pspan=(pr.max-pr.min)*pct;
     var pans=[];
     for(var i=0;i<n;i++) pans.push(pc-pspan/2+pspan*(i/(n-1)));
 
-    if($("sweepPattern").value!=="grid" || !tiltCaps)
+    var tr=sweepTiltRange();
+    if($("sweepPattern").value!=="grid" || !tr)
       return pans.map(function(p){ return {pan:p,tilt:null}; });
 
     var rows=clampInt($("sweepTiltRows").value,1,5,2);
     var tpct=Math.max(5,Math.min(100,parseFloat($("sweepTiltSpan").value)||35))/100;
-    var tc=(tiltCaps.min+tiltCaps.max)/2, tspan=(tiltCaps.max-tiltCaps.min)*tpct;
+    var tc=(tr.min+tr.max)/2, tspan=(tr.max-tr.min)*tpct;
     var out=[];
     for(var r=0;r<rows;r++){
       var t=(rows===1)? tc : tc-tspan/2+tspan*(r/(rows-1));
@@ -723,6 +771,21 @@
 
   function sweepGoTo(i,prevIdx){
     if(!sweep.stops.length) return;
+
+    /* Local PTZ bridge: absolute angles over http to the real DirectShow control
+       — the most reliable path, and exactly repeatable. */
+    if(sweepTransport()==="ptzhttp"){
+      var s=sweep.stops[Math.max(0,Math.min(sweep.stops.length-1,i))];
+      var params={};
+      if(s.pan!=null)  params.pan =Math.max(ptzhttp.pan[0], Math.min(ptzhttp.pan[1], s.pan));
+      if(s.tilt!=null) params.tilt=Math.max(ptzhttp.tilt[0],Math.min(ptzhttp.tilt[1],s.tilt));
+      sweep.moving=true;
+      ptzHttpSet(params).catch(function(e){
+        sweepStatus.textContent="Lost the local PTZ bridge — is ptz-bridge.ps1 still running? Sweep stopped.";
+        ptzhttp.ok=false; sweepOnBox.checked=false;
+      }).then(function(){ sweepArrived(); });
+      return;
+    }
 
     /* Native path: absolute positions, so every stop is exactly repeatable. */
     if(panCaps&&ptzTrack){
@@ -830,7 +893,7 @@
 
   function sweepTick(values){
     if(!sweepOnBox.checked) return;
-    if(!(panCaps&&ptzTrack) && !bridge.connected) return;
+    if(!sweepTransport()) return;
     if(!sweep.stops.length){
       sweep.stops=buildStops();
       if(!sweep.stops.length){ sweepOnBox.checked=false; return; }
@@ -1601,6 +1664,7 @@
   /* ---------- boot ---------- */
   listCams();
   renderLog();
+  probePtzHttp().then(function(ok){ if(ok && ptzTrack) refreshSweepAvailability(); });
 })();
 </script>
 </body>
