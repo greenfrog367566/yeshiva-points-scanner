@@ -27,12 +27,41 @@ accepted knowingly; read #218 for the feasibility case. In brief:
 - **Tier 1 — schools with a real relationship** (starting with Ben's own):
   everything in this document, unchanged. Real accounts, Firestore, three
   roles, admin oversight, view-as, security rules, converter tool.
-- **Tier 2 — an independent rebbi with no institutional agreement:** stays
-  local. localStorage exactly as today, plus a backup written to **his own**
-  Google Drive (`drive.file` scope, plain `fetch`, no SDK). Ben holds nothing.
+- **Tier 2 — an independent rebbi with no institutional agreement:** his
+  **class data** stays local. localStorage exactly as today, plus a backup
+  written to **his own** Google Drive (`drive.file` scope, plain `fetch`, no
+  SDK). Ben holds **no student records** — not a name, not a score, not a
+  photo.
 - **This document describes tier 1.** Nothing in it needed to change to
   accommodate the split — it just stopped being the only option. Where a
   locked decision below now applies to only one tier, it says so.
+
+**Amended 2026-08-09 — identity is universal; the tier gates only where CLASS
+DATA lives.** See `docs/Universal_SignIn_Proposal.md` (ACCEPTED). The split
+above governs custody of *student records*; it was never a decision that tier
+2 should be **anonymous**, and the two got conflated in the first draft. They
+are separable, and separating them is what makes the product feel finished:
+
+- **Every rebbi signs in, both tiers, same Google button.** No comparable
+  product ships browser-profile-as-account (ClassDojo gives every teacher a
+  real account; PBIS Rewards / LiveSchool run school email or Clever /
+  ClassLink SSO), and codes across that whole category are for *joining*,
+  never for authenticating.
+- **What Ben's Firestore holds for a tier-2 rebbi is an account record only:**
+  email, display name, tier, `schoolId` (null), created-at. **No class data
+  of any kind.** Holding a consenting adult's email is ordinary SaaS ground
+  and is covered by the privacy note owed under Q3; holding a stranger
+  school's student records is the liability the split exists to avoid. **The
+  custody decision is untouched by this.**
+- **No new rule-3 conflict.** The Drive spike already proved no-SDK Google
+  sign-in (plain redirect, token from the fragment, zero external scripts),
+  and Firestore has a **REST API** that accepts a bearer token from plain
+  `fetch` — so writing one account document needs no SDK. **Tier 2 still
+  never loads the Firebase SDK.**
+- **It also solves the spike's hardest finding structurally:** silent Drive
+  token renewal only works when the app names the account (`login_hint`).
+  With universal sign-in the account *is* the hint, so the multi-account
+  failure that silently stops a backup cannot occur.
 
 **The consequence that matters for step 1:** the storage seam this rebuild
 has to cut anyway (whole-blob `save()` → incremental writes) now has **two
@@ -76,6 +105,7 @@ reversible. Do not unpick the architecture to get there.
 - **Activity overview for superadmin:** a light dashboard — who's logged in, who's active, who hasn't touched it since the invite. Distinct from "view as."
 - **"View as this rebbi" (superadmin):** pull up a rebbi's real state to debug his actual problem instead of reconstructing it from an email. This is the single biggest killer of the support-email burden.
 - **All three roles, the activity overview and view-as are tier-1 only** (2026-08-09). For tier 2 there is no server-side copy to oversee or view, so none of it can exist by construction. Support for a tier-2 rebbi stays "send me your backup" → the converter tool. Stated here rather than left to be discovered: it is a real cost of the split, and it falls hardest on rebbeim with no colleague or IT department to ask.
+- **Identity is NOT tiered — only class data is** (2026-08-09, see the custody section above). Every rebbi in every tier has a real account he signs into. What the tier decides is where his class lives, and therefore which of the capabilities above can exist for him. A tier-2 rebbi is a **fully-fledged signed-in user with a standalone account**, not a guest and not a degraded mode. The activity overview can therefore see *that* a tier-2 rebbi exists and when he last signed in — account metadata — while still seeing nothing whatsoever of his class.
 
 ### Data model (the hard part, and why)
 
@@ -105,8 +135,46 @@ The doc as first written assumed someone else always builds the roster before a 
   - Roster-only: type/paste a class, get an account + link/code. For new rebbeim.
   - Backup-upload: feed an existing tester's JSON export, seed his account with his real class exactly as it stands. Includes activities and the full history — "starter class" for an existing rebbi means his actual class.
 - **Bulk mode** for the full beta list (above).
-- **Doubles as the recovery path:** account breaks → re-run from a fresh backup. This is why it's a tool, not a one-time script. Superadmin-gated at minimum.
-- **Old localStorage retires on conversion:** the app detects a converted device and shows a one-time "your class has moved" screen instead of quietly running a stale local copy alongside the real one. No forks.
+- **Doubles as the recovery path:** account breaks → re-run from a fresh backup. This is why it's a tool, not a one-time script. ~~Superadmin-gated at minimum.~~ **Amended 2026-08-09 — see "Bringing the existing cohort in" below: the bulk and provisioning modes stay superadmin-gated, but a rebbi restoring HIS OWN class into HIS OWN account must be self-serve.**
+- **Old localStorage retires on conversion:** the app detects a converted device and shows a one-time "your class has moved" screen instead of quietly running a stale local copy alongside the real one. No forks. **That screen must not fire until the data is provably in the account** (read back and compare counts, then retire) — a conversion that half-succeeded and then cleared the local copy is the worst outcome available.
+
+### Bringing the existing cohort in — REQUIRED, and it gates the sign-in rollout
+
+**Added 2026-08-09 as Ben's condition on accepting universal sign-in:** *"make
+sure to include a data upload for current beta rebbeim."* Full specification
+in `docs/Universal_SignIn_Proposal.md` §10; the load-bearing points:
+
+- **This is a gate, not a feature.** The beta cohort onboarded on v0.9.0
+  (2026-07-18) and has real classes in `localStorage` **today**. Universal
+  sign-in makes signing in the front door — so if a rebbi signs in and his
+  class is not there, sign-in is a **downgrade**. The upload path ships
+  **before** any beta rebbi is asked to sign in.
+- **Same-device adoption is the common case and the one to make excellent.**
+  Most will sign in on the machine they already teach with, where the class is
+  already in `localStorage`. Detect it and offer to claim it — *"This device
+  has a class — Sample Class 1, 24 boys, last scan today. Add it to your
+  account?"* No export, no file, no round trip.
+- **Self-serve backup upload** for a new device, recovery, or the `file://`
+  cohort. This is the converter's backup-upload mode, ungated for own-account
+  restore (above). Needing Ben to restore a rebbi's own class is precisely the
+  support burden this rebuild exists to end.
+- **Drive restore** for tier 2 once the backup ships — *"found a backup in
+  your Drive from Aug 9 — restore it?"*
+- **For tier 2, "upload" moves nothing.** The class stays on his device by
+  design; the operation claims it under his account and starts backing it up
+  to his own Drive. Custody unchanged.
+- **Safety properties, each a lesson already paid for:** never silently
+  overwrite a class already in the account (**the #244 seed-guard shape — do
+  not rebuild that bug in the cloud**); idempotent re-upload (tier 1 gets this
+  from open question 3's deterministic write ids, **tier 2 needs it stated
+  explicitly**); non-destructive until verified; a stored receipt in the shape
+  of `data.attConversion` / `data.mirrorBackfill`; and **carry the whole
+  class** — activities, log, tracked items and `trackedData`, Shulchani
+  balances, raffle/prize history, seating, settings. A partial import that
+  reports success is worse than a clean failure.
+- **It needs the same verification harness as the converter** (open question
+  6). This is the largest data migration in the project's history after 2c and
+  there is no Firestore analogue to `test-migration.html` yet.
 
 ### What retires, what it's replaced by
 
@@ -229,7 +297,7 @@ Not features — the decisions the data-model session cannot start without, plus
   1. **One code namespace or two?** Recommend one field where the code itself carries its type (school code vs. beta PIN), so the rebbi never has to know which kind he was handed and the screen never grows a "what kind of code is this?" radio button.
   2. **Per-person PIN or per-batch code?** These pull in opposite directions and the answer probably differs by path: a **live PD room** wants one batch code readable off a projected screen (this is what Path B was written for), while an **individually-invited beta tester** wants a per-person, single-use, revocable PIN so a leaked code can't provision strangers. Supporting both is one field on a `codes` collection (`maxUses`, `usedBy`, `revoked`), not two systems.
   3. **What if a rebbi has no code at all?** Recommend: he still gets in and lands standalone — never a free-text "type your school name" box, which manufactures duplicate schools that an admin then has to merge by hand. A school claims him later (sub-question 4); he never types its name.
-  4. **Adoption, the reverse direction.** A standalone rebbi whose school signs on afterwards has to become part of it. That is **Q2 in `Data_Custody_Decision.md`** (tier migration via the converter tool's backup-upload mode) viewed from the account side — same event, two halves: his *data* moves, and his *account* gets a `schoolId`. Confirm both halves are covered, don't assume the data half implies the account half.
+  4. **Adoption, the reverse direction — mostly answered by universal sign-in (2026-08-09).** A standalone rebbi whose school signs on afterwards has to become part of it. That is **Q2 in `Data_Custody_Decision.md`** (tier migration via the converter tool's backup-upload mode) viewed from the account side — same event, two halves: his *data* moves, and his *account* gets a `schoolId`. **The account half has now collapsed to a field flip**, because under universal sign-in he *already has an account* — there is nothing to create, only a `schoolId` to set and security rules to re-evaluate against it. What survives is the data half: run the backup-upload converter, with Q2's verification still owed. Don't assume the field flip implies the data move either; they are still two operations, just no longer two *systems*.
   5. **Does the code carry a role?** An admin's account has to be created somehow too. Either the code carries the tier (school-admin code vs. school-rebbi code), or admins stay Path A / provisioned-only. Recommend the latter to start — the fewer things a typed string can grant, the better.
 
 ### File System Access API — local backup safety net
@@ -274,6 +342,8 @@ Day one, new rebbi at a PD: taps Sign in with Google, types the code from the sc
 
 Day one, existing tester: clicks a link, and his actual class — scores, history, gradebook — is just there. Nothing re-entered. The old copy on his machine tells him it's moved.
 
+Day one, independent rebbi with no school behind him (tier 2, and the one the first draft of this section forgot): **taps the same Sign in with Google button as everyone else.** The app sees the class already sitting on that device and offers to claim it — one tap, no export, no file. From then on the app knows his name, shows *"backed up to your Drive 12 minutes ago,"* and his students never leave his own machine and his own Drive. He is a signed-in user of a real product, not a guest running a browser page.
+
 Every day after: opens the installed app, works normally, wifi or not. When he's stuck, Berel looks at his actual screen state in thirty seconds instead of a week of email. When a student leaves, archive; when he returns, un-archive. When the menahel wants to see how homework is going, he can — and the rebbi's private notes stay private unless he chooses otherwise.
 
 That's "make it real."
@@ -286,7 +356,8 @@ That's "make it real."
 0b. **The Drive OAuth spike — runs in parallel, gates nothing, is gated by nothing** (added 2026-08-09 with the custody split). Sign-in → create-a-file → write-JSON → re-auth-after-expiry against a throwaway GCP project, on a page not yet wired into `app.html`. It de-risks the one genuine unknown in tier 2 (the re-auth UX on a shared Chromebook mid-lesson, not the API), and it pays off whatever else happens: it is a better backup than the Sheet today, independent of whether the rebuild has started. Needs Ben to create the GCP project + OAuth client ID. Keep it a spike — the deliverable is confidence and a little reusable `fetch` code, not a merged feature.
 1. **Data model design session** — the collections, the incremental-write shape, the migration map from the current `data` object (including tracked items), `firstName`/`lastName`, archive states, the `sharedWithAdmin` flag. **This is its own real session, the biggest single step, and everything else stands on it.** Do not compress it into a prompt. **Open the session by working the "Open questions for step 1" list above** — and open *that* with the two-tier split's consequence: the storage seam has **two implementations**, which shapes every collection decision after it. The class entity (question 2) and the write-id model (question 3) are likewise inputs to the collection design, not follow-ups to it.
 2. **Auth + tiers + security rules** — both sign-in paths, the three tiers, gating proven with no real UI yet.
-3. **The converter tool** — both modes plus bulk. Prove the migration carries a real class (with gradebook data) on a throwaway account.
+3. **The converter tool** — both modes plus bulk. Prove the migration carries a real class (with gradebook data) on a throwaway account. **Scope it as migration tool + verification harness** (open question 6), and build the **self-serve own-account restore** here too — bulk and provisioning stay superadmin-gated.
+3b. **The existing-cohort upload path — and it must land before step 8, not with it.** Same-device adoption, self-serve backup upload, Drive restore. See "Bringing the existing cohort in" above. **No beta rebbi is asked to sign in until this works**, because sign-in without it is a downgrade for every rebbi who already has a class. Shares step 3's verification harness.
 4. **Real routing / back button.**
 5. **Superadmin tools** — view-as, the activity overview, the email export.
 6. **Admin's gradebook view** — Class Book default, Teacher's Book where shared.
