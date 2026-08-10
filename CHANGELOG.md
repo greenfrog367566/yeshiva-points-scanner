@@ -380,6 +380,14 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
   The attempt has been removed. **Popping the scanner out by pressing ⧉ works exactly as it always did** — that is a button press, so the browser allows it. There is simply no longer a broken automatic version of it failing quietly in the background.
 
+- **Adding a boy with a name you already have now asks first — and deleting one always tells you exactly which boy it means.** Two Moshe Cohens is a real thing in a Yeshiva, so the app has never forbidden it. But it also never *mentioned* it: pressing Add twice (or Enter twice) quietly made a second student with the same name, and from then on every list that names students — the delete confirmation, History's student filter, the Gradebook's rows — showed two identical entries with nothing to tell them apart. The paste-a-list importer has always checked for this; the Add button and Rename now do too. **It is a question, not a refusal:** "You already have a student named X — add another with the same name?" OK means yes (they really are two boys — give them different classes or an initial); Cancel means it was a slip.
+
+  **The Delete confirmation now names the class and the points as well as the name** — "Delete Moshe Cohen (5A, 12 pts)?" — because with duplicates allowed, "Delete Moshe Cohen?" answers the question for *neither* of them. The class and the total are the two things you can check against the boy you actually mean before pressing OK.
+
+  **Names are also capped at 80 characters** at every door a name comes in through (Add, Rename, the paste importer). Far past any real name — the cap exists because a barcode scan or a pasted paragraph landing in the name box used to become a "student" whose name was wider than the screen, stretching every list in the app.
+
+  Nothing changes for students you already have — no saved data changes and there is no migration.
+
 - **A whole batch of points can now be taken back in one action, instead of one boy at a time.** Giving points to several boys at once — from the tick-boxes on Run → Students, or the new "Give to all" — writes a separate line for each boy, which is what keeps History honest and lets you undo any single one of them. But it also meant that undoing a mistake made to twenty-five boys took twenty-five separate presses, which nobody is going to do. **A wrong batch was harder to take back than the single scan it replaced** — the opposite of what the feature was for.
 
   Now, pressing ↩ on any line that came from a batch asks whether you want to reverse **the whole batch**, and tells you how many boys that is: *"OK — undo all 25 · Cancel — undo only this one"*. Choosing to undo just the one still works exactly as before, so nothing you could do previously has been taken away.
