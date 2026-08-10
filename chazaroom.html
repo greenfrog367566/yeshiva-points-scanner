@@ -661,7 +661,7 @@
   var camSel=$("camSel"), startBtn=$("startBtn"), stopBtn=$("stopBtn"),
       vid=$("vid"), ov=$("ov"), octx=ov.getContext("2d");
   var stream=null, detector=null, supported=false, running=false, loopT=null;
-  var qIndex=0, revealed=false, perStudent=false, mode="calib", capturing=false;
+  var qIndex=0, revealed=false, perStudent=false, mode="calib", capturing=false, dismissed=false;
   var passTimes=[];
   var tallyNow={A:0,B:0,C:0,D:0};   /* anonymous current-frame letter counts    */
   var studentAnswer={};             /* id -> {L}  latched for the question       */
@@ -774,7 +774,7 @@
 
   /* ---- question board + tiles ---- */
   function loadQuestion(i){
-    qIndex=i; revealed=false; scannedThisQ=false; capturing=false; hideLift(); qStartedAt=Date.now(); tallyNow={A:0,B:0,C:0,D:0}; studentAnswer={};
+    qIndex=i; revealed=false; scannedThisQ=false; capturing=false; dismissed=false; hideLift(); qStartedAt=Date.now(); tallyNow={A:0,B:0,C:0,D:0}; studentAnswer={};
     if(ptzhttp.ok && $("sweepOn").checked) ptzSet({pan:0,tilt:0});   /* centre for the countdown */
     var q=questions[i]||{q:"—",opts:{},correct:""};
     $("qNum").textContent="Question "+(i+1)+" of "+questions.length;
@@ -866,7 +866,7 @@
     }
   }
   function onCountdownEnd(){
-    if(mode!=="game" || revealed || capturing) return;
+    if(mode!=="game" || revealed || capturing || dismissed) return;
     if(Date.now()-qStartedAt < 500) return;    /* never fire the instant a question loads */
     capturing=true; showLift();
     var afterCapture=function(){ if(revealed || $("liftModal").hidden) return; capturing=false; renderLiftList(); if($("liftAuto").checked) finishReveal(); else $("liftSub").textContent="Everyone who answered is shown — reveal when ready, or ✕ to go back."; };
@@ -875,7 +875,7 @@
   }
   /* Close the popup WITHOUT revealing — back to the board (its Reveal / Next
      stay available). Escape or clicking the dark backdrop does the same. */
-  function dismissLift(){ capturing=false; hideLift(); }
+  function dismissLift(){ dismissed=true; capturing=false; hideLift(); sweep.on=false; }
   $("liftRevealBtn").addEventListener("click",function(){ capturing=false; finishReveal(); });
   $("liftCloseBtn").addEventListener("click",dismissLift);
   $("liftBackBtn").addEventListener("click",dismissLift);
