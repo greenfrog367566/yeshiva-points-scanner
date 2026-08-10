@@ -8,7 +8,11 @@ The current working queue. Read this at the start of a session.
 
 ## Doing now
 
-Nothing in flight. **#127/#128 (batch undo + whole-class award) shipped as #230, and voice-notes-on shipped as #231** — both merged and verified live on `menchmark.app` 2026-08-07. See `CHANGELOG.md` for what each did; pull the next item from "Next, in order" below.
+**Shipped and verified live 2026-08-09/10:** **#244** — the downloaded offline copy was destroying a rebbi's work on every reopen (found by reproduction, not by reading); **#248** — Gradebook attendance cells are now editable, which is slice 1 of #227; **#242** and **#247** — two-tier custody and universal sign-in recorded as accepted; **#243** — the Drive OAuth spike. See `CHANGELOG.md` for what each did.
+
+**#244 is why the first item under "Waiting on Ben" is the most urgent thing on this page.** The fix is in the repo and it cannot reach a copy already sitting on a rebbi's machine — a `file://` copy has no update path at all. Someone has to tell those rebbeim to re-download.
+
+**Open drafts:** **#249** (offline capability probe + automatic folder backup) needs one run on a managed Chromebook before anything relies on it. Two findings from it worth not re-deriving: `showDirectoryPicker` **does** work on `file://` and the folder permission survives a reopen with no prompt — that reversed the prediction going in, and is the only reason the folder backup exists at all — and the backup nudge has no network dependency, so it already works offline. **#250** (fetch & generate whole chapters) is in flight from another session. **#240** (hadroom camera diagnostic) predates this queue and is conflicting.
 
 **On the horizon:** the Firebase/Firestore rebuild is fully scoped in `docs/Firebase_Rebuild_Scope.md` — real accounts, Firestore replacing localStorage, three tiers, incremental-write data model, converter tool, 8-step build order. Not started; step 1 (data model design session) hasn't begun.
 
@@ -24,7 +28,7 @@ Its phase mapping was reconciled against the code on 2026-08-04 and it now carri
 
 **Q1/Q2/Q4/Q5 are adopted as recommended; Q3 is still on Ben** (what a school has to sign — see "Not code, still owed"). The rebuild scope is amended to match: the split is its first locked decision, Path B is reframed (self-serve defaults to tier 2, a school code promotes to tier 1), and open question 1 is narrowed to a clear recommendation.
 
-**The spike is DONE (PR #243, 2026-08-09) and it answered its question.** The whole Drive API surface worked first time with no SDK and no external script — folder, 509-byte write in ~1.1s, read-back, in-place update, and a 3599s token. Silent re-auth **works**, invisibly, and recovers from a real 401 — but **only when the app sends a `login_hint`**. Without it, `prompt=none` fails on any browser holding more than one Google account, which is the normal case and which cost an hour of wrong conclusions before it was found. The 60-minute token cannot be lengthened (a refresh token needs a client secret, and Google uniquely won't accept PKCE instead) and no longer needs to be. Still owed there: one run on a shared/logged-out Chromebook.
+**The spike is DONE (PR #243, merged 2026-08-10) and it answered its question.** The whole Drive API surface worked first time with no SDK and no external script — folder, 509-byte write in ~1.1s, read-back, in-place update, and a 3599s token. Silent re-auth **works**, invisibly, and recovers from a real 401 — but **only when the app sends a `login_hint`**. Without it, `prompt=none` fails on any browser holding more than one Google account, which is the normal case and which cost an hour of wrong conclusions before it was found. The 60-minute token cannot be lengthened (a refresh token needs a client secret, and Google uniquely won't accept PKCE instead) and no longer needs to be. Still owed there: one run on a shared/logged-out Chromebook, and a decision on whether to strip the hardcoded client ID before anything else builds on the spike.
 
 **Also decided 2026-08-09: universal sign-in** (`docs/Universal_SignIn_Proposal.md`, ACCEPTED). Ben's read of the tier-2 story was that it looked "half baked and not professional" — correct, and the audit located the fault precisely: the Drive-JSON storage pattern is fine (it is WhatsApp's chat-backup architecture, and local-first is mainstream), but **tier 2 had been sketched anonymous**, and no comparable product ships browser-profile-as-account. So **every rebbi signs in, both tiers, same Google button; the tier decides only where class data lives.** Firestore holds an account row for a tier-2 rebbi — email, name, tier — and no student records ever. Custody is unchanged. It costs nothing architecturally (the spike already proved no-SDK sign-in; Firestore's REST API takes plain `fetch`) and it solves the `login_hint` requirement structurally, since the account *is* the hint.
 
@@ -34,19 +38,37 @@ Its phase mapping was reconciled against the code on 2026-08-04 and it now carri
 
 **Still on Ben, and now the earliest gate of all:** a plain-language privacy note for the account record itself. Smaller than Q3's school agreement, but it comes first — it is needed before *any* self-serve signup in *either* tier, including his own school.
 
-**1. Finish Phase 2c: give the Gradebook a writer, then drop the four old tabs (#227)** — the biggest build item left, and it was missing from this list entirely until 2026-08-06.
+**1. The app update check — fully designed, not started, blocked on one call.**
 
-Every `gb*` function only reads. Until the grid can edit a cell, the Attendance / Homework / Passes / Tracker tabs cannot go, because their setters are the only thing feeding the mirror — see the Phase 2 status section for what each store already did. **Give it its own session**: it needs a cell editor plus setters, and it touches the transcription seam, so it is the riskiest thing currently on the board. When a tab does go, delete its `TRACKED_LEGACY` row, its badge-table row **and** that store's `mirrorTracked()` call together.
+A `version.json` served next to the app plus an `APP_VERSION` constant in it, and **two different banners, because the two copies fail differently**: the PWA gets "reload to update", the downloaded `file://` copy gets "download a fresh copy" — it can never update itself. **This is the only channel that reaches a rebbi still running the pre-#244 copy**, which is what moves it above #227. Blocked only on the CORS route — see "Waiting on Ben".
 
-**2. Offline resync** — read-only investigation first, then PROPOSE FIRST
+**2. Finish Phase 2c: the remaining Gradebook writers, then drop the four old tabs (#227)** — the biggest build item left.
+
+**Slice 1 shipped (#248): attendance cells are editable.** Three slices left, and it is **one PR per tab**, because the four legacy setters differ in what they can even record: **only `setAttendance()` takes a date.** `setHw()` writes to a global, `setPass()` keeps no per-use history, and `trackerLogAdd()` stamps `now`. **Homework is next, and it is the cheap one** — one optional `dateKey` parameter on `setHw()`, then it reuses everything slice 1 established. **Passes may not be correctable at all** without first giving that store real history, which is a bigger question than a column.
+
+**Removing a tab is much bigger than adding its column**, and that is the trap in this item. The Attendance tab especially: the Sheet push, the seating-chart badges and "Mark the rest Present" all read that store directly, and every one of them has to move first or it fails silently. When a tab finally does go, delete its `TRACKED_LEGACY` row, its badge-table row **and** that store's `mirrorTracked()` call together.
+
+**3. Offline resync** — read-only investigation first, then PROPOSE FIRST
 The snapshot recovers after being offline; logged scans do not unless "resync all scans" is pressed. Want it automatic on reconnect and periodically.
 **Retry safety differs per tab.** The Log dedups by ID so re-pushing is safe. The Attendance Log has no dedup, so a retry duplicates rows. Confirm per tab before proposing.
 **In the Firestore era this asymmetry dissolves** — see the rebuild doc's open question 3 (deterministic client-generated write ids make every retry idempotent). That does not answer the question here; the localStorage/Apps Script investigation is still owed as written.
 
-**3. Warning flash, and the sticky raffle removal**
+**4. Warning flash, and the sticky raffle removal**
 What is left of the old "small standalone features" item once Freeze and the raffle note shipped. **Not the behavior ladder** — no marks store, no rung counting, no reset periods. Those stay in `docs/Behavior_Ladder_Spec.md`.
 - Warning flash: reuses the minus flash, **records nothing**. A recorded warning implies a count, a count implies rungs, and rungs are the ladder. Verified not started — nothing in `app.html` matches.
 - The raffle removal *note* shipped (`renderRaffleAdjustNote()`, "N students removed … from past wins"). What did **not** ship is the question it was filed with: report how a removal could clear itself after the next draw rather than staying sticky. Still open, still a report before a change.
+
+---
+
+## Waiting on Ben
+
+Roughly in the order of what they unblock. Nothing below is a task Claude can take.
+
+1. **Tell rebbeim holding an old offline copy to re-download** (#244). The only item on this page with real data at risk, and no code substitutes for it until the update check ships.
+2. **The privacy note for the account record** (item 0 above). The earliest gate in the whole sign-in plan — it blocks any self-serve signup in *either* tier, including Ben's own school.
+3. **The rule-3 / Firebase SDK call.** Recommendation: vendor the SDK as a same-origin file, tier 1 only. **Rebuild step 1 stays blocked until this is settled** — see `Firebase_Rebuild_Scope.md` open question 1 and the conflict note in `CLAUDE.md`.
+4. **The CORS route for the update check** — a `_headers` file (recommended) or a `<script src>`. Blocks item 1 of "Next, in order" and nothing else.
+5. **Q3: what a school signs** (detail below). Gates onboarding school #2; blocks no code.
 
 ---
 
@@ -74,7 +96,7 @@ What is left of the old "small standalone features" item once Freeze and the raf
 
 ## Phase 2 status
 
-2a and 2b shipped. **2c's data is done; its tabs are not.** Attendance converted (#138), homework resets by decision, and #219 answered the two that were TBD — tracker copied over in full, passes had no history to copy. **All four old tabs are still there.** Removing them is blocked: the Gradebook can't write, and those tabs' setters are the only thing feeding the mirror. Now #227 (#122 is closed). **2d shipped 2026-08-05** in two parts (#208 + the badges) — see "Doing now". The count value shape it was holding up is settled: an entry stores the step it contributed.
+2a and 2b shipped. **2c's data is done; its tabs are not.** Attendance converted (#138), homework resets by decision, and #219 answered the two that were TBD — tracker copied over in full, passes had no history to copy. **All four old tabs are still there.** Removing them was blocked on the Gradebook being read-only; **#248 broke that open for Attendance** (slice 1 of 4), so the block is now per-tab rather than total — the three stores without a writer still have their setters as the only thing feeding the mirror. Now #227 (#122 is closed). **2d shipped 2026-08-05** in two parts (#208 + the badges) — see "Doing now". The count value shape it was holding up is settled: an entry stores the step it contributed.
 
 **2d has cleared the Firebase rebuild's step 1** (locked 2026-08-04): the data-model session was waiting on `trackedData`'s count shape so it would not be modelled against 2b's guess and then done twice. It now has a real answer to model.
 
