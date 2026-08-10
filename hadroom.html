@@ -145,7 +145,9 @@
 
   /* "lift up your cards" popup */
   .lift-modal{position:fixed;inset:0;background:rgba(15,20,36,.86);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
-  .lift-box{background:var(--ink);border:2px solid var(--gold);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.5);padding:26px 30px;max-width:760px;width:100%;text-align:center;color:#fff;max-height:92vh;overflow:auto}
+  .lift-box{position:relative;background:var(--ink);border:2px solid var(--gold);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.5);padding:26px 30px;max-width:760px;width:100%;text-align:center;color:#fff;max-height:92vh;overflow:auto}
+  .lift-x{position:absolute;top:10px;right:12px;width:38px;height:38px;border-radius:9px;background:#26315a;border:1px solid #41507f;color:#cfd5ea;font-size:1.1rem;line-height:1}
+  .lift-x:hover{background:#33406b;color:#fff}
   .lift-title{font-family:var(--serif);font-size:clamp(2rem,5vw,3.2rem);font-weight:700;color:var(--gold)}
   .lift-title .arrow{display:inline-block;animation:bob 1s ease-in-out infinite}
   @keyframes bob{50%{transform:translateY(-8px)}}
@@ -238,6 +240,7 @@
       <!-- "Lift up your cards" popup, shown when the countdown hits 0 -->
       <div id="liftModal" class="lift-modal" hidden>
         <div class="lift-box">
+          <button class="lift-x" id="liftCloseBtn" title="Close (Esc)">✕</button>
           <div class="lift-title"><span class="arrow">⬆</span> Lift up your cards!</div>
           <div class="lift-sub" id="liftSub">Hold your answer up to the camera.</div>
           <div class="lift-count" id="liftCount"></div>
@@ -770,7 +773,7 @@
 
   /* ---- question board + tiles ---- */
   function loadQuestion(i){
-    qIndex=i; revealed=false; scannedThisQ=false; capturing=false; hideLift(); tallyNow={A:0,B:0,C:0,D:0}; studentAnswer={};
+    qIndex=i; revealed=false; scannedThisQ=false; capturing=false; hideLift(); qStartedAt=Date.now(); tallyNow={A:0,B:0,C:0,D:0}; studentAnswer={};
     if(ptzhttp.ok && $("sweepOn").checked) ptzSet({pan:0,tilt:0});   /* centre for the countdown */
     var q=questions[i]||{q:"—",opts:{},correct:""};
     $("qNum").textContent="Question "+(i+1)+" of "+questions.length;
@@ -809,7 +812,7 @@
   }
 
   /* ---- timer + auto-reveal ---- */
-  var tHandle=null, tLeft=0;
+  var tHandle=null, tLeft=0, qStartedAt=0;
   function startTimer(){
     stopTimer();
     var secs=clampInt($("timerSecs").value,0,300,0), tEl=$("timer");
@@ -862,14 +865,21 @@
     }
   }
   function onCountdownEnd(){
-    if(mode!=="game" || revealed) return;
+    if(mode!=="game" || revealed || capturing) return;
+    if(Date.now()-qStartedAt < 500) return;    /* never fire the instant a question loads */
     capturing=true; showLift();
-    var afterCapture=function(){ if(revealed) return; capturing=false; renderLiftList(); if($("liftAuto").checked) finishReveal(); else $("liftSub").textContent="Everyone who answered is shown — reveal when ready."; };
+    var afterCapture=function(){ if(revealed || $("liftModal").hidden) return; capturing=false; renderLiftList(); if($("liftAuto").checked) finishReveal(); else $("liftSub").textContent="Everyone who answered is shown — reveal when ready, or ✕ to go back."; };
     if($("sweepOn").checked && ptzhttp.ok && !scannedThisQ){ scannedThisQ=true; scanPass(afterCapture); }
     else { setTimeout(afterCapture, 4000); }   /* fixed-camera lift window */
   }
+  /* Close the popup WITHOUT revealing — back to the board (its Reveal / Next
+     stay available). Escape or clicking the dark backdrop does the same. */
+  function dismissLift(){ capturing=false; hideLift(); }
   $("liftRevealBtn").addEventListener("click",function(){ capturing=false; finishReveal(); });
-  $("liftAuto").addEventListener("change",function(){ $("autoReveal").checked=this.checked; if(this.checked && !capturing && !revealed && mode==="game") finishReveal(); });
+  $("liftCloseBtn").addEventListener("click",dismissLift);
+  $("liftModal").addEventListener("click",function(e){ if(e.target===$("liftModal")) dismissLift(); });
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape" && !$("liftModal").hidden) dismissLift(); });
+  $("liftAuto").addEventListener("change",function(){ $("autoReveal").checked=this.checked; if(this.checked && !capturing && !revealed && mode==="game" && !$("liftModal").hidden) finishReveal(); });
   function finishReveal(){
     if(revealed) return; revealed=true; stopTimer(); capturing=false; hideLift();
     var q=questions[qIndex], snap=snapshot(), counts=snap.counts, total=counts.A+counts.B+counts.C+counts.D;
