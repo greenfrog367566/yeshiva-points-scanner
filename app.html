@@ -4767,6 +4767,25 @@ function setupRoster() {
   }
   function nextActId(){ var n=1; var used={}; data.activities.forEach(function(a){used[a.id]=1;}); while(used["a"+n]) n++; return "a"+n; }
   function studentById(id){ id=(id||"").trim().toUpperCase(); for(var i=0;i<data.students.length;i++){ if(data.students[i].id.toUpperCase()===id) return data.students[i]; } return null; }
+  // Case-insensitive exact-name lookup — for warning about duplicates, never
+  // for routing anything: a name is a label, only an id identifies a student.
+  function studentByName(name){
+    var key=(name||"").trim().toLowerCase();
+    if(!key) return null;
+    for(var i=0;i<data.students.length;i++){ if(data.students[i].name.trim().toLowerCase()===key) return data.students[i]; }
+    return null;
+  }
+  // One length rule for every door a name comes in through (Add, Rename, the
+  // paste importer). 80 is far past any real name — the cap exists because a
+  // barcode burst or a pasted paragraph landing in the name box used to become
+  // a "student" whose name was wider than the page, and every list in the app
+  // stretched to fit it.
+  var STUDENT_NAME_MAX=80;
+  function studentNameOk(name){
+    if(name.length<=STUDENT_NAME_MAX) return true;
+    alert("That name is "+name.length+" characters — names are capped at "+STUDENT_NAME_MAX+".\n\nIf a scan or a paste landed in the name box, clear it and type the name.");
+    return false;
+  }
   // Every list of students sorts alphabetically by last name, then first name
   // — the displayed name itself is untouched ("First Last"), this only
   // controls sort order. A single-word name (no space) sorts on itself as-is.
@@ -18225,8 +18244,15 @@ nameLine
       var edit=el("button","btn btn-sm","Rename");
       edit.addEventListener("click", function(){
         var nn=prompt("Name:", s.name); if(nn===null) return;
-        var ng=prompt("Group (blank for none):", s.group||""); 
-        s.name=nn.trim()||s.name; s.group=(ng||"").trim(); save(); renderStudents(); renderClassSel();
+        nn=nn.trim();
+        if(nn && !studentNameOk(nn)) return;
+        // Renaming onto ANOTHER student's exact name gets the same question the
+        // Add button asks — a rename is how a duplicate usually happens by
+        // accident (fixing a typo into the spelling the other boy already has).
+        var clash=nn && studentByName(nn);
+        if(clash && clash.id!==s.id && !confirm("Another student is already named “"+clash.name+"”"+(clash.group?" in "+clash.group:"")+".\n\nRename this one to the same name anyway?")) return;
+        var ng=prompt("Group (blank for none):", s.group||"");
+        s.name=nn||s.name; s.group=(ng||"").trim(); save(); renderStudents(); renderClassSel();
       });
       var photoUrlBtn=el("button","btn btn-sm","Photo URL…");
       photoUrlBtn.title="Paste a link to a photo (e.g. from Google Drive/Sheets) instead of uploading";
@@ -18244,7 +18270,12 @@ nameLine
       }
       var del=el("button","btn btn-sm btn-bad","Delete");
       del.addEventListener("click", function(){
-        if(confirm("Delete "+s.name+"? Their points will be removed.")){
+        // The confirm names more than the name: with duplicates allowed, two
+        // rows can read identically, and "Delete Moshe Cohen?" answers the
+        // question for NEITHER of them. Class and current points are the two
+        // things a rebbi can check against the boy he means.
+        var who=s.name+(s.group?" ("+s.group+", ":" (")+fmt(score(s.id))+" pts)";
+        if(confirm("Delete "+who+"? Their points will be removed.")){
           data.students=data.students.filter(function(x){return x.id!==s.id;});
           delete data.scores[s.id]; delete studentBreakdownOpen[s.id]; save(); renderStudents();
         }
@@ -18330,6 +18361,17 @@ nameLine
   $("studCustomTo").addEventListener("change", function(){ data.studCustomTo=this.value; save(); renderStudents(); });
   $("addStudent").addEventListener("click", function(){
     var name=$("newName").value.trim(); if(!name){ $("newName").focus(); return; }
+    if(!studentNameOk(name)) return;
+    // The paste-a-list importer has always deduplicated against the roster;
+    // this button never did, so a double-press (or two Enters) quietly made a
+    // second boy with the same name — and from that moment every surface that
+    // names students showed two identical entries with nothing to tell them
+    // apart. Twins and cousins are real, so a duplicate is a question, not a
+    // refusal.
+    var dup=studentByName(name);
+    if(dup && !confirm("You already have a student named “"+dup.name+"”"+(dup.group?" in "+dup.group:"")+".\n\nAdd ANOTHER student with the same name? (Fine if they really are two boys — give them different classes or add an initial so you can tell them apart.)")){
+      $("newName").focus(); return;
+    }
     var grp=$("newGroup").value.trim();
     data.students.push({id:nextStudentId(), name:name, group:grp});
     $("newName").value=""; save(); renderStudents(); renderClassSel(); $("newName").focus();
@@ -18358,7 +18400,7 @@ nameLine
       var cols = line.indexOf("\t") >= 0 ? line.split("\t") : line.split(",");
       var name = (cols[0] || "").trim();
       var grp  = (cols[1] || "").trim();
-      if (!name) return;
+      if (!name || name.length > STUDENT_NAME_MAX) return;
       var key = name.toLowerCase();
       if (seen[key]) return;
       seen[key] = true;
