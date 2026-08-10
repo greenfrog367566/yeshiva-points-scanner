@@ -18,15 +18,15 @@ Its phase mapping was reconciled against the code on 2026-08-04 and it now carri
 
 ## Next, in order
 
-**0. The two-tier data custody question (#218)** — a decision, not a build, and it is now the thing gating the biggest piece of work left.
+**0. The Drive OAuth spike — the two-tier custody split is DECIDED (#218), and this is what it makes actionable.**
 
-It challenges the Firebase rebuild's core premise: every rebbi's student records in one person's Firebase project, for schools with no relationship or agreement. It proposes splitting custody by institutional relationship — full Firebase for schools that sign on, local + the rebbi's **own** Google Drive for everyone else.
+**Ben took the split on 2026-08-09:** custody follows institutional relationship. Tier 1 (schools with a real relationship, starting with his own) gets the Firebase rebuild as scoped; tier 2 (an independent rebbi) stays local — localStorage as today, plus a backup to **his own** Google Drive. The deciding argument was sequencing, not liability: step 1 has to replace whole-blob `save()` with incremental writes anyway, so the seam is being cut regardless, and the split only decides whether it has one implementation behind it or two. **The fallback stays open** — if two implementations prove too costly, tier 2 promotes into a gated single backend ("the middle tier") via the tier-migration path that already exists. Don't re-litigate the split; read `docs/Data_Custody_Decision.md` §1, which records the reasoning *and* the risks accepted knowingly.
 
-Why it is item 0 rather than something to get to: it says the split has to be settled **before** step 1's collection design, because it decides whether the storage seam has one implementation behind it or two — and building that seam twice is the cost of deciding late. It also makes the rule-3-vs-Firebase-SDK conflict much easier, since tier 2 would never load the SDK at all. It carries five open questions of its own.
+**Q1/Q2/Q4/Q5 are adopted as recommended; Q3 is still on Ben** (what a school has to sign — see "Not code, still owed"). The rebuild scope is amended to match: the split is its first locked decision, Path B is reframed (self-serve defaults to tier 2, a school code promotes to tier 1), and open question 1 is narrowed to a clear recommendation.
 
-It also names a piece that could start immediately and independently: **spike the Drive OAuth + `drive.file` write flow** against a throwaway Google Cloud project. No dependency on accounts, Firestore or the data model, and it de-risks the one real unknown — the re-auth UX in classroom conditions, not the API.
+**What's actually next: spike the Drive OAuth + `drive.file` write flow** against a throwaway Google Cloud project. Sign-in → create-a-file → write-JSON → re-auth-after-expiry, on a page not yet wired into `app.html`. No dependency on accounts, Firestore or the data model, and it de-risks the one real unknown — the re-auth UX on a shared Chromebook mid-lesson, not the API. It pays off either way: it's a better backup than the Sheet today regardless of when the rebuild starts.
 
-**`docs/Data_Custody_Decision.md` (2026-08-07) works the five open questions with a recommendation each**, so a yes/no/other per question is enough to move — read that before re-deriving the issue from scratch. Its one non-technical question (what a school has to agree to, to become tier 1) is flagged as staying explicitly Ben's call rather than getting a recommendation.
+**Blocked on one human step:** the GCP project and OAuth client ID have to be created in Ben's own Google Cloud Console. Nothing else gates it. **Keep it a spike** — the deliverable is confidence in the UX plus a little reusable `fetch` code, not a merged feature.
 
 **1. Finish Phase 2c: give the Gradebook a writer, then drop the four old tabs (#227)** — the biggest build item left, and it was missing from this list entirely until 2026-08-06.
 
@@ -46,6 +46,7 @@ What is left of the old "small standalone features" item once Freeze and the raf
 
 ## Not code, still owed
 
+- **What a school has to agree to, to become tier 1** (#218 Q3). The last open question from the custody decision, and the only one that stayed on Ben by design — it's a liability and relationship question, not an architecture one. Nothing in code is blocked on it, but **it gates onboarding school #2**: school #1 is Ben's own, where the relationship exists by virtue of him being staff. Something short in writing before any outside school's data lands in Firestore — data ownership, deletion on request, breach notification, who to contact.
 - **Physical workflow write-up.** Where codes actually live in a room: Avery labels on index cards, one per boy, boys take them out at the start; rebbi holds a clipboard with the seating chart and activity codes; arm an activity then scan the boy; homework code on the folder. A beta rebbi asked and nothing in the app or docs answers it.
 - **Onboarding video: using it in a class** — the most-asked one (four of eight beta replies). `docs/Onboarding_Video_Scripts.md` calls it **Video B**; the beta tally called it **C**. Same video, script already written.
   **Video A shipped 2026-08-05** — setup from scratch *plus* the whole Record group, wider than the script's last two beats. Not linked anywhere yet: nothing in `quick-start.html`, `index.html`, or the app points to it, so a beta rebbi can't find it. That link is the open half of this item.
