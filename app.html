@@ -173,6 +173,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      refused. Same slot, same shape. */
   #storageWarn{display:none;background:var(--bad-soft);color:#7c2d1c;border:1px solid #e3bdb5;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem}
   #storageWarn b{color:#5e1f12}
+  /* notice() — the non-blocking replacement for alert(). A fixed stack at the
+     top of the viewport: nothing behind it stops running, which is the entire
+     point — a native alert() halts every timer, scan handler and animation in
+     the app until someone walks to the screen and clicks it. */
+  #noticeStack{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:100000;display:flex;flex-direction:column;gap:8px;width:min(480px,calc(100vw - 32px));pointer-events:none}
+  .notice-card{pointer-events:auto;display:flex;align-items:flex-start;gap:12px;background:#fff;color:var(--ink);border:1px solid var(--line);border-left:4px solid var(--brass);border-radius:12px;padding:12px 14px;box-shadow:0 8px 28px rgba(20,26,40,.22);font-size:.92rem}
+  .notice-card .notice-msg{white-space:pre-line;flex:1;overflow-wrap:anywhere}
+  .notice-card .notice-ok{flex:0 0 auto}
   /* Backup staleness nudge. Shares #saveWarn's slot at the top of <main> so it
      shows on whichever tab is open, but amber rather than red — nothing is
      broken, it is a reminder. Hidden by default; shown only by maybeShowBackupNudge(). */
@@ -1362,7 +1370,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* print */
   @media print{
     @page{size:letter;margin:0}
-    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.fab-btn,.view-note,.toolbar,.no-print,#saveWarn,#storageWarn,#backupNudge,.pill-note,#globalScanBar{display:none!important}
+    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.fab-btn,.view-note,.toolbar,.no-print,#saveWarn,#storageWarn,#backupNudge,.pill-note,#globalScanBar,#noticeStack{display:none!important}
     body{background:#fff}
     main{max-width:none;padding:0}
     .view{display:none!important}
@@ -4714,6 +4722,46 @@ function setupRoster() {
     box.style.display="block";
   }
 
+  /* notice(msg) — what alert(msg) should have been in a classroom app.
+   *
+   * A native alert() is MODAL FOR THE WHOLE PAGE: every timer, the wheel
+   * mid-spin, the scan handler a wedge scanner is firing into — all of it
+   * freezes until someone physically reaches the screen and clicks OK. On a
+   * projector or smartboard that someone is the rebbi, mid-lesson. So every
+   * informational alert() in the app now comes through here instead: a card at
+   * the top of the screen with an OK button, auto-dismissing after 12 seconds,
+   * stacking if several arrive at once, and stopping NOTHING.
+   *
+   * The one semantic difference from alert(): code after notice() runs
+   * immediately rather than after the click. Every converted site was checked
+   * for that — each either return;s straight after or only does cleanup that
+   * never needed the user to have read the message first. confirm() and
+   * prompt() are NOT touched here; they return answers, and their callers
+   * are written around that answer arriving synchronously.
+   */
+  var noticeStackEl=null;
+  function notice(msg){
+    if(!noticeStackEl){
+      noticeStackEl=document.createElement("div");
+      noticeStackEl.id="noticeStack";
+      document.body.appendChild(noticeStackEl);
+    }
+    var card=document.createElement("div");
+    card.className="notice-card";
+    card.setAttribute("role","alert");
+    var txt=document.createElement("div");
+    txt.className="notice-msg";
+    txt.textContent=String(msg);
+    var ok=document.createElement("button");
+    ok.className="btn btn-sm notice-ok";
+    ok.textContent="OK";
+    var t=setTimeout(dismiss, 12000);
+    function dismiss(){ clearTimeout(t); if(card.parentNode) card.parentNode.removeChild(card); }
+    ok.addEventListener("click", dismiss);
+    card.appendChild(txt); card.appendChild(ok);
+    noticeStackEl.appendChild(card);
+  }
+
   /* ---------- helpers ---------- */
   var pipWin = null; // set while the floating scanner is popped out into a real OS window
   function $(id){
@@ -6478,7 +6526,7 @@ function setupRoster() {
     var a=actById(actId);
     if(!a){ flash(false,"No tracked activity selected","",""); beep(false); return; }
     var count=data.trackerLog.filter(function(e){ return e.actId===actId; }).length;
-    if(!count){ alert("\u201C"+a.name+"\u201D has no logged entries to reset."); return; }
+    if(!count){ notice("\u201C"+a.name+"\u201D has no logged entries to reset."); return; }
     /* THE DIALOG HAD TO CHANGE IN THE SAME BREATH AS THE CODE BELOW IT.
      *
      * Until now this wiped one store and the Gradebook could not see it either
@@ -10290,7 +10338,7 @@ function setupRoster() {
                  +sibs.length+" students at once.\n\nOK — undo all "+sibs.length
                  +"\nCancel — undo only this one")){
         var n=undoBatch(entry.batchId);
-        alert("Reversed "+n+" student"+(n===1?"":"s")+" — "+fmtDelta(-entry.delta)+" each for “"+entry.label+"”.");
+        notice("Reversed "+n+" student"+(n===1?"":"s")+" — "+fmtDelta(-entry.delta)+" each for “"+entry.label+"”.");
         return true;
       }
     }
@@ -10716,7 +10764,7 @@ function setupRoster() {
     var raw=prompt("Change points for this scan \u2014 \u201C"+entry.label+" / "+(studentById(entry.sid)||{name:entry.sid}).name+"\u201D  (current: "+(entry.delta>0?"+":"")+entry.delta+")  New value:", String(entry.delta));
     if(raw===null) return; // cancelled
     var newDelta=parseInt(raw,10);
-    if(isNaN(newDelta)){ alert("Please enter a whole number."); return; }
+    if(isNaN(newDelta)){ notice("Please enter a whole number."); return; }
     if(newDelta===entry.delta) return; // no change
     // Difference between new and old. A correction entry with diff reverses
     // the old value and installs the new one in a single net adjustment.
@@ -12895,7 +12943,7 @@ function setupRoster() {
     var startBtn=el("button","btn btn-primary","🏆 Start Contest"); startBtn.style.marginTop="4px"; startBtn.style.width="100%";
     startBtn.addEventListener("click", function(){
       var name=nameIn.value.trim();
-      if(!name){ alert("Give the contest a name first."); return; }
+      if(!name){ notice("Give the contest a name first."); return; }
       var startTs=new Date(startIn.value+"T00:00:00").getTime();
       var endTs;
       if(durMode==="week") endTs=startTs+7*24*60*60*1000;
@@ -12903,10 +12951,10 @@ function setupRoster() {
         var sd=new Date(startIn.value+"T00:00:00");
         endTs=new Date(sd.getFullYear(), sd.getMonth()+1, sd.getDate()).getTime();
       } else {
-        if(!endIn.value){ alert("Pick an end date."); return; }
+        if(!endIn.value){ notice("Pick an end date."); return; }
         endTs=new Date(endIn.value+"T23:59:59").getTime();
       }
-      if(endTs<=startTs){ alert("The end date needs to be after the start date."); return; }
+      if(endTs<=startTs){ notice("The end date needs to be after the start date."); return; }
       data.contest={id:newId(), name:name, startTs:startTs, endTs:endTs, mode:scoreMode, counting:true, ended:false, merged:false};
       save(); close();
       standRange="contest";
@@ -13554,7 +13602,7 @@ function setupRoster() {
             data.pastContests[idx2].merged=true;
             if(data.contest&&data.contest.id===cid) data.contest.merged=true;
             save();
-            alert("Merged "+result.entries+" scan"+(result.entries===1?"":"s")+" across "+result.students+" student"+(result.students===1?"":"s")+".");
+            notice("Merged "+result.entries+" scan"+(result.entries===1?"":"s")+" across "+result.students+" student"+(result.students===1?"":"s")+".");
             renderContestTab();
             if($("view-standings")&&$("view-standings").classList.contains("active")) renderStandings();
           });
@@ -13663,7 +13711,7 @@ function setupRoster() {
     var name=prompt("Name this contest — the boys will see it on the Contest tab.\n\nWhile it runs, the points you scan are held for the contest instead of going into anyone's score.", "Class Contest");
     if(name===null) return;                       // cancelled
     name=(name||"").trim();
-    if(!name){ alert("A contest needs a name."); return; }
+    if(!name){ notice("A contest needs a name."); return; }
     mcStart(name);
     renderContestTab();
     renderContestBanner();
@@ -13673,7 +13721,7 @@ function setupRoster() {
   $("mcMergeBtn").addEventListener("click", function(){
     var c=miniContestLive(); if(!c) return;
     var sum=mcSummary(c);
-    if(!sum.students){ alert("Nothing has been scanned into “"+c.name+"” yet, so there are no points to add. Use “Finish without adding points” to close it."); return; }
+    if(!sum.students){ notice("Nothing has been scanned into “"+c.name+"” yet, so there are no points to add. Use “Finish without adding points” to close it."); return; }
     if(!confirm(
       "Add “"+c.name+"” points to everyone’s scores and finish?\n\n"
       + sum.students+" student"+(sum.students===1?"":"s")+" · "+mcFmtPts(sum.points)+" will be added to their real scores now.\n\n"
@@ -13682,7 +13730,7 @@ function setupRoster() {
     )) return;
     var res=mcMergeAndClose();
     renderContestTab(); renderContestBanner(); renderScanBoard(); renderRecent(); refreshLiveViews();
-    alert("“"+res.name+"” finished. "+mcFmtPts(res.granted)+" added across "+res.students+" student"+(res.students===1?"":"s")+".");
+    notice("“"+res.name+"” finished. "+mcFmtPts(res.granted)+" added across "+res.students+" student"+(res.students===1?"":"s")+".");
   });
   $("mcDumpBtn").addEventListener("click", function(){
     var c=miniContestLive(); if(!c) return;
@@ -13696,7 +13744,7 @@ function setupRoster() {
     )) return;
     var res=mcDumpAndClose();
     renderContestTab(); renderContestBanner(); renderScanBoard(); renderRecent(); refreshLiveViews();
-    alert("“"+res.name+"” finished. No points were added to anyone’s score.");
+    notice("“"+res.name+"” finished. No points were added to anyone’s score.");
   });
 
   $("contestTabStartBtn").addEventListener("click", showStartContestModal);
@@ -13712,14 +13760,14 @@ function setupRoster() {
     var result=mergeContestIntoMain(data.contest.id);
     data.contest.merged=true;
     save();
-    alert("Merged "+result.entries+" scan"+(result.entries===1?"":"s")+" across "+result.students+" student"+(result.students===1?"":"s")+" into the regular score.");
+    notice("Merged "+result.entries+" scan"+(result.entries===1?"":"s")+" across "+result.students+" student"+(result.students===1?"":"s")+" into the regular score.");
     renderContestTab(); renderRecent(); renderScanBoard();
     if($("view-standings").classList.contains("active")) renderStandings();
   });
   $("contestTabSaveBtn").addEventListener("click", function(){
     if(!data.contest) return;
     saveContestToHistory(data.contest);
-    alert("\u201C"+data.contest.name+"\u201D saved to contest history.");
+    notice("\u201C"+data.contest.name+"\u201D saved to contest history.");
     renderPastContests();
   });
   $("contestTabClearBtn").addEventListener("click", function(){
@@ -13744,11 +13792,11 @@ function setupRoster() {
     var grp=$("resetPointsGroup").value, cls=data.currentClass;
     var scope = activeStudents().filter(function(s){ return !grp || s.group===grp; });
     var label = grp ? grp : (cls ? cls : "everyone shown (all classes)");
-    if(!scope.length){ alert("No students match the current filter."); return; }
+    if(!scope.length){ notice("No students match the current filter."); return; }
     if(!confirm("Reset spendable points to 0 for "+scope.length+" student"+(scope.length===1?"":"s")+" ("+label+")? Their lifetime Trends history is kept — this only zeroes their current balance, e.g. to start a fresh week.")) return;
     scope.forEach(function(s){ data.scores[s.id]=0; });
     save(); renderStandings(); renderScanBoard(); renderTapPanel();
-    alert("Points reset for "+scope.length+" student"+(scope.length===1?"":"s")+".");
+    notice("Points reset for "+scope.length+" student"+(scope.length===1?"":"s")+".");
   });
 
   /* ---------- PRINTABLE POINT CARDS ---------- */
@@ -14186,7 +14234,7 @@ function setupRoster() {
       spend.addEventListener("click", function(){
         var n=parseInt(inp.value,10)||0;
         if(n<=0){ inp.focus(); return; }
-        if(n>score(s.id)){ alert(s.name+" only has "+fmtScore(s.id)+" to spend."); return; }
+        if(n>score(s.id)){ notice(s.name+" only has "+fmtScore(s.id)+" to spend."); return; }
         data.raffle.entries[s.id]=(data.raffle.entries[s.id]||0)+n;
         data.scores[s.id]=score(s.id)-n;
         addLogEntry({ts:Date.now(),sid:s.id,label:"Raffle tickets",delta:-n});
@@ -14360,7 +14408,7 @@ function setupRoster() {
     return arr;
   }
   function auOpenDraw(pid){
-    if(auPrizeTotal(pid)<=0){ alert("No tickets have been placed on this prize yet."); return; }
+    if(auPrizeTotal(pid)<=0){ notice("No tickets have been placed on this prize yet."); return; }
     auDrawPid=pid; auSpinning=false;
     $("auDrawTitle").textContent=auPrizeLabel(auPrize(pid))||"Prize";
     $("auDrawResult").className="spin-result"; $("auDrawResult").innerHTML="";
@@ -14584,7 +14632,7 @@ function setupRoster() {
   $("auRemMode").addEventListener("change", function(){ curAu().remainderMode=this.value; save(); });
   $("auDivideOne").addEventListener("click", function(){ if(!auctionStudentId) return; auDivideEvenly(auctionStudentId); renderAuction(); });
   $("auDivideAll").addEventListener("click", function(){
-    if(!curAu().prizes.length){ alert("Add some prizes first."); return; }
+    if(!curAu().prizes.length){ notice("Add some prizes first."); return; }
     if(!confirm("Divide every student's tickets evenly across all prizes? This replaces their current ticket placements.")) return;
     data.students.forEach(function(s){ auDivideEvenly(s.id); }); renderAuction();
   });
@@ -14665,7 +14713,7 @@ function setupRoster() {
   $("trMode").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; trModeVal=b.dataset.tr; renderTrends(); });
   $("trStud").addEventListener("change", function(){ trStudId=this.value; renderTrends(); });
   $("trSendSheet").addEventListener("click", function(){
-    if(!(data.sheetUrl||"").trim()){ alert("Connect your Google Sheet first (Google Sheet tab)."); return; }
+    if(!(data.sheetUrl||"").trim()){ notice("Connect your Google Sheet first (Google Sheet tab)."); return; }
     var labels={};
     data.students.forEach(function(s){ var rec=(data.earned||{})[s.id]||{}; Object.keys(rec).forEach(function(L){ labels[L]=1; }); });
     var cols=Object.keys(labels).sort();
@@ -14679,7 +14727,7 @@ function setupRoster() {
     var header=["Name","Group","Current balance","Total earned"];
     cols.forEach(function(L){ header.push(L+" (times)"); header.push(L+" (pts)"); });
     pushToSheet({type:"totals", header:header, rows:rows});
-    alert("Totals sent — check the “Student Totals” tab in your sheet.");
+    notice("Totals sent — check the “Student Totals” tab in your sheet.");
   });
 
   /* ---------- PRIZE STORE ---------- */
@@ -15328,7 +15376,7 @@ function setupRoster() {
     save(); applyPesukMode();
   }
   function deleteTextSet(id){
-    if(id==="starter"){ alert("The starter set can't be deleted — import your own text set above to replace or supplement it."); return; }
+    if(id==="starter"){ notice("The starter set can't be deleted — import your own text set above to replace or supplement it."); return; }
     var s=null; for(var i=0;i<data.textSets.length;i++){ if(data.textSets[i].id===id) s=data.textSets[i]; }
     if(!s) return;
     if(!confirm("Delete the text set \""+s.label+"\"? Its testing marks and best times will be removed. (Your other sets are not affected.)")) return;
@@ -15419,7 +15467,7 @@ function setupRoster() {
     var s=null; for(var i=0;i<data.textSets.length;i++){ if(data.textSets[i].id===id) s=data.textSets[i]; }
     if(!s) return;
     var w=window.open("", "_blank");
-    if(!w){ alert("Please allow pop-ups for this site to print a handout."); return; }
+    if(!w){ notice("Please allow pop-ups for this site to print a handout."); return; }
     var esc=function(t){ return String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); };
     var body="";
     for(var n=s.from; n<=s.to; n++){
@@ -16512,7 +16560,7 @@ nameLine
   function newQuestion(){
     cancelGameAuto();
     var act=activeShorashim();
-    if(act.length<4){ alert("Mark at least 4 shorashim active (Words mode) for the corners game."); return; }
+    if(act.length<4){ notice("Mark at least 4 shorashim active (Words mode) for the corners game."); return; }
     var correct=shuffle(act)[0];
     var distract=shuffle(act.filter(function(s){return s.id!==correct.id;})).slice(0,3);
     gameQ={correct:correct, opts:shuffle([correct].concat(distract)), timer:null, t:gameSeconds()};
@@ -17031,11 +17079,11 @@ nameLine
     var name=(prompt("Name for this list:","")||" ").trim();
     if(!name) return;
     var included=activeStudents().filter(function(s){ return !data.spinnerExcluded[s.id]; });
-    if(!included.length){ alert("No students selected — check at least one name first."); return; }
+    if(!included.length){ notice("No students selected — check at least one name first."); return; }
     var list={id:"sl"+Date.now().toString(36), name:name, sids:included.map(function(s){ return s.id; }), savedTs:Date.now()};
     data.spinnerSavedLists.unshift(list);
     save();
-    alert("\u201C"+name+"\u201D saved with "+included.length+" student"+(included.length===1?"":"s")+".");
+    notice("\u201C"+name+"\u201D saved with "+included.length+" student"+(included.length===1?"":"s")+".");
     renderSpinner();
   });
 
@@ -17135,12 +17183,12 @@ nameLine
   $("spinAddItem").addEventListener("click", spinAddItem);
   $("spinNewItem").addEventListener("keydown", function(e){ if(e.key==="Enter") spinAddItem(); });
   $("spinSaveCustomList").addEventListener("click", function(){
-    if(!data.spinnerItems.length){ alert("Add some items first."); return; }
+    if(!data.spinnerItems.length){ notice("Add some items first."); return; }
     var name=(prompt("Name for this list:","")||" ").trim(); if(!name) return;
     var list={id:"sl"+Date.now().toString(36), name:name, sids:[], isCustom:true,
       customItems:data.spinnerItems.map(function(it){ return it.text; }), savedTs:Date.now()};
     data.spinnerSavedLists.unshift(list); save();
-    alert("\u201C"+name+"\u201D saved with "+data.spinnerItems.length+" item"+(data.spinnerItems.length===1?"":"s")+".");
+    notice("\u201C"+name+"\u201D saved with "+data.spinnerItems.length+" item"+(data.spinnerItems.length===1?"":"s")+".");
     renderSpinner();
   });
   $("spinClearAll").addEventListener("click", function(){
@@ -18281,7 +18329,7 @@ nameLine
     cls=cls.trim();
     sel.forEach(function(s){ s.group=cls; });
     save(); renderStudents(); renderClassSel(); renderScanBoard(); renderTapPanel(); renderStandings();
-    alert(sel.length+" student"+(sel.length===1?"":"s")+(cls?(" moved to “"+cls+"”."):" cleared of their class."));
+    notice(sel.length+" student"+(sel.length===1?"":"s")+(cls?(" moved to “"+cls+"”."):" cleared of their class."));
   });
   // (b) Award the same amount, with a typed reason, to everyone selected.
   //
@@ -18297,9 +18345,9 @@ nameLine
     var raw=prompt("Give how many "+unit+" to each of the "+sel.length+" selected student"+(sel.length===1?"":"s")+"?\n\nUse a negative number to take "+unit+" away.", "1");
     if(raw===null) return;
     var amt=parseInt(raw,10);
-    if(!isFinite(amt) || amt===0){ alert("Enter a whole number other than zero."); return; }
+    if(!isFinite(amt) || amt===0){ notice("Enter a whole number other than zero."); return; }
     var reason=(prompt("What is this for?\n\nThis is what shows in History, in each student's breakdown, and on your Google Sheet — so make it something you'll recognise later.", "")||"").trim();
-    if(!reason){ alert("A reason is needed — it's what the History entry will say."); return; }
+    if(!reason){ notice("A reason is needed — it's what the History entry will say."); return; }
     if(!confirm(fmtDelta(amt)+" "+unit+" to "+sel.length+" student"+(sel.length===1?"":"s")+"\nReason: “"+reason+"”\n\nThis logs one entry per student, exactly like scanning them, so it can be undone from History.")) return;
     var done=0, skipped=[];
     // One shared id across the whole loop — this is what lets #127's undo find
@@ -18320,7 +18368,7 @@ nameLine
       msg+="\n\n"+skipped.length+" skipped — not in “"+data.currentClass+"”:\n"+skipped.join(", ")
          + "\n\nSwitch the class selector in the top-right corner to “All classes” to include them.";
     }
-    alert(msg);
+    notice(msg);
   });
   $("breakdownPeriod").addEventListener("change", function(){
     $("studCustomRangeRow").style.display = this.value==="custom" ? "flex" : "none";
@@ -19217,7 +19265,7 @@ nameLine
     // student version does. Same number, same reasoning, kept the same on purpose.
     var spec=LABEL_SPECS[data.menuLabelFormat];
     var per = spec ? spec.cols*spec.rows : 30;
-    if(!$("menuWhich").value){ alert("Pick one code in the “All codes” dropdown first — then this fills a whole sheet with just that code."); return; }
+    if(!$("menuWhich").value){ notice("Pick one code in the “All codes” dropdown first — then this fills a whole sheet with just that code."); return; }
     $("menuCopies").value=per; renderMenuLabels();
   });
   $("personalFormat").addEventListener("change", function(){ data.personalLabelFormat=this.value; save(); renderPersonalPages(); });
@@ -19228,7 +19276,7 @@ nameLine
   $("fillSheet").addEventListener("click", function(){
     var spec=LABEL_SPECS[data.labelFormat];
     var per = spec ? spec.cols*spec.rows : 30;
-    if(!$("labelWho").value){ alert("Pick one student in the “Whole class” dropdown first — then this fills a whole sheet with just their code."); return; }
+    if(!$("labelWho").value){ notice("Pick one student in the “Whole class” dropdown first — then this fills a whole sheet with just their code."); return; }
     $("labelCopies").value=per; renderLabels();
   });
   $("printLabels").addEventListener("click", function(){ document.body.classList.add("print-students"); window.print(); });
@@ -19500,7 +19548,7 @@ nameLine
    */
   function seatReseatWith(order, question){
     var studs=activeStudents();
-    if(!studs.length){ alert("No students in this class yet."); return; }
+    if(!studs.length){ notice("No students in this class yet."); return; }
     if(!confirm(question(studs.length))) return;
     seatReseatAll(order(studs));
     seatPrintSyncDims(); renderTapPanel(); renderSeatChartPrint();
@@ -20405,7 +20453,7 @@ nameLine
   // active tab can be restored after printing.
   var seatPrintPrevView=null;
   function triggerSeatChartPrint(orientation){
-    if(!activeStudents().length){ alert("No students in this class to print. Pick a class in the header first."); return; }
+    if(!activeStudents().length){ notice("No students in this class to print. Pick a class in the header first."); return; }
     renderSeatChartPrint();
     var curActive=document.querySelector(".view.active");
     if(curActive && curActive.id!=="view-printSeats"){
@@ -20605,7 +20653,7 @@ nameLine
         showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
         if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
         if (statusEl) statusEl.textContent = "";
-        alert("Restored from Google Sheet.");
+        notice("Restored from Google Sheet.");
       })
       .catch(function(err) {
         if (statusEl) statusEl.textContent = "Couldn't reach your sheet. Check your connection and try again.";
@@ -21121,9 +21169,9 @@ nameLine
           showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
           if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
           renderShulchaniStatus();
-          alert("Backup restored.");
+          notice("Backup restored.");
         });
-      }catch(err){ alert("Sorry, that file couldn't be read as a backup."); }
+      }catch(err){ notice("Sorry, that file couldn't be read as a backup."); }
     };
     r.readAsText(file);
     e.target.value="";
@@ -21201,7 +21249,7 @@ nameLine
         $("sheetUrl").value=data.sheetUrl||""; $("autoSheet").checked=(data.autoSheet!==false);
         renderActButtons(); renderRecent(); renderStudents(); renderActivities(); renderClassSel();
         $("logCsvStatus").textContent="Restored "+fresh.students.length+" students, "+fresh.activities.length+" activities, and "+entries.length+" log entries.";
-        alert("Restored from Log CSV: "+fresh.students.length+" students, "+entries.length+" scan entries.");
+        notice("Restored from Log CSV: "+fresh.students.length+" students, "+entries.length+" scan entries.");
       }catch(err){
         $("logCsvStatus").textContent="Couldn't read that as a Log CSV. Make sure it's the export of your sheet's Log tab (Time, Student, Class/Group, Activity, Points, New total).";
       }
@@ -22174,7 +22222,7 @@ nameLine
   $("resetScores").addEventListener("click", function(){
     if(confirm(resetScoresConfirmText())){
       resetAllScores();
-      alert("All scores reset to zero, and the scan history cleared. Trends history was kept.");
+      notice("All scores reset to zero, and the scan history cleared. Trends history was kept.");
     }
   });
   // Full wipe — institution/class name, roster, activities, scores, log, raffle
@@ -22183,7 +22231,7 @@ nameLine
   $("clearAllData").addEventListener("click", function(){
     var typed=prompt("This permanently erases the institution name, class name, students, activities, scores, scan log, raffle history, and your saved Google Sheet link on this device. This cannot be undone.\n\nType CLEAR to confirm:");
     if(typed===null) return;
-    if(typed.trim().toUpperCase()!=="CLEAR"){ alert("Not cleared — typed text didn't match \u201CCLEAR\u201D."); return; }
+    if(typed.trim().toUpperCase()!=="CLEAR"){ notice("Not cleared — typed text didn't match \u201CCLEAR\u201D."); return; }
     data=JSON.parse(JSON.stringify(defaults));
     save();
     location.reload();
