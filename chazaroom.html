@@ -127,6 +127,7 @@
   @keyframes pulse{50%{transform:scale(1.08)}}
   .qbig{font-family:var(--serif);font-size:clamp(1.8rem,4.2vw,3.4rem);line-height:1.15;text-align:center;margin:16px 0 20px;font-weight:600}
   .tiles{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .tiles[hidden],.podium[hidden]{display:none}   /* author display beats [hidden] otherwise */
   @media(max-width:600px){ .tiles{grid-template-columns:1fr} }
   .tile{border-radius:14px;padding:20px 22px;min-height:96px;display:flex;align-items:center;gap:16px;color:#fff;position:relative;transition:transform .1s,opacity .2s}
   .tile.A{background:var(--a)} .tile.B{background:var(--b)} .tile.C{background:var(--c)} .tile.D{background:var(--d)}
@@ -137,6 +138,32 @@
   .tile.wrong{opacity:.32}
   .tile .check{position:absolute;top:8px;right:10px;font-size:1.4rem;display:none}
   .tile.correct .check{display:block}
+  /* get-ready beat: question alone before the tiles + countdown appear */
+  .readyline{text-align:center;color:#aeb6d2;font-weight:700;letter-spacing:.6px;text-transform:uppercase;font-size:1rem;margin:-4px 0 16px;animation:pulse 1s ease-in-out infinite}
+  .timer.ready{border-color:#41507f;color:#aeb6d2}
+  /* between-questions scoreboard, Kahoot-style */
+  ol.blb{list-style:none;margin:6px auto 4px;padding:0;max-width:560px}
+  ol.blb li{display:flex;align-items:center;gap:14px;background:#26315a;border-radius:10px;padding:10px 16px;margin-bottom:8px;font-size:1.15rem;animation:rise .35s ease both}
+  ol.blb li:nth-child(2){animation-delay:.08s} ol.blb li:nth-child(3){animation-delay:.16s}
+  ol.blb li:nth-child(4){animation-delay:.24s} ol.blb li:nth-child(5){animation-delay:.32s}
+  ol.blb li .rk{font-weight:800;width:26px;color:#aeb6d2;flex:0 0 auto}
+  ol.blb li .nm{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  ol.blb li .gain{color:#67e08f;font-weight:800;font-size:.95rem}
+  ol.blb li .pts{font-weight:800;font-variant-numeric:tabular-nums}
+  ol.blb li.first{background:var(--gold);color:#1b1400}
+  ol.blb li.first .rk{color:#7a5c00} ol.blb li.first .gain{color:#1f6b3d}
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  /* final podium */
+  .podium{display:flex;align-items:flex-end;justify-content:center;gap:14px;margin:14px 0 6px;min-height:240px}
+  .podium .col{display:flex;flex-direction:column;align-items:center;gap:6px;width:170px;min-width:0}
+  .podium .name{font-weight:700;font-size:1.15rem;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .podium .pts{color:#aeb6d2;font-weight:700}
+  .podium .block{width:100%;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:center;font-size:2.2rem;font-weight:800;color:#1b1400;animation:rise .5s ease both}
+  .podium .p1 .block{height:150px;background:var(--gold);animation-delay:.7s}
+  .podium .p1 .name,.podium .p1 .pts{animation:rise .5s ease both;animation-delay:.7s}
+  .podium .p2 .block{height:110px;background:#c9cfdd;animation-delay:.35s}
+  .podium .p2 .name,.podium .p2 .pts{animation:rise .5s ease both;animation-delay:.35s}
+  .podium .p3 .block{height:80px;background:#d9a05b}
   .board-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px;flex-wrap:wrap}
   .board-foot .answered{font-size:1.05rem;font-weight:700;color:#e6eaf6}
   .board-foot .controls{display:flex;gap:8px;flex-wrap:wrap}
@@ -254,7 +281,7 @@
       </div>
       <div class="row" style="margin-top:12px">
         <button class="btn gold big" id="startBtn">Start camera</button>
-        <div class="hint" style="margin:0;align-self:center">Opens straight into a quick visibility check before the first question.</div>
+        <div class="hint" style="margin:0;align-self:center">Opens into the lobby — boys hold up a card to join — then the first question.</div>
       </div>
       <div id="support"></div>
       <p class="hint" id="setupHint"></p>
@@ -281,15 +308,15 @@
         </div>
       </div>
 
-      <!-- Calibration: is everyone visible? -->
+      <!-- Lobby: boys join by holding up a card (doubles as the visibility check) -->
       <div id="calibPanel" class="card" hidden>
-        <h2>Quick check — can the camera see everyone?</h2>
-        <p class="hint" style="margin-top:0" id="calibHint">Have the boys hold up <strong>any</strong> card. Each one lights up when the camera reads him. Adjust the camera (or sweep) until they're all green, then start.</p>
+        <h2>Lobby — hold up your card to join!</h2>
+        <p class="hint" style="margin-top:0" id="calibHint">Hold up <strong>any</strong> card — your name pops up when the camera reads you, and you're in. Start when everyone has joined.</p>
         <div id="calibGrid" class="students" style="margin-top:6px"></div>
         <div id="calibAnon" class="bigcount" style="text-align:left;font-size:1.4rem"></div>
         <div class="row" style="margin-top:12px">
-          <button class="btn gold" id="calibDoneBtn">Everyone's visible — start the game →</button>
-          <div class="stat"><div class="k">Visible now</div><div class="v" id="calibCount">0</div></div>
+          <button class="btn gold" id="calibDoneBtn">Start the game →</button>
+          <div class="stat"><div class="k">Joined</div><div class="v" id="calibCount">0</div></div>
         </div>
       </div>
 
@@ -300,7 +327,10 @@
           <div class="timer off" id="timer">–</div>
         </div>
         <div class="qbig" id="qBig">—</div>
+        <div id="readyLine" class="readyline" hidden>Get ready…</div>
         <div class="tiles" id="tiles"></div>
+        <div id="boardScore" class="bscore" hidden><ol class="blb" id="boardLb"></ol></div>
+        <div id="boardPodium" class="podium" hidden></div>
         <div class="board-foot">
           <div class="answered" id="answeredLine"></div>
           <div class="controls">
@@ -338,7 +368,7 @@
             <div class="stat"><div class="k">Detects/s</div><div class="v" id="sFps">–</div></div>
           </div>
           <div class="row" style="margin-top:10px;align-items:center">
-            <button class="btn sec" id="calibToggleBtn">Re-check visibility</button>
+            <button class="btn sec" id="calibToggleBtn">Back to the lobby</button>
             <button class="btn sec" id="stopBtn">Stop camera</button>
             <label class="f" id="sweepGameWrap" hidden style="align-self:center;margin:0">
               <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.95rem;color:var(--ink)">
@@ -714,6 +744,10 @@
       vid=$("vid"), ov=$("ov"), octx=ov.getContext("2d");
   var stream=null, detector=null, supported=false, running=false, loopT=null;
   var qIndex=0, revealed=false, perStudent=false, mode="calib", capturing=false, dismissed=false;
+  /* Within a game, each question walks Kahoot's beats:
+     ready (question alone) -> answer (tiles + countdown) -> result (reveal)
+     -> score (scoreboard screen, roster mode) ... and after the last question, podium. */
+  var qphase="ready", lastGain={};
   var passTimes=[];
   var tallyNow={A:0,B:0,C:0,D:0};   /* anonymous current-frame letter counts    */
   var studentAnswer={};             /* id -> {L}  latched for the question       */
@@ -763,7 +797,7 @@
      sweep checkbox on, so the end-of-countdown scan pass still runs. ---- */
   function ptzNudge(axis,delta){
     if(!ptzhttp.ok) return;
-    if(sweep.on){ sweep.on=false; sweep.stops=[]; $("sweepStatusLine").textContent="Sweep paused while you aim — Re-check visibility resumes it."; }
+    if(sweep.on){ sweep.on=false; sweep.stops=[]; $("sweepStatusLine").textContent="Sweep paused while you aim — Back to the lobby resumes it."; }
     var r=ptzhttp[axis], p={};
     p[axis]=Math.max(r[0],Math.min(r[1],ptzhttp.cur[axis]+delta));
     ptzSet(p).catch(function(){});
@@ -868,26 +902,46 @@
           if(liveNow[s.id]) c.style.boxShadow="0 0 0 2px var(--good)"; }                                          /* extra ring = in view right now */
         c.appendChild(el("span",null,s.name)); grid.appendChild(c); });
       $("calibCount").textContent=seenN+" / "+roster.length;
-      $("calibHint").innerHTML=(seenN>=roster.length&&roster.length? "<strong>Everyone's been seen.</strong> " : "")+"Have the boys hold up <strong>any</strong> card — each lights green once the camera reads him and <strong>stays green</strong> for the rest of this check, so a sweep can add them up across the room. "+(ptzhttp.ok?"Aim and zoom with the pad under the video":"Adjust the camera")+" until all "+roster.length+" are green.";
+      $("calibHint").innerHTML=(seenN>=roster.length&&roster.length? "<strong>Everyone's in!</strong> " : "")+"Hold up <strong>any</strong> card to join — your name pops green and <strong>stays in</strong>, so a sweep can collect the whole room. "+(ptzhttp.ok?"Aim and zoom with the pad under the video":"Adjust the camera")+" until all "+roster.length+" have joined.";
     } else {
       $("calibGrid").innerHTML="";
       var n=tallyNow.A+tallyNow.B+tallyNow.C+tallyNow.D;
       $("calibAnon").textContent=n+" card"+(n===1?"":"s")+" visible right now.";
       $("calibCount").textContent=n;
-      $("calibHint").innerHTML="Have the class hold up any card — the count shows how many the camera reads. (No class list, so it can't tell who's who.)";
+      $("calibHint").innerHTML="Hold up any card to join — the count shows how many the camera can read. (No class list, so play is anonymous.)";
     }
   }
 
   /* ---- question board + tiles ---- */
   function loadQuestion(i){
-    qIndex=i; revealed=false; scannedThisQ=false; capturing=false; dismissed=false; hideLift(); qStartedAt=Date.now(); tallyNow={A:0,B:0,C:0,D:0}; studentAnswer={};
+    qIndex=i; revealed=false; scannedThisQ=false; capturing=false; dismissed=false; hideLift(); qStartedAt=Date.now(); tallyNow={A:0,B:0,C:0,D:0}; studentAnswer={}; lastGain={};
     if(ptzhttp.ok && $("sweepOn").checked) ptzSet({pan:0,tilt:0});   /* centre for the countdown */
     var q=questions[i]||{q:"—",opts:{},correct:""};
     $("qNum").textContent="Question "+(i+1)+" of "+questions.length;
     $("qBig").textContent=q.q;
+    $("boardScore").hidden=true; $("boardPodium").hidden=true;
     renderTiles();
-    $("revealResult").hidden=true; $("revealBtn").disabled=false; $("nextBtn").disabled=true;
-    startTimer();
+    $("revealResult").hidden=true; $("revealBtn").disabled=false; $("nextBtn").disabled=true; $("nextBtn").textContent="Next →";
+    /* Kahoot's get-ready beat: the question alone first — read it, then pick a card up */
+    qphase="ready"; $("tiles").hidden=true; $("readyLine").hidden=false;
+    startReady(q);
+  }
+  /* Read-the-question countdown, scaled to question length (Kahoot's dynamic think time) */
+  function startReady(q){
+    stopTimer();
+    var secs=Math.min(8,Math.max(4,Math.round(String(q.q||"").length/15))), tEl=$("timer");
+    tLeft=secs; tEl.className="timer ready"; tEl.textContent=tLeft;
+    tHandle=setInterval(function(){
+      tLeft--;
+      if(tLeft<=0){ stopTimer(); beginAnswerPhase(); return; }
+      tEl.textContent=tLeft;
+    },1000);
+  }
+  function beginAnswerPhase(){
+    if(mode!=="game"||qphase!=="ready") return;
+    qphase="answer"; $("readyLine").hidden=true; $("tiles").hidden=false;
+    tallyNow={A:0,B:0,C:0,D:0}; studentAnswer={}; qStartedAt=Date.now();
+    renderTiles(); startTimer();
   }
   function snapshot(){
     if(!perStudent){ var t=tallyNow; return {counts:{A:t.A,B:t.B,C:t.C,D:t.D}, answered:t.A+t.B+t.C+t.D, byLetter:null}; }
@@ -896,6 +950,7 @@
     return {counts:counts, answered:answered, byLetter:byLetter};
   }
   function renderTiles(){
+    if(qphase==="score"||qphase==="podium") return;   /* those screens own the board */
     var q=questions[qIndex]||{opts:{}}, tiles=$("tiles");
     if(tiles.childNodes.length!==4){ tiles.innerHTML=""; LETTERS.forEach(function(L){
       var t=el("div","tile "+L); t.id="tile-"+L;
@@ -952,6 +1007,7 @@
     })();
   }
   function doReveal(){
+    if(qphase==="ready"){ beginAnswerPhase(); return; }   /* Reveal during get-ready = skip ahead */
     if(revealed) return;
     if($("sweepOn").checked && ptzhttp.ok && !scannedThisQ){ scannedThisQ=true; $("revealBtn").disabled=true; scanPass(function(){ finishReveal(); }); return; }
     finishReveal();
@@ -984,7 +1040,7 @@
      re-opens the capture window. Additive — newly-raised cards get counted, none
      are dropped. Fires from the popup button or a CTRL:PAN master card. */
   function rescanRoom(){
-    if(mode!=="game" || revealed) return;
+    if(mode!=="game" || revealed || qphase!=="answer") return;
     dismissed=false; capturing=true;
     if($("liftModal").hidden) showLift();
     $("liftSub").textContent="Panning the room — hold your cards up!";
@@ -1003,14 +1059,14 @@
   document.addEventListener("keydown",function(e){ if(e.key==="Escape" && !$("liftModal").hidden) dismissLift(); });
   $("liftAuto").addEventListener("change",function(){ $("autoReveal").checked=this.checked; if(this.checked && !capturing && !revealed && mode==="game" && !$("liftModal").hidden) finishReveal(); });
   function finishReveal(){
-    if(revealed) return; revealed=true; stopTimer(); capturing=false; hideLift();
+    if(revealed) return; revealed=true; qphase="result"; stopTimer(); capturing=false; hideLift();
     var q=questions[qIndex], snap=snapshot(), counts=snap.counts, total=counts.A+counts.B+counts.C+counts.D;
     LETTERS.forEach(function(L){ var t=$("tile-"+L); if(L===q.correct) t.classList.add("correct"); else t.classList.add("wrong"); });
     game.asked++;
     var rr=$("revealResult"); rr.hidden=false;
     if(perStudent){
       var right=0, answered=snap.answered;
-      (snap.byLetter[q.correct]||[]).forEach(function(id){ scores[id]=(scores[id]||0)+PTS_PER_CORRECT; right++; });
+      (snap.byLetter[q.correct]||[]).forEach(function(id){ scores[id]=(scores[id]||0)+PTS_PER_CORRECT; right++; lastGain[id]=true; });
       save(); renderLeaderboard();
       rr.innerHTML="<strong>Correct: "+q.correct+"</strong> — "+right+" of "+answered+" who answered got it"+(answered<roster.length? (", "+(roster.length-answered)+" didn't answer.") : ".");
     } else {
@@ -1022,13 +1078,57 @@
     }
     $("revealBtn").disabled=true; $("nextBtn").disabled=false;
   }
+  /* Next walks the Kahoot beats: result -> scoreboard (roster mode) -> next
+     question, and after the last question -> podium. The rebbi paces every step. */
   function goNext(){
-    if(qIndex+1>=questions.length){
-      var rr=$("revealResult"); rr.hidden=false;
-      rr.innerHTML= perStudent ? "<strong>That was the last question.</strong> Final standings are on the leaderboard." : ("<strong>That was the last question.</strong> Class had the majority on "+game.right+" of "+game.asked+".");
-      $("nextBtn").disabled=true; return;
-    }
+    var last = qIndex+1>=questions.length;
+    if(qphase==="result" && perStudent){ showScoreboard(last); return; }
+    if(last){ showPodium(); return; }
     loadQuestion(qIndex+1);
+  }
+  function showScoreboard(final){
+    qphase="score"; hideLift(); stopTimer();
+    var tEl=$("timer"); tEl.className="timer off"; tEl.textContent="–";
+    $("tiles").hidden=true; $("readyLine").hidden=true; $("revealResult").hidden=true; $("boardPodium").hidden=true;
+    $("qBig").textContent="Scoreboard";
+    $("answeredLine").textContent="";
+    var ol=$("boardLb"); ol.innerHTML="";
+    var ranked=roster.slice().sort(function(a,b){ return (scores[b.id]||0)-(scores[a.id]||0); }).slice(0,5);
+    ranked.forEach(function(s,i){
+      var li=el("li",i===0?"first":null);
+      li.appendChild(el("span","rk",String(i+1)));
+      li.appendChild(el("span","nm",s.name));
+      if(lastGain[s.id]) li.appendChild(el("span","gain","+"+PTS_PER_CORRECT));
+      li.appendChild(el("span","pts",String(scores[s.id]||0)));
+      ol.appendChild(li);
+    });
+    $("boardScore").hidden=false;
+    $("revealBtn").disabled=true; $("nextBtn").disabled=false;
+    $("nextBtn").textContent= final ? "Podium →" : "Next →";
+  }
+  function showPodium(){
+    qphase="podium"; hideLift(); stopTimer();
+    var tEl=$("timer"); tEl.className="timer off"; tEl.textContent="–";
+    $("tiles").hidden=true; $("readyLine").hidden=true; $("revealResult").hidden=true; $("boardScore").hidden=true;
+    $("qNum").textContent="Game over";
+    $("answeredLine").textContent="";
+    if(perStudent){
+      $("qBig").textContent="🏆 Final results!";
+      var p=$("boardPodium"); p.innerHTML="";
+      var ranked=roster.slice().sort(function(a,b){ return (scores[b.id]||0)-(scores[a.id]||0); });
+      [1,0,2].forEach(function(r){                       /* 2nd — 1st — 3rd, like the real thing */
+        var s=ranked[r]; if(!s) return;
+        var col=el("div","col p"+(r+1));
+        col.appendChild(el("div","name",s.name));
+        col.appendChild(el("div","pts",(scores[s.id]||0)+" pt"+((scores[s.id]||0)===1?"":"s")));
+        col.appendChild(el("div","block",String(r+1)));
+        p.appendChild(col);
+      });
+      p.hidden=false;
+    } else {
+      $("qBig").textContent="Class had it on "+game.right+" of "+game.asked+" questions";
+    }
+    $("revealBtn").disabled=true; $("nextBtn").disabled=true; $("nextBtn").textContent="Next →";
   }
   $("revealBtn").addEventListener("click",doReveal);
   $("nextBtn").addEventListener("click",goNext);
@@ -1084,7 +1184,7 @@
       else if(mA){ L=mA[1].toUpperCase(); if(perStudent) return; }
       else return;
       count[L]++; total++;
-      if(sid){ seenLive[sid]=now; if(mode==="calib") calibSeen[sid]=true; if(mode==="game") studentAnswer[sid]={L:L}; }
+      if(sid){ seenLive[sid]=now; if(mode==="calib") calibSeen[sid]=true; if(mode==="game"&&qphase!=="ready") studentAnswer[sid]={L:L}; }   /* no answering during get-ready, like Kahoot */
       /* Privacy: the overlay shows only WHO was scanned — a neutral box and the
          boy's name, never which letter he chose (no colour-coding by choice). */
       var pts=c.cornerPoints;
