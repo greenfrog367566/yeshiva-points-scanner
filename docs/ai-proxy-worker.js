@@ -40,6 +40,16 @@
 // can silently change out from under you. Update this if/when Google
 // deprecates it — check https://ai.google.dev/gemini-api/docs/models for
 // the current stable Flash model before picking a replacement.
+//
+// ⚠️ FREE-TIER QUOTA depends heavily on WHICH model this is. "gemini-3.5-flash"
+// is the premium "most-intelligent" flash model and its free tier is tiny —
+// measured at ~20 requests PER DAY, shared across every teacher on this key. A
+// lighter model (e.g. "gemini-2.5-flash" or a "-lite" variant) has a far larger
+// free allowance and is more than enough to split Hebrew into phrases. If teachers
+// keep hitting "quota exceeded", either switch this to a lighter model (one line,
+// but it's a translation-quality call — judge it against your review gate) or put
+// a PAID key in GEMINI_API_KEY, which removes the cap entirely and keeps this
+// model. Your exact per-model limits are shown at https://aistudio.google.com/rate-limit
 const GEMINI_MODEL = "gemini-3.5-flash";
 
 // Bump this if the prompt format or model changes in a way that should
