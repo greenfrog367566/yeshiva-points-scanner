@@ -252,7 +252,7 @@
                 <input type="checkbox" id="liftAuto" checked> Auto-reveal
               </span>
             </label>
-            <button class="btn sec big" id="liftBackBtn">← Back</button>
+            <button class="btn sec big" id="liftPanBtn">↻ Pan the room</button>
             <button class="btn gold big" id="liftRevealBtn">Reveal answer →</button>
           </div>
         </div>
@@ -651,8 +651,8 @@
     var sheet=$("cardsheet"); sheet.innerHTML="";
     if(typeof window.QRCode==="undefined"){ sheet.appendChild(el("div","bad-box","The QR library did not load (needs internet).")); return; }
     var size=Math.max(1,parseFloat($("cardSize").value)||3), px=Math.max(150,Math.min(1400,Math.round(size*220)));
-    $("cardsMode").innerHTML="<strong>Game-master control cards.</strong> Hold one up to the camera to run the game hands-free — <em>Reveal</em> shows the answer, <em>Next</em> reveals (if needed) then moves on. Print these small, just for yourself.";
-    [["REVEAL","CTRL:REVEAL"],["NEXT","CTRL:NEXT"],["CHECK","CTRL:CALIB"],["START","CTRL:PLAY"]].forEach(function(p){ sheet.appendChild(controlCard(p[0],p[1],px,size)); });
+    $("cardsMode").innerHTML="<strong>Game-master control cards.</strong> Hold one up to the camera to run the game hands-free — <em>Reveal</em> shows the answer, <em>Next</em> reveals (if needed) then moves on, <em>Pan</em> re-scans the room for stragglers. Print these small, just for yourself.";
+    [["REVEAL","CTRL:REVEAL"],["NEXT","CTRL:NEXT"],["PAN","CTRL:PAN"],["CHECK","CTRL:CALIB"],["START","CTRL:PLAY"]].forEach(function(p){ sheet.appendChild(controlCard(p[0],p[1],px,size)); });
   }
   $("genCardsBtn").addEventListener("click",buildCards);
   $("masterCardsBtn").addEventListener("click",buildControlCards);
@@ -874,12 +874,26 @@
     if($("sweepOn").checked && ptzhttp.ok && !scannedThisQ){ scannedThisQ=true; scanPass(afterCapture); }
     else { setTimeout(afterCapture, 4000); }   /* fixed-camera lift window */
   }
+  /* "Pan the room" — re-scan for stragglers without revealing. With the PTZ
+     bridge it sweeps the gimbal across the room again; on a fixed camera it just
+     re-opens the capture window. Additive — newly-raised cards get counted, none
+     are dropped. Fires from the popup button or a CTRL:PAN master card. */
+  function rescanRoom(){
+    if(mode!=="game" || revealed) return;
+    dismissed=false; capturing=true;
+    if($("liftModal").hidden) showLift();
+    $("liftSub").textContent="Panning the room — hold your cards up!";
+    var done=function(){ if(revealed || $("liftModal").hidden) return; capturing=false; renderLiftList();
+      $("liftSub").textContent="Scanned — ↻ pan again for stragglers, or reveal."; };
+    if(ptzhttp.ok && $("sweepOn").checked){ scanPass(done); }
+    else { renderLiftList(); setTimeout(done, 4000); }
+  }
   /* Close the popup WITHOUT revealing — back to the board (its Reveal / Next
      stay available). Escape or clicking the dark backdrop does the same. */
   function dismissLift(){ dismissed=true; capturing=false; hideLift(); sweep.on=false; }
   $("liftRevealBtn").addEventListener("click",function(){ capturing=false; finishReveal(); });
   $("liftCloseBtn").addEventListener("click",dismissLift);
-  $("liftBackBtn").addEventListener("click",dismissLift);
+  $("liftPanBtn").addEventListener("click",rescanRoom);
   $("liftModal").addEventListener("click",function(e){ if(e.target===$("liftModal")) dismissLift(); });
   document.addEventListener("keydown",function(e){ if(e.key==="Escape" && !$("liftModal").hidden) dismissLift(); });
   $("liftAuto").addEventListener("change",function(){ $("autoReveal").checked=this.checked; if(this.checked && !capturing && !revealed && mode==="game" && !$("liftModal").hidden) finishReveal(); });
@@ -921,6 +935,7 @@
     var now=Date.now(); if(ctrlAt[cmd] && now-ctrlAt[cmd]<1800) return; ctrlAt[cmd]=now;
     if(cmd==="REVEAL"){ if(mode==="game" && !revealed) doReveal(); }
     else if(cmd==="NEXT"){ if(mode!=="game") return; if(!revealed) doReveal(); else if(!$("nextBtn").disabled) goNext(); }
+    else if(cmd==="PAN"){ rescanRoom(); }
     else if(cmd==="CALIB"){ setMode("calib"); }
     else if(cmd==="PLAY"){ if(mode==="calib") setMode("game"); }
   }
@@ -957,7 +972,7 @@
     var count={A:0,B:0,C:0,D:0}, total=0;
     codes.forEach(function(c){
       var v=String(c.rawValue||""), L=null, sid=null;
-      var mC=/^CTRL:(REVEAL|NEXT|CALIB|PLAY)$/i.exec(v);
+      var mC=/^CTRL:(REVEAL|NEXT|PAN|CALIB|PLAY)$/i.exec(v);
       if(mC){ handleCtrl(mC[1].toUpperCase()); return; }
       var mS=/^HAD:([^:]+):([ABCD])$/i.exec(v), mA=/^ANS:([ABCD])$/i.exec(v);
       if(mS){ sid=mS[1]; L=mS[2].toUpperCase(); if(!perStudent) return; if(!nameKnown(sid)) return; }
