@@ -81,26 +81,36 @@ it a minute before believing a zero.
 users immediately; bump `CACHE_VERSION` in `sw.js` on a release to purge the
 stale *offline* copy.
 
-### ⚠️ `/robots.txt` lies about whether it exists
+### `/robots.txt` — check the body, not the status code
 
-Cloudflare injects a **managed Content Signals `robots.txt`** when the origin
-has none. Before this repo had its own, `GET /robots.txt` returned **200 with
-1,248 bytes** — which reads exactly like a healthy file — but the body was
-*entirely comments*: no `User-agent`, no `Allow`, no `Sitemap`. Meanwhile
-`HEAD /robots.txt` returned **404**, the origin's real answer.
+**Current state (verified live 2026-08-10): the repo ships `robots.txt`, it is
+what Cloudflare serves, and `HEAD` and `GET` now agree at 200.** Nothing here
+needs acting on — this section exists so the next person doesn't re-derive it.
 
-So a plain status check on that path proves nothing either way. **Read the body
-and look for a directive**, don't trust the code:
+**The trap it came from.** Cloudflare injects a **managed Content Signals
+`robots.txt`** when the origin has none. Before this repo had its own,
+`GET /robots.txt` returned **200 with 1,248 bytes** — which reads exactly like a
+healthy file — but the body was *entirely comments*: no `User-agent`, no
+`Allow`, no `Sitemap`. Meanwhile `HEAD /robots.txt` returned **404**, the
+origin's real answer. A status check alone could not tell those apart, which is
+the habit worth keeping:
 
 ```bash
 # does the live robots.txt actually contain our rules, or just Cloudflare's comments?
 curl -sL --ssl-no-revoke https://menchmark.app/robots.txt | grep -c '^Sitemap:'
 ```
 
-The repo now ships `robots.txt`, which should win as a real origin asset — but
-whether Cloudflare serves it verbatim, appends its content signals to it, or
-overrides it is **unverified**, and only observable against the live site after
-a deploy. Check the body, not the status code.
+**Settled 2026-08-10, measured against the live site after the #245 deploy: the
+repo's own `robots.txt` wins, and Cloudflare serves it verbatim.** The managed
+Content Signals file is a *fallback for a missing origin file*, not an overlay —
+once `robots.txt` exists in the repo, the content-signals comments are gone
+entirely and the body is exactly what this repo ships, `User-agent` / `Allow` /
+`Sitemap` intact. Nothing is appended, nothing is rewritten. So the injection
+described above only ever applies while the origin has no `robots.txt`; don't
+re-litigate it, and don't expect a merged block.
+
+Still read the body rather than the status code, for the reason above — the
+200-vs-404 split is a property of that path, not of what we ship.
 
 (`--ssl-no-revoke` is needed on this machine — without it curl fails the TLS
 revocation check and reports `http=000`, which is indistinguishable from a dead
