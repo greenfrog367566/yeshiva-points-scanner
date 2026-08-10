@@ -196,6 +196,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #offlineSeedWarn.show{display:flex}
   #offlineSeedWarn b{color:#4d3706}
   #offlineSeedWarn .os-spacer{flex:1 1 auto}
+  /* Two-windows notice — amber like #backupNudge: nothing is broken, but the
+     rebbi should know a second window is writing to the same class. Carries its
+     own print-hide rule rather than joining the shared no-print line. */
+  #multiTabWarn{display:none;background:#fdf6e3;color:#6b4d09;border:1px solid #ecd9a4;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem;align-items:center;gap:12px;flex-wrap:wrap}
+  #multiTabWarn b{color:#4d3606}
+  #multiTabWarn span{flex:1;min-width:200px}
+  @media print{ #multiTabWarn{display:none!important} }
 
   /* ======= SCAN VIEW ======= */
   .scan-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start}
@@ -1921,6 +1928,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
        hidden until then; shares #saveWarn's slot so it shows on whichever tab
        is open. -->
   <div id="storageWarn"></div>
+  <div id="multiTabWarn"></div>
 
   <div id="backupNudge">
     <span id="backupNudgeText"></span>
@@ -4705,6 +4713,81 @@ function setupRoster() {
     fbSaveSeq=(fbSaveSeq||0)+1;
     scheduleAutoSnapshot();
   }
+  /* ---------- CROSS-TAB ADOPTION ---------- */
+  /* Two open windows used to destroy each other's scans, silently. save()
+   * writes the WHOLE data blob from this tab's memory, and nothing here ever
+   * listened for the other tab's writes — so a window opened at 9:00 that
+   * scanned at 9:05 wrote its 9:00 memory back over everything the other
+   * window had recorded in between. Proven live: scan in tab A, scan in tab B,
+   * and A's scan is gone from storage with no error in either tab. Desktop
+   * plus smartboard, or a leftover morning tab, is all it takes.
+   *
+   * The browser's "storage" event is the fix: it fires in every OTHER tab on
+   * the origin when one tab writes (never in the writer itself, so there is no
+   * loop). On that event this tab ADOPTS the newer blob — the same
+   * migrate-then-rerender the restore-from-backup path has always done, minus
+   * its save(): storage already holds exactly this content, and writing it
+   * back would just ping the other tab for nothing. After adopting, this tab's
+   * next save is built on top of the other tab's scans instead of over them.
+   *
+   * What this deliberately does NOT do:
+   * - merge simultaneous writes. Two scans inside the same instant still race,
+   *   and the loser's entry is dropped; only the Firestore rebuild's
+   *   incremental writes truly end that. This closes the everyday case — a
+   *   stale tab clobbering hours of another tab's work.
+   * - adopt an external CLEAR (newValue null). "Clear all data" is
+   *   type-to-confirm in the tab where it happens; a background tab wiping its
+   *   own memory in sympathy, mid-lesson, is not recoverable enough to do
+   *   automatically. The banner is shown and this tab keeps working.
+   * Both tabs also get a persistent amber banner saying a second window is
+   * open — in step now, but one window at a time is still the honest advice.
+   */
+  function showMultiTabWarn(){
+    var box=document.getElementById("multiTabWarn");
+    if(!box || box.dataset.dismissed==="1") return;
+    if(!box.firstChild){
+      var msg=document.createElement("span");
+      msg.innerHTML="<b>Menchmark is open in another window or tab as well.</b> "
+        + "The two now keep each other up to date, so scans made in either one are kept — "
+        + "but scanning from one window at a time is still the safest way to work.";
+      var ok=document.createElement("button");
+      ok.className="btn btn-sm"; ok.textContent="OK";
+      ok.addEventListener("click", function(){ box.style.display="none"; box.dataset.dismissed="1"; });
+      box.appendChild(msg); box.appendChild(ok);
+    }
+    box.style.display="flex";
+  }
+  window.addEventListener("storage", function(e){
+    if(e.key!==KEY) return;
+    if(!canSave) return; // startup already decided storage here is unusable; don't fight it
+    showMultiTabWarn();
+    if(!e.newValue) return; // external clear — warn only, never auto-wipe a working tab
+    try{
+      // Read storage itself rather than e.newValue: if several writes landed
+      // quickly, this adopts the newest state however many events are queued.
+      var raw=localStorage.getItem(KEY);
+      if(!raw) return;
+      var incoming=JSON.parse(raw);
+      // Same shape guard load() applies to a raw blob.
+      if(!incoming || typeof incoming!=="object" || Array.isArray(incoming)) return;
+      data=migrateData(incoming); load2fix();
+      // The restore-from-backup re-render list, minus its save().
+      $("schoolName").textContent=data.school;
+      $("bunkName").textContent=data.className;
+      $("sheetUrl").value=data.sheetUrl||"";
+      $("autoSheet").checked=(data.autoSheet!==false);
+      renderActButtons(); renderRecent(); renderStudents(); renderActivities();
+      renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
+      showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
+      if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
+      renderShulchaniStatus();
+      refreshLiveViews();
+      if(typeof refreshTrackedBadges==="function") refreshTrackedBadges();
+    }catch(err){
+      // A malformed write from elsewhere must never crash a healthy tab; the
+      // banner is already up, and this tab's own data is untouched.
+    }
+  });
   // Shown when a save had to give something up, or could not happen at all.
   // Deliberately a banner and not an alert(): save() runs on every scan, and a
   // modal per scan would be unusable exactly when the rebbi is mid-lesson. Sits
