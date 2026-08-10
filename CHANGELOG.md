@@ -16,7 +16,9 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
   Until now, backing up without internet meant *remembering* to press **Download backup file**. The Google Sheet needs internet. So a rebbi working offline had one copy of his whole year sitting in one browser on one computer, and the only thing standing between him and losing it was his own memory.
 
-  **Now: choose a folder once, and Menchmark saves into it on its own** — when you open the app, and again when you close it. Pick a folder on the computer, or on a **USB stick you leave plugged in**, which gets the backup off the machine entirely. No internet, no Google account, nothing to remember, no button to press.
+  **Now: choose a folder once, and Menchmark saves into it on its own** — every time you open the app, and again when you switch away from it if anything has changed. Pick a folder on the computer, or on a **USB stick you leave plugged in**, which gets the backup off the machine entirely. No internet, no Google account, nothing to remember, no button to press.
+
+  **The one you can count on is the one when you open it**, and it is worth knowing why: opening always writes, and what it writes is everything the last session did. The save when you switch away is a bonus that narrows the gap — a browser closing a tab does not always leave enough time to finish writing a file, so that one is not promised. Between them, the folder is never more than one session behind, and there is a **Back up now** button on the card whenever you want to be certain this minute.
 
   Find it under **Run → Backup & Restore**, next to "Back up everything".
 
@@ -24,7 +26,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
   **It tells you when it cannot.** If the USB stick is unplugged, or the folder was moved or deleted, or your school's Chromebook does not allow it, Menchmark says so on that same card and goes back to reminding you to save a backup by hand. **A backup that quietly stops is worse than one that was never set up**, so this one is never silent.
 
-  **It also quiets the backup reminder** — a folder backup is a real, restorable backup, the same file the Download button makes, and it restores the same way.
+  **It also quiets the backup reminder** — a folder backup is a real, restorable backup holding exactly what the Download button saves, and it restores the same way, through **Restore from a backup**.
 
   **Chrome and Edge only** (which includes Chromebooks). On other browsers the card simply does not appear, rather than offering something that cannot work.
 

@@ -2991,7 +2991,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
            Offering a button that cannot work is worse than not offering it. -->
       <div class="card pad bk-card" id="folderBackupCard" style="display:none;border-left:4px solid var(--good)">
         <h3>Back up to a folder automatically <span style="font-size:.72rem;font-weight:700;color:var(--good);background:var(--good-soft);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px">No internet needed</span></h3>
-        <p>Choose a folder <b>once</b> — on this computer, or on a USB stick you leave plugged in — and Menchmark saves a backup into it by itself: when you open the app, and again when you close it. <b>No internet, no Google account, nothing to remember.</b></p>
+        <p>Choose a folder <b>once</b> — on this computer, or on a USB stick you leave plugged in — and Menchmark saves a backup into it by itself: every time you open the app, and again when you switch away from it. <b>No internet, no Google account, nothing to remember.</b></p>
         <p style="margin:8px 0 0;font-size:.86rem">Each day gets its own file, so you keep a history rather than one file that overwrites itself. A week of backups is about the size of one photo.</p>
         <div id="folderBackupStatus" style="margin:10px 0 0;font-size:.88rem;font-weight:600"></div>
         <div style="margin-top:10px">
@@ -4690,6 +4690,11 @@ function setupRoster() {
       }
       if(failed || trimmed) showStorageWarn(trimmed, failed);
     }
+    // Marks the save as newer than whatever last reached the backup folder, so
+    // the closing write knows there is something to write. Guarded with ||0
+    // because save() can run before this file's folder-backup section has been
+    // evaluated, where the hoisted var is still undefined and ++ would give NaN.
+    fbSaveSeq=(fbSaveSeq||0)+1;
     scheduleAutoSnapshot();
   }
   // Shown when a save had to give something up, or could not happen at all.
@@ -20767,7 +20772,22 @@ nameLine
    * keep writing over.
    */
   var FB_DB="menchmarkBackupFS", FB_STORE="handles", FB_KEY="dir";
-  var fbHandle=null, fbLastWrite=0, fbBusy=false;
+  var fbHandle=null, fbBusy=false;
+  /* "Has anything changed since the last folder write?", counted rather than
+   * timed. The closing write used to be skipped for 60 seconds after any other
+   * write, which sounds like a debounce but silently dropped the commonest
+   * session there is: open the app, take attendance, close it — under a minute,
+   * so the write the card promises on closing never happened. Nothing was lost
+   * (localStorage still had it, and the next open writes it), but the folder
+   * copy sat a whole session behind, which is exactly the copy a rebbi falls
+   * back on when the machine is the thing that broke.
+   *
+   * A counter, not a boolean, because the write is async: we record which
+   * revision actually reached the disk, so a scan that lands mid-write leaves
+   * the app correctly dirty instead of being marked saved by a write that
+   * never contained it. Flicking between tabs still writes nothing, which was
+   * the point of the original rate limit. */
+  var fbSaveSeq=0, fbWrittenSeq=-1;
   function fbSupported(){ return typeof window.showDirectoryPicker==="function" && typeof indexedDB!=="undefined"; }
   function fbIdb(){
     return new Promise(function(res,rej){
@@ -20811,18 +20831,28 @@ nameLine
   function fbWrite(silent){
     if(!fbHandle || fbBusy) return Promise.resolve(false);
     fbBusy=true;
+    // Captured BEFORE the write starts: this is the revision these bytes
+    // contain. Anything saved while the write is in flight bumps fbSaveSeq
+    // past it and correctly leaves the app dirty for the next write.
+    var seq=(fbSaveSeq||0);
     return fbHandle.getFileHandle(fbFileName(),{create:true})
       .then(function(fh){ return fh.createWritable(); })
       .then(function(w){
         return w.write(JSON.stringify(data)).then(function(){ return w.close(); });
       })
       .then(function(){
-        fbLastWrite=Date.now();
+        fbWrittenSeq=seq;
         // A folder backup IS a restorable backup, so it stamps lastBackupAt and
         // quiets the staleness nudge — unlike the CSV exports, which are reports.
         markBackedUp();
-        if(!silent) fbStatus("Backed up to “"+fbHandle.name+"” just now.", "good");
-        else fbStatus("Backing up automatically to “"+fbHandle.name+"”. Last saved just now.", "good");
+        // Guarded for the same reason as the catch below, and it matters more
+        // here: the bytes are already on disk by this point, so letting a
+        // broken status line throw would drop us into the failure branch and
+        // tell the rebbi nothing was backed up when it just was.
+        try{
+          if(!silent) fbStatus("Backed up to “"+fbHandle.name+"” just now.", "good");
+          else fbStatus("Backing up automatically to “"+fbHandle.name+"”. Last saved just now.", "good");
+        }catch(_){}
         return true;
       })
       .catch(function(e){
@@ -20830,10 +20860,27 @@ nameLine
         // deleted or renamed, and a school policy revoking access. All three
         // must be visible: a backup that stopped without saying so is worse
         // than one that was never set up.
-        fbStatus("Could not write to that folder ("+(e&&e.name||e)+"). Your data is safe here, but nothing is being backed up — choose a folder again, or use “Download backup file”.", "bad");
+        try{
+          fbStatus("Could not write to that folder ("+(e&&e.name||e)+"). Your data is safe here, but nothing is being backed up — choose a folder again, or use “Download backup file”.", "bad");
+        }catch(_){}
         return false;
       })
-      .then(function(r){ fbBusy=false; return r; });
+      // CLEARED IN BOTH DIRECTIONS, and that is the point of the shape here.
+      // fbBusy is the guard that stops two writes overlapping, so anything that
+      // leaves it stuck true disables every later backup for the rest of the
+      // session — and disables it SILENTLY, since fbWrite() returns before it
+      // can say anything. That is the one failure this card promises cannot
+      // happen. A lone .then() only runs on success, so a throw inside the
+      // .catch above (or anywhere after it) used to latch the guard on forever;
+      // the reject arm below closes that, and the try/catch in the handler
+      // means a broken status line can't take the backup down with it.
+      // Resolves false rather than rethrowing: every caller treats this as
+      // "did it write?", and most call it as a bare statement (startup, the
+      // visibility write, the two buttons), so a rethrow here would surface as
+      // an unhandled rejection in a rebbi's console for a case the .catch above
+      // has already reported on screen.
+      .then(function(r){ fbBusy=false; return r; },
+            function(){ fbBusy=false; return false; });
   }
   // Re-attaches a folder chosen in an earlier session, but ONLY if the
   // permission is still granted without prompting. Asking on startup would be
@@ -20909,12 +20956,21 @@ nameLine
   /* The second of the two automatic writes: when the app is hidden — the tab
    * closed, the laptop shut, the rebbi switching away at the end of a period.
    * visibilitychange rather than beforeunload, because an async file write is
-   * not reliably allowed during unload. Rate-limited so flicking between tabs
-   * does not write continuously. */
+   * not reliably allowed during unload.
+   *
+   * Skipped only when nothing has changed since the last write, so flicking
+   * between tabs still costs nothing — but a short session that actually did
+   * something is never skipped, which a plain time-based limit got wrong.
+   *
+   * BEST-EFFORT BY NATURE, and worth being honest about: on a real tab close
+   * the page can be torn down before an async file write finishes, so this is
+   * the write that MIGHT not land. The open-time write in fbInit() is the one
+   * carrying this feature — it always runs, and it always contains everything
+   * the previous session did. This one just narrows the window. */
   document.addEventListener("visibilitychange", function(){
     if(document.visibilityState!=="hidden") return;
     if(!fbHandle) return;
-    if(Date.now()-fbLastWrite < 60000) return;
+    if(fbWrittenSeq===(fbSaveSeq||0)) return;
     fbWrite(true);
   });
 
