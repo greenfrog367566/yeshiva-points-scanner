@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hadroom — class review game</title>
+<!-- Hadroom MVP. Standalone, single file, no build step — same shape as the
+     Menchmark app. A whole-class review game: the rebbi asks a multiple-choice
+     question, every boy holds up a printed A/B/C/D card, and the camera reads
+     the whole room at once into a live tally. No devices for the boys, no
+     roster, no accounts. Questions are typed or drafted by AI from pasted
+     text. Deliberately anonymous — it counts letters, not who held them.
+     Reuses the multi-QR detection proven in hadroom-camera-test.html. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- BarcodeDetector polyfill (ZXing-C++ WASM). Desktop Windows Chrome/Edge have
+     no native BarcodeDetector; this defines it only when missing, so other
+     platforms keep the faster native one. Multi-QR needs this. -->
+<script src="https://fastly.jsdelivr.net/npm/barcode-detector@3/dist/iife/polyfill.min.js"></script>
+<style>
+  :root{
+    --ink:#1b2440; --paper:#eceef3; --card:#ffffff; --line:#d8dbe4; --muted:#6a7187;
+    --brass:#a8772a; --gold:#e8b321;
+    --a:#2b6ca3; --a-soft:#e2eef7;
+    --b:#1f8a5b; --b-soft:#e3f3ea;
+    --c:#a8772a; --c-soft:#f3e9d4;
+    --d:#8a3fb0; --d-soft:#efe3f6;
+    --good:#1f8a5b; --good-soft:#e3f3ea; --bad:#b04432; --bad-soft:#f6e6e2;
+    --shadow:0 1px 2px rgba(27,36,64,.06),0 8px 24px rgba(27,36,64,.07);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit;font-size:1rem}
+
+  header{background:var(--ink);color:#fff;padding:12px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header .logo{width:34px;height:34px;border-radius:9px;background:var(--gold);color:#1b1400;font-family:var(--serif);font-weight:700;font-size:1.2rem;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+  header .ttl{font-family:var(--serif);font-size:1.3rem;font-weight:600}
+  header .sub{font-size:.76rem;color:#aeb6d2;letter-spacing:.4px;text-transform:uppercase}
+  nav.views{margin-left:auto;display:flex;gap:6px}
+  nav.views button{background:transparent;border:1px solid #41507f;color:#cfd5ea;border-radius:8px;padding:7px 14px;font-size:.9rem}
+  nav.views button:hover{background:#26315a}
+  nav.views button.active{background:var(--gold);border-color:var(--brass);color:#1b1400;font-weight:700}
+
+  .wrap{max-width:1150px;margin:0 auto;padding:18px 20px 60px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 10px;font-size:1.02rem}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  label.f{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted);font-weight:600}
+  label.f input,label.f select,label.f textarea{border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff;color:var(--ink)}
+  label.f input[type=number]{width:90px}
+  .btn{background:var(--ink);color:#fff;border:1px solid var(--ink);border-radius:8px;padding:9px 18px;font-size:.92rem;font-weight:600}
+  .btn:hover{background:#2c3860}
+  .btn.sec{background:#fff;color:var(--ink);border-color:var(--line)}
+  .btn.sec:hover{background:#f4f5f9}
+  .btn.gold{background:var(--gold);border-color:var(--brass);color:#1b1400}
+  .btn.gold:hover{background:#f0c53f}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.big{font-size:1.1rem;padding:12px 26px}
+  .hint{font-size:.83rem;color:var(--muted);margin:8px 0 0}
+  .note{background:#f4f5f9;border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:8px;padding:10px 12px;font-size:.85rem;margin:10px 0 0}
+  .bad-box{background:var(--bad-soft);border:1px solid #e0bcb3;border-left:3px solid var(--bad);border-radius:8px;padding:12px 14px;font-size:.9rem;margin:10px 0 0}
+
+  /* ---- Play view ---- */
+  .stage{position:relative;display:inline-block;line-height:0;background:#000;border-radius:10px;overflow:hidden;max-width:100%}
+  .stage video{display:block;width:100%;max-width:760px;height:auto}
+  .stage canvas.ov{position:absolute;left:0;top:0;pointer-events:none}
+  .play-grid{display:grid;grid-template-columns:minmax(320px,1.4fr) minmax(260px,1fr);gap:16px;align-items:start}
+  @media(max-width:820px){ .play-grid{grid-template-columns:1fr} }
+
+  .qbar{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:14px 16px;margin-bottom:16px}
+  .qbar .qnum{font-size:.74rem;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
+  .qbar .qtext{font-size:1.35rem;font-family:var(--serif);margin:2px 0 8px}
+  .qbar .opts{display:flex;gap:8px;flex-wrap:wrap}
+  .qbar .opt{border:1px solid var(--line);border-radius:9px;padding:6px 12px;font-size:.95rem;display:flex;gap:8px;align-items:center}
+  .qbar .opt .lt{font-weight:800;width:20px;height:20px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:.8rem}
+  .lt.A{background:var(--a)} .lt.B{background:var(--b)} .lt.C{background:var(--c)} .lt.D{background:var(--d)}
+  .qbar .opt.correct{background:var(--good-soft);border-color:var(--good);font-weight:600}
+
+  /* live tally */
+  .tally{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .ty{border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;transition:background .15s}
+  .ty .lt{width:34px;height:34px;border-radius:8px;color:#fff;font-weight:800;font-size:1.1rem;display:inline-flex;align-items:center;justify-content:center;margin-bottom:6px}
+  .ty .cnt{font-size:2.2rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+  .ty.A{background:var(--a-soft)} .ty.B{background:var(--b-soft)} .ty.C{background:var(--c-soft)} .ty.D{background:var(--d-soft)}
+  .ty.win{outline:3px solid var(--gold);outline-offset:2px}
+  .ty.reveal-correct{outline:3px solid var(--good);outline-offset:2px}
+  .ty.reveal-wrong{opacity:.5}
+  .bigcount{font-size:.8rem;color:var(--muted);text-align:center;margin-top:6px}
+
+  .stat{display:inline-flex;flex-direction:column;background:#f4f5f9;border:1px solid var(--line);border-radius:10px;padding:7px 12px;min-width:92px}
+  .stat .k{font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+  .stat .v{font-size:1.15rem;font-weight:800;font-variant-numeric:tabular-nums}
+  .statrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+
+  /* ---- Questions editor ---- */
+  ul.qlist{list-style:none;margin:12px 0 0;padding:0}
+  ul.qlist li{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start}
+  ul.qlist li .n{font-weight:800;color:var(--muted);flex:0 0 auto}
+  ul.qlist li .body{flex:1;min-width:0}
+  ul.qlist li .q{font-weight:600}
+  ul.qlist li .a{font-size:.85rem;color:var(--muted);margin-top:2px}
+  ul.qlist li .a b{color:var(--good)}
+  ul.qlist li .x{background:none;border:none;color:var(--bad);font-size:1.1rem;flex:0 0 auto}
+  textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;resize:vertical}
+
+  /* ---- Print cards ---- */
+  #cardsheet{display:flex;flex-wrap:wrap;gap:0;margin-top:14px}
+  .qr-cell{border:1px dashed #9aa0b0;padding:.12in;margin:.06in;text-align:center;break-inside:avoid;page-break-inside:avoid}
+  .qr-cell .lbl{font-weight:800;font-size:34pt;font-family:var(--serif);margin-bottom:4px}
+  .qr-cell .cap{font-family:var(--mono);font-size:10px;margin-top:4px;color:var(--muted)}
+  .qr-cell canvas,.qr-cell img{display:block;width:var(--qs);height:var(--qs);margin:0 auto}
+
+  @page{size:8.5in 11in;margin:.4in}
+  @media print{
+    body{background:#fff}
+    .noprint{display:none!important}
+    .wrap{max-width:none;padding:0;margin:0}
+    .card{border:none;box-shadow:none;padding:0;margin:0}
+  }
+</style>
+</head>
+<body>
+
+<header class="noprint">
+  <div class="logo">H</div>
+  <div>
+    <div class="ttl">Hadroom</div>
+    <div class="sub">Whole-class review game</div>
+  </div>
+  <nav class="views">
+    <button id="navPlay" class="active">Play</button>
+    <button id="navQ">Questions</button>
+    <button id="navCards">Answer cards</button>
+  </nav>
+</header>
+
+<div class="wrap">
+
+  <!-- =============== PLAY =============== -->
+  <section id="viewPlay">
+    <div id="playSetup" class="card">
+      <h2>Start a game</h2>
+      <div class="row">
+        <label class="f" style="flex:1;min-width:240px">Camera
+          <select id="camSel"><option value="">(looking for cameras…)</option></select>
+        </label>
+        <div style="align-self:flex-end;padding-bottom:1px"><button class="btn gold big" id="startBtn">Start camera</button></div>
+      </div>
+      <div id="support"></div>
+      <p class="hint" id="qCountHint"></p>
+    </div>
+
+    <div id="playArea" hidden>
+      <div class="qbar">
+        <div class="qnum" id="qNum">Question 1</div>
+        <div class="qtext" id="qText">—</div>
+        <div class="opts" id="qOpts"></div>
+      </div>
+
+      <div class="play-grid">
+        <div class="card" style="margin:0">
+          <div class="stage" id="stage">
+            <video id="vid" playsinline muted autoplay></video>
+            <canvas class="ov" id="ov" width="10" height="10"></canvas>
+          </div>
+          <div class="statrow">
+            <div class="stat"><div class="k">Cards seen</div><div class="v" id="sSeen">0</div></div>
+            <div class="stat"><div class="k">Most at once</div><div class="v" id="sMax">0</div></div>
+            <div class="stat"><div class="k">Detects/s</div><div class="v" id="sFps">–</div></div>
+          </div>
+          <p class="hint">Hold the frame steady on the class. Every A/B/C/D card in view is counted live. It counts <em>how many</em> of each — not who.</p>
+        </div>
+
+        <div>
+          <div class="card" style="margin:0 0 12px">
+            <div class="tally" id="tally"></div>
+            <div class="bigcount" id="bigcount"></div>
+          </div>
+          <div class="card" style="margin:0">
+            <div class="row" style="justify-content:space-between">
+              <button class="btn gold" id="revealBtn">Reveal answer</button>
+              <button class="btn" id="nextBtn" disabled>Next question →</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <button class="btn sec" id="stopBtn">Stop camera</button>
+              <label class="f" style="margin-left:auto">Freeze count
+                <select id="freezeMode">
+                  <option value="live">Live (keep counting)</option>
+                  <option value="peak">Peak (highest seen)</option>
+                </select>
+              </label>
+            </div>
+            <div id="revealResult" class="note" hidden></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="scoreCard">
+        <h2>Game so far</h2>
+        <div class="statrow">
+          <div class="stat"><div class="k">Questions asked</div><div class="v" id="gAsked">0</div></div>
+          <div class="stat"><div class="k">Class got right</div><div class="v" id="gRight">0</div></div>
+          <div class="stat"><div class="k">Best answer rate</div><div class="v" id="gRate">–</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============== QUESTIONS =============== -->
+  <section id="viewQ" hidden>
+    <div class="card">
+      <h2>Add a question</h2>
+      <label class="f">Question
+        <textarea id="qInput" rows="2" placeholder="e.g. According to Rashi, who...?"></textarea>
+      </label>
+      <div class="row" style="margin-top:8px">
+        <label class="f" style="flex:1;min-width:120px">A <input id="optA" type="text"></label>
+        <label class="f" style="flex:1;min-width:120px">B <input id="optB" type="text"></label>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label class="f" style="flex:1;min-width:120px">C <input id="optC" type="text"></label>
+        <label class="f" style="flex:1;min-width:120px">D <input id="optD" type="text"></label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="f">Correct answer
+          <select id="correctSel"><option>A</option><option>B</option><option>C</option><option>D</option></select>
+        </label>
+        <div style="align-self:flex-end;padding-bottom:1px"><button class="btn" id="addQBtn">Add question</button></div>
+      </div>
+      <p class="hint">Options are optional — a plain question with just A/B/C/D letters works too. The correct answer is what "Reveal" checks against.</p>
+    </div>
+
+    <div class="card">
+      <h2>Draft questions with AI</h2>
+      <label class="f">Paste this week's learning (Gemara text, a summary, notes…)
+        <textarea id="aiText" rows="5" placeholder="Paste the material here and AI will draft multiple-choice review questions from it."></textarea>
+      </label>
+      <div class="row" style="margin-top:8px">
+        <label class="f">How many <input id="aiCount" type="number" value="5" min="1" max="20"></label>
+        <div style="align-self:flex-end;padding-bottom:1px"><button class="btn gold" id="aiBtn">Draft questions</button></div>
+        <div id="aiStatus" class="hint" style="margin:0;align-self:flex-end;padding-bottom:6px"></div>
+      </div>
+      <p class="hint">Drafts are added to the list below for you to review and edit before playing. Always check them — AI can misread a source.</p>
+    </div>
+
+    <div class="card">
+      <h2>Questions <span class="hint" style="font-weight:400" id="qListCount"></span></h2>
+      <div class="row"><button class="btn sec" id="clearQBtn">Clear all</button><button class="btn sec" id="sampleBtn">Load sample questions</button></div>
+      <ul class="qlist" id="qlist"></ul>
+    </div>
+  </section>
+
+  <!-- =============== ANSWER CARDS =============== -->
+  <section id="viewCards" hidden>
+    <div class="card noprint">
+      <h2>Printable answer cards</h2>
+      <p class="hint" style="margin-top:0">Print one set, laminate them, hand them out. Each boy gets four cards (A, B, C, D) — or share a class set. He holds up his choice; the camera reads the whole room.</p>
+      <div class="row">
+        <label class="f">Card size (inches) <input id="cardSize" type="number" value="5" min="1" max="8" step="0.25"></label>
+        <label class="f">Sets to print <input id="cardSets" type="number" value="1" min="1" max="40"></label>
+        <div style="align-self:flex-end;padding-bottom:1px;display:flex;gap:8px">
+          <button class="btn" id="genCardsBtn">Generate</button>
+          <button class="btn sec" id="printCardsBtn">Print</button>
+        </div>
+      </div>
+      <div class="note">Field-tested sizing: <strong>5" cards read to about 22 feet</strong> with a fixed camera. Bigger cards reach further (~1" of card per ~4½ ft). Print at <strong>100% / actual size</strong>, not "fit to page".</div>
+    </div>
+    <div class="card">
+      <div id="cardsheet"></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+  function $(id){ return document.getElementById(id); }
+  function el(tag,cls,txt){ var n=document.createElement(tag); if(cls) n.className=cls; if(txt!=null) n.textContent=txt; return n; }
+
+  var AI_PROXY_URL="https://pesukim-ai-proxy.bsteinerman.workers.dev/";
+  var LETTERS=["A","B","C","D"];
+  var ANSWER_PREFIX="ANS:";          /* card QR content: ANS:A ... ANS:D */
+
+  /* ---------------- persistence (questions only) ---------------- */
+  var LS_KEY="hadroom_mvp_v1";
+  var questions=[];
+  function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify({questions:questions})); }catch(e){} }
+  function load(){
+    try{ var d=JSON.parse(localStorage.getItem(LS_KEY)||"{}"); if(Array.isArray(d.questions)) questions=d.questions; }catch(e){}
+  }
+
+  /* ---------------- view switching ---------------- */
+  var views={ Play:"viewPlay", Q:"viewQ", Cards:"viewCards" };
+  function show(which){
+    Object.keys(views).forEach(function(k){
+      $(views[k]).hidden = (k!==which);
+      $("nav"+k).classList.toggle("active", k===which);
+    });
+    if(which==="Cards" && !$("cardsheet").firstChild) buildCards();
+    if(which==="Q") renderQList();
+    if(which==="Play") updateQCountHint();
+  }
+  $("navPlay").addEventListener("click",function(){ show("Play"); });
+  $("navQ").addEventListener("click",function(){ show("Q"); });
+  $("navCards").addEventListener("click",function(){ show("Cards"); });
+
+  /* ================= QUESTIONS ================= */
+  function renderQList(){
+    var list=$("qlist"); list.innerHTML="";
+    $("qListCount").textContent = questions.length ? ("("+questions.length+")") : "";
+    if(!questions.length){ list.appendChild(el("li",null,"No questions yet. Add one above, draft with AI, or load the samples.")); return; }
+    questions.forEach(function(q,i){
+      var li=el("li");
+      li.appendChild(el("span","n",(i+1)+"."));
+      var body=el("div","body");
+      body.appendChild(el("div","q",q.q||"(untitled)"));
+      var opts=LETTERS.filter(function(L){ return q.opts && q.opts[L]; })
+                      .map(function(L){ return L+") "+q.opts[L]; }).join("   ");
+      var a=el("div","a");
+      a.innerHTML = (opts? opts+" · " : "") + "correct: <b>"+(q.correct||"?")+"</b>";
+      body.appendChild(a);
+      li.appendChild(body);
+      var x=el("button","x","✕"); x.title="Remove";
+      x.addEventListener("click",function(){ questions.splice(i,1); save(); renderQList(); });
+      li.appendChild(x);
+      list.appendChild(li);
+    });
+  }
+  $("addQBtn").addEventListener("click",function(){
+    var q=$("qInput").value.trim();
+    if(!q){ $("qInput").focus(); return; }
+    var opts={A:$("optA").value.trim(),B:$("optB").value.trim(),C:$("optC").value.trim(),D:$("optD").value.trim()};
+    questions.push({q:q,opts:opts,correct:$("correctSel").value});
+    save(); renderQList();
+    ["qInput","optA","optB","optC","optD"].forEach(function(id){ $(id).value=""; });
+    $("qInput").focus();
+  });
+  $("clearQBtn").addEventListener("click",function(){
+    if(!questions.length) return;
+    if(confirm("Remove all "+questions.length+" questions?")){ questions=[]; save(); renderQList(); }
+  });
+  $("sampleBtn").addEventListener("click",function(){
+    [{q:"Which of these is one of the Arba Minim?",opts:{A:"Apple",B:"Esrog",C:"Potato",D:"Grape"},correct:"B"},
+     {q:"How many days is Sukkos (in Eretz Yisrael)?",opts:{A:"1",B:"7",C:"8",D:"40"},correct:"B"},
+     {q:"Who led Bnei Yisrael out of Mitzrayim?",opts:{A:"Moshe",B:"Dovid",C:"Shlomo",D:"Yosef"},correct:"A"}
+    ].forEach(function(s){ questions.push(s); });
+    save(); renderQList();
+  });
+
+  /* ---- AI drafting via the shared Gemini proxy ---- */
+  $("aiBtn").addEventListener("click", async function(){
+    var text=$("aiText").value.trim();
+    var n=Math.max(1,Math.min(20,parseInt($("aiCount").value,10)||5));
+    var statusEl=$("aiStatus"), btn=this;
+    if(!text){ statusEl.textContent="Paste some material first."; return; }
+    btn.disabled=true; statusEl.textContent="Drafting "+n+" questions…";
+    var prompt=
+      "You are helping a rebbi make a multiple-choice review game from the text below. "+
+      "Write exactly "+n+" review questions. Each has 4 options labelled A, B, C, D, with exactly one correct. "+
+      "Base them ONLY on the text; keep questions short and clear. "+
+      "Return ONLY a JSON array, no prose, each item: "+
+      '{"q":"...","opts":{"A":"...","B":"...","C":"...","D":"..."},"correct":"A"}. '+
+      "\n\nTEXT:\n"+text;
+    try{
+      var res=await fetch(AI_PROXY_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:prompt})});
+      var json=await res.json().catch(function(){ return null; });
+      if(!res.ok) throw new Error((json&&json.error)||("HTTP "+res.status));
+      if(!json||!json.text) throw new Error("empty response");
+      var arr=parseAIQuestions(json.text);
+      if(!arr.length) throw new Error("could not read questions from the reply");
+      arr.forEach(function(q){ questions.push(q); });
+      save(); renderQList();
+      statusEl.textContent="Added "+arr.length+" — review them below.";
+      $("aiText").value="";
+    }catch(e){
+      var cors = /failed to fetch|networkerror/i.test(e.message);
+      statusEl.textContent = cors
+        ? "Couldn't reach the AI service from this page (its origin isn't allowed yet). Type questions by hand for now — AI drafting works once the proxy permits this site."
+        : ("AI draft failed: "+e.message);
+    }finally{ btn.disabled=false; }
+  });
+  function parseAIQuestions(txt){
+    var s=String(txt);
+    var i=s.indexOf("["), j=s.lastIndexOf("]");
+    if(i>=0 && j>i) s=s.slice(i,j+1);
+    var arr=[]; try{ arr=JSON.parse(s); }catch(e){ return []; }
+    if(!Array.isArray(arr)) return [];
+    return arr.filter(function(o){ return o&&o.q; }).map(function(o){
+      var opts=o.opts||{};
+      var correct=(o.correct||"A").toString().trim().toUpperCase().charAt(0);
+      if(LETTERS.indexOf(correct)<0) correct="A";
+      return {q:String(o.q), opts:{A:opts.A||"",B:opts.B||"",C:opts.C||"",D:opts.D||""}, correct:correct};
+    });
+  }
+
+  /* ================= ANSWER CARDS ================= */
+  function buildCards(){
+    var sheet=$("cardsheet"); sheet.innerHTML="";
+    if(typeof window.QRCode==="undefined"){
+      sheet.appendChild(el("div","bad-box","The QR library did not load (needs an internet connection). Reload connected to print cards."));
+      return;
+    }
+    var size=parseFloat($("cardSize").value)||5;
+    var sets=Math.max(1,Math.min(40,parseInt($("cardSets").value,10)||1));
+    var px=Math.max(150,Math.min(1400,Math.round(size*220)));
+    var colors={A:"var(--a)",B:"var(--b)",C:"var(--c)",D:"var(--d)"};
+    for(var s=0;s<sets;s++){
+      LETTERS.forEach(function(L){
+        var cell=el("div","qr-cell"); cell.style.setProperty("--qs",size+"in");
+        var lbl=el("div","lbl",L); lbl.style.color=colors[L]; cell.appendChild(lbl);
+        var holder=el("div"); cell.appendChild(holder);
+        try{ new window.QRCode(holder,{text:ANSWER_PREFIX+L,width:px,height:px,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ cell.appendChild(el("div","cap","(QR error)")); }
+        cell.appendChild(el("div","cap",ANSWER_PREFIX+L+" · "+size+'"'));
+        sheet.appendChild(cell);
+      });
+    }
+  }
+  $("genCardsBtn").addEventListener("click",buildCards);
+  $("printCardsBtn").addEventListener("click",function(){ if(!$("cardsheet").firstChild) buildCards(); window.print(); });
+
+  /* ================= PLAY ================= */
+  var camSel=$("camSel"), startBtn=$("startBtn"), stopBtn=$("stopBtn"),
+      vid=$("vid"), ov=$("ov"), octx=ov.getContext("2d");
+  var stream=null, detector=null, supported=false;
+  var running=false, timer=null;
+  var qIndex=0, revealed=false;
+  var tallyNow={A:0,B:0,C:0,D:0}, tallyPeak={A:0,B:0,C:0,D:0}, seenMax=0;
+  var passTimes=[];
+  var game={asked:0,right:0,bestRate:0};
+
+  /* ----- detector support ----- */
+  (function(){
+    if(!("BarcodeDetector" in window)){
+      $("support").appendChild(el("div","bad-box","This browser has no QR detection and the polyfill did not load — check the internet connection, or use Chrome/Edge."));
+      startBtn.disabled=true; return;
+    }
+    try{ detector=new window.BarcodeDetector({formats:["qr_code"]}); supported=true; }
+    catch(e){ $("support").appendChild(el("div","bad-box","QR detector unavailable: "+e.message)); startBtn.disabled=true; }
+  })();
+
+  function listCams(){
+    if(!navigator.mediaDevices||!navigator.mediaDevices.enumerateDevices) return Promise.resolve();
+    return navigator.mediaDevices.enumerateDevices().then(function(devs){
+      var cams=devs.filter(function(d){ return d.kind==="videoinput"; });
+      var keep=camSel.value; camSel.innerHTML="";
+      if(!cams.length){ camSel.appendChild(el("option","","(no cameras found)")); return; }
+      cams.forEach(function(d,i){
+        var o=el("option"); o.value=d.deviceId;
+        o.textContent=d.label||("Camera "+(i+1));
+        camSel.appendChild(o);
+      });
+      if(keep) camSel.value=keep;
+    });
+  }
+
+  function updateQCountHint(){
+    var h=$("qCountHint");
+    if(!questions.length){ h.innerHTML="No questions yet — add some on the <strong>Questions</strong> tab first (or load the samples)."; }
+    else h.textContent = questions.length+" question"+(questions.length>1?"s":"")+" ready. Print the answer cards, point the camera at the class, and Start.";
+  }
+
+  startBtn.addEventListener("click",function(){
+    if(!supported) return;
+    if(!questions.length){ show("Q"); return; }
+    var v={ width:{ideal:1920}, height:{ideal:1080} };
+    if(camSel.value) v.deviceId={exact:camSel.value};
+    startBtn.disabled=true;
+    navigator.mediaDevices.getUserMedia({video:v,audio:false}).then(function(s){
+      stream=s; vid.srcObject=s;
+      return vid.play().catch(function(){});
+    }).then(function(){
+      listCams();
+      $("playSetup").hidden=true; $("playArea").hidden=false;
+      qIndex=0; game={asked:0,right:0,bestRate:0}; updateGameStats();
+      loadQuestion(0);
+      sizeOverlay(); startLoop();
+    }).catch(function(e){
+      startBtn.disabled=false;
+      $("support").appendChild(el("div","bad-box","Could not open the camera: "+e.name+" — "+e.message));
+    });
+  });
+  stopBtn.addEventListener("click",function(){
+    stopLoop();
+    if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream=null; }
+    vid.srcObject=null;
+    $("playArea").hidden=true; $("playSetup").hidden=false; startBtn.disabled=false;
+  });
+
+  function sizeOverlay(){ var w=vid.clientWidth,h=vid.clientHeight; if(w&&h&&(ov.width!==w||ov.height!==h)){ ov.width=w; ov.height=h; } }
+  window.addEventListener("resize",sizeOverlay);
+  vid.addEventListener("loadedmetadata",sizeOverlay);
+
+  /* ----- question flow ----- */
+  function loadQuestion(i){
+    qIndex=i; revealed=false;
+    resetTally();
+    var q=questions[i]||{q:"—",opts:{},correct:""};
+    $("qNum").textContent="Question "+(i+1)+" of "+questions.length;
+    $("qText").textContent=q.q;
+    var opts=$("qOpts"); opts.innerHTML="";
+    LETTERS.forEach(function(L){
+      var o=el("div","opt"); o.id="opt-"+L;
+      o.appendChild(el("span","lt "+L,L));
+      o.appendChild(el("span",null, (q.opts&&q.opts[L])? q.opts[L] : "" ));
+      opts.appendChild(o);
+    });
+    $("revealResult").hidden=true;
+    $("revealBtn").disabled=false;
+    $("nextBtn").disabled=true;
+    renderTally();
+  }
+  $("revealBtn").addEventListener("click",function(){
+    if(revealed) return;
+    revealed=true;
+    var q=questions[qIndex];
+    var counts=currentCounts();
+    // mark tally + option
+    LETTERS.forEach(function(L){
+      var ty=$("ty-"+L); ty.classList.remove("win");
+      if(L===q.correct){ ty.classList.add("reveal-correct"); $("opt-"+L).classList.add("correct"); }
+      else ty.classList.add("reveal-wrong");
+    });
+    var total=counts.A+counts.B+counts.C+counts.D;
+    var right=counts[q.correct]||0;
+    var rate= total? Math.round(100*right/total) : 0;
+    game.asked++;
+    /* "class got it right" = the majority of raised cards picked the correct
+       letter (anonymous, so this is the class-level score). */
+    var majority = LETTERS.reduce(function(a,L){ return counts[L]>counts[a]?L:a; },"A");
+    if(majority===q.correct && total>0) game.right++;
+    if(rate>game.bestRate) game.bestRate=rate;
+    updateGameStats();
+    var rr=$("revealResult"); rr.hidden=false;
+    rr.innerHTML="<strong>Correct answer: "+q.correct+"</strong> — "+
+      right+" of "+total+" card"+(total===1?"":"s")+" chose it ("+rate+"%)."+
+      (majority===q.correct? " The class had it." : " Most of the class missed it.");
+    $("revealBtn").disabled=true;
+    $("nextBtn").disabled=false;
+  });
+  $("nextBtn").addEventListener("click",function(){
+    if(qIndex+1>=questions.length){
+      // wrap-up
+      var rr=$("revealResult"); rr.hidden=false;
+      rr.innerHTML="<strong>That was the last question.</strong> Class got the majority right on "+game.right+" of "+game.asked+". Press Stop, or add more questions.";
+      $("nextBtn").disabled=true;
+      return;
+    }
+    loadQuestion(qIndex+1);
+  });
+
+  /* ----- tally ----- */
+  function resetTally(){ tallyNow={A:0,B:0,C:0,D:0}; tallyPeak={A:0,B:0,C:0,D:0}; seenMax=0; $("sMax").textContent="0"; }
+  function currentCounts(){ return ($("freezeMode").value==="peak")? tallyPeak : tallyNow; }
+  function renderTally(){
+    var t=$("tally");
+    if(t.childNodes.length!==4){
+      t.innerHTML="";
+      LETTERS.forEach(function(L){
+        var d=el("div","ty "+L); d.id="ty-"+L;
+        d.appendChild(el("div","lt "+L,L));
+        d.appendChild(el("div","cnt","0"));
+        t.appendChild(d);
+      });
+    }
+    var counts=currentCounts();
+    var total=counts.A+counts.B+counts.C+counts.D;
+    var lead=LETTERS.reduce(function(a,L){ return counts[L]>counts[a]?L:a; },"A");
+    LETTERS.forEach(function(L){
+      var ty=$("ty-"+L);
+      ty.querySelector(".cnt").textContent=counts[L];
+      if(!revealed){
+        ty.classList.remove("reveal-correct","reveal-wrong");
+        ty.classList.toggle("win", total>0 && counts[L]===counts[lead] && counts[lead]>0);
+      }
+    });
+    $("bigcount").textContent = total? (total+" card"+(total===1?"":"s")+" up"+($("freezeMode").value==="peak"?" (peak this question)":"")) : "waiting for cards…";
+  }
+
+  /* ----- detection loop ----- */
+  function startLoop(){ if(running||!supported) return; running=true; passTimes=[]; onePass(); }
+  function stopLoop(){ running=false; if(timer){ clearTimeout(timer); timer=null; } $("sFps").textContent="–"; }
+  var work=document.createElement("canvas"), wctx=work.getContext("2d",{willReadFrequently:true});
+  function onePass(){
+    if(!running) return;
+    var vw=vid.videoWidth, vh=vid.videoHeight;
+    if(!vw||!vh){ timer=setTimeout(onePass,150); return; }
+    var W=Math.min(1920,vw), H=Math.round(vh*(W/vw));
+    if(work.width!==W){ work.width=W; work.height=H; }
+    wctx.drawImage(vid,0,0,W,H);
+    detector.detect(work).then(function(codes){ handleCodes(codes||[],W,H); }).catch(function(){}).then(function(){
+      var now=performance.now(); passTimes.push(now);
+      while(passTimes.length && now-passTimes[0]>2000) passTimes.shift();
+      if(passTimes.length>1){ var span=(now-passTimes[0])/1000; $("sFps").textContent=span>0?((passTimes.length-1)/span).toFixed(1):"–"; }
+      if(running) timer=setTimeout(onePass,150);
+    });
+  }
+  function handleCodes(codes,W,H){
+    sizeOverlay();
+    octx.clearRect(0,0,ov.width,ov.height);
+    var sx=ov.width/W, sy=ov.height/H;
+    var count={A:0,B:0,C:0,D:0}, total=0;
+    var colorFor={A:"#2b6ca3",B:"#1f8a5b",C:"#a8772a",D:"#8a3fb0"};
+    codes.forEach(function(c){
+      var v=String(c.rawValue||"");
+      if(v.indexOf(ANSWER_PREFIX)!==0) return;
+      var L=v.slice(ANSWER_PREFIX.length).trim().toUpperCase().charAt(0);
+      if(LETTERS.indexOf(L)<0) return;
+      count[L]++; total++;
+      var pts=c.cornerPoints;
+      if(pts&&pts.length){
+        octx.lineWidth=3; octx.strokeStyle=colorFor[L]; octx.fillStyle="rgba(0,0,0,0)";
+        octx.beginPath();
+        var bx,by;
+        pts.forEach(function(p,i){ var x=p.x*sx,y=p.y*sy; if(i===0){octx.moveTo(x,y);bx=x;by=y;}else{octx.lineTo(x,y); if(y<by){bx=x;by=y;}} });
+        octx.closePath(); octx.stroke();
+        octx.fillStyle=colorFor[L]; octx.font="bold 20px sans-serif";
+        octx.fillText(L, bx, Math.max(18,by-6));
+      }
+    });
+    tallyNow=count;
+    LETTERS.forEach(function(L){ if(count[L]>tallyPeak[L]) tallyPeak[L]=count[L]; });
+    if(total>seenMax){ seenMax=total; $("sMax").textContent=String(total); }
+    $("sSeen").textContent=String(total);
+    if(!revealed || $("freezeMode").value==="peak") renderTally();
+    else renderTally();
+  }
+
+  $("freezeMode").addEventListener("change",renderTally);
+
+  function updateGameStats(){
+    $("gAsked").textContent=game.asked;
+    $("gRight").textContent=game.right;
+    $("gRate").textContent=game.asked? game.bestRate+"%" : "–";
+  }
+
+  /* ---------- boot ---------- */
+  load();
+  listCams();
+  renderQList();
+  updateQCountHint();
+})();
+</script>
+</body>
+</html>
