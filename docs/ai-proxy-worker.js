@@ -41,16 +41,17 @@
 // deprecates it — check https://ai.google.dev/gemini-api/docs/models for
 // the current stable Flash model before picking a replacement.
 //
-// ⚠️ FREE-TIER QUOTA depends heavily on WHICH model this is. "gemini-3.5-flash"
-// is the premium "most-intelligent" flash model and its free tier is tiny —
-// measured at ~20 requests PER DAY, shared across every teacher on this key. A
-// lighter model (e.g. "gemini-2.5-flash" or a "-lite" variant) has a far larger
-// free allowance and is more than enough to split Hebrew into phrases. If teachers
-// keep hitting "quota exceeded", either switch this to a lighter model (one line,
-// but it's a translation-quality call — judge it against your review gate) or put
-// a PAID key in GEMINI_API_KEY, which removes the cap entirely and keeps this
-// model. Your exact per-model limits are shown at https://aistudio.google.com/rate-limit
-const GEMINI_MODEL = "gemini-3.5-flash";
+// ⚠️ FREE-TIER QUOTA depends heavily on WHICH model this is. The premium
+// "gemini-3.5-flash" (the "most-intelligent" flash model) has a tiny free tier —
+// measured 2026-08-10 at ~20 requests PER DAY, shared across every teacher on this
+// key, which made the feature nearly unusable. We use "gemini-2.5-flash" instead:
+// a far larger free allowance and more than enough to split Hebrew into phrases.
+// (2.5-flash was in fact this proxy's original model before it was briefly pinned
+// to 3.5-flash.) Trade-offs if you ever revisit: a "-lite" variant is cheaper still
+// with an even bigger free tier; a PAID key removes the cap on any model. Switching
+// model is a translation-quality call — judge output against your review gate. Your
+// exact per-model limits are shown at https://aistudio.google.com/rate-limit
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 // Bump this if the prompt format or model changes in a way that should
 // invalidate everything cached under the old scheme.
