@@ -15695,7 +15695,10 @@ nameLine
     function syncHidden(){
       if(!selected.length){ $("autoPerek").value=""; $("autoFrom").value=""; $("autoTo").value=""; return; }
       var sorted=selected.slice().sort(function(a,b){return a-b;});
-      $("autoPerek").value=sorted[0];
+      // autoPerek holds the full comma-separated list of selected chapters/perakim
+      // (e.g. "6,7"). Each selected chapter is fetched in FULL — the chip numbers
+      // are chapters, never verse numbers. from/to kept only for the low/high hint.
+      $("autoPerek").value=sorted.join(",");
       $("autoFrom").value=sorted[0];
       $("autoTo").value=sorted[sorted.length-1];
     }
@@ -15822,29 +15825,67 @@ nameLine
     return json.text;
   }
 
+  // Fetch ONE whole chapter/perek from Sefaria and run it through the AI proxy
+  // in small batches (8 pesukim at a time, like the wizard auto-flow) so a long
+  // chapter can't blow the proxy's timeout. Returns the combined CSV, header kept
+  // once. Throws if Sefaria or the proxy can't be reached so the caller can fall
+  // back. `onStatus(part,total)` fires before each batch for progress messages.
+  async function generateChapterCSV(seferRef, chapter, kind, hebrewOnly, refLabel, onStatus){
+    var verses=await fetchSefariaVerses(seferRef, chapter, 1, 999);
+    var BATCH=8, batches=[], parts=[];
+    for(var i=0;i<verses.length;i+=BATCH) batches.push(verses.slice(i,i+BATCH));
+    // Generating a whole chapter (× several chapters) fires many proxy calls in a
+    // row, and the Gemini free tier can rate-limit a later one. Give each batch a
+    // single retry after a short pause so one transient hiccup doesn't drop a whole
+    // chapter, and space successful calls slightly to stay under the limit.
+    function pause(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+    async function askOnce(prompt){
+      try{ return await callAiProxy(prompt); }
+      catch(e){ await pause(2500); return await callAiProxy(prompt); }
+    }
+    for(var b=0;b<batches.length;b++){
+      if(onStatus) onStatus(b+1, batches.length);
+      if(b>0) await pause(600);
+      var bl=refLabel+(batches.length>1?" ("+(b+1)+"/"+batches.length+")":"");
+      var bp=hebrewOnly ? buildHebrewOnlyPrompt(kind, bl, batches[b]) : buildAutoImportPrompt(kind, bl, batches[b]);
+      var bcsv=stripCodeFence(await askOnce(bp));
+      if(b>0){
+        // Drop the repeated header row from every batch after the first
+        var lines=bcsv.split("\n");
+        var hi=lines.findIndex(function(l){return /^num[,\t]/i.test(l.trim());});
+        if(hi>=0) lines.splice(hi,1);
+        bcsv=lines.join("\n");
+      }
+      parts.push(bcsv.trim());
+    }
+    return parts.join("\n");
+  }
+
   $("autoFetchBtn").addEventListener("click", async function(){
     var statusEl=$("autoFetchStatus"), btn=this;
     var kind=$("autoKind").value;
     // autoSefer is now a hidden input set by the chip picker
     var seferRef=$("autoSefer").value;
-    var perek=parseInt($("autoPerek").value,10);
-    var from=parseInt($("autoFrom").value,10);
-    var to=parseInt($("autoTo").value,10); if(isNaN(to)) to=from;
+    // autoPerek holds the comma-separated list of selected chapters/perakim.
+    // Each is a CHAPTER number (never a verse) and is fetched in FULL.
+    var chapters=($("autoPerek").value||"").split(",")
+      .map(function(s){return parseInt(s,10);})
+      .filter(function(n){return !isNaN(n);})
+      .sort(function(a,b){return a-b;});
 
     // Give a clear message if no selection has been made yet
     if(!seferRef){
       var pickEl=kind==="pasuk" ? $("autoParshaSel") : $("autoMesechtaSel");
-      statusEl.textContent="Please select a "+(kind==="mishna"?"mesechta":"parsha")+" and then tap at least one "+(kind==="mishna"?"perek":"chapter")+"."; 
+      statusEl.textContent="Please select a "+(kind==="mishna"?"mesechta":"parsha")+" and then tap at least one "+(kind==="mishna"?"perek":"chapter")+".";
       if(pickEl) pickEl.focus();
       return;
     }
-    if(isNaN(perek) || isNaN(from)){
+    if(!chapters.length){
       statusEl.textContent="Tap at least one "+(kind==="mishna"?"perek":"chapter")+" to continue.";
       return;
     }
-    if(to<from) to=from;
 
-    // Build a readable label from the selected Parsha/Mesechta + chapter
+    // Build a readable label from the selected Parsha/Mesechta
     var seferLabel="";
     if(kind==="pasuk"){
       var pSel=$("autoParshaSel");
@@ -15853,12 +15894,11 @@ nameLine
       var mSel=$("autoMesechtaSel");
       seferLabel=mSel && mSel.selectedOptions[0] ? mSel.selectedOptions[0].textContent : seferRef;
     }
-    var refLabel=seferLabel+" "+perek+":"+(from===to?from:from+"-"+to);
+    var unitWord=kind==="mishna"?"Perek":"Ch.";
+    var hebrewOnly=$("autoHebrewOnly") && $("autoHebrewOnly").checked;
+    function chapterRefLabel(ch){ return seferLabel+" "+unitWord+" "+ch; }
 
     btn.disabled=true;
-    $("setKind").value=kind;
-    $("setRef").value=refLabel;
-    if(!$("setLabel").value.trim()) $("setLabel").value=refLabel;
 
     function fallBackToManual(promptText, reason){
       $("promptBox").value=promptText;
@@ -15867,31 +15907,60 @@ nameLine
       $("promptBox").scrollIntoView({behavior:"smooth", block:"center"});
     }
 
-    var verses;
-    try{
-      statusEl.textContent="Fetching "+refLabel+" from Sefaria…";
-      verses=await fetchSefariaVerses(seferRef, perek, from, to);
-    }catch(err){
-      // Can't reach Sefaria (offline, typo'd range, etc.) — fall all the way
-      // back to the plain manual prompt, same as clicking "Build AI prompt".
-      fallBackToManual(buildImportPrompt(refLabel, kind), "Couldn't reach Sefaria");
+    // ── ONE chapter selected → keep the review-first flow: fill the CSV box so
+    //    the rebbi can eyeball the AI output before clicking "Import as new text set."
+    if(chapters.length===1){
+      var ch=chapters[0], refLabel=chapterRefLabel(ch);
+      $("setKind").value=kind;
+      $("setRef").value=refLabel;
+      if(!$("setLabel").value.trim()) $("setLabel").value=refLabel;
+      try{
+        var csvText=await generateChapterCSV(seferRef, ch, kind, hebrewOnly, refLabel, function(n,tot){
+          statusEl.textContent=(hebrewOnly?"Splitting ":"Building flashcards for ")+refLabel+(tot>1?" (part "+n+" of "+tot+")":"")+"…";
+        });
+        $("csvBox").value=csvText;
+        statusEl.textContent="Done — review the CSV below, then click \"Import as new text set.\"";
+        $("csvBox").scrollIntoView({behavior:"smooth", block:"center"});
+      }catch(err){
+        // Try to hand back a prompt seeded with the real Hebrew; if even Sefaria
+        // is unreachable, fall all the way back to the plain manual prompt.
+        try{
+          var vs=await fetchSefariaVerses(seferRef, ch, 1, 999);
+          var pr=hebrewOnly ? buildHebrewOnlyPrompt(kind, refLabel, vs) : buildAutoImportPrompt(kind, refLabel, vs);
+          fallBackToManual(pr, "Couldn't reach the AI automatically");
+        }catch(e2){
+          fallBackToManual(buildImportPrompt(refLabel, kind), "Couldn't reach Sefaria");
+        }
+      }
       btn.disabled=false;
       return;
     }
 
-    var hebrewOnly=$("autoHebrewOnly") && $("autoHebrewOnly").checked;
-    var prompt=hebrewOnly ? buildHebrewOnlyPrompt(kind, refLabel, verses) : buildAutoImportPrompt(kind, refLabel, verses);
-    try{
-      statusEl.textContent=hebrewOnly ? "Asking AI to split into Hebrew phrases…" : "Asking AI to build the flashcard CSV…";
-      var csvText=stripCodeFence(await callAiProxy(prompt));
-      $("csvBox").value=csvText;
-      statusEl.textContent="Done — review the CSV below, then click \"Import as new text set.\"";
-      $("csvBox").scrollIntoView({behavior:"smooth", block:"center"});
-    }catch(err){
-      // Got the real Hebrew from Sefaria but couldn't reach the AI proxy —
-      // still hand back a prompt seeded with that accurate text so the
-      // teacher can finish the old-fashioned way instead of being stuck.
-      fallBackToManual(prompt, "Couldn't reach the AI automatically");
+    // ── SEVERAL chapters selected → one text set per chapter, auto-imported
+    //    (two chapters can't share one set — both have a "pasuk 1", which would
+    //    collide on the num key). Generate each in turn and import it on its own.
+    var made=[], failed=[];
+    for(var ci=0; ci<chapters.length; ci++){
+      var refLabel2=chapterRefLabel(chapters[ci]);
+      var stepPrefix="Generating "+refLabel2+" ("+(ci+1)+" of "+chapters.length+")";
+      statusEl.textContent=stepPrefix+"…";
+      try{
+        var csv2=await generateChapterCSV(seferRef, chapters[ci], kind, hebrewOnly, refLabel2, (function(prefix){
+          return function(n,tot){ statusEl.textContent=prefix+(tot>1?" — part "+n+"/"+tot:"")+"…"; };
+        })(stepPrefix));
+        var parsed2=parseTextSetCSV(stripCodeFence(csv2));
+        if(!parsed2) throw new Error("empty result");
+        addImportedSet(parsed2, refLabel2, refLabel2, kind);
+        made.push(refLabel2);
+      }catch(err){
+        failed.push(refLabel2);
+      }
+    }
+    if(made.length){
+      statusEl.textContent="Created "+made.length+" text set"+(made.length>1?"s":"")+": "+made.join(", ")+
+        (failed.length?("  ·  couldn't do: "+failed.join(", ")):"")+". The last one is loaded now — switch sets with the picker above.";
+    } else {
+      statusEl.textContent="Couldn't generate "+failed.join(", ")+" — check your connection and try again.";
     }
     btn.disabled=false;
   });

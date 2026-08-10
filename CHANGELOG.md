@@ -307,6 +307,12 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Fixed
 
+- **Fetch & generate now brings the *whole* perek — not one lone pasuk.** In the Pesukim/Mishnayos import, tapping a chapter to fetch it from Sefaria and build flashcards was quietly treating the *chapter number as a verse number*. Choose Perek 6 and it fetched only "6:6" — the single sixth pasuk of the sixth perek. Choose chapters 6 and 7 and it fetched "6:6-7" — two verses of one perek — instead of the two whole perakim you picked. So the feature looked like it worked but generated almost none of the text you asked for.
+
+  **What changed.** A tapped chip is now understood as a whole chapter: pick Perek 6 and you get *all* of Perek 6, start to finish. Because a long perek can be dozens of pesukim, the text is fetched and sent to the AI in small batches so it can't time out on the way — the status line counts the parts as it goes.
+
+  **Picking more than one perek makes one flashcard set per perek.** Tap 6 and 7 and you get two sets — "Ch. 6" and "Ch. 7" — each imported on its own and named for its perek, with the last one loaded and ready. (Two perakim can't share a single set: they both have a "pasuk 1", and the two would collide. Keeping them separate is what makes each perek's numbering come out right.) A single perek still drops its CSV in the box first so you can eyeball the AI's work before importing, exactly as before.
+
 - **The downloaded offline copy no longer wipes your work every time you open it.** This is the most serious thing fixed so far, and it only ever affected the **"Download separate offline copy"** file — not the normal app, not the installed app, not anyone's Google Sheet.
 
   **What was happening.** That downloaded file carries a snapshot of your class inside it, so it opens ready to use instead of blank. But the line that loaded the snapshot ran **every single time the file was opened**, not just the first time. So it put your class back exactly as it was on the day you downloaded the file — and everything you had scanned since was overwritten. Close the file at the end of the day, open it the next morning, and the day was gone. Silently, with nothing to tell you it had happened.
