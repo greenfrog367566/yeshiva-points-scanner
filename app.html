@@ -11237,6 +11237,9 @@ function setupRoster() {
    * Everything else stays shared, deliberately: one rebbi, one classroom, one
    * set of settings, and the same consistency the two existing copies have.
    */
+  // Whether the ⚙ Display options row is expanded. Transient by design — see
+  // the comment at its button below.
+  var seatDisplayOpen=false;
   function renderTapPanelInto(bodyId, toggleId, opts){
     opts=opts||{};
     var bodyEl=$(bodyId); if(!bodyEl) return;
@@ -11250,6 +11253,23 @@ function setupRoster() {
     // carries the same class — refreshAttFillBtn() has to be able to find the
     // one the attendance button belongs on without matching both.
     var toolbar=el("div","seat-toolbar seat-toolbar-main");
+    // The six display options (Avatar, Points, activities footer + its three
+    // layout controls) are set-and-forget — touched when the room changes, not
+    // while running it — yet they sat permanently between the rebbi and the
+    // seats, up to nine controls at rest. They now live in a wrapper that one
+    // ⚙ Display button opens. Deliberately NOT a data field: transient JS
+    // state (seatDisplayOpen, module scope so it survives the re-render every
+    // option-toggle triggers), collapsed again on the next load. The
+    // attendance-fill button stays OUTSIDE the wrapper — it is a scanning-flow
+    // control, present only while Attendance is armed, and must not hide with
+    // the options.
+    var dispBtn=el("button","seat-modebtn"+(seatDisplayOpen?" active":""),"⚙ Display");
+    dispBtn.title="Avatar, points and activity-code options for this chart";
+    dispBtn.addEventListener("click", function(){ seatDisplayOpen=!seatDisplayOpen; renderTapPanel(); });
+    toolbar.appendChild(dispBtn);
+    var dispWrap=el("span","seat-display-opts");
+    dispWrap.style.cssText="display:"+(seatDisplayOpen?"contents":"none");
+    toolbar.appendChild(dispWrap);
     // Seating chart not shown in Teach / Shorashim context
     var allowSeating=true; // teachTapPanelBody/shorTapPanelBody no longer exist; all remaining tap panels allow seating view
     var effViewMode=opts.forceSeating ? "seating" : (allowSeating ? data.tapViewMode : "list");
@@ -11307,10 +11327,12 @@ function setupRoster() {
       }
       modeRow.appendChild(seg);
     }
-    // Scannable mode lives in the ALWAYS-VISIBLE toolbar, beside List / Seating
-    // chart — not in the ⚙ Setup panel, where it started. Setup is collapsed by
-    // default, so putting it there meant opening a panel every time to use the
-    // feature the chart exists for. Available in both List and Seating chart —
+    // Scannable mode (the Avatar select) sits one click away, behind ⚙ Display —
+    // a deliberate softening of the earlier "always visible, never in ⚙ Setup"
+    // rule. Setup was the wrong hiding place because opening it MEANS arranging;
+    // ⚙ Display is a plain options drawer with no side effects, and the select
+    // is a set-and-forget choice (the chart REMEMBERS it — scanning day to day
+    // never reopens the drawer). Available in both List and Seating chart —
     // List mode has no seats to put codes in, so it shows each student's QR as
     // a card in the grid instead (see the list-mode branch below).
     //
@@ -11345,7 +11367,7 @@ function setupRoster() {
       save(); renderTapPanel();
     });
     modeWrap.appendChild(modeSel);
-    toolbar.appendChild(modeWrap);
+    dispWrap.appendChild(modeWrap);
 
     // Points, matching the sheet's own checkbox and independent of the card mode
     // for the same reason it is there: showing codes used to take every boy's
@@ -11356,7 +11378,7 @@ function setupRoster() {
       data.seatShowPoints=!data.seatShowPoints;
       save(); renderTapPanel();
     });
-    toolbar.appendChild(ptsBtn);
+    dispWrap.appendChild(ptsBtn);
 
     // Independent of Show codes — a rebbi may want the activity codes footer
     // (to arm an activity by tapping or scanning it) without also switching
@@ -11368,7 +11390,7 @@ function setupRoster() {
       data.seatActivitiesMode=!data.seatActivitiesMode;
       save(); renderTapPanel();
     });
-    toolbar.appendChild(actBtn);
+    dispWrap.appendChild(actBtn);
 
     // How that footer is laid out. Only offered while it is actually showing —
     // a layout control for something not on screen is noise, and this toolbar
@@ -11383,7 +11405,7 @@ function setupRoster() {
         data.actFooterGrouped=!data.actFooterGrouped;
         save(); renderTapPanel();
       });
-      toolbar.appendChild(groupBtn);
+      dispWrap.appendChild(groupBtn);
 
       // Width, only while grouped — it sets the columns INSIDE a section, so
       // it means nothing to a single flat row.
@@ -11394,7 +11416,7 @@ function setupRoster() {
           data.actFooterCols = actFooterCols()>=3 ? 1 : actFooterCols()+1;
           save(); renderTapPanel();
         });
-        toolbar.appendChild(colBtn);
+        dispWrap.appendChild(colBtn);
       }
 
       // Which codes are here, and in what order. Arranging mode on this chart
@@ -11407,7 +11429,7 @@ function setupRoster() {
       var pickBtn=el("button","seat-modebtn","⚙ Choose codes");
       pickBtn.title="Add, remove or re-order the codes shown here — the same ones that print on the class sheet";
       pickBtn.addEventListener("click", openCodePickerModal);
-      toolbar.appendChild(pickBtn);
+      dispWrap.appendChild(pickBtn);
     }
 
     // Built here so it is present on the first paint if Attendance is already
