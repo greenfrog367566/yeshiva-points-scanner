@@ -4090,6 +4090,19 @@ function setupRoster() {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">How Record Opens</h3>
+      <div class="toolbar">
+        <span style="font-weight:600">Open Record on:</span>
+        <span class="seg" id="setRecordOpen">
+          <button data-mode="last" class="active">Remember last</button>
+          <button data-mode="dash">Dashboard</button>
+          <button data-mode="fs">⛶ Full-screen chart</button>
+        </span>
+      </div>
+      <p class="view-note" style="margin:8px 0 14px"><strong>Remember last</strong> by default: if you were scanning from the full-screen seating chart when you left, the app opens back into it; close it with ✕ and the app goes back to opening on the Dashboard. <strong>Dashboard</strong> means always start there, even if you were full screen yesterday. <strong>Full-screen chart</strong> means always start in the full-screen seating chart — the room, the scan bar, nothing else — however you left things. Whatever you pick, the ⛶ and ✕ buttons keep working exactly as before within the day.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">How the Picker Opens</h3>
       <div class="toolbar">
         <span style="font-weight:600">Open the Picker on:</span>
@@ -7801,6 +7814,21 @@ function setupRoster() {
       b.classList.toggle("active", b.dataset.mode===data.pickerMode);
     });
   }
+  function syncRecordOpenSetting(){
+    document.querySelectorAll("#setRecordOpen button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.mode===data.recordOpenMode);
+    });
+  }
+  document.querySelectorAll("#setRecordOpen button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var m=btn.dataset.mode;
+      data.recordOpenMode = (m==="dash"||m==="fs") ? m : "last";
+      save(); syncRecordOpenSetting();
+      // Takes effect at the NEXT load by design — yanking the rebbi in or out
+      // of full screen the moment he taps a Settings button would be the
+      // setting doing the opposite of what it promises ("how Record OPENS").
+    });
+  });
   function syncMatchModeSetting(){
     document.querySelectorAll("#setMatchMode button").forEach(function(b){
       b.classList.toggle("active", b.dataset.mode===data.matchMode);
@@ -7839,6 +7867,7 @@ function setupRoster() {
     $("setSixSeven").checked = !!data.sixSeven;
     syncPickerModeSetting();
     syncMatchModeSetting();
+    syncRecordOpenSetting();
     // Phase 1: Teach flip / quiz delay / game auto inits moved to renderTeach,
     // renderQuiz, renderGame — those controls now live on their feature panels.
     renderSerialUI();
@@ -21602,6 +21631,11 @@ nameLine
     // boolean, defaults OFF: existing saves keep starting at the Dashboard
     // until the ⛶ button is pressed once.
     if(typeof data.seatsFsOpen!=="boolean") data.seatsFsOpen=false;
+    // How Record opens: "last" (follow seatsFsOpen), "dash" (always Dashboard),
+    // "fs" (always the full-screen chart). Additive string with a whitelist
+    // guard — anything unrecognized becomes the default, matching pickerMode's
+    // pattern.
+    if(data.recordOpenMode!=="dash" && data.recordOpenMode!=="fs" && data.recordOpenMode!=="last") data.recordOpenMode="last";
     if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
     if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
     // Dropped position per floating launcher FAB. Additive/empty-safe — an
@@ -22775,15 +22809,18 @@ nameLine
   // Auto-generate only if teacher opted in (default: true)
   if (data.wizardLearning && data.wizardLearning.autoGenerate !== false) setTimeout(function(){ autoGenerateWizardTextSet(); }, 1500);
   setTimeout(function(){ $("seatsScanInput").focus(); },80);
-  // Reopen the full-screen seating chart if that is how the rebbi left the app
-  // (data.seatsFsOpen — set by ⛶, cleared by ✕). Goes through the button's own
-  // click path so the overlay, scan-bar lift and no-scroll fit all set up
-  // exactly as a manual open would. Deferred past first paint; guarded on the
-  // scan tab being active (it is at boot, but a hash/wizard flow may differ)
-  // and on the button existing at all.
+  // Open the full-screen seating chart at boot when the rebbi's "How Record
+  // Opens" setting says to: "fs" opens it always; "last" (the default) opens it
+  // if that is how he left the app (data.seatsFsOpen — set by ⛶, cleared by ✕);
+  // "dash" never auto-opens. Goes through the button's own click path so the
+  // overlay, scan-bar lift and no-scroll fit all set up exactly as a manual
+  // open would. Deferred past first paint; guarded on the scan tab being active
+  // (it is at boot, but a hash/wizard flow may differ) and on the button
+  // existing at all.
   setTimeout(function(){
     var vscan=$("view-scan"), btn=$("seatsPopOut");
-    if(data.seatsFsOpen===true && btn && vscan && vscan.classList.contains("active")) btn.click();
+    var wantFs = data.recordOpenMode==="fs" || (data.recordOpenMode!=="dash" && data.seatsFsOpen===true);
+    if(wantFs && btn && vscan && vscan.classList.contains("active")) btn.click();
   },140);
   // Backup staleness check. Deferred so it never competes with first paint, and
   // wrapped like its neighbours — a nudge failing must never stop the app from
