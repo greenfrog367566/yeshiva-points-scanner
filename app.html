@@ -2715,7 +2715,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       </details>
     </div>
 
-    <div class="card pad" style="margin-bottom:20px">
+    <!-- Shown only once a Google Sheet is actually linked — see syncRosterCardVisibility().
+         Its ⬇ button cannot do anything without one, so for the many rebbeim who never
+         connect a sheet this card was a primary-styled button whose only outcome was an
+         error line. Hidden, never removed: link a sheet and it is back, untouched. -->
+    <div class="card pad" id="rosterSheetCard" style="margin-bottom:20px;display:none">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">Class lists from your Google Sheet</h3>
       <p style="font-size:.9rem;color:var(--muted);margin:0 0 10px">Keep your rosters in the <b>same sheet</b> you use for syncing. Add a tab named <b>Roster</b> with columns — <b>Name</b>, <b>Class</b>, and optionally <b>Photo URL</b> (a direct, publicly-viewable image link) — then pull them in here. Each class becomes selectable from the dropdown in the top-right corner. Photo URLs only fill in for students who don't already have a photo set here.</p>
       <div class="toolbar">
@@ -2735,12 +2739,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         </ol>
       </details>
 
-      <details style="margin-top:8px">
-        <summary style="cursor:pointer;font-size:.85rem;color:var(--muted)">Paste a list (easiest — no Apps Script needed)</summary>
-        <p style="font-size:.82rem;color:var(--muted);margin:8px 0 6px">One student per line as <code>Name, Class</code> — <b>or</b> just select the Name and Class columns in your Google Sheet, copy, and paste here (a header row is skipped automatically).</p>
-        <textarea id="rosterPaste" class="field" rows="5" placeholder="Yaakov Cohen, Math 5A&#10;Dovid Levi, Math 5A&#10;Moshe Stern, Math 6B"></textarea>
-        <button class="btn btn-sm" id="rosterPasteBtn" style="margin-top:8px">Import pasted list</button>
-      </details>
+      <p style="font-size:.85rem;color:var(--muted);margin:12px 0 0">No Google Sheet? You don't need one to bring in a class — use <b>Add many at once</b> in the card above. It takes the same <code>Name, Class</code> list (paste straight from your sheet's columns too), and it tells you who was added and who was already here.</p>
     </div>
 
     <div class="toolbar">
@@ -18311,6 +18310,7 @@ nameLine
     setTimeout(function(){ ok.focus(); },30);
   }
   function renderStudents(){
+    syncRosterCardVisibility(); // every restore path and init already calls this
     $("studCustomFrom").value=data.studCustomFrom||"";
     $("studCustomTo").value=data.studCustomTo||"";
     $("studCustomRangeRow").style.display = $("breakdownPeriod").value==="custom" ? "flex" : "none";
@@ -18649,22 +18649,23 @@ nameLine
       rosterStatus("Couldn't read the sheet. Check that the web app has the latest Code 1 and is deployed to “Anyone,” then re-deploy — or paste the list below.");
     });
   });
-  $("rosterPasteBtn").addEventListener("click", function(){
-    var lines=($("rosterPaste").value||"").split("\n"), rows=[];
-    lines.forEach(function(ln){
-      ln=ln.replace(/\s+$/,""); if(!ln.trim()) return;
-      var i=ln.indexOf("\t"); if(i<0) i=ln.indexOf(",");        // tab (copied from Sheets) or comma
-      var name, cls;
-      if(i<0){ name=ln.trim(); cls=""; }
-      else { name=ln.slice(0,i).trim(); cls=ln.slice(i+1).replace(/\t/g," ").trim(); }
-      // skip a header row like "Name / Class"
-      if(/^(name|student|student)$/i.test(name) && /^(class|group)?$/i.test(cls)) return;
-      if(name) rows.push({name:name, cls:cls});
-    });
-    if(!rows.length){ rosterStatus("Nothing to import — paste your names (and classes) first, one per line."); return; }
-    var res=importRoster(rows); $("rosterPaste").value="";
-    rosterStatus("Imported "+res.added+" new and updated "+res.updated+" — "+groups().length+" class"+(groups().length===1?"":"es")+" available.");
-  });
+  /* The "Paste a list" panel that used to sit here is retired. It was a second,
+   * older paste path a card below "Add many at once" — same Name, Class input,
+   * but its own naive parser and importRoster(), which matches on name and
+   * OVERWRITES that student's class with no warning (#125) and has no
+   * duplicate protection at all. parseBulkNames() above already does the same
+   * job better: tabs or commas, header rows skipped, name-length cap, dupes
+   * within the paste collapsed, and existing students reported as skipped
+   * rather than silently rewritten. One paste path, and it is the safe one.
+   * importRoster() itself stays — the ⬇ sheet button is still its caller. */
+
+  /* The sheet-import card only makes sense once a sheet is linked: without
+   * data.sheetUrl its button can only print "add your Google Sheet link first".
+   * Called on load and whenever the Sync tab writes the URL. */
+  function syncRosterCardVisibility(){
+    var card=$("rosterSheetCard"); if(!card) return;
+    card.style.display = (data.sheetUrl||"").trim() ? "" : "none";
+  }
 
   /* ---------- ACTIVITIES ---------- */
   // The Add form's value field means two different things by mode: a raw point
@@ -20681,6 +20682,7 @@ nameLine
   $("saveSheetUrl").addEventListener("click", function(){
     data.sheetUrl=$("sheetUrl").value.trim(); save();
     $("sheetStatus").textContent = data.sheetUrl ? "Link saved. Do one scan to test it." : "Link cleared.";
+    syncRosterCardVisibility(); // the roster card appears/disappears with the link
   });
   // Replays this device's whole scan history to the Sheet. Safe to click anytime —
   // each scan carries a stable ID, so the Apps Script skips any it already logged.
