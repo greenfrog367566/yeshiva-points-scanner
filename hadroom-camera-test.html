@@ -1,0 +1,1671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camera Multi-QR Test — diagnostic</title>
+<!-- THROWAWAY DIAGNOSTIC PAGE. Not part of the Menchmark app.
+     Deliberately standalone: it reads and writes NO Menchmark data, touches no
+     localStorage, and is linked from no navigation. Its only job is to answer
+     one question before any of this is built for real — can a live webcam feed
+     read several QR cards at once, at classroom distance, and how big do the
+     cards have to be. Safe to delete once that question is answered. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- BarcodeDetector polyfill (ZXing-C++ compiled to WASM). Desktop Windows Chrome
+     and Edge ship no BarcodeDetector at all, so without this the whole test is
+     dead on this machine. It defines window.BarcodeDetector only when the browser
+     has none, so Android/ChromeOS/macOS keep the faster native implementation and
+     the detection loop below never needs to know which one it got.
+     Pulls a few hundred KB of .wasm from the CDN on first use, then caches. -->
+<script src="https://fastly.jsdelivr.net/npm/barcode-detector@3/dist/iife/polyfill.min.js"></script>
+<style>
+  :root{
+    --ink:#1b2440;
+    --paper:#eceef3;
+    --card:#ffffff;
+    --line:#d8dbe4;
+    --muted:#6a7187;
+    --brass:#a8772a;
+    --good:#1f8a5b;
+    --good-soft:#e3f3ea;
+    --bad:#b04432;
+    --bad-soft:#f6e6e2;
+    --shadow:0 1px 2px rgba(27,36,64,.06),0 8px 24px rgba(27,36,64,.07);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.45}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit;font-size:1rem}
+
+  header{background:var(--ink);color:#fff;padding:10px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header .ttl{font-weight:700}
+  header .sub{font-size:.78rem;color:#aeb6d2;letter-spacing:.4px;text-transform:uppercase}
+  nav.views{margin-left:auto;display:flex;gap:6px}
+  nav.views button{background:transparent;border:1px solid #41507f;color:#cfd5ea;border-radius:8px;padding:6px 12px;font-size:.88rem}
+  nav.views button:hover{background:#26315a}
+  nav.views button.active{background:#e8b93a;border-color:#a8772a;color:#1b1400;font-weight:700}
+
+  .wrap{max-width:1100px;margin:0 auto;padding:18px 20px 60px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 10px;font-size:1.02rem}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  label.f{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted);font-weight:600}
+  label.f input,label.f select{border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff;color:var(--ink)}
+  label.f input[type=number]{width:110px}
+  .btn{background:var(--ink);color:#fff;border:1px solid var(--ink);border-radius:8px;padding:8px 16px;font-size:.9rem;font-weight:600}
+  .btn:hover{background:#2c3860}
+  .btn.sec{background:#fff;color:var(--ink);border-color:var(--line)}
+  .btn.sec:hover{background:#f4f5f9}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .hint{font-size:.82rem;color:var(--muted);margin:8px 0 0}
+  .note{background:#f4f5f9;border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:8px;padding:10px 12px;font-size:.85rem;margin:10px 0 0}
+  .bad-box{background:var(--bad-soft);border:1px solid #e0bcb3;border-left:3px solid var(--bad);border-radius:8px;padding:12px 14px;font-size:.9rem;margin:10px 0 0}
+  .good-box{background:var(--good-soft);border:1px solid #bcdfcd;border-left:3px solid var(--good);border-radius:8px;padding:10px 12px;font-size:.85rem;margin:10px 0 0}
+
+  .stage{position:relative;display:inline-block;line-height:0;background:#000;border-radius:10px;overflow:hidden;max-width:100%}
+  .stage video{display:block;width:100%;max-width:960px;height:auto}
+  .stage canvas.ov{position:absolute;left:0;top:0;pointer-events:none}
+
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .stat{background:#f4f5f9;border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:110px}
+  .stat .k{font-size:.7rem;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+  .stat .v{font-size:1.25rem;font-weight:800;font-variant-numeric:tabular-nums}
+  .stat.hot .v{color:var(--good)}
+
+  #camInfo{font-family:var(--mono);font-size:.78rem;color:var(--muted);margin-top:10px;word-break:break-all}
+
+  ul.log{list-style:none;margin:10px 0 0;padding:0;max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  ul.log li{display:flex;gap:10px;align-items:baseline;padding:6px 10px;border-bottom:1px solid #eef0f5;font-size:.86rem}
+  ul.log li:last-child{border-bottom:none}
+  ul.log li .val{font-family:var(--mono);font-weight:700;flex:1;word-break:break-all}
+  ul.log li .cnt{background:var(--good-soft);color:var(--good);border-radius:999px;padding:1px 8px;font-size:.74rem;font-weight:800;flex:0 0 auto}
+  ul.log li .ts{color:var(--muted);font-size:.76rem;flex:0 0 auto;font-variant-numeric:tabular-nums}
+  ul.log li.empty{color:var(--muted);justify-content:center;font-style:italic}
+
+  /* ---- Printable test sheet ---- */
+  #sheet{display:flex;flex-wrap:wrap;gap:0;margin-top:14px}
+  .qr-cell{border:1px dashed #9aa0b0;padding:.12in;margin:.06in;text-align:center;break-inside:avoid;page-break-inside:avoid}
+  .qr-cell canvas,.qr-cell img{display:block;width:var(--qs);height:var(--qs)}
+  .qr-cell .cap{font-family:var(--mono);font-size:11px;margin-top:4px;word-break:break-all}
+  .qr-cell .dim{font-size:9px;color:var(--muted)}
+  .ruler{margin-top:14px;font-size:.78rem;color:var(--muted)}
+  .ruler .bar{width:1in;height:12px;border:1px solid var(--ink);border-right-width:2px;border-left-width:2px;margin-bottom:3px}
+
+  @page{size:8.5in 11in;margin:.4in}
+  @media print{
+    body{background:#fff}
+    .noprint{display:none!important}
+    .wrap{max-width:none;padding:0;margin:0}
+    .card{border:none;box-shadow:none;padding:0;margin:0}
+    #sheet{gap:0}
+    .qr-cell{border-color:#bbb}
+  }
+</style>
+</head>
+<body>
+
+<header class="noprint">
+  <div>
+    <div class="ttl">Camera Multi-QR Test</div>
+    <div class="sub">Diagnostic — not part of the app</div>
+  </div>
+  <nav class="views">
+    <button id="navLive" class="active">Live camera test</button>
+    <button id="navPrint">Printable test sheet</button>
+  </nav>
+</header>
+
+<div class="wrap">
+
+  <!-- =============== LIVE CAMERA TEST =============== -->
+  <section id="viewLive">
+
+    <div class="card">
+      <h2>1 · Camera</h2>
+      <div class="row">
+        <label class="f" style="flex:1;min-width:260px">Video input
+          <select id="camSel"><option value="">(looking for cameras…)</option></select>
+        </label>
+        <label class="f">Detection interval (ms)
+          <input type="number" id="intervalMs" value="150" min="30" max="2000" step="10">
+        </label>
+        <label class="f">Detect width (px)
+          <input type="number" id="detWidth" value="1920" min="320" max="3840" step="80">
+        </label>
+        <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:1px">
+          <button class="btn" id="startBtn">Start</button>
+          <button class="btn sec" id="stopBtn" disabled>Stop</button>
+        </div>
+      </div>
+      <p class="hint" id="permHint" hidden>
+        Camera names are hidden until you grant permission once.
+        <button class="btn sec" id="permBtn" style="padding:3px 10px;font-size:.82rem">Show camera names</button>
+      </p>
+      <div id="support"></div>
+      <div id="camInfo"></div>
+
+      <p class="note" id="ptzHint"><strong>Zoom and sweep controls appear here once the camera is open</strong> —
+        press <strong>Start</strong>. They only exist if the camera hands pan/tilt/zoom to the browser, and Chrome
+        asks for a separate "pan, tilt &amp; zoom" permission the first time. If the camera does not offer them,
+        this spot says so instead.</p>
+
+      <div id="zoomWrap" hidden style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="row">
+          <label class="f" style="flex:1;min-width:260px">Zoom <span id="zoomVal" style="color:var(--ink)"></span>
+            <input type="range" id="zoomSlider" min="0" max="1" step="1" value="0">
+          </label>
+          <label class="f" style="align-self:flex-end;padding-bottom:6px">
+            <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.9rem;color:var(--ink)">
+              <input type="checkbox" id="autoZoom"> Auto-zoom
+            </span>
+          </label>
+          <label class="f">Target code size (px)
+            <input type="number" id="zoomTarget" value="70" min="20" max="400" step="5">
+          </label>
+          <button class="btn sec" id="zoomReset" style="align-self:flex-end;padding-bottom:8px">Reset to 1x</button>
+        </div>
+        <div id="zoomStatus" class="hint"></div>
+      </div>
+      <div id="zoomNone" class="note" hidden></div>
+
+      <div id="sweepWrap" hidden style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="row">
+          <label class="f" style="align-self:flex-end;padding-bottom:6px">
+            <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.9rem;color:var(--ink)">
+              <input type="checkbox" id="sweepOn"> <strong>Sweep the room</strong>
+            </span>
+          </label>
+          <label class="f">Seating
+            <select id="sweepPattern">
+              <option value="row">Rows — pan side to side</option>
+              <option value="arc">Semi-circle — pan the whole arc</option>
+              <option value="grid">Deep rows — pan × tilt grid</option>
+            </select>
+          </label>
+          <label class="f">Stops <input type="number" id="sweepStops" value="5" min="2" max="20" step="1"></label>
+          <label class="f">Arc width (% of full pan) <input type="number" id="sweepSpan" value="60" min="5" max="100" step="5"></label>
+          <label class="f" id="tiltRowsLabel" hidden>Tilt rows <input type="number" id="sweepTiltRows" value="2" min="1" max="5" step="1"></label>
+          <label class="f" id="tiltSpanLabel" hidden>Tilt span (% of full tilt) <input type="number" id="sweepTiltSpan" value="35" min="5" max="100" step="5"></label>
+          <label class="f">Dwell (ms) <input type="number" id="sweepDwell" value="700" min="150" max="5000" step="50"></label>
+        </div>
+        <div id="sweepStopList" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"></div>
+        <div id="sweepStatus" class="hint"></div>
+        <div class="note">
+          <strong>What sweeping is for.</strong> Zoom buys distance by cropping, so it sees fewer boys at once.
+          Sweeping pans the camera across the room and adds up what it found at each stop, buying that coverage
+          back with <em>time</em> instead of field of view — one full pass is a roll call of the room rather than
+          a snapshot. Zoom in until the back row reads, then set enough stops to cover the seats.
+          Roughly <strong>one stop per 1× of zoom</strong>, plus one for overlap.
+        </div>
+      </div>
+      <div id="sweepNone" class="note" hidden></div>
+
+      <div id="bridgeWrap" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <div style="font-weight:700;margin-bottom:4px">Link Controller bridge <span id="brDot" style="font-weight:400;color:var(--muted)">— not connected</span></div>
+        <p class="hint" style="margin-top:0">
+          The Link's <em>zoom</em> is a standard control the browser can drive directly, but its <em>gimbal</em> is a
+          vendor command no browser can reach. Insta360's own <strong>Link Controller</strong> app can, and it leaves a
+          local WebSocket open for its phone remote — this talks to that. In Link Controller, turn on
+          <strong>Remote control</strong> (“connect your mobile phone to remotely control the device”) so its
+          <strong>QR code</strong> is actually on screen — that panel is the only thing that shows one.
+          Then press <strong>“Read the code from a window…”</strong> and pick the Link Controller window: the page
+          reads the code straight out of it at full resolution and connects itself — nothing to squint at, and no
+          screenshot to save. Sharing is used only to find that code, and stops the moment it does.
+          Failing that: hold the code up to the camera, paste or drop a screenshot, or type the port and token in.
+        </p>
+        <div class="row">
+          <label class="f">Port <input type="text" id="brPort" style="width:100px" placeholder="e.g. 51234"></label>
+          <label class="f" style="flex:1;min-width:200px">Token <input type="text" id="brToken" placeholder="from the pairing QR code"></label>
+          <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:1px">
+            <button class="btn" id="brConnect">Connect</button>
+            <button class="btn sec" id="brDisconnect" disabled>Disconnect</button>
+            <button class="btn" id="brShare">Read the code from a window…</button>
+            <button class="btn sec" id="brPick">Choose a screenshot…</button>
+            <input type="file" id="brFile" accept="image/*" style="display:none">
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn sec" id="brLeft" disabled>◀</button>
+          <button class="btn sec" id="brRight" disabled>▶</button>
+          <button class="btn sec" id="brUp" disabled>▲</button>
+          <button class="btn sec" id="brDown" disabled>▼</button>
+          <label class="f">Pan speed <input type="number" id="brSpeed" value="20" min="1" max="30" step="1"></label>
+          <label class="f">Move time (ms) <input type="number" id="brMove" value="350" min="50" max="3000" step="50"></label>
+        </div>
+        <div id="brStatus" class="hint"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2 · Live feed</h2>
+      <div class="stage" id="stage">
+        <video id="vid" playsinline muted autoplay></video>
+        <canvas class="ov" id="ov" width="10" height="10"></canvas>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="k">Passes / sec</div><div class="v" id="sFps">–</div></div>
+        <div class="stat hot"><div class="k">Codes this pass</div><div class="v" id="sNow">–</div></div>
+        <div class="stat"><div class="k">Most at once</div><div class="v" id="sMax">–</div></div>
+        <div class="stat"><div class="k">Detect time</div><div class="v" id="sMs">–</div></div>
+        <div class="stat"><div class="k">Smallest code</div><div class="v" id="sSize">–</div></div>
+        <div class="stat hot"><div class="k">Last full sweep</div><div class="v" id="sSweep">–</div></div>
+      </div>
+      <p class="hint"><strong>Two separate levers on range, and it matters which one you move.</strong>
+        <strong>Detect width</strong> is how wide the frame is scaled to before detection — the default 1920
+        keeps a 1080p camera at full resolution (it never upscales: a smaller feed is used as-is). Lowering it
+        saves CPU but throws away exactly the pixels that decide a distant read. <strong>Zoom</strong> makes the
+        codes bigger by cropping, so it buys range at the cost of seeing fewer boys. Keep detect width at native
+        first, and spend zoom on what is still missing.
+        "Smallest code" below is the shortest side, in detect-frame pixels, of the smallest code seen this pass —
+        it is the number that decides whether a code reads, and what auto-zoom steers on.</p>
+    </div>
+
+    <div class="card">
+      <h2>3 · Reads <span class="hint" style="font-weight:400">— newest on top, last 50. Repeat reads inside 1s collapse into a count.</span></h2>
+      <ul class="log" id="log"><li class="empty">Nothing read yet.</li></ul>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sec" id="clearLog">Clear log</button>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- =============== PRINTABLE TEST SHEET =============== -->
+  <section id="viewPrint" hidden>
+
+    <div class="card noprint">
+      <h2>Printable test sheet</h2>
+      <div class="row">
+        <label class="f">How many codes
+          <input type="number" id="pCount" value="8" min="1" max="60" step="1">
+        </label>
+        <label class="f">Prefix
+          <input type="text" id="pPrefix" value="TEST-" style="width:130px">
+        </label>
+        <label class="f">Size (inches)
+          <input type="number" id="pSize" value="2.75" min="0.5" max="8" step="0.05">
+        </label>
+        <label class="f">Error correction
+          <select id="pEc">
+            <option value="L">L — fewest squares (biggest modules)</option>
+            <option value="M" selected>M — matches the app</option>
+            <option value="Q">Q</option>
+            <option value="H">H — most squares (smallest modules)</option>
+          </select>
+        </label>
+        <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:1px">
+          <button class="btn" id="pGen">Generate</button>
+          <button class="btn sec" id="pPrint">Print</button>
+        </div>
+      </div>
+      <label class="f" style="margin-top:10px">Custom values — one per line, overrides prefix &amp; count (leave empty to ignore)
+        <textarea id="pCustom" rows="3" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px"></textarea>
+      </label>
+      <div class="note">
+        Print at <strong>100% / actual size</strong> — not "Fit to page", or the measured size is meaningless.
+        The 1-inch bar at the bottom of the sheet is there to check that with a ruler before trusting any distance result.
+      </div>
+      <p class="hint" id="pageInfo" style="font-weight:600;color:var(--ink)"></p>
+      <p class="hint">Lower error correction means fewer, larger squares in the same physical area, which usually reads from further away. Higher correction survives glare and creases better. Worth testing both before settling on a card.</p>
+    </div>
+
+    <div class="card">
+      <div id="sheet"></div>
+      <div class="ruler">
+        <div class="bar"></div>
+        1 inch — measure this. If it is not exactly 1", the printer scaled the page and the code sizes are wrong.
+      </div>
+    </div>
+
+  </section>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  function $(id){ return document.getElementById(id); }
+  function el(tag,cls,txt){ var n=document.createElement(tag); if(cls) n.className=cls; if(txt!=null) n.textContent=txt; return n; }
+
+  /* ---------- view switching ---------- */
+  var navLive=$("navLive"), navPrint=$("navPrint"), viewLive=$("viewLive"), viewPrint=$("viewPrint");
+  function showView(which){
+    var live = which==="live";
+    viewLive.hidden=!live; viewPrint.hidden=live;
+    navLive.classList.toggle("active",live);
+    navPrint.classList.toggle("active",!live);
+    if(!live && !$("sheet").firstChild) buildSheet();
+  }
+  navLive.addEventListener("click",function(){ showView("live"); });
+  navPrint.addEventListener("click",function(){ showView("print"); });
+
+  /* ================= CAMERA ================= */
+
+  var camSel=$("camSel"), startBtn=$("startBtn"), stopBtn=$("stopBtn"),
+      permHint=$("permHint"), permBtn=$("permBtn"), camInfo=$("camInfo"),
+      vid=$("vid"), ov=$("ov"), octx=ov.getContext("2d");
+  var stream=null;
+
+  function listCams(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices){
+      camSel.innerHTML=""; camSel.appendChild(el("option","","(this browser cannot list cameras)"));
+      return Promise.resolve();
+    }
+    return navigator.mediaDevices.enumerateDevices().then(function(devs){
+      var cams=devs.filter(function(d){ return d.kind==="videoinput"; });
+      var keep=camSel.value;
+      camSel.innerHTML="";
+      if(!cams.length){
+        camSel.appendChild(el("option","","(no video inputs found)"));
+        permHint.hidden=true;
+        return;
+      }
+      var unnamed=false;
+      cams.forEach(function(d,i){
+        var o=el("option");
+        o.value=d.deviceId;
+        if(d.label) o.textContent=d.label;
+        else { o.textContent="Camera "+(i+1)+" (name hidden until permission granted)"; unnamed=true; }
+        camSel.appendChild(o);
+      });
+      if(keep) camSel.value=keep;
+      permHint.hidden=!unnamed;
+    });
+  }
+
+  permBtn.addEventListener("click",function(){
+    navigator.mediaDevices.getUserMedia({video:true}).then(function(s){
+      s.getTracks().forEach(function(t){ t.stop(); });
+      return listCams();
+    }).catch(function(e){
+      camInfo.textContent="Permission request failed: "+e.name+" — "+e.message;
+    });
+  });
+
+  if(navigator.mediaDevices && navigator.mediaDevices.addEventListener){
+    navigator.mediaDevices.addEventListener("devicechange",listCams);
+  }
+
+  function stopStream(){
+    if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream=null; }
+    vid.srcObject=null;
+  }
+
+  function sizeOverlay(){
+    var w=vid.clientWidth, h=vid.clientHeight;
+    if(w && h && (ov.width!==w || ov.height!==h)){ ov.width=w; ov.height=h; }
+  }
+  window.addEventListener("resize",sizeOverlay);
+  vid.addEventListener("loadedmetadata",sizeOverlay);
+
+  startBtn.addEventListener("click",function(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      camInfo.textContent="This browser has no getUserMedia — a camera cannot be opened here.";
+      return;
+    }
+    stopStream();
+    var id=camSel.value;
+    var v={ width:{ideal:1920}, height:{ideal:1080} };
+    if(id) v.deviceId={exact:id};
+    startBtn.disabled=true;
+    /* Zoom is gated behind Chrome's separate pan/tilt/zoom permission, and the
+       capability is only exposed when it was asked for up front. Ask with it,
+       and fall back to a plain request if the camera or the user says no —
+       losing zoom must never cost us the camera. */
+    var withZoom={}; for(var k in v) withZoom[k]=v[k];
+    withZoom.zoom=true; withZoom.pan=true; withZoom.tilt=true;
+    ptzRequested=true;
+    navigator.mediaDevices.getUserMedia({video:withZoom,audio:false}).catch(function(e){
+      ptzRequested=false; ptzDenied=e.name;
+      return navigator.mediaDevices.getUserMedia({video:v,audio:false});
+    }).then(function(s){
+      stream=s;
+      vid.srcObject=s;
+      return vid.play().catch(function(){ /* autoplay policies — muted video should be fine */ });
+    }).then(function(){
+      stopBtn.disabled=false;
+      listCams();          /* labels are available now that permission is granted */
+      showTrackInfo();
+      setupZoom();
+      sizeOverlay();
+      startLoop();
+    }).catch(function(e){
+      startBtn.disabled=false;
+      camInfo.textContent="Could not open that camera: "+e.name+" — "+e.message;
+    });
+  });
+
+  /* ---------- zoom (UVC digital zoom, e.g. the Insta360 Link's 4x) ---------- */
+  var zoomWrap=$("zoomWrap"), zoomNone=$("zoomNone"), zoomSlider=$("zoomSlider"),
+      zoomVal=$("zoomVal"), zoomStatus=$("zoomStatus"), autoZoomBox=$("autoZoom");
+  var zoomCaps=null, zoomTrack=null, zoomNow=null, zoomBusy=false, zoomHunt=0;
+  var ptzRequested=false, ptzDenied=null;
+  var ZOOM_SETTLE_MS=650;   /* the camera needs time to move and the loop to see it */
+
+  function zoomSteps(){
+    if(!zoomCaps) return [];
+    var step=zoomCaps.step||((zoomCaps.max-zoomCaps.min)/20)||1;
+    var out=[],x=zoomCaps.min;
+    while(x<=zoomCaps.max+1e-6 && out.length<200){ out.push(Math.round(x*1000)/1000); x+=step; }
+    return out;
+  }
+
+  function setupZoom(){
+    zoomCaps=null; zoomTrack=null; zoomNow=null; zoomHunt=0;
+    zoomWrap.hidden=true; zoomNone.hidden=true;
+    $("ptzHint").hidden=true;   /* the camera is open; the real answer replaces the promise */
+    if(!stream) return;
+    var t=stream.getVideoTracks()[0];
+    if(!t||!t.getCapabilities){ showNoZoom("This browser cannot report camera capabilities, so zoom cannot be driven."); return; }
+    var caps={};
+    try{ caps=t.getCapabilities()||{}; }catch(e){}
+    /* Sweep needs pan, not zoom — set it up before the zoom check bails out,
+       so a pan-only camera still gets it. */
+    setupSweep(caps,t);
+    if(!caps.zoom || typeof caps.zoom.max!=="number" || caps.zoom.max<=caps.zoom.min){
+      showNoZoom("This camera exposes no zoom control to the browser"+
+        (ptzDenied? " — the pan/tilt/zoom permission was refused ("+ptzDenied+"), so the camera opened without it." :
+         ptzRequested? " — the permission was granted, but the camera itself reports no zoom range." :
+         ".")+
+        " Insta360's own Link Controller app applies zoom outside the browser; if you zoom there, this page simply "+
+        "sees an already-zoomed picture and everything below still measures correctly.");
+      return;
+    }
+    zoomCaps=caps.zoom; zoomTrack=t;
+    var settings={}; try{ settings=t.getSettings()||{}; }catch(e){}
+    zoomNow=(typeof settings.zoom==="number")? settings.zoom : zoomCaps.min;
+    var steps=zoomSteps();
+    zoomSlider.min=0; zoomSlider.max=Math.max(0,steps.length-1); zoomSlider.step=1;
+    zoomSlider.value=String(nearestStepIndex(zoomNow));
+    zoomWrap.hidden=false;
+    updateZoomLabel("ready");
+  }
+
+  function showNoZoom(msg){
+    zoomNone.hidden=false;
+    zoomNone.textContent=msg;
+    autoZoomBox.checked=false;
+  }
+
+  function nearestStepIndex(v){
+    var steps=zoomSteps(), best=0, bd=Infinity;
+    for(var i=0;i<steps.length;i++){ var d=Math.abs(steps[i]-v); if(d<bd){bd=d;best=i;} }
+    return best;
+  }
+
+  function updateZoomLabel(why){
+    if(!zoomCaps) return;
+    var ratio=zoomCaps.min>0 ? (zoomNow/zoomCaps.min) : zoomNow;
+    zoomVal.textContent="— "+(Math.round(ratio*100)/100)+"x  (raw "+zoomNow+
+      ", range "+zoomCaps.min+"–"+zoomCaps.max+(zoomCaps.step?" step "+zoomCaps.step:"")+")";
+    if(why) zoomStatus.textContent=why;
+  }
+
+  function applyZoom(v,why){
+    if(!zoomCaps||!zoomTrack||zoomBusy) return;
+    v=Math.max(zoomCaps.min,Math.min(zoomCaps.max,v));
+    if(zoomNow!=null && Math.abs(v-zoomNow)<1e-6) return;
+    zoomBusy=true;
+    zoomTrack.applyConstraints({advanced:[{zoom:v}]}).then(function(){
+      zoomNow=v;
+      zoomSlider.value=String(nearestStepIndex(v));
+      updateZoomLabel(why);
+    }).catch(function(e){
+      zoomStatus.textContent="Zoom refused by the camera: "+e.name+" — "+e.message;
+    }).then(function(){
+      setTimeout(function(){ zoomBusy=false; },ZOOM_SETTLE_MS);
+    });
+  }
+
+  zoomSlider.addEventListener("input",function(){
+    var steps=zoomSteps(), i=parseInt(zoomSlider.value,10)||0;
+    autoZoomBox.checked=false;
+    applyZoom(steps[i],"set by hand");
+  });
+  $("zoomReset").addEventListener("click",function(){
+    if(!zoomCaps) return;
+    autoZoomBox.checked=false;
+    applyZoom(zoomCaps.min,"reset to widest");
+  });
+  autoZoomBox.addEventListener("change",function(){
+    zoomHunt=0;
+    zoomStatus.textContent=autoZoomBox.checked? "Auto-zoom on — steering on the smallest code in frame." : "Auto-zoom off.";
+  });
+
+  /* One step per settle window, steering the SMALLEST code towards the target
+     size. Zooming in is what buys distance; the guard against overdoing it is
+     that a code drifting near the frame edge is about to be lost entirely. */
+  function autoZoomStep(boxes,W,H){
+    if(!autoZoomBox.checked||!zoomCaps||zoomBusy) return;
+    var steps=zoomSteps(), i=nearestStepIndex(zoomNow);
+    var target=parseInt($("zoomTarget").value,10); if(!isFinite(target)||target<20) target=70;
+
+    if(!boxes.length){
+      zoomHunt++;
+      if(zoomHunt<6) return;                       /* a brief dropout is not a reason to move */
+      zoomHunt=0;
+      if(i<steps.length-1){ applyZoom(steps[i+1],"nothing in frame — zooming in to hunt"); }
+      else { applyZoom(steps[0],"nothing found at full zoom — back to widest and hunting again"); }
+      return;
+    }
+    zoomHunt=0;
+
+    var minSide=Infinity, edge=false;
+    var ux0=Infinity,uy0=Infinity,ux1=-Infinity,uy1=-Infinity;
+    var m=Math.max(6,Math.round(W*0.02));
+    boxes.forEach(function(b){
+      minSide=Math.min(minSide,Math.min(b.w,b.h));
+      if(b.x<m||b.y<m||b.x+b.w>W-m||b.y+b.h>H-m) edge=true;
+      ux0=Math.min(ux0,b.x); uy0=Math.min(uy0,b.y);
+      ux1=Math.max(ux1,b.x+b.w); uy1=Math.max(uy1,b.y+b.h);
+    });
+    var coverage=Math.max((ux1-ux0)/W,(uy1-uy0)/H);
+
+    if(edge||coverage>0.9){
+      if(i>0) applyZoom(steps[i-1],"a code is at the edge — zooming out so it is not lost");
+      else updateZoomLabel("already at the widest, and codes still reach the edge");
+      return;
+    }
+    if(minSide<target*0.9 && coverage<0.65){
+      if(i<steps.length-1) applyZoom(steps[i+1],"smallest code "+Math.round(minSide)+"px, want "+target+"px — zooming in");
+      else updateZoomLabel("at full zoom; smallest code still only "+Math.round(minSide)+"px — the cards need to be bigger");
+      return;
+    }
+    if(minSide>target*1.6 && coverage<0.5){
+      if(i>0) applyZoom(steps[i-1],"codes are comfortably large — zooming out to widen the view");
+      return;
+    }
+    if(minSide<target*0.9){
+      /* Wanted to zoom in and deliberately did not: the codes already fill the
+         frame, so going closer would start pushing boys out of view. This is
+         the honest answer to "why is it not reaching my target". */
+      updateZoomLabel("holding at "+Math.round(coverage*100)+"% of frame — zooming in would push codes out of view. "+
+        "Smallest is "+Math.round(minSide)+"px, target "+target+"px: the cards have to get bigger, or the camera closer.");
+    } else {
+      updateZoomLabel("holding — smallest code "+Math.round(minSide)+"px, target "+target+"px");
+    }
+  }
+
+  /* ---------- sweep: pan the room and add up what each stop saw ----------
+     Zoom trades field of view for range; sweeping trades TIME for the field of
+     view back. One completed traverse is a roll call of the whole room rather
+     than a snapshot of one slice of it. */
+  var sweepWrap=$("sweepWrap"), sweepNone=$("sweepNone"), sweepOnBox=$("sweepOn"),
+      sweepStatus=$("sweepStatus"), sweepStopList=$("sweepStopList");
+  var panCaps=null, tiltCaps=null, ptzTrack=null;
+  var SWEEP_SETTLE_MS=420;      /* gimbal travel before the picture is worth reading */
+  var sweep={stops:[],idx:0,dir:1,moving:false,arrivedAt:0,seen:null,perStop:[],startedAt:0};
+
+  /* ---- Local PTZ bridge (ptz-bridge.ps1) ----
+     The Link's pan/tilt are a vendor extension unit no browser can reach, but
+     they ARE standard DirectShow camera controls, which a tiny local PowerShell
+     server exposes over http. If it is running, the sweep drives the REAL gimbal
+     directly with ABSOLUTE angles — no Link Controller app, no token, no QR. */
+  var ptzhttp={ url:"http://localhost:8787", ok:false, device:"",
+                pan:[-145,145], tilt:[-90,100], zoom:[100,400] };
+  function probePtzHttp(){
+    return fetch(ptzhttp.url+"/status",{cache:"no-store"}).then(function(r){ return r.json(); })
+      .then(function(j){
+        ptzhttp.ok=true; ptzhttp.device=j.device||"camera";
+        if(j.panRange) ptzhttp.pan=j.panRange;
+        if(j.tiltRange) ptzhttp.tilt=j.tiltRange;
+        if(j.zoomRange) ptzhttp.zoom=j.zoomRange;
+        return true;
+      }).catch(function(){ ptzhttp.ok=false; return false; });
+  }
+  function ptzHttpSet(params){
+    var qs=Object.keys(params).map(function(k){ return k+"="+Math.round(params[k]); }).join("&");
+    return fetch(ptzhttp.url+"/set?"+qs,{cache:"no-store"}).then(function(r){ return r.json(); });
+  }
+  /* Precedence: the local bridge (deliberate, absolute, most reliable) wins;
+     then the camera's own pan if Chrome exposes it; then Link Controller. */
+  function sweepTransport(){
+    if(ptzhttp.ok) return "ptzhttp";
+    if(panCaps&&ptzTrack) return "native";
+    if(bridge.connected) return "ws";
+    return null;
+  }
+  function sweepPanRange(){
+    if(ptzhttp.ok) return {min:ptzhttp.pan[0],max:ptzhttp.pan[1],step:1};
+    if(panCaps) return panCaps;
+    return null;
+  }
+  function sweepTiltRange(){
+    if(ptzhttp.ok) return {min:ptzhttp.tilt[0],max:ptzhttp.tilt[1],step:1};
+    if(tiltCaps) return tiltCaps;
+    return null;
+  }
+
+  /* Sweep can be driven two ways — the camera's own pan, or the Link Controller
+     bridge — so its panel appears when EITHER is available, and reappears if the
+     bridge connects later. */
+  function refreshSweepAvailability(){
+    if(panCaps&&ptzTrack && !ptzhttp.ok) return;  /* native already showing, no bridge to prefer */
+    if(ptzhttp.ok || bridge.connected){
+      sweepNone.hidden=true;
+      sweepWrap.hidden=false;
+      $("ptzHint").hidden=true;
+      syncPatternUI();
+      if(!sweepOnBox.checked)
+        sweepStatus.textContent = ptzhttp.ok
+          ? "Local PTZ bridge connected ("+ptzhttp.device+") — sweep drives the real gimbal directly, at absolute angles. Turn the Link's AI tracking off first."
+          : "Driving the gimbal through Link Controller. Stops are relative moves, so it starts from wherever the camera is aimed now.";
+    } else {
+      sweepWrap.hidden=true;
+      sweepOnBox.checked=false;
+      resetSweep();
+      if(ptzTrack) sweepNone.hidden=false;        /* camera open but no pan */
+    }
+  }
+
+  function setupSweep(caps,t){
+    panCaps=null; tiltCaps=null; ptzTrack=null;
+    sweepWrap.hidden=true; sweepNone.hidden=true;
+    resetSweep();
+    var p=caps.pan;
+    if(!p || typeof p.max!=="number" || p.max<=p.min){
+      ptzTrack=t;                                  /* remembered so a bridge can still sweep */
+      sweepNone.hidden=true;
+      /* A fresh probe in case the local bridge was started after page load;
+         when it answers, re-render so the sweep panel appears on its own. */
+      probePtzHttp().then(function(ok){ if(ok) refreshSweepAvailability(); });
+      refreshSweepAvailability();
+      if(sweepWrap.hidden) sweepNone.hidden=false;
+      sweepNone.innerHTML="<strong>Sweep needs pan control, and this camera exposes none to the browser"+
+        (ptzDenied? " (the pan/tilt/zoom permission was refused)." : ".")+"</strong><br>"+
+        "On the Insta360 Link this is expected: <em>zoom</em> is a standard control (so the zoom panel works), but "+
+        "<em>pan and tilt</em> are a vendor extension unit the browser cannot reach. Two ways to sweep anyway:<br>"+
+        "<strong>1. Local PTZ bridge (recommended)</strong> — run <code>ptz-bridge.ps1</code> and this page drives "+
+        "the real gimbal directly, at absolute angles. It is not detected right now; start it and press Start again.<br>"+
+        "<strong>2. Link Controller bridge</strong> — pair with the app's QR code below. "+
+        "Either way, turn the Link's AI tracking off first, or it will fight the sweep.";
+      sweepOnBox.checked=false;
+      return;
+    }
+    panCaps=p; ptzTrack=t;
+    if(caps.tilt && typeof caps.tilt.max==="number" && caps.tilt.max>caps.tilt.min) tiltCaps=caps.tilt;
+    $("sweepPattern").disabled=false;
+    sweepWrap.hidden=false;
+    syncPatternUI();
+    sweepStatus.textContent="Ready. Zoom in until the far seats read, then switch this on.";
+  }
+
+  function syncPatternUI(){
+    var grid=$("sweepPattern").value==="grid";
+    var haveTilt=!!sweepTiltRange();
+    $("tiltRowsLabel").hidden=!(grid&&haveTilt);
+    $("tiltSpanLabel").hidden=!(grid&&haveTilt);
+    if(grid&&!haveTilt) sweepStatus.textContent="This camera reports no tilt, so a grid sweep will pan only.";
+  }
+  $("sweepPattern").addEventListener("change",function(){
+    var v=$("sweepPattern").value;
+    /* a semi-circle wants the whole arc; rows want a slice of it */
+    $("sweepSpan").value = (v==="arc")? "100" : "60";
+    syncPatternUI();
+    resetSweep();
+  });
+  ["sweepStops","sweepSpan","sweepTiltRows","sweepTiltSpan"].forEach(function(id){
+    $(id).addEventListener("change",resetSweep);
+  });
+
+  function clampInt(v,lo,hi,dflt){
+    var n=parseInt(v,10);
+    if(!isFinite(n)) return dflt;
+    return Math.max(lo,Math.min(hi,n));
+  }
+  function snapTo(v,caps){
+    if(!caps) return v;
+    var step=caps.step||1;
+    var n=caps.min+Math.round((v-caps.min)/step)*step;
+    return Math.max(caps.min,Math.min(caps.max,n));
+  }
+
+  /* Stops are laid out around the camera's mechanical centre so a sweep is
+     repeatable — not around wherever it happened to be pointing. */
+  function buildStops(){
+    var n=clampInt($("sweepStops").value,2,20,5);
+    var pr=sweepPanRange();   /* native OR local bridge — both absolute */
+    /* Only the Link Controller WebSocket path is relative; there a "stop" is one
+       move further along, so the list is placeholders. */
+    if(!pr){
+      if(!bridge.connected) return [];
+      var out=[];
+      for(var k=0;k<n;k++) out.push({pan:null,tilt:null});
+      return out;
+    }
+    var pct=Math.max(5,Math.min(100,parseFloat($("sweepSpan").value)||60))/100;
+    var pc=(pr.min+pr.max)/2, pspan=(pr.max-pr.min)*pct;
+    var pans=[];
+    for(var i=0;i<n;i++) pans.push(pc-pspan/2+pspan*(i/(n-1)));
+
+    var tr=sweepTiltRange();
+    if($("sweepPattern").value!=="grid" || !tr)
+      return pans.map(function(p){ return {pan:p,tilt:null}; });
+
+    var rows=clampInt($("sweepTiltRows").value,1,5,2);
+    var tpct=Math.max(5,Math.min(100,parseFloat($("sweepTiltSpan").value)||35))/100;
+    var tc=(tr.min+tr.max)/2, tspan=(tr.max-tr.min)*tpct;
+    var out=[];
+    for(var r=0;r<rows;r++){
+      var t=(rows===1)? tc : tc-tspan/2+tspan*(r/(rows-1));
+      /* serpentine: each tilt row starts where the previous one ended */
+      var seq=(r%2===0)? pans : pans.slice().reverse();
+      seq.forEach(function(p){ out.push({pan:p,tilt:t}); });
+    }
+    return out;
+  }
+
+  function resetSweep(){
+    sweep.stops=[]; sweep.idx=0; sweep.dir=1; sweep.moving=false;
+    sweep.seen=Object.create(null); sweep.perStop=[]; sweep.startedAt=0;
+    if(sweepStopList) sweepStopList.innerHTML="";
+  }
+
+  function sweepArrived(extra){
+    setTimeout(function(){ sweep.moving=false; sweep.arrivedAt=Date.now(); },SWEEP_SETTLE_MS+(extra||0));
+  }
+
+  function sweepGoTo(i,prevIdx){
+    if(!sweep.stops.length) return;
+
+    /* Local PTZ bridge: absolute angles over http to the real DirectShow control
+       — the most reliable path, and exactly repeatable. */
+    if(sweepTransport()==="ptzhttp"){
+      var s=sweep.stops[Math.max(0,Math.min(sweep.stops.length-1,i))];
+      var params={};
+      if(s.pan!=null)  params.pan =Math.max(ptzhttp.pan[0], Math.min(ptzhttp.pan[1], s.pan));
+      if(s.tilt!=null) params.tilt=Math.max(ptzhttp.tilt[0],Math.min(ptzhttp.tilt[1],s.tilt));
+      sweep.moving=true;
+      ptzHttpSet(params).catch(function(e){
+        sweepStatus.textContent="Lost the local PTZ bridge — is ptz-bridge.ps1 still running? Sweep stopped.";
+        ptzhttp.ok=false; sweepOnBox.checked=false;
+      }).then(function(){ sweepArrived(); });
+      return;
+    }
+
+    /* Native path: absolute positions, so every stop is exactly repeatable. */
+    if(panCaps&&ptzTrack){
+      var s=sweep.stops[Math.max(0,Math.min(sweep.stops.length-1,i))];
+      var c={};
+      if(s.pan!=null) c.pan=snapTo(s.pan,panCaps);
+      if(s.tilt!=null && tiltCaps) c.tilt=snapTo(s.tilt,tiltCaps);
+      sweep.moving=true;
+      ptzTrack.applyConstraints({advanced:[c]}).catch(function(e){
+        sweepStatus.textContent="The camera refused to pan: "+e.name+" — "+e.message+". Sweep stopped.";
+        sweepOnBox.checked=false;
+      }).then(function(){ sweepArrived(); });
+      return;
+    }
+
+    /* Bridge path: the gimbal only takes RELATIVE velocity, so a stop is "move
+       one step further along", and the first stop is simply where we already
+       are. Ping-ponging is what keeps the drift from accumulating. */
+    if(bridge.connected){
+      var dur=clampInt($("brMove").value,50,3000,350);
+      sweep.moving=true;
+      if(prevIdx==null){
+        /* First stop of a traverse. Without this the sweep would start at
+           whatever the camera is aimed at and only ever travel outward from
+           there, covering half the room. Run back to one end first so the
+           swept arc is CENTRED on where the rebbi pointed it. */
+        var half=Math.max(0,(sweep.stops.length-1)/2)*dur;
+        if(half<40){ sweepArrived(); return; }
+        sweepStatus.textContent="Centring the sweep — running to one end first.";
+        brMove(-1,0,half,function(){ sweepArrived(); });
+        return;
+      }
+      var step=i-prevIdx;
+      if(step===0){ sweepArrived(); return; }
+      brMove(step>0?1:-1,0,dur,function(){ sweepArrived(); });
+      return;
+    }
+
+    sweepOnBox.checked=false;
+    sweepStatus.textContent="Nothing can pan the camera — sweep stopped.";
+  }
+
+  function renderSweepStops(){
+    if(!sweep.stops.length) return;
+    if(sweepStopList.childNodes.length!==sweep.stops.length){
+      sweepStopList.innerHTML="";
+      sweep.stops.forEach(function(s,i){
+        var chip=el("span");
+        chip.style.cssText="border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:.78rem;background:#f4f5f9";
+        chip.id="swchip"+i;
+        sweepStopList.appendChild(chip);
+      });
+    }
+    sweep.stops.forEach(function(s,i){
+      var chip=$("swchip"+i); if(!chip) return;
+      var n=sweep.perStop[i]? Object.keys(sweep.perStop[i]).length : 0;
+      chip.textContent=(i+1)+": "+n;
+      var here=(i===sweep.idx);
+      chip.style.background=here? "#e8b93a" : (n? "var(--good-soft)" : "#f4f5f9");
+      chip.style.fontWeight=here? "800" : "600";
+    });
+  }
+
+  /* A sweep that leaves gaps between stops loses boys silently, which is the
+     one failure this whole thing exists to avoid. Two things give it away
+     without needing to know the camera's field of view in degrees: adjacent
+     stops that never share a code (nothing straddles the seam), and stops that
+     saw nothing at all (the arc is aimed wider than the seating). */
+  function coverageAdvice(){
+    var per=sweep.perStop, n=sweep.stops.length, tips=[];
+    var pairs=0, overlapping=0, empty=[];
+    for(var i=0;i<n;i++){
+      if(!per[i]||!Object.keys(per[i]).length) empty.push(i+1);
+    }
+    for(i=0;i<n-1;i++){
+      if(!per[i]||!per[i+1]) continue;
+      var a=Object.keys(per[i]);
+      if(!a.length||!Object.keys(per[i+1]).length) continue;
+      pairs++;
+      for(var k=0;k<a.length;k++){ if(per[i+1][a[k]]){ overlapping++; break; } }
+    }
+    if(pairs&&overlapping===0){
+      tips.push("No code was seen at two stops in a row, so the stops probably do not overlap — "+
+        "anything sitting between them is invisible. Add stops, or narrow the arc.");
+    }
+    if(empty.length&&empty.length<n){
+      tips.push("Stop"+(empty.length>1?"s":"")+" "+empty.join(", ")+" saw nothing — "+
+        "the arc is aimed wider than the seating. Narrowing it spends the same time on fewer, better stops.");
+    }
+    return tips.join(" ");
+  }
+
+  function finishTraverse(){
+    var uniq=Object.keys(sweep.seen).length;
+    var secs=sweep.startedAt? (Date.now()-sweep.startedAt)/1000 : 0;
+    var advice=coverageAdvice();
+    $("sSweep").textContent=String(uniq);
+    sweepStatus.textContent="Sweep complete — "+uniq+" code"+(uniq===1?"":"s")+
+      " across "+sweep.stops.length+" stops in "+secs.toFixed(1)+"s."+
+      (advice? "  ⚠ "+advice : "  Starting the next pass.");
+    sweep.seen=Object.create(null);
+    sweep.perStop=[];
+    sweep.startedAt=Date.now();
+  }
+
+  function sweepTick(values){
+    if(!sweepOnBox.checked) return;
+    if(!sweepTransport()) return;
+    if(!sweep.stops.length){
+      sweep.stops=buildStops();
+      if(!sweep.stops.length){ sweepOnBox.checked=false; return; }
+      sweep.idx=0; sweep.dir=1; sweep.seen=Object.create(null); sweep.perStop=[];
+      sweep.startedAt=Date.now();
+      sweepGoTo(0,null);
+      return;
+    }
+    if(sweep.moving) return;
+
+    if(!sweep.perStop[sweep.idx]) sweep.perStop[sweep.idx]=Object.create(null);
+    values.forEach(function(v){ sweep.seen[v]=true; sweep.perStop[sweep.idx][v]=true; });
+    renderSweepStops();
+
+    sweepStatus.textContent="Stop "+(sweep.idx+1)+" of "+sweep.stops.length+
+      " — "+Object.keys(sweep.perStop[sweep.idx]).length+" here, "+
+      Object.keys(sweep.seen).length+" unique so far this pass.";
+
+    var dwell=clampInt($("sweepDwell").value,150,5000,700);
+    if(Date.now()-sweep.arrivedAt<dwell) return;
+
+    var next=sweep.idx+sweep.dir;
+    if(next>=sweep.stops.length||next<0){
+      finishTraverse();
+      sweep.dir=-sweep.dir;                 /* ping-pong: no long run back to the start */
+      next=sweep.idx+sweep.dir;
+      if(next<0||next>=sweep.stops.length) next=sweep.idx;
+    }
+    var prev=sweep.idx;
+    sweep.idx=next;
+    sweepGoTo(next,prev);
+  }
+
+  /* Sweeping and auto-zoom would fight each other — auto-zoom would resize on
+     whichever slice of the room it happened to be pointed at. */
+  sweepOnBox.addEventListener("change",function(){
+    if(sweepOnBox.checked){
+      autoZoomBox.checked=false;
+      resetSweep();
+    } else {
+      sweepStatus.textContent="Sweep off.";
+    }
+  });
+  autoZoomBox.addEventListener("change",function(){
+    if(autoZoomBox.checked && sweepOnBox.checked){
+      sweepOnBox.checked=false;
+      sweepStatus.textContent="Sweep off — auto-zoom took over.";
+    }
+  });
+
+  /* ================= LINK CONTROLLER BRIDGE =================
+     The Link's gimbal is a UVC vendor extension unit, which no browser can
+     touch. Insta360's own Link Controller app can, and it leaves a WebSocket
+     open on localhost for its phone remote — port and token come from the
+     pairing QR code it shows. Messages are protobuf, so this carries just
+     enough of a codec to speak it: no library, matching the file's no-build,
+     no-dependency shape. Schema mirrored from the app's own .proto. */
+
+  var PB={
+    /* enum values straight out of the schema */
+    PARAM_ZOOM:1, PARAM_PAN_TILT_RELATIVE:12,
+    XU_PANTILT_RELATIVE_CONTROL:22
+  };
+
+  function pbVarint(v){
+    var out=[], b=BigInt(v);
+    if(b<0n) b+=(1n<<64n);            /* negative int32 sign-extends to 64 bits */
+    do{
+      var byte=Number(b & 0x7Fn); b >>= 7n;
+      if(b>0n) byte|=0x80;
+      out.push(byte);
+    } while(b>0n);
+    return out;
+  }
+  function pbTag(f,w){ return pbVarint((f<<3)|w); }
+  function pbUtf8(s){
+    var out=[], e=encodeURIComponent(s);
+    for(var i=0;i<e.length;i++){
+      if(e[i]==="%"){ out.push(parseInt(e.substr(i+1,2),16)); i+=2; }
+      else out.push(e.charCodeAt(i));
+    }
+    return out;
+  }
+  function pbBool(f,v){ return v? pbTag(f,0).concat(pbVarint(1)) : []; }
+  function pbInt(f,v){ return (!v)? [] : pbTag(f,0).concat(pbVarint(v)); }
+  function pbStr(f,s){ if(!s) return []; var b=pbUtf8(s); return pbTag(f,2).concat(pbVarint(b.length),b); }
+  function pbMsg(f,body){ return pbTag(f,2).concat(pbVarint(body.length),body); }
+  function pbPacked(f,arr){
+    if(!arr||!arr.length) return [];
+    var p=[]; arr.forEach(function(v){ p=p.concat(pbVarint(v)); });
+    return pbTag(f,2).concat(pbVarint(p.length),p);
+  }
+
+  /* Request { hasUvcRequest=1 hasUvcExtendRequest=2 hasControlRequest=4
+               hasHeartbeatRequest=5 uvcRequest=10 uvcExtendRequest=11
+               controlRequest=13 heartbeatRequest=14 } */
+  function encControl(token){
+    return new Uint8Array(pbBool(4,true).concat(pbMsg(13,pbStr(1,token))));
+  }
+  function encHeartbeat(){
+    return new Uint8Array(pbBool(5,true).concat(pbMsg(14,[])));
+  }
+  /* UVCExtendRequest { serial=1 paramType=2 selector=3 data=4 presetPosIndex=5 } */
+  function encPanTilt(serial,data){
+    var body=pbStr(1,serial)
+      .concat(pbInt(2,PB.PARAM_PAN_TILT_RELATIVE))
+      .concat(pbInt(3,PB.XU_PANTILT_RELATIVE_CONTROL))
+      .concat(pbPacked(4,data))
+      .concat(pbInt(5,-1));
+    return new Uint8Array(pbBool(2,true).concat(pbMsg(11,body)));
+  }
+  /* UVCRequest { serial=1 paramType=2 value=3 } */
+  function encZoom(serial,value){
+    var body=pbStr(1,serial).concat(pbInt(2,PB.PARAM_ZOOM)).concat(pbInt(3,value));
+    return new Uint8Array(pbBool(1,true).concat(pbMsg(10,body)));
+  }
+
+  /* Just enough decoding to read the serial number and the control verdict. */
+  function pbRead(bytes){
+    var i=0, out={};
+    function vi(){
+      var shift=0n, val=0n, b;
+      do{ b=bytes[i++]; val |= BigInt(b & 0x7F)<<shift; shift+=7n; } while(b & 0x80);
+      return val;
+    }
+    while(i<bytes.length){
+      var key=Number(vi()), f=key>>3, w=key&7, v=null;
+      if(w===0) v=vi();
+      else if(w===2){ var len=Number(vi()); v=bytes.subarray(i,i+len); i+=len; }
+      else if(w===5) i+=4;
+      else if(w===1) i+=8;
+      else break;
+      (out[f]=out[f]||[]).push(v);
+    }
+    return out;
+  }
+  function pbUtf8Decode(b){
+    try{ return new TextDecoder().decode(b); }catch(e){ return ""; }
+  }
+
+  var bridge={ws:null,connected:false,serial:"",hb:null,moveTimer:null};
+  var brStatus=$("brStatus"), brDot=$("brDot");
+  var brBtns=["brLeft","brRight","brUp","brDown"];
+
+  function brSetStatus(msg){ brStatus.textContent=msg; }
+  function brEnable(on){
+    brBtns.forEach(function(id){ $(id).disabled=!on; });
+    $("brDisconnect").disabled=!on;
+    $("brConnect").disabled=on;
+    brDot.textContent=on? "— connected"+(bridge.serial? " to "+bridge.serial : "") : "— not connected";
+    brDot.style.color=on? "var(--good)" : "var(--muted)";
+  }
+
+  function brConnect(){
+    var port=$("brPort").value.trim(), token=$("brToken").value.trim();
+    if(!port||!token){ brSetStatus("Port and token are both needed — they are in the pairing QR code."); return; }
+    brDisconnect(true);
+    var url="ws://localhost:"+port+"/?token="+encodeURIComponent(token);
+    var ws;
+    try{ ws=new WebSocket(url); }
+    catch(e){ brSetStatus("Could not open "+url+" — "+e.message); return; }
+    ws.binaryType="arraybuffer";
+    bridge.ws=ws;
+    brSetStatus("Connecting to "+url+" …");
+    ws.onopen=function(){
+      bridge.connected=true;
+      ws.send(encControl(token));
+      bridge.hb=setInterval(function(){
+        if(bridge.ws&&bridge.ws.readyState===1) bridge.ws.send(encHeartbeat());
+      },1000);
+      brEnable(true);
+      brSetStatus("Connected — asked Link Controller for control.");
+      refreshSweepAvailability();
+    };
+    ws.onmessage=function(ev){
+      var f=pbRead(new Uint8Array(ev.data));
+      if(f[10]&&f[10].length){                       /* deviceInfoNotify */
+        var inner=pbRead(f[10][0]);
+        /* The device serial (curDeviceSerialNum) is field 2 here — field 1 is
+           the DeviceInfo submessage, whose own field 2 is the same serial.
+           Verified against a real Link 2 Pro; the earlier field-1 read decoded
+           the whole submessage as garbage and addressed no device. */
+        var sn="";
+        if(inner[2]&&inner[2].length) sn=pbUtf8Decode(inner[2][0]);
+        if(!sn && inner[1]&&inner[1].length){ var di=pbRead(inner[1][0]); if(di[2]&&di[2].length) sn=pbUtf8Decode(di[2][0]); }
+        if(sn&&sn!==bridge.serial){ bridge.serial=sn; brEnable(true); brSetStatus("Camera reported: "+sn); }
+      }
+      if(f[12]&&f[12].length){                       /* controlResponse */
+        var cr=pbRead(f[12][0]);
+        var ok=cr[1]&&cr[1].length? Number(cr[1][0])===1 : false;
+        if(!ok) brSetStatus("Link Controller refused control — the token may be stale, or its phone remote already has control. Re-open the pairing QR and try again.");
+      }
+      if(f[16]&&f[16].length){                       /* toastNotify */
+        var tn=pbRead(f[16][0]);
+        if(tn[2]&&tn[2].length) brSetStatus("Link Controller says: "+pbUtf8Decode(tn[2][0]));
+      }
+    };
+    ws.onerror=function(){
+      brSetStatus("WebSocket error. Is Link Controller running, and is the port right? The port changes each time it starts.");
+    };
+    ws.onclose=function(){
+      bridge.connected=false; bridge.serial="";
+      if(bridge.hb){ clearInterval(bridge.hb); bridge.hb=null; }
+      brEnable(false);
+      refreshSweepAvailability();
+    };
+  }
+
+  function brDisconnect(quiet){
+    if(bridge.moveTimer){ clearInterval(bridge.moveTimer); bridge.moveTimer=null; }
+    if(bridge.hb){ clearInterval(bridge.hb); bridge.hb=null; }
+    if(bridge.ws){ try{ bridge.ws.close(); }catch(e){} bridge.ws=null; }
+    bridge.connected=false; bridge.serial="";
+    brEnable(false);
+    if(!quiet){ brSetStatus("Disconnected."); refreshSweepAvailability(); }
+  }
+
+  /* Relative pan/tilt is a per-message NUDGE, not a move-until-stop velocity —
+     verified against a real Link 2 Pro, where a single message moved the gimbal
+     an imperceptible step. To travel, the command must be resent continuously,
+     exactly as the phone remote does while a button is held. So a "move" is a
+     train of identical pulses for the duration, then a zero. */
+  function brSend(data){
+    if(!bridge.ws||bridge.ws.readyState!==1) return;
+    bridge.ws.send(encPanTilt(bridge.serial,data));
+  }
+  function brStop(){
+    if(bridge.moveTimer){ clearInterval(bridge.moveTimer); bridge.moveTimer=null; }
+    brSend([0,0,0,0]);
+  }
+  var BR_PULSE_MS=60;
+  function brMove(dx,dy,ms,done){
+    if(!bridge.connected) return;
+    var sp=clampInt($("brSpeed").value,1,30,20);
+    var dur=ms||clampInt($("brMove").value,50,3000,350);
+    var pulse=[dx>0?1:dx<0?255:0, dx?sp:0, dy>0?1:dy<0?255:0, dy?Math.min(20,sp):0];
+    if(bridge.moveTimer){ clearInterval(bridge.moveTimer); bridge.moveTimer=null; }
+    var until=Date.now()+dur;
+    brSend(pulse);
+    bridge.moveTimer=setInterval(function(){
+      if(Date.now()>=until){
+        clearInterval(bridge.moveTimer); bridge.moveTimer=null;
+        brSend([0,0,0,0]);
+        if(done) done();
+        return;
+      }
+      brSend(pulse);
+    },BR_PULSE_MS);
+  }
+
+  $("brConnect").addEventListener("click",brConnect);
+  $("brDisconnect").addEventListener("click",function(){ brDisconnect(false); });
+  $("brLeft").addEventListener("click",function(){ brMove(-1,0); });
+  $("brRight").addEventListener("click",function(){ brMove(1,0); });
+  $("brUp").addEventListener("click",function(){ brMove(0,1); });
+  $("brDown").addEventListener("click",function(){ brMove(0,-1); });
+
+  /* Pairing without typing: the app's QR code holds a URL carrying port and
+     token, and this page is already looking at QR codes through the camera. */
+  function maybePair(text){
+    if(!text||bridge.connected) return false;
+    if(text.indexOf("port=")===-1||text.indexOf("token=")===-1) return false;
+    var port=null,token=null;
+    try{
+      var u=new URL(text);
+      port=u.searchParams.get("port"); token=u.searchParams.get("token");
+    }catch(e){
+      var mp=/[?&]port=([^&\s]+)/.exec(text), mt=/[?&]token=([^&\s]+)/.exec(text);
+      if(mp) port=decodeURIComponent(mp[1]);
+      if(mt) token=decodeURIComponent(mt[1]);
+    }
+    if(!port||!token) return false;
+    $("brPort").value=port; $("brToken").value=token;
+    brSetStatus("Paired from a QR code — port "+port+". Press Connect.");
+    return true;
+  }
+
+  /* Reading a pairing code out of a picture, however it arrives. Every branch
+     reports what it saw: a silent "nothing happened" is the one outcome that
+     leaves nobody any way to work out why. */
+  function pairFromImage(blob,how){
+    if(!supported||!detector){
+      brSetStatus("Cannot read images here — the barcode detector never loaded (no internet on first load?).");
+      return;
+    }
+    if(!blob){ brSetStatus("That "+how+" carried no image."); return; }
+    brSetStatus("Reading the "+how+" ("+Math.round(blob.size/1024)+" KB) …");
+    createImageBitmap(blob).then(function(bmp){
+      return detector.detect(bmp).then(function(codes){
+        if(!codes.length){
+          /* The pairing code is ~41 squares across, so it needs roughly 4px a
+             square. Below that no amount of upscaling helps — the detail was
+             thrown away by whatever shrank the picture. */
+          var tooSmall=Math.min(bmp.width,bmp.height)<200;
+          brSetStatus("No QR code found in that "+how+" ("+bmp.width+"x"+bmp.height+")."+
+            (tooSmall
+              ? " That is too small to decode: this pairing code is about 41 squares across, so it needs"+
+                " ~170px at the absolute minimum and 300px+ to be reliable. Enlarge the Link Controller window"+
+                " first, screenshot at full size without shrinking it, or use “Read the code from a window…”,"+
+                " which captures at native resolution and avoids the problem entirely."
+              : " Crop tighter around the code, or use “Read the code from a window…” instead."));
+          return;
+        }
+        for(var k=0;k<codes.length;k++){ if(maybePair(codes[k].rawValue)) return; }
+        /* Found a code but it is not a pairing URL — show what it says, because
+           knowing what Link Controller actually encodes IS the diagnosis. */
+        var t=String(codes[0].rawValue||"");
+        brSetStatus("Read a QR code, but it carries no port and token. It says: "+
+          (t.length>120? t.slice(0,120)+"…" : t));
+      });
+    }).catch(function(e){
+      brSetStatus("Could not read that "+how+": "+(e.name||"")+" "+(e.message||e));
+    });
+  }
+
+  document.addEventListener("paste",function(ev){
+    var cd=ev.clipboardData;
+    if(!cd) return;
+    var items=cd.items||[];
+    for(var i=0;i<items.length;i++){
+      if(items[i].type.indexOf("image")===0){
+        pairFromImage(items[i].getAsFile(),"pasted screenshot");
+        return;
+      }
+    }
+    /* Not an image — maybe the pairing link itself was copied as text. */
+    var txt="";
+    try{ txt=cd.getData("text")||""; }catch(e){}
+    if(txt){
+      if(maybePair(txt)) return;
+      brSetStatus("Pasted text had no port and token in it.");
+      return;
+    }
+    brSetStatus("Nothing usable on the clipboard — copy the code as an image "+
+      "(Windows: Win+Shift+S), or use “Choose a screenshot…”.");
+  });
+
+  /* The best route by far: let the page look at the Link Controller window
+     itself. The QR is tiny on screen and painful to read by eye or to
+     screenshot accurately — but at native resolution a detector reads it
+     instantly, and it can keep trying every frame until it does. The shared
+     stream is used for nothing else and is stopped the moment a code is found. */
+  $("brShare").addEventListener("click",function(){
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){
+      brSetStatus("This browser cannot share a window. Use “Choose a screenshot…” instead.");
+      return;
+    }
+    if(!supported||!detector){
+      brSetStatus("The barcode detector never loaded, so a shared window cannot be read.");
+      return;
+    }
+    brSetStatus("Pick the Insta360 Link Controller window in the dialog …");
+    /* Ask for real resolution. Left to itself Chrome will hand back a
+       downscaled window, and a downscaled QR is an unreadable QR. */
+    navigator.mediaDevices.getDisplayMedia({
+      video:{ width:{ideal:3840}, height:{ideal:2160}, frameRate:{ideal:8} },
+      audio:false
+    }).then(function(st){
+      /* The video MUST be in the document to produce frames — a detached one,
+         or one hidden with display:none, can sit at videoWidth 0 forever. */
+      var v=document.createElement("video");
+      v.muted=true; v.playsInline=true; v.autoplay=true;
+      v.style.cssText="position:fixed;left:-10000px;top:0;width:320px;height:180px;opacity:0.01;pointer-events:none";
+      document.body.appendChild(v);
+      v.srcObject=st;
+
+      var cvs=document.createElement("canvas"), ctx=cvs.getContext("2d",{willReadFrequently:true});
+      var big=document.createElement("canvas"), bctx=big.getContext("2d",{willReadFrequently:true});
+      var tries=0, stopped=false, sawAnyQr=false, lastDims="unknown";
+
+      function finish(msg){
+        if(stopped) return;
+        stopped=true;
+        st.getTracks().forEach(function(t){ t.stop(); });
+        if(v.parentNode) v.parentNode.removeChild(v);
+        if(msg) brSetStatus(msg);
+      }
+      st.getVideoTracks()[0].addEventListener("ended",function(){ finish("Window sharing stopped."); });
+
+      function tryDetect(canvas){ return detector.detect(canvas); }
+
+      function scan(){
+        if(stopped) return;
+        if(++tries>100){
+          finish("Gave up after 30s. Shared window was "+lastDims+" and "+
+            (sawAnyQr? "a QR code was visible but never a pairing code — is that the right window?"
+                     : "no QR code was ever visible in it. Link Controller only shows one while "+
+                       "“Remote control” is switched on, so turn that on first; its live preview alone has no code. "+
+                       "If the window sits partly off-screen, drag it fully on first."));
+          return;
+        }
+        var w=v.videoWidth, h=v.videoHeight;
+        if(!w||!h){ setTimeout(scan,250); return; }
+        lastDims=w+"x"+h;
+        if(cvs.width!==w){ cvs.width=w; cvs.height=h; }
+        ctx.drawImage(v,0,0,w,h);
+        if(tries%6===1) brSetStatus("Looking for the code in the shared window ("+lastDims+") …");
+
+        tryDetect(cvs).then(function(codes){
+          if(codes.length) sawAnyQr=true;
+          for(var i=0;i<codes.length;i++){
+            if(maybePair(codes[i].rawValue)){
+              finish(null);
+              brSetStatus("Read the code from the shared window — connecting …");
+              setTimeout(brConnect,150);
+              return;
+            }
+          }
+          /* Nothing at native size. A QR that is small on a big desktop can
+             sit at barely 2px per module; doubling it costs one draw and
+             often tips it over the line. */
+          if(w<2600){
+            if(big.width!==w*2){ big.width=w*2; big.height=h*2; }
+            bctx.imageSmoothingEnabled=false;
+            bctx.drawImage(cvs,0,0,w*2,h*2);
+            tryDetect(big).then(function(c2){
+              if(c2.length) sawAnyQr=true;
+              for(var j=0;j<c2.length;j++){
+                if(maybePair(c2[j].rawValue)){
+                  finish(null);
+                  brSetStatus("Read the code from the shared window (upscaled) — connecting …");
+                  setTimeout(brConnect,150);
+                  return;
+                }
+              }
+              setTimeout(scan,250);
+            }).catch(function(){ setTimeout(scan,300); });
+            return;
+          }
+          setTimeout(scan,250);
+        }).catch(function(){ setTimeout(scan,300); });
+      }
+
+      if(v.readyState>=2) scan();
+      else v.addEventListener("loadedmetadata",function(){ scan(); });
+      v.play().catch(function(){});
+      setTimeout(function(){ if(!tries) scan(); },1200);   /* belt and braces */
+    }).catch(function(e){
+      brSetStatus(e.name==="NotAllowedError"
+        ? "Window sharing was cancelled."
+        : "Could not share a window: "+e.name+" — "+e.message);
+    });
+  });
+
+  $("brPick").addEventListener("click",function(){ $("brFile").click(); });
+  $("brFile").addEventListener("change",function(){
+    var f=$("brFile").files&&$("brFile").files[0];
+    pairFromImage(f,"chosen image");
+    $("brFile").value="";
+  });
+
+  /* Drag a screenshot straight onto the page. */
+  document.addEventListener("dragover",function(ev){ ev.preventDefault(); });
+  document.addEventListener("drop",function(ev){
+    var f=ev.dataTransfer&&ev.dataTransfer.files&&ev.dataTransfer.files[0];
+    if(!f) return;
+    ev.preventDefault();
+    pairFromImage(f,"dropped image");
+  });
+
+  stopBtn.addEventListener("click",function(){
+    stopLoop();
+    stopStream();
+    zoomWrap.hidden=true; zoomNone.hidden=true; zoomCaps=null; zoomTrack=null;
+    sweepWrap.hidden=true; sweepNone.hidden=true; panCaps=null; tiltCaps=null; ptzTrack=null;
+    sweepOnBox.checked=false; resetSweep();
+    $("ptzHint").hidden=false;
+    octx.clearRect(0,0,ov.width,ov.height);
+    startBtn.disabled=false;
+    stopBtn.disabled=true;
+  });
+
+  function showTrackInfo(){
+    if(!stream) return;
+    var t=stream.getVideoTracks()[0];
+    if(!t) return;
+    var s=t.getSettings ? t.getSettings() : {};
+    camInfo.textContent="Open: "+(t.label||"(unnamed)")+
+      "  ·  "+(s.width||"?")+"×"+(s.height||"?")+
+      " @ "+(s.frameRate? Math.round(s.frameRate) : "?")+"fps"+
+      (s.deviceId? "  ·  id "+String(s.deviceId).slice(0,12)+"…" : "");
+  }
+
+  /* ================= DETECTION ================= */
+
+  var support=$("support");
+  var detector=null, supported=false, engineIsNative=true;
+
+  (function checkSupport(){
+    if(!("BarcodeDetector" in window)){
+      var b=el("div","bad-box");
+      b.innerHTML="<strong>No Barcode Detection API, and the polyfill did not load.</strong><br>"+
+        "Desktop Windows Chrome and Edge ship no native <code>BarcodeDetector</code>, so this page loads a WASM "+
+        "polyfill from jsDelivr instead — and that script did not arrive. Almost always this means <strong>no "+
+        "internet connection</strong> (or something blocking jsDelivr). Reconnect and reload."+
+        "<br><br>The camera picker and live preview below still work, so the camera and its framing can be "+
+        "checked — only the detection loop, boxes and stats are off.";
+      support.appendChild(b);
+      return;
+    }
+    /* Native implementations report "[native code]"; the polyfill is real JS.
+       Worth naming, because the two are nowhere near the same speed. */
+    engineIsNative=/\[native code\]/.test(String(window.BarcodeDetector));
+    supported=true;
+    try{ detector=new window.BarcodeDetector({formats:["qr_code"]}); }
+    catch(e){
+      supported=false;
+      support.appendChild(el("div","bad-box","BarcodeDetector exists but refused qr_code: "+e.name+" — "+e.message+
+        " Camera preview still works; detection is off."));
+      return;
+    }
+    var engine=engineIsNative
+      ? "native BarcodeDetector (the browser's own — fastest)"
+      : "WASM polyfill (ZXing-C++), because this browser has no native one — expect slower passes, and a pause on the very first detect while the .wasm downloads";
+    var g=el("div","good-box","Detection ready — using the "+engine+".");
+    support.appendChild(g);
+    if(window.BarcodeDetector.getSupportedFormats){
+      window.BarcodeDetector.getSupportedFormats().then(function(fs){
+        g.textContent="Detection ready — using the "+engine+". Formats available: "+fs.join(", ");
+        if(fs.indexOf("qr_code")===-1){
+          g.className="bad-box";
+          g.textContent="This browser's BarcodeDetector does NOT list qr_code as a supported format: "+fs.join(", ");
+        }
+      }).catch(function(){});
+    }
+  })();
+
+  var work=document.createElement("canvas");
+  var wctx=work.getContext("2d",{willReadFrequently:true});
+  var running=false, timer=null, errStreak=0;
+  var passTimes=[], maxAtOnce=0;
+  var sFps=$("sFps"), sNow=$("sNow"), sMax=$("sMax"), sMs=$("sMs");
+
+  function interval(){
+    var n=parseInt($("intervalMs").value,10);
+    if(!isFinite(n)||n<30) n=30;
+    if(n>2000) n=2000;
+    return n;
+  }
+
+  function startLoop(){
+    if(running||!supported) return;
+    running=true; errStreak=0; passTimes=[]; maxAtOnce=0;
+    sMax.textContent="0";
+    onePass();
+  }
+  function stopLoop(){
+    running=false;
+    if(timer){ clearTimeout(timer); timer=null; }
+    sFps.textContent="–"; sNow.textContent="–"; sMs.textContent="–"; $("sSize").textContent="–";
+  }
+  function schedule(){
+    if(!running) return;
+    timer=setTimeout(onePass,interval());
+  }
+
+  function onePass(){
+    if(!running) return;
+    var vw=vid.videoWidth, vh=vid.videoHeight;
+    if(!vw||!vh){ schedule(); return; }
+
+    var want=parseInt($("detWidth").value,10);
+    if(!isFinite(want)||want<320) want=320;
+    if(want>3840) want=3840;
+    var W=Math.min(want,vw), H=Math.round(vh*(W/vw));
+    if(work.width!==W||work.height!==H){ work.width=W; work.height=H; }
+    wctx.drawImage(vid,0,0,W,H);
+
+    var t0=performance.now();
+    detector.detect(work).then(function(codes){
+      errStreak=0;
+      var dt=performance.now()-t0;
+      sMs.textContent=Math.round(dt)+"ms";
+      handleCodes(codes||[],W,H);
+    }).catch(function(e){
+      errStreak++;
+      sMs.textContent="err";
+      if(errStreak>=3){
+        stopLoop();
+        support.appendChild(el("div","bad-box","Detection kept failing and was stopped: "+e.name+" — "+e.message));
+      }
+    }).then(schedule);
+
+    var now=performance.now();
+    passTimes.push(now);
+    while(passTimes.length && now-passTimes[0]>2000) passTimes.shift();
+    if(passTimes.length>1){
+      var span=(now-passTimes[0])/1000;
+      sFps.textContent=span>0 ? ((passTimes.length-1)/span).toFixed(1) : "–";
+    }
+  }
+
+  function handleCodes(codes,W,H){
+    sizeOverlay();
+    octx.clearRect(0,0,ov.width,ov.height);
+    var sx=ov.width/W, sy=ov.height/H;
+
+    var seen={}, uniq=0, now=Date.now(), boxes=[], smallest=Infinity;
+    codes.forEach(function(c){
+      var val=c.rawValue==null? "" : String(c.rawValue);
+      if(!seen[val]){ seen[val]=true; uniq++; noteRead(val,now); maybePair(val); }
+
+      /* measured in detect-frame pixels — the units auto-zoom steers on */
+      var bb=boxOf(c);
+      if(bb){ boxes.push(bb); smallest=Math.min(smallest,Math.min(bb.w,bb.h)); }
+
+      var pts=c.cornerPoints;
+      octx.lineWidth=3;
+      octx.strokeStyle="#1f8a5b";
+      octx.fillStyle="rgba(31,138,91,.16)";
+      var bx, by;
+      if(pts && pts.length){
+        octx.beginPath();
+        pts.forEach(function(p,i){
+          var x=p.x*sx, y=p.y*sy;
+          if(i===0){ octx.moveTo(x,y); bx=x; by=y; }
+          else{ octx.lineTo(x,y); if(y<by){ bx=x; by=y; } }
+        });
+        octx.closePath();
+        octx.fill();
+        octx.stroke();
+      } else if(c.boundingBox){
+        var b=c.boundingBox;
+        octx.strokeRect(b.x*sx,b.y*sy,b.width*sx,b.height*sy);
+        bx=b.x*sx; by=b.y*sy;
+      }
+      if(bx==null) return;
+      var label=val.length>28 ? val.slice(0,28)+"…" : val;
+      octx.font="bold 15px "+ "-apple-system,Segoe UI,Roboto,sans-serif";
+      var tw=octx.measureText(label).width;
+      var ly=Math.max(18,by-8);
+      octx.fillStyle="rgba(27,36,64,.85)";
+      octx.fillRect(bx-4,ly-15,tw+10,20);
+      octx.fillStyle="#fff";
+      octx.fillText(label,bx+1,ly);
+    });
+
+    sNow.textContent=String(uniq);
+    if(uniq>maxAtOnce){ maxAtOnce=uniq; sMax.textContent=String(uniq); }
+    $("sSize").textContent = boxes.length? Math.round(smallest)+"px" : "–";
+    autoZoomStep(boxes,W,H);
+    sweepTick(Object.keys(seen));
+    if(logDirty) renderLog();
+  }
+
+  /* Axis-aligned bounds of a detection, in detect-canvas pixels. */
+  function boxOf(c){
+    var pts=c.cornerPoints;
+    if(pts&&pts.length){
+      var xs=[],ys=[];
+      pts.forEach(function(p){ xs.push(p.x); ys.push(p.y); });
+      var x0=Math.min.apply(null,xs), x1=Math.max.apply(null,xs);
+      var y0=Math.min.apply(null,ys), y1=Math.max.apply(null,ys);
+      return {x:x0,y:y0,w:x1-x0,h:y1-y0};
+    }
+    if(c.boundingBox) return {x:c.boundingBox.x,y:c.boundingBox.y,w:c.boundingBox.width,h:c.boundingBox.height};
+    return null;
+  }
+
+  /* ---------- read log ---------- */
+  var entries=[], byVal=Object.create(null), logDirty=false;
+  var logEl=$("log");
+  var COLLAPSE_MS=1000, LOG_CAP=50;
+
+  function noteRead(val,now){
+    var e=byVal[val];
+    if(e && (now-e.last)<=COLLAPSE_MS){
+      e.count++; e.last=now; logDirty=true; return;
+    }
+    e={val:val,count:1,first:now,last:now};
+    byVal[val]=e;
+    entries.unshift(e);
+    while(entries.length>LOG_CAP){
+      var drop=entries.pop();
+      if(byVal[drop.val]===drop) delete byVal[drop.val];
+    }
+    logDirty=true;
+  }
+
+  function renderLog(){
+    logDirty=false;
+    logEl.innerHTML="";
+    if(!entries.length){
+      logEl.appendChild(el("li","empty","Nothing read yet."));
+      return;
+    }
+    entries.forEach(function(e){
+      var li=el("li");
+      li.appendChild(el("span","val",e.val===""? "(empty value)" : e.val));
+      if(e.count>1) li.appendChild(el("span","cnt","seen "+e.count+"x"));
+      li.appendChild(el("span","ts",new Date(e.first).toLocaleTimeString()));
+      logEl.appendChild(li);
+    });
+  }
+
+  $("clearLog").addEventListener("click",function(){
+    entries=[]; byVal=Object.create(null); logDirty=false; renderLog();
+  });
+
+  /* ================= PRINTABLE TEST SHEET ================= */
+
+  function ecLevel(k){
+    if(!window.QRCode||!window.QRCode.CorrectLevel) return null;
+    var C=window.QRCode.CorrectLevel;
+    return k==="L"? C.L : k==="Q"? C.Q : k==="H"? C.H : C.M;
+  }
+
+  function buildSheet(){
+    var sheet=$("sheet");
+    sheet.innerHTML="";
+
+    if(typeof window.QRCode==="undefined"){
+      sheet.appendChild(el("div","bad-box",
+        "The QR library did not load (it comes from cdnjs, so this section needs an internet connection). "+
+        "Reload with a connection to generate the sheet."));
+      return;
+    }
+
+    var size=parseFloat($("pSize").value);
+    if(!isFinite(size)||size<=0) size=2.75;
+    var n=parseInt($("pCount").value,10);
+    if(!isFinite(n)||n<1) n=1;
+    if(n>60) n=60;
+    var prefix=$("pPrefix").value;
+    var lvl=ecLevel($("pEc").value);
+
+    var values=$("pCustom").value.split("\n").map(function(s){ return s.trim(); }).filter(Boolean);
+    if(!values.length){
+      values=[];
+      for(var i=1;i<=n;i++) values.push(prefix+i);
+    }
+
+    /* ~300 dots per printed inch keeps the squares crisp on paper */
+    var px=Math.max(120,Math.min(1200,Math.round(size*300)));
+
+    values.forEach(function(txt){
+      var cell=el("div","qr-cell");
+      cell.style.setProperty("--qs",size+"in");
+      var holder=el("div");
+      cell.appendChild(holder);
+      try{
+        new window.QRCode(holder,{text:txt,width:px,height:px,correctLevel:lvl});
+      }catch(e){
+        cell.appendChild(el("div","cap","(QR error: "+e.message+")"));
+      }
+      cell.appendChild(el("div","cap",txt));
+      cell.appendChild(el("div","dim",size+'" · EC '+$("pEc").value));
+      sheet.appendChild(cell);
+    });
+
+    /* How this lands on paper: 8.5x11 less the .4in @page margin, and each cell
+       is the code plus its .12in padding, 1px cut line and .06in margin. */
+    var cellIn=size+2*0.12+2*0.06+0.03;
+    var perRow=Math.max(1,Math.floor(7.7/cellIn));
+    var perCol=Math.max(1,Math.floor(10.2/cellIn));
+    var perPage=perRow*perCol;
+    var pages=Math.ceil(values.length/perPage);
+    $("pageInfo").textContent=values.length+" codes at "+size+'" — '+perRow+" across x "+perCol+
+      " down = "+perPage+" per sheet, "+pages+" sheet"+(pages===1?"":"s")+" total.";
+  }
+
+  $("pGen").addEventListener("click",buildSheet);
+  $("pPrint").addEventListener("click",function(){
+    if(!$("sheet").firstChild) buildSheet();
+    window.print();
+  });
+
+  /* ---------- boot ---------- */
+  listCams();
+  renderLog();
+  probePtzHttp().then(function(ok){ if(ok && ptzTrack) refreshSweepAvailability(); });
+})();
+</script>
+</body>
+</html>

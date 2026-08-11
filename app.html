@@ -2995,6 +2995,20 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <p>Save a file with your full roster, activities, and scores. Keep it somewhere safe.</p>
         <button class="btn btn-primary" id="exportJson">Download backup file</button>
       </div>
+      <!-- Hidden entirely unless the browser can actually do it (Chrome/Edge).
+           Offering a button that cannot work is worse than not offering it. -->
+      <div class="card pad bk-card" id="folderBackupCard" style="display:none;border-left:4px solid var(--good)">
+        <h3>Back up to a folder automatically <span style="font-size:.72rem;font-weight:700;color:var(--good);background:var(--good-soft);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px">No internet needed</span></h3>
+        <p>Choose a folder <b>once</b> — on this computer, or on a USB stick you leave plugged in — and Menchmark saves a backup into it by itself: every time you open the app, and again when you switch away from it. <b>No internet, no Google account, nothing to remember.</b></p>
+        <p style="margin:8px 0 0;font-size:.86rem">Each day gets its own file, so you keep a history rather than one file that overwrites itself. A week of backups is about the size of one photo.</p>
+        <div id="folderBackupStatus" style="margin:10px 0 0;font-size:.88rem;font-weight:600"></div>
+        <div style="margin-top:10px">
+          <button class="btn btn-primary" id="folderBackupPick">Choose a folder</button>
+          <button class="btn" id="folderBackupNow" style="display:none">Back up now</button>
+          <button class="btn" id="folderBackupStop" style="display:none">Stop using this folder</button>
+        </div>
+        <p style="margin:10px 0 0;font-size:.82rem;color:var(--muted)">If the folder is on a USB stick that is unplugged, or your school's Chromebook blocks it, Menchmark tells you here and goes back to reminding you to save a backup by hand. It never fails silently.</p>
+      </div>
       <div class="card pad bk-card">
         <h3>Install Menchmark as an app <span style="font-size:.72rem;font-weight:700;color:var(--good);background:var(--good-soft);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px">Best way to work offline</span></h3>
         <p>Install Menchmark from your browser (look for <b>Install</b> in the menu, or the ⊕ / install icon in the address bar) to run it like a real app — its own window, an icon on your device, and <b>persistent storage</b> that resists the browser clearing your data. Works fully offline once installed, <b>and it stays the same Menchmark</b> — the same students, the same scores, whether you are online or not.</p>
@@ -4684,6 +4698,11 @@ function setupRoster() {
       }
       if(failed || trimmed) showStorageWarn(trimmed, failed);
     }
+    // Marks the save as newer than whatever last reached the backup folder, so
+    // the closing write knows there is something to write. Guarded with ||0
+    // because save() can run before this file's folder-backup section has been
+    // evaluated, where the hoisted var is still undefined and ++ would give NaN.
+    fbSaveSeq=(fbSaveSeq||0)+1;
     scheduleAutoSnapshot();
   }
   // Shown when a save had to give something up, or could not happen at all.
@@ -8123,26 +8142,54 @@ function setupRoster() {
     a2:{name:"Davening nicely", pts:32},  // 1 Maah
     a3:{name:"Learning nicely", pts:32}   // 1 Maah
   };
+  // The starter re-value FOLLOWS THE MODE, in both directions. It used to ride
+  // inside seedShulchaniCoinCodes(), which runs exactly once — so entering
+  // Shulchani Mode pushed "Learning nicely" from 1 to 32 and switching back to
+  // points left it at 32 forever. A rebbi who tried the mode and changed his
+  // mind was quietly left awarding 32 points a scan, with nothing on screen
+  // connecting that to a toggle he had already flipped back.
+  //
+  // Going in, the old value is stamped on the activity as a.ptsBeforeCoins;
+  // coming out, it is put back and the stamp cleared. The stamp is the whole
+  // mechanism — absent means "this app never touched this value", which is why
+  // it needs no load2fix() default and why an activity the rebbi created
+  // himself is never in scope.
+  //
+  // Hand-edits win, always. Coming out we only restore an activity still
+  // sitting at exactly the value we set; if the rebbi has since made "On time"
+  // worth 16, that is his number and we keep it — and we drop the stamp, so
+  // the app stops managing that activity from then on rather than waiting to
+  // spring a restore on him later.
+  function applyStarterValuesForMode(toShulchani){
+    data.activities.forEach(function(a){
+      var st=SHULCHANI_STARTER_VALUES[a.id];
+      if(!st || a.tracked || a.name!==st.name) return;
+      if(toShulchani){
+        // Only an untouched starter — one still at its shipped value, and not
+        // already stamped by an earlier trip through the mode.
+        if(a.pts===1 && typeof a.ptsBeforeCoins!=="number"){
+          a.ptsBeforeCoins=a.pts;
+          a.pts=st.pts;
+        }
+      } else if(typeof a.ptsBeforeCoins==="number"){
+        if(a.pts===st.pts) a.pts=a.ptsBeforeCoins;
+        delete a.ptsBeforeCoins;
+      }
+    });
+  }
   // Mints one scannable code per denomination, positive and negative, the first
   // time a rebbi lands in Shulchani Mode. Runs ONCE (data.shulchaniCoinsSeeded)
   // and is purely additive: nothing existing is renamed, re-valued or removed,
   // and switching back to points never deletes what this made — the codes carry
   // a.coin and are simply scoped out of the other mode by actInCurrentMode().
   //
-  // revalueStarters is false on the load-time backfill for a rebbi ALREADY in
-  // Shulchani Mode: he has been scanning with whatever his activities are worth,
-  // and quietly changing their values under him on a routine load is not a thing
-  // to do. Only a deliberate switch into the mode — where the dialog has already
-  // said balances are changing — re-values the untouched starters.
-  function seedShulchaniCoinCodes(revalueStarters){
+  // Minting is all this does now. The starter re-value moved out to
+  // applyStarterValuesForMode(), because the two have different lifetimes:
+  // the codes are minted once and kept, the values have to follow every
+  // switch. Callers run both — mint once, re-value each time.
+  function seedShulchaniCoinCodes(){
     if(data.shulchaniCoinsSeeded) return;
     data.shulchaniCoinsSeeded=true;
-    if(revalueStarters){
-      data.activities.forEach(function(a){
-        var st=SHULCHANI_STARTER_VALUES[a.id];
-        if(st && !a.tracked && a.name===st.name && a.pts===1) a.pts=st.pts;
-      });
-    }
     // Largest-first, the same order COINS uses on every other surface, each
     // denomination's give/take pair kept together. Deductions seed hidden:
     // fourteen tiles is more than the Record tab wants, and taking a Darkon
@@ -8241,9 +8288,10 @@ function setupRoster() {
       data.scores={}; data.log=[];
     }
     data.shulchaniMode=newMode;
-    // Set the mode FIRST: seeding pushes a "Coins" section and re-values the
-    // starters, and both read isShulchani() on the way through.
-    if(newMode) seedShulchaniCoinCodes(true);
+    // Set the mode FIRST: seeding pushes a "Coins" section, and it reads
+    // isShulchani() on the way through.
+    applyStarterValuesForMode(newMode);
+    if(newMode) seedShulchaniCoinCodes();
     save();
     $("shulchaniModal").style.display="none";
     $("shulchaniConvert").style.display="none";
@@ -8589,7 +8637,7 @@ function setupRoster() {
         $("shulchaniClear").onclick=function(){ doShulchaniSwitch(false, false); };
         $("shulchaniModal").style.display="flex";
       } else {
-        data.shulchaniMode=false; save();
+        data.shulchaniMode=false; applyStarterValuesForMode(false); save();
         renderShulchaniStatus(); renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities(); renderActButtons();
       }
       return;
@@ -8604,7 +8652,7 @@ function setupRoster() {
       $("shulchaniClear").onclick=function(){ doShulchaniSwitch(true, false); };
       $("shulchaniModal").style.display="flex";
     } else {
-      data.shulchaniMode=true; seedShulchaniCoinCodes(true); save();
+      data.shulchaniMode=true; applyStarterValuesForMode(true); seedShulchaniCoinCodes(); save();
       renderShulchaniStatus(); renderRecent(); renderScanBoard(); renderTapPanel(); renderActivities(); renderActButtons();
     }
   });
@@ -20852,6 +20900,164 @@ nameLine
   // now that step 1 has a fully offline-capable fallback) — same as the
   // existing "QR codes need an internet connection this one time" note
   // elsewhere in the app.
+  /* ---------- Automatic folder backup (File System Access) ---------------
+   *
+   * THE ONE AUTOMATIC BACKUP A NEVER-ONLINE REBBI CAN HAVE. The Sheet needs
+   * internet; the Drive backup will need internet and an account. A rebbi on
+   * the downloaded offline copy has neither, and exactly one copy of his year
+   * on one machine. This writes a real file to a real folder — a USB stick
+   * left plugged in, or just his Documents — with no network at all.
+   *
+   * MEASURED, NOT ASSUMED, and the measurement went against the prediction
+   * (spikes/offline-capability-probe.html, 2026-08-10). On a genuine file://
+   * page — how most offline rebbeim open the app — showDirectoryPicker() is
+   * available, the directory handle survives a close-and-reopen in IndexedDB,
+   * and queryPermission() comes back "granted" with NO prompt. Chrome's own
+   * docs say a site is re-prompted once its tabs close, so this was expected
+   * to be a dead end. It is not.
+   *
+   * NO DATA-MODEL CHANGE, DELIBERATELY. The handle lives in IndexedDB and the
+   * only thing written to `data` is the existing lastBackupAt stamp. So there
+   * is no new field, no load2fix backfill and no DATA_VERSION bump — this
+   * feature cannot corrupt a save because it never reshapes one.
+   *
+   * ONE FILE PER DAY. Same name within a day (so a day's repeated writes just
+   * overwrite each other) and a new name tomorrow, which turns the folder into
+   * a week of history rather than one file that overwrites the only copy.
+   * That is the Contest lesson: never let the sole record be the thing you
+   * keep writing over.
+   */
+  var FB_DB="menchmarkBackupFS", FB_STORE="handles", FB_KEY="dir";
+  var fbHandle=null, fbBusy=false;
+  /* "Has anything changed since the last folder write?", counted rather than
+   * timed. The closing write used to be skipped for 60 seconds after any other
+   * write, which sounds like a debounce but silently dropped the commonest
+   * session there is: open the app, take attendance, close it — under a minute,
+   * so the write the card promises on closing never happened. Nothing was lost
+   * (localStorage still had it, and the next open writes it), but the folder
+   * copy sat a whole session behind, which is exactly the copy a rebbi falls
+   * back on when the machine is the thing that broke.
+   *
+   * A counter, not a boolean, because the write is async: we record which
+   * revision actually reached the disk, so a scan that lands mid-write leaves
+   * the app correctly dirty instead of being marked saved by a write that
+   * never contained it. Flicking between tabs still writes nothing, which was
+   * the point of the original rate limit. */
+  var fbSaveSeq=0, fbWrittenSeq=-1;
+  function fbSupported(){ return typeof window.showDirectoryPicker==="function" && typeof indexedDB!=="undefined"; }
+  function fbIdb(){
+    return new Promise(function(res,rej){
+      var r=indexedDB.open(FB_DB,1);
+      r.onupgradeneeded=function(){ r.result.createObjectStore(FB_STORE); };
+      r.onsuccess=function(){ res(r.result); };
+      r.onerror=function(){ rej(r.error); };
+    });
+  }
+  function fbSaveHandle(h){
+    return fbIdb().then(function(db){ return new Promise(function(res,rej){
+      var t=db.transaction(FB_STORE,"readwrite"); t.objectStore(FB_STORE).put(h,FB_KEY);
+      t.oncomplete=function(){res();}; t.onerror=function(){rej(t.error);};
+    });});
+  }
+  function fbLoadHandle(){
+    return fbIdb().then(function(db){ return new Promise(function(res,rej){
+      var t=db.transaction(FB_STORE,"readonly"), q=t.objectStore(FB_STORE).get(FB_KEY);
+      q.onsuccess=function(){ res(q.result||null); }; q.onerror=function(){rej(q.error);};
+    });});
+  }
+  function fbClearHandle(){
+    return fbIdb().then(function(db){ return new Promise(function(res,rej){
+      var t=db.transaction(FB_STORE,"readwrite"); t.objectStore(FB_STORE)["delete"](FB_KEY);
+      t.oncomplete=function(){res();}; t.onerror=function(){rej(t.error);};
+    });});
+  }
+  function fbStatus(msg, tone){
+    var el=$("folderBackupStatus"); if(!el) return;
+    el.textContent=msg||"";
+    el.style.color = tone==="bad" ? "var(--bad)" : tone==="good" ? "var(--good)" : "var(--muted)";
+    if($("folderBackupNow")) $("folderBackupNow").style.display = fbHandle ? "" : "none";
+    if($("folderBackupStop")) $("folderBackupStop").style.display = fbHandle ? "" : "none";
+    if($("folderBackupPick")) $("folderBackupPick").textContent = fbHandle ? "Choose a different folder" : "Choose a folder";
+  }
+  function fbFileName(){ return "menchmark-backup-"+todayKey()+".json"; }
+  /* Writes the same JSON the Download button produces, so a folder backup and a
+   * downloaded one are the same thing and restore through the same path.
+   * `silent` suppresses the success line for the automatic writes, which should
+   * not shout every time the app opens. */
+  function fbWrite(silent){
+    if(!fbHandle || fbBusy) return Promise.resolve(false);
+    fbBusy=true;
+    // Captured BEFORE the write starts: this is the revision these bytes
+    // contain. Anything saved while the write is in flight bumps fbSaveSeq
+    // past it and correctly leaves the app dirty for the next write.
+    var seq=(fbSaveSeq||0);
+    return fbHandle.getFileHandle(fbFileName(),{create:true})
+      .then(function(fh){ return fh.createWritable(); })
+      .then(function(w){
+        return w.write(JSON.stringify(data)).then(function(){ return w.close(); });
+      })
+      .then(function(){
+        fbWrittenSeq=seq;
+        // A folder backup IS a restorable backup, so it stamps lastBackupAt and
+        // quiets the staleness nudge — unlike the CSV exports, which are reports.
+        markBackedUp();
+        // Guarded for the same reason as the catch below, and it matters more
+        // here: the bytes are already on disk by this point, so letting a
+        // broken status line throw would drop us into the failure branch and
+        // tell the rebbi nothing was backed up when it just was.
+        try{
+          if(!silent) fbStatus("Backed up to “"+fbHandle.name+"” just now.", "good");
+          else fbStatus("Backing up automatically to “"+fbHandle.name+"”. Last saved just now.", "good");
+        }catch(_){}
+        return true;
+      })
+      .catch(function(e){
+        // The realistic failures are an unplugged USB stick, a folder that was
+        // deleted or renamed, and a school policy revoking access. All three
+        // must be visible: a backup that stopped without saying so is worse
+        // than one that was never set up.
+        try{
+          fbStatus("Could not write to that folder ("+(e&&e.name||e)+"). Your data is safe here, but nothing is being backed up — choose a folder again, or use “Download backup file”.", "bad");
+        }catch(_){}
+        return false;
+      })
+      // CLEARED IN BOTH DIRECTIONS, and that is the point of the shape here.
+      // fbBusy is the guard that stops two writes overlapping, so anything that
+      // leaves it stuck true disables every later backup for the rest of the
+      // session — and disables it SILENTLY, since fbWrite() returns before it
+      // can say anything. That is the one failure this card promises cannot
+      // happen. A lone .then() only runs on success, so a throw inside the
+      // .catch above (or anywhere after it) used to latch the guard on forever;
+      // the reject arm below closes that, and the try/catch in the handler
+      // means a broken status line can't take the backup down with it.
+      // Resolves false rather than rethrowing: every caller treats this as
+      // "did it write?", and most call it as a bare statement (startup, the
+      // visibility write, the two buttons), so a rethrow here would surface as
+      // an unhandled rejection in a rebbi's console for a case the .catch above
+      // has already reported on screen.
+      .then(function(r){ fbBusy=false; return r; },
+            function(){ fbBusy=false; return false; });
+  }
+  // Re-attaches a folder chosen in an earlier session, but ONLY if the
+  // permission is still granted without prompting. Asking on startup would be
+  // exactly the nagging this feature exists to remove.
+  function fbInit(){
+    if(!fbSupported()) return;
+    var card=$("folderBackupCard"); if(card) card.style.display="";
+    fbLoadHandle().then(function(h){
+      if(!h) { fbStatus("Not set up yet — choose a folder and Menchmark does the rest.", ""); return; }
+      if(!h.queryPermission) { fbHandle=h; fbStatus("Folder remembered: “"+h.name+"”.", ""); return; }
+      return h.queryPermission({mode:"readwrite"}).then(function(p){
+        if(p==="granted"){
+          fbHandle=h;
+          fbStatus("Backing up automatically to “"+h.name+"”.", "good");
+          fbWrite(true);
+        } else {
+          fbStatus("Menchmark still remembers the folder “"+h.name+"”, but this browser is asking for permission again. Press “Choose a folder” and pick it once more.", "bad");
+        }
+      });
+    }).catch(function(){ fbStatus("", ""); });
+  }
   var QR_CDN_URL="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
   // Records WHICH downloaded copy seeded this browser. Deliberately a separate
   // key rather than a field inside `data`: it describes the file, not the class,
@@ -20868,6 +21074,62 @@ nameLine
       return "<!doctype html>\n"+docClone.outerHTML;
     });
   }
+  if($("folderBackupPick")) $("folderBackupPick").addEventListener("click", function(){
+    if(!fbSupported()){ fbStatus("This browser cannot save straight to a folder. Use “Download backup file” instead.", "bad"); return; }
+    window.showDirectoryPicker({mode:"readwrite"}).then(function(h){
+      fbHandle=h;
+      /* Three outcomes, kept apart on purpose — an earlier version collapsed
+       * them and could show "could not use that folder" in red while the
+       * buttons underneath said it was working. Remembering the folder and
+       * writing to it are separate things and fail separately:
+       *   picker refused   -> not set up at all (the catch below)
+       *   cannot REMEMBER  -> works today, gone tomorrow. Say exactly that.
+       *   cannot WRITE     -> fbWrite's own message.
+       */
+      return fbSaveHandle(h).then(function(){
+        return fbWrite(false);
+      }, function(){
+        return fbWrite(false).then(function(ok){
+          if(ok) fbStatus("Backed up to “"+h.name+"” — but this browser would not let Menchmark remember the folder, so you will have to choose it again next time.", "bad");
+        });
+      });
+    }).catch(function(e){
+      // A cancelled picker is not an error and must not look like one.
+      if(e && (e.name==="AbortError")) return;
+      fbHandle=null;
+      fbStatus("Could not use that folder ("+(e&&e.name||e)+").", "bad");
+    });
+  });
+  if($("folderBackupNow")) $("folderBackupNow").addEventListener("click", function(){ fbWrite(false); });
+  if($("folderBackupStop")) $("folderBackupStop").addEventListener("click", function(){
+    // Only forgets where to write. Never touches the files already in the
+    // folder — those are the rebbi's backups, not ours to clean up.
+    fbHandle=null;
+    fbClearHandle()["catch"](function(){});
+    fbStatus("Stopped. The backups already in that folder are untouched.", "");
+  });
+
+  /* The second of the two automatic writes: when the app is hidden — the tab
+   * closed, the laptop shut, the rebbi switching away at the end of a period.
+   * visibilitychange rather than beforeunload, because an async file write is
+   * not reliably allowed during unload.
+   *
+   * Skipped only when nothing has changed since the last write, so flicking
+   * between tabs still costs nothing — but a short session that actually did
+   * something is never skipped, which a plain time-based limit got wrong.
+   *
+   * BEST-EFFORT BY NATURE, and worth being honest about: on a real tab close
+   * the page can be torn down before an async file write finishes, so this is
+   * the write that MIGHT not land. The open-time write in fbInit() is the one
+   * carrying this feature — it always runs, and it always contains everything
+   * the previous session did. This one just narrows the window. */
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState!=="hidden") return;
+    if(!fbHandle) return;
+    if(fbWrittenSeq===(fbSaveSeq||0)) return;
+    fbWrite(true);
+  });
+
   $("offlineDownloadBtn").addEventListener("click", function(){
     var btn=this, statusEl=$("offlineDownloadStatus");
     var origText=btn.textContent;
@@ -21591,11 +21853,38 @@ nameLine
     if(typeof data.shulchaniMode!=="boolean") data.shulchaniMode=false;
     if(typeof data.shulchaniCoinsSeeded!=="boolean") data.shulchaniCoinsSeeded=false;
     // A rebbi ALREADY in Shulchani Mode before coin codes existed never passes
-    // through the mode switch again, so he would never get them. Seed here too —
-    // but with revalueStarters false: he has been scanning with whatever his
-    // activities are worth, and a routine load is not the moment to change that
-    // under him. Additive either way; nothing existing is renamed or removed.
-    if(data.shulchaniMode && !data.shulchaniCoinsSeeded) seedShulchaniCoinCodes(false);
+    // through the mode switch again, so he would never get them. Seed here too.
+    // Minting only — a routine load never re-values anything, which is why the
+    // starter values are applied at the switch and not here.
+    if(data.shulchaniMode && !data.shulchaniCoinsSeeded) seedShulchaniCoinCodes();
+    // One-shot: stamp the starters that the OLD seeding re-valued before
+    // a.ptsBeforeCoins existed, so they can be restored on the way back out.
+    // Without this the restore only helps rebbeim who enter Shulchani Mode
+    // from here on — everyone the one-way re-value already hit stays stuck at
+    // 8/32/32 in points mode, which is the whole bug.
+    //
+    // Deliberately narrow. It only fires for a save that has actually been
+    // through seeding (shulchaniCoinsSeeded), and only on an activity still
+    // sitting at EXACTLY the value seeding would have set — which is the one
+    // state the old code could have produced, since it only ever re-valued an
+    // activity worth 1. A rebbi who has since changed the number is not
+    // touched, and nothing is stamped twice.
+    //
+    // The residual risk is a rebbi who set one of these to 8/32 by hand and
+    // would rather keep it: he gets it restored to 1 on a future switch back
+    // to points, and has to type his number again. That is a visible, one-
+    // field, self-correcting outcome — against leaving every affected rebbi
+    // permanently mis-valued with no way back. No value is changed HERE; this
+    // only records what to put back later.
+    if(typeof data.shulchaniStarterStamped!=="boolean") data.shulchaniStarterStamped=false;
+    if(data.shulchaniCoinsSeeded && !data.shulchaniStarterStamped){
+      data.activities.forEach(function(a){
+        var st=SHULCHANI_STARTER_VALUES[a.id];
+        if(!st || a.tracked || a.name!==st.name) return;
+        if(a.pts===st.pts && typeof a.ptsBeforeCoins!=="number") a.ptsBeforeCoins=1;
+      });
+    }
+    data.shulchaniStarterStamped=true;
     if(typeof data.showPrutot!=="boolean") data.showPrutot=false;
     if(typeof data.snackSeconds!=="number" || data.snackSeconds<=0) data.snackSeconds=420;
     // What the floating timer opens at. Purely additive: 300 is the value the
@@ -22364,6 +22653,13 @@ nameLine
   // two buttons and by markBackedUp().
   setTimeout(function(){
     try{ maybeShowBackupNudge(); }catch(e){}
+    // Re-attaches a previously chosen backup folder and writes today's file.
+    // AFTER the nudge on purpose: if the folder is still connected, fbWrite()
+    // stamps lastBackupAt and hides the bar a moment later, so a rebbi who is
+    // already protected sees it disappear rather than never seeing it. If the
+    // folder is gone, the nudge correctly stays up. Wrapped because a broken
+    // IndexedDB must never stop the app booting.
+    try{ fbInit(); }catch(e){}
   }, 1200);
 })();
 
