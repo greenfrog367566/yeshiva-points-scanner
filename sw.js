@@ -50,6 +50,13 @@ self.addEventListener("fetch", function(event){
   // Never touch cross-origin traffic — Sheets sync, AI proxy, Sefaria, etc.
   if(url.origin !== self.location.origin) return;
 
+  // version.json is the update check's answer and must never come from cache.
+  // The cache-first branch below would otherwise pin it to whatever was true
+  // the first time it was fetched, so the app would keep reporting itself up
+  // to date forever — the exact failure the check exists to catch. Straight to
+  // the network; if that fails the check fails silent, which is intended.
+  if(url.pathname.indexOf("/version.json") >= 0) return;
+
   var isHTML = req.mode === "navigate" ||
     (req.headers.get("accept") || "").indexOf("text/html") >= 0;
 

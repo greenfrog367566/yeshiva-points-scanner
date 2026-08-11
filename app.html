@@ -173,6 +173,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      refused. Same slot, same shape. */
   #storageWarn{display:none;background:var(--bad-soft);color:#7c2d1c;border:1px solid #e3bdb5;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem}
   #storageWarn b{color:#5e1f12}
+  /* notice() — the non-blocking replacement for alert(). A fixed stack at the
+     top of the viewport: nothing behind it stops running, which is the entire
+     point — a native alert() halts every timer, scan handler and animation in
+     the app until someone walks to the screen and clicks it. */
+  #noticeStack{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:100000;display:flex;flex-direction:column;gap:8px;width:min(480px,calc(100vw - 32px));pointer-events:none}
+  .notice-card{pointer-events:auto;display:flex;align-items:flex-start;gap:12px;background:#fff;color:var(--ink);border:1px solid var(--line);border-left:4px solid var(--brass);border-radius:12px;padding:12px 14px;box-shadow:0 8px 28px rgba(20,26,40,.22);font-size:.92rem}
+  .notice-card .notice-msg{white-space:pre-line;flex:1;overflow-wrap:anywhere}
+  .notice-card .notice-ok{flex:0 0 auto}
   /* Backup staleness nudge. Shares #saveWarn's slot at the top of <main> so it
      shows on whichever tab is open, but amber rather than red — nothing is
      broken, it is a reminder. Hidden by default; shown only by maybeShowBackupNudge(). */
@@ -188,6 +196,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #offlineSeedWarn.show{display:flex}
   #offlineSeedWarn b{color:#4d3706}
   #offlineSeedWarn .os-spacer{flex:1 1 auto}
+  /* Two-windows notice — amber like #backupNudge: nothing is broken, but the
+     rebbi should know a second window is writing to the same class. Carries its
+     own print-hide rule rather than joining the shared no-print line. */
+  #multiTabWarn{display:none;background:#fdf6e3;color:#6b4d09;border:1px solid #ecd9a4;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem;align-items:center;gap:12px;flex-wrap:wrap}
+  #multiTabWarn b{color:#4d3606}
+  #multiTabWarn span{flex:1;min-width:200px}
+  @media print{ #multiTabWarn{display:none!important} }
 
   /* ======= SCAN VIEW ======= */
   .scan-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start}
@@ -1362,7 +1377,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* print */
   @media print{
     @page{size:letter;margin:0}
-    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.fab-btn,.view-note,.toolbar,.no-print,#saveWarn,#storageWarn,#backupNudge,.pill-note,#globalScanBar{display:none!important}
+    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.fab-btn,.view-note,.toolbar,.no-print,#saveWarn,#storageWarn,#backupNudge,.pill-note,#globalScanBar,#noticeStack{display:none!important}
     body{background:#fff}
     main{max-width:none;padding:0}
     .view{display:none!important}
@@ -1808,7 +1823,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div class="fs-body" id="fsBody">
     <div class="fs-acts" id="fsActs"></div>
     <div class="toolbar" style="margin:0 0 8px;gap:6px">
-      <input id="fsCustomAmt" type="number" min="0" step="1" value="1" class="field" style="width:56px;text-align:center;flex:0 0 auto">
+      <input id="fsCustomAmt" type="number" min="0" max="1000" step="1" value="1" class="field" style="width:56px;text-align:center;flex:0 0 auto">
       <button class="btn btn-sm" id="fsCustomAdd">+Custom</button>
       <button class="btn btn-sm" id="fsCustomSub">−Custom</button>
       <span class="grow"></span>
@@ -1913,6 +1928,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
        hidden until then; shares #saveWarn's slot so it shows on whichever tab
        is open. -->
   <div id="storageWarn"></div>
+  <div id="multiTabWarn"></div>
 
   <div id="backupNudge">
     <span id="backupNudgeText"></span>
@@ -1978,7 +1994,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <div class="custom-row">
             <div>
               <label class="lbl">Custom amount</label>
-              <input type="number" id="customAmt" class="field" value="1" min="0" step="1">
+              <input type="number" id="customAmt" class="field" value="1" min="0" max="1000" step="1">
             </div>
             <button class="act-btn" id="customAdd" type="button">
               <span class="an">Custom (add)</span>
@@ -4705,6 +4721,81 @@ function setupRoster() {
     fbSaveSeq=(fbSaveSeq||0)+1;
     scheduleAutoSnapshot();
   }
+  /* ---------- CROSS-TAB ADOPTION ---------- */
+  /* Two open windows used to destroy each other's scans, silently. save()
+   * writes the WHOLE data blob from this tab's memory, and nothing here ever
+   * listened for the other tab's writes — so a window opened at 9:00 that
+   * scanned at 9:05 wrote its 9:00 memory back over everything the other
+   * window had recorded in between. Proven live: scan in tab A, scan in tab B,
+   * and A's scan is gone from storage with no error in either tab. Desktop
+   * plus smartboard, or a leftover morning tab, is all it takes.
+   *
+   * The browser's "storage" event is the fix: it fires in every OTHER tab on
+   * the origin when one tab writes (never in the writer itself, so there is no
+   * loop). On that event this tab ADOPTS the newer blob — the same
+   * migrate-then-rerender the restore-from-backup path has always done, minus
+   * its save(): storage already holds exactly this content, and writing it
+   * back would just ping the other tab for nothing. After adopting, this tab's
+   * next save is built on top of the other tab's scans instead of over them.
+   *
+   * What this deliberately does NOT do:
+   * - merge simultaneous writes. Two scans inside the same instant still race,
+   *   and the loser's entry is dropped; only the Firestore rebuild's
+   *   incremental writes truly end that. This closes the everyday case — a
+   *   stale tab clobbering hours of another tab's work.
+   * - adopt an external CLEAR (newValue null). "Clear all data" is
+   *   type-to-confirm in the tab where it happens; a background tab wiping its
+   *   own memory in sympathy, mid-lesson, is not recoverable enough to do
+   *   automatically. The banner is shown and this tab keeps working.
+   * Both tabs also get a persistent amber banner saying a second window is
+   * open — in step now, but one window at a time is still the honest advice.
+   */
+  function showMultiTabWarn(){
+    var box=document.getElementById("multiTabWarn");
+    if(!box || box.dataset.dismissed==="1") return;
+    if(!box.firstChild){
+      var msg=document.createElement("span");
+      msg.innerHTML="<b>Menchmark is open in another window or tab as well.</b> "
+        + "The two now keep each other up to date, so scans made in either one are kept — "
+        + "but scanning from one window at a time is still the safest way to work.";
+      var ok=document.createElement("button");
+      ok.className="btn btn-sm"; ok.textContent="OK";
+      ok.addEventListener("click", function(){ box.style.display="none"; box.dataset.dismissed="1"; });
+      box.appendChild(msg); box.appendChild(ok);
+    }
+    box.style.display="flex";
+  }
+  window.addEventListener("storage", function(e){
+    if(e.key!==KEY) return;
+    if(!canSave) return; // startup already decided storage here is unusable; don't fight it
+    showMultiTabWarn();
+    if(!e.newValue) return; // external clear — warn only, never auto-wipe a working tab
+    try{
+      // Read storage itself rather than e.newValue: if several writes landed
+      // quickly, this adopts the newest state however many events are queued.
+      var raw=localStorage.getItem(KEY);
+      if(!raw) return;
+      var incoming=JSON.parse(raw);
+      // Same shape guard load() applies to a raw blob.
+      if(!incoming || typeof incoming!=="object" || Array.isArray(incoming)) return;
+      data=migrateData(incoming); load2fix();
+      // The restore-from-backup re-render list, minus its save().
+      $("schoolName").textContent=data.school;
+      $("bunkName").textContent=data.className;
+      $("sheetUrl").value=data.sheetUrl||"";
+      $("autoSheet").checked=(data.autoSheet!==false);
+      renderActButtons(); renderRecent(); renderStudents(); renderActivities();
+      renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
+      showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
+      if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
+      renderShulchaniStatus();
+      refreshLiveViews();
+      if(typeof refreshTrackedBadges==="function") refreshTrackedBadges();
+    }catch(err){
+      // A malformed write from elsewhere must never crash a healthy tab; the
+      // banner is already up, and this tab's own data is untouched.
+    }
+  });
   // Shown when a save had to give something up, or could not happen at all.
   // Deliberately a banner and not an alert(): save() runs on every scan, and a
   // modal per scan would be unusable exactly when the rebbi is mid-lesson. Sits
@@ -4720,6 +4811,46 @@ function setupRoster() {
         + "Nothing else was lost — the roster, every score and today’s marks all saved normally. "
         + "Those older entries are still on the Log tab of your Google Sheet if you have been syncing.";
     box.style.display="block";
+  }
+
+  /* notice(msg) — what alert(msg) should have been in a classroom app.
+   *
+   * A native alert() is MODAL FOR THE WHOLE PAGE: every timer, the wheel
+   * mid-spin, the scan handler a wedge scanner is firing into — all of it
+   * freezes until someone physically reaches the screen and clicks OK. On a
+   * projector or smartboard that someone is the rebbi, mid-lesson. So every
+   * informational alert() in the app now comes through here instead: a card at
+   * the top of the screen with an OK button, auto-dismissing after 12 seconds,
+   * stacking if several arrive at once, and stopping NOTHING.
+   *
+   * The one semantic difference from alert(): code after notice() runs
+   * immediately rather than after the click. Every converted site was checked
+   * for that — each either return;s straight after or only does cleanup that
+   * never needed the user to have read the message first. confirm() and
+   * prompt() are NOT touched here; they return answers, and their callers
+   * are written around that answer arriving synchronously.
+   */
+  var noticeStackEl=null;
+  function notice(msg){
+    if(!noticeStackEl){
+      noticeStackEl=document.createElement("div");
+      noticeStackEl.id="noticeStack";
+      document.body.appendChild(noticeStackEl);
+    }
+    var card=document.createElement("div");
+    card.className="notice-card";
+    card.setAttribute("role","alert");
+    var txt=document.createElement("div");
+    txt.className="notice-msg";
+    txt.textContent=String(msg);
+    var ok=document.createElement("button");
+    ok.className="btn btn-sm notice-ok";
+    ok.textContent="OK";
+    var t=setTimeout(dismiss, 12000);
+    function dismiss(){ clearTimeout(t); if(card.parentNode) card.parentNode.removeChild(card); }
+    ok.addEventListener("click", dismiss);
+    card.appendChild(txt); card.appendChild(ok);
+    noticeStackEl.appendChild(card);
   }
 
   /* ---------- helpers ---------- */
@@ -4775,6 +4906,25 @@ function setupRoster() {
   }
   function nextActId(){ var n=1; var used={}; data.activities.forEach(function(a){used[a.id]=1;}); while(used["a"+n]) n++; return "a"+n; }
   function studentById(id){ id=(id||"").trim().toUpperCase(); for(var i=0;i<data.students.length;i++){ if(data.students[i].id.toUpperCase()===id) return data.students[i]; } return null; }
+  // Case-insensitive exact-name lookup — for warning about duplicates, never
+  // for routing anything: a name is a label, only an id identifies a student.
+  function studentByName(name){
+    var key=(name||"").trim().toLowerCase();
+    if(!key) return null;
+    for(var i=0;i<data.students.length;i++){ if(data.students[i].name.trim().toLowerCase()===key) return data.students[i]; }
+    return null;
+  }
+  // One length rule for every door a name comes in through (Add, Rename, the
+  // paste importer). 80 is far past any real name — the cap exists because a
+  // barcode burst or a pasted paragraph landing in the name box used to become
+  // a "student" whose name was wider than the page, and every list in the app
+  // stretched to fit it.
+  var STUDENT_NAME_MAX=80;
+  function studentNameOk(name){
+    if(name.length<=STUDENT_NAME_MAX) return true;
+    alert("That name is "+name.length+" characters — names are capped at "+STUDENT_NAME_MAX+".\n\nIf a scan or a paste landed in the name box, clear it and type the name.");
+    return false;
+  }
   // Every list of students sorts alphabetically by last name, then first name
   // — the displayed name itself is untouched ("First Last"), this only
   // controls sort order. A single-word name (no space) sorts on itself as-is.
@@ -6486,7 +6636,7 @@ function setupRoster() {
     var a=actById(actId);
     if(!a){ flash(false,"No tracked activity selected","",""); beep(false); return; }
     var count=data.trackerLog.filter(function(e){ return e.actId===actId; }).length;
-    if(!count){ alert("\u201C"+a.name+"\u201D has no logged entries to reset."); return; }
+    if(!count){ notice("\u201C"+a.name+"\u201D has no logged entries to reset."); return; }
     /* THE DIALOG HAD TO CHANGE IN THE SAME BREATH AS THE CODE BELOW IT.
      *
      * Until now this wiped one store and the Gradebook could not see it either
@@ -7405,16 +7555,18 @@ function setupRoster() {
   $("fsClose").addEventListener("click", function(){ if(pipWin && pipPanelId==="floatScan"){ pipWin.close(); } else { fpToggle(false); } });
   $("fsMin").addEventListener("click", function(){ $("floatScan").classList.toggle("min"); });
   $("fsCompact").addEventListener("click", function(){ data.fpCompact=!data.fpCompact; save(); this.classList.toggle("on", data.fpCompact); fpRenderNames(); });
-  $("fsCustomAdd").addEventListener("click", function(){
-    var n=Math.abs(parseInt($("fsCustomAmt").value,10)||0);
-    fpCustomAct={label:"Custom", delta:n}; fpRenderActs();
-    fpFlash(true, "Now scoring: Custom  "+fmt(n)); beep(true);
-  });
-  $("fsCustomSub").addEventListener("click", function(){
-    var n=Math.abs(parseInt($("fsCustomAmt").value,10)||0);
-    fpCustomAct={label:"Custom", delta:-n}; fpRenderActs();
-    fpFlash(true, "Now scoring: Custom  "+fmt(-n)); beep(true);
-  });
+  // Same guard as armCustom(): junk in the box must not arm Custom 0, and the
+  // box always ends up showing the number that was actually armed.
+  function fpArmCustom(sign){
+    var f=$("fsCustomAmt");
+    var n=normCustomAmt(f.value);
+    if(n>0) lastGoodCustomAmt=n; else n=lastGoodCustomAmt;
+    f.value=n;
+    fpCustomAct={label:"Custom", delta:sign*n}; fpRenderActs();
+    fpFlash(true, "Now scoring: Custom  "+fmt(sign*n)); beep(true);
+  }
+  $("fsCustomAdd").addEventListener("click", function(){ fpArmCustom(1); });
+  $("fsCustomSub").addEventListener("click", function(){ fpArmCustom(-1); });
   $("fsCustomAmt").addEventListener("focus", function(){ this.select(); });
   $("fsUndo").addEventListener("click", function(){
     if(!fpLastLogId){ fpFlash(false,"Nothing to undo yet"); beep(false); return; }
@@ -9829,7 +9981,8 @@ function setupRoster() {
       var pcs=studentById(pcsid);
       if(!pcs){ flash(false,"Unknown personal code","","\u201C"+code+"\u201D"); beep(false); return; }
       var camt=$("customAmt");
-      var n=Math.abs(parseInt(camt?camt.value:1,10)||0);
+      var n=normCustomAmt(camt?camt.value:1);
+      if(!(n>0)) n=lastGoodCustomAmt;
       awardWith(pcs, "Custom", n);
       return;
     }
@@ -10298,7 +10451,7 @@ function setupRoster() {
                  +sibs.length+" students at once.\n\nOK — undo all "+sibs.length
                  +"\nCancel — undo only this one")){
         var n=undoBatch(entry.batchId);
-        alert("Reversed "+n+" student"+(n===1?"":"s")+" — "+fmtDelta(-entry.delta)+" each for “"+entry.label+"”.");
+        notice("Reversed "+n+" student"+(n===1?"":"s")+" — "+fmtDelta(-entry.delta)+" each for “"+entry.label+"”.");
         return true;
       }
     }
@@ -10724,7 +10877,7 @@ function setupRoster() {
     var raw=prompt("Change points for this scan \u2014 \u201C"+entry.label+" / "+(studentById(entry.sid)||{name:entry.sid}).name+"\u201D  (current: "+(entry.delta>0?"+":"")+entry.delta+")  New value:", String(entry.delta));
     if(raw===null) return; // cancelled
     var newDelta=parseInt(raw,10);
-    if(isNaN(newDelta)){ alert("Please enter a whole number."); return; }
+    if(isNaN(newDelta)){ notice("Please enter a whole number."); return; }
     if(newDelta===entry.delta) return; // no change
     // Difference between new and old. A correction entry with diff reverses
     // the old value and installs the new one in a single net adjustment.
@@ -12216,7 +12369,8 @@ function setupRoster() {
     if(c==="CTRL:GIVEALL"){ giveArmedToAll(); return; }
     if(c==="CTRL:CUSTOM+" || c==="CTRL:CUSTOM-"){
       var camt2=$("customAmt");
-      var n2=Math.abs(parseInt(camt2?camt2.value:1,10)||0);
+      var n2=normCustomAmt(camt2?camt2.value:1);
+      if(!(n2>0)) n2=lastGoodCustomAmt;
       var neg2 = c==="CTRL:CUSTOM-";
       setArmed("Custom", neg2?-n2:n2);
       flash(true,"Now scoring","Custom  "+fmt(neg2?-n2:n2),"Scan a student next");
@@ -12304,7 +12458,7 @@ function setupRoster() {
 
     var body=el("div");
     body.appendChild(el("label","lbl","Points"));
-    var amtIn=el("input","field"); amtIn.type="number"; amtIn.min="0"; amtIn.step="1";
+    var amtIn=el("input","field"); amtIn.type="number"; amtIn.min="0"; amtIn.max="1000"; amtIn.step="1";
     var camt=$("customAmt");
     amtIn.value = camt ? camt.value : "1";
     amtIn.style.marginBottom="14px";
@@ -12314,7 +12468,8 @@ function setupRoster() {
     var addBtn=el("button","btn btn-primary","+ Add");
     var subBtn=el("button","btn btn-bad","− Subtract");
     function applyAmt(){
-      var n=Math.abs(parseInt(amtIn.value,10)||0);
+      var n=normCustomAmt(amtIn.value);
+      if(!(n>0)) n=lastGoodCustomAmt;
       if(camt) camt.value=n;
       return n;
     }
@@ -12447,10 +12602,24 @@ function setupRoster() {
     $("scanInput").focus();
   });
 
+  // ONE parse for every place a custom amount enters the app — the box itself,
+  // the two arm buttons, a PC: personal-code scan, a CTRL:CUSTOM QR, and the
+  // tap-panel's Give points dialog all go through here. It used to be the same
+  // bare Math.abs(parseInt(...)) copy-pasted at each site, which is how
+  // 999999999 became a legal award: nothing anywhere bounded the magnitude. The
+  // cap is deliberately generous — Shulchani balances are integer prutot, so a
+  // three-digit award is ordinary — but a fat-fingered extra digit or a barcode
+  // burst that survives as digits now tops out at something a rebbi can undo,
+  // not something that ends the class economy.
+  var CUSTOM_AMT_MAX=1000;
+  function normCustomAmt(raw){
+    var n=Math.abs(parseInt(raw,10)||0);
+    return n>CUSTOM_AMT_MAX ? CUSTOM_AMT_MAX : n;
+  }
   // custom amount — buttons behave like activity buttons (dataset.label/delta drives the
   // "armed" highlight in setArmed), with the live-typed amount kept in sync on every input.
   function syncCustomButtons(){
-    var n=Math.abs(parseInt($("customAmt").value,10)||0);
+    var n=normCustomAmt($("customAmt").value);
     var addBtn=$("customAdd"), subBtn=$("customSub");
     addBtn.dataset.label="Custom"; addBtn.dataset.delta=n;
     subBtn.dataset.label="Custom"; subBtn.dataset.delta=-n;
@@ -12473,8 +12642,14 @@ function setupRoster() {
   // the buttons and the next scan can never disagree with the box.
   function commitCustomAmt(){
     var f=$("customAmt");
-    var n=Math.abs(parseInt(f.value,10)||0);
-    if(n>0) lastGoodCustomAmt=n; else { n=lastGoodCustomAmt; f.value=n; }
+    var n=normCustomAmt(f.value);
+    if(n>0) lastGoodCustomAmt=n; else n=lastGoodCustomAmt;
+    // ALWAYS write the committed number back into the box — not only on the
+    // empty-box fallback. "-5", "007" and an over-cap amount all commit as
+    // something other than what was typed, and the box showing one number while
+    // the pill arms another is exactly the disagreement this function exists to
+    // prevent.
+    f.value=n;
     if(armed && armed.label==="Custom") setArmed("Custom", armed.delta<0 ? -n : n);
     syncCustomButtons();
   }
@@ -12488,7 +12663,7 @@ function setupRoster() {
     // every way out goes through commitCustomAmt(): Enter, leaving the field,
     // and the scan branch below.
     syncCustomButtons();
-    var n=Math.abs(parseInt(this.value,10)||0);
+    var n=normCustomAmt(this.value);
     if(n>0) lastGoodCustomAmt=n;
   });
   $("customAmt").addEventListener("focus", function(){ this.select(); });
@@ -12536,11 +12711,17 @@ function setupRoster() {
   // box. Scanning without touching the amount still works — see the burst
   // handling above, which is what makes leaving the cursor here safe.
   function armCustom(sign){
-    var n=Math.abs(parseInt($("customAmt").value,10)||0);
-    if(n>0) lastGoodCustomAmt=n;
+    var f=$("customAmt");
+    var n=normCustomAmt(f.value);
+    // A box holding "abc" (a scanner burst's leftovers) or "0" used to arm
+    // Custom 0 here — and a 0-point scan writes a log entry that moves no
+    // score, which is invisible on screen but still eats an "Undo last scan"
+    // press. Same fallback the commit path has always used.
+    if(n>0) lastGoodCustomAmt=n; else n=lastGoodCustomAmt;
+    f.value=n;
     setArmed("Custom", sign<0 ? -n : n);
     syncCustomButtons();
-    var f=$("customAmt"); f.focus(); f.select();
+    f.focus(); f.select();
   }
   $("customAdd").addEventListener("click", function(){ armCustom(1); });
   $("customSub").addEventListener("click", function(){ armCustom(-1); });
@@ -12903,7 +13084,7 @@ function setupRoster() {
     var startBtn=el("button","btn btn-primary","🏆 Start Contest"); startBtn.style.marginTop="4px"; startBtn.style.width="100%";
     startBtn.addEventListener("click", function(){
       var name=nameIn.value.trim();
-      if(!name){ alert("Give the contest a name first."); return; }
+      if(!name){ notice("Give the contest a name first."); return; }
       var startTs=new Date(startIn.value+"T00:00:00").getTime();
       var endTs;
       if(durMode==="week") endTs=startTs+7*24*60*60*1000;
@@ -12911,10 +13092,10 @@ function setupRoster() {
         var sd=new Date(startIn.value+"T00:00:00");
         endTs=new Date(sd.getFullYear(), sd.getMonth()+1, sd.getDate()).getTime();
       } else {
-        if(!endIn.value){ alert("Pick an end date."); return; }
+        if(!endIn.value){ notice("Pick an end date."); return; }
         endTs=new Date(endIn.value+"T23:59:59").getTime();
       }
-      if(endTs<=startTs){ alert("The end date needs to be after the start date."); return; }
+      if(endTs<=startTs){ notice("The end date needs to be after the start date."); return; }
       data.contest={id:newId(), name:name, startTs:startTs, endTs:endTs, mode:scoreMode, counting:true, ended:false, merged:false};
       save(); close();
       standRange="contest";
@@ -13562,7 +13743,7 @@ function setupRoster() {
             data.pastContests[idx2].merged=true;
             if(data.contest&&data.contest.id===cid) data.contest.merged=true;
             save();
-            alert("Merged "+result.entries+" scan"+(result.entries===1?"":"s")+" across "+result.students+" student"+(result.students===1?"":"s")+".");
+            notice("Merged "+result.entries+" scan"+(result.entries===1?"":"s")+" across "+result.students+" student"+(result.students===1?"":"s")+".");
             renderContestTab();
             if($("view-standings")&&$("view-standings").classList.contains("active")) renderStandings();
           });
@@ -13671,7 +13852,7 @@ function setupRoster() {
     var name=prompt("Name this contest — the boys will see it on the Contest tab.\n\nWhile it runs, the points you scan are held for the contest instead of going into anyone's score.", "Class Contest");
     if(name===null) return;                       // cancelled
     name=(name||"").trim();
-    if(!name){ alert("A contest needs a name."); return; }
+    if(!name){ notice("A contest needs a name."); return; }
     mcStart(name);
     renderContestTab();
     renderContestBanner();
@@ -13681,7 +13862,7 @@ function setupRoster() {
   $("mcMergeBtn").addEventListener("click", function(){
     var c=miniContestLive(); if(!c) return;
     var sum=mcSummary(c);
-    if(!sum.students){ alert("Nothing has been scanned into “"+c.name+"” yet, so there are no points to add. Use “Finish without adding points” to close it."); return; }
+    if(!sum.students){ notice("Nothing has been scanned into “"+c.name+"” yet, so there are no points to add. Use “Finish without adding points” to close it."); return; }
     if(!confirm(
       "Add “"+c.name+"” points to everyone’s scores and finish?\n\n"
       + sum.students+" student"+(sum.students===1?"":"s")+" · "+mcFmtPts(sum.points)+" will be added to their real scores now.\n\n"
@@ -13690,7 +13871,7 @@ function setupRoster() {
     )) return;
     var res=mcMergeAndClose();
     renderContestTab(); renderContestBanner(); renderScanBoard(); renderRecent(); refreshLiveViews();
-    alert("“"+res.name+"” finished. "+mcFmtPts(res.granted)+" added across "+res.students+" student"+(res.students===1?"":"s")+".");
+    notice("“"+res.name+"” finished. "+mcFmtPts(res.granted)+" added across "+res.students+" student"+(res.students===1?"":"s")+".");
   });
   $("mcDumpBtn").addEventListener("click", function(){
     var c=miniContestLive(); if(!c) return;
@@ -13704,7 +13885,7 @@ function setupRoster() {
     )) return;
     var res=mcDumpAndClose();
     renderContestTab(); renderContestBanner(); renderScanBoard(); renderRecent(); refreshLiveViews();
-    alert("“"+res.name+"” finished. No points were added to anyone’s score.");
+    notice("“"+res.name+"” finished. No points were added to anyone’s score.");
   });
 
   $("contestTabStartBtn").addEventListener("click", showStartContestModal);
@@ -13720,14 +13901,14 @@ function setupRoster() {
     var result=mergeContestIntoMain(data.contest.id);
     data.contest.merged=true;
     save();
-    alert("Merged "+result.entries+" scan"+(result.entries===1?"":"s")+" across "+result.students+" student"+(result.students===1?"":"s")+" into the regular score.");
+    notice("Merged "+result.entries+" scan"+(result.entries===1?"":"s")+" across "+result.students+" student"+(result.students===1?"":"s")+" into the regular score.");
     renderContestTab(); renderRecent(); renderScanBoard();
     if($("view-standings").classList.contains("active")) renderStandings();
   });
   $("contestTabSaveBtn").addEventListener("click", function(){
     if(!data.contest) return;
     saveContestToHistory(data.contest);
-    alert("\u201C"+data.contest.name+"\u201D saved to contest history.");
+    notice("\u201C"+data.contest.name+"\u201D saved to contest history.");
     renderPastContests();
   });
   $("contestTabClearBtn").addEventListener("click", function(){
@@ -13752,11 +13933,11 @@ function setupRoster() {
     var grp=$("resetPointsGroup").value, cls=data.currentClass;
     var scope = activeStudents().filter(function(s){ return !grp || s.group===grp; });
     var label = grp ? grp : (cls ? cls : "everyone shown (all classes)");
-    if(!scope.length){ alert("No students match the current filter."); return; }
+    if(!scope.length){ notice("No students match the current filter."); return; }
     if(!confirm("Reset spendable points to 0 for "+scope.length+" student"+(scope.length===1?"":"s")+" ("+label+")? Their lifetime Trends history is kept — this only zeroes their current balance, e.g. to start a fresh week.")) return;
     scope.forEach(function(s){ data.scores[s.id]=0; });
     save(); renderStandings(); renderScanBoard(); renderTapPanel();
-    alert("Points reset for "+scope.length+" student"+(scope.length===1?"":"s")+".");
+    notice("Points reset for "+scope.length+" student"+(scope.length===1?"":"s")+".");
   });
 
   /* ---------- PRINTABLE POINT CARDS ---------- */
@@ -14194,7 +14375,7 @@ function setupRoster() {
       spend.addEventListener("click", function(){
         var n=parseInt(inp.value,10)||0;
         if(n<=0){ inp.focus(); return; }
-        if(n>score(s.id)){ alert(s.name+" only has "+fmtScore(s.id)+" to spend."); return; }
+        if(n>score(s.id)){ notice(s.name+" only has "+fmtScore(s.id)+" to spend."); return; }
         data.raffle.entries[s.id]=(data.raffle.entries[s.id]||0)+n;
         data.scores[s.id]=score(s.id)-n;
         addLogEntry({ts:Date.now(),sid:s.id,label:"Raffle tickets",delta:-n});
@@ -14368,7 +14549,7 @@ function setupRoster() {
     return arr;
   }
   function auOpenDraw(pid){
-    if(auPrizeTotal(pid)<=0){ alert("No tickets have been placed on this prize yet."); return; }
+    if(auPrizeTotal(pid)<=0){ notice("No tickets have been placed on this prize yet."); return; }
     auDrawPid=pid; auSpinning=false;
     $("auDrawTitle").textContent=auPrizeLabel(auPrize(pid))||"Prize";
     $("auDrawResult").className="spin-result"; $("auDrawResult").innerHTML="";
@@ -14592,7 +14773,7 @@ function setupRoster() {
   $("auRemMode").addEventListener("change", function(){ curAu().remainderMode=this.value; save(); });
   $("auDivideOne").addEventListener("click", function(){ if(!auctionStudentId) return; auDivideEvenly(auctionStudentId); renderAuction(); });
   $("auDivideAll").addEventListener("click", function(){
-    if(!curAu().prizes.length){ alert("Add some prizes first."); return; }
+    if(!curAu().prizes.length){ notice("Add some prizes first."); return; }
     if(!confirm("Divide every student's tickets evenly across all prizes? This replaces their current ticket placements.")) return;
     data.students.forEach(function(s){ auDivideEvenly(s.id); }); renderAuction();
   });
@@ -14673,7 +14854,7 @@ function setupRoster() {
   $("trMode").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; trModeVal=b.dataset.tr; renderTrends(); });
   $("trStud").addEventListener("change", function(){ trStudId=this.value; renderTrends(); });
   $("trSendSheet").addEventListener("click", function(){
-    if(!(data.sheetUrl||"").trim()){ alert("Connect your Google Sheet first (Google Sheet tab)."); return; }
+    if(!(data.sheetUrl||"").trim()){ notice("Connect your Google Sheet first (Google Sheet tab)."); return; }
     var labels={};
     data.students.forEach(function(s){ var rec=(data.earned||{})[s.id]||{}; Object.keys(rec).forEach(function(L){ labels[L]=1; }); });
     var cols=Object.keys(labels).sort();
@@ -14687,7 +14868,7 @@ function setupRoster() {
     var header=["Name","Group","Current balance","Total earned"];
     cols.forEach(function(L){ header.push(L+" (times)"); header.push(L+" (pts)"); });
     pushToSheet({type:"totals", header:header, rows:rows});
-    alert("Totals sent — check the “Student Totals” tab in your sheet.");
+    notice("Totals sent — check the “Student Totals” tab in your sheet.");
   });
 
   /* ---------- PRIZE STORE ---------- */
@@ -15336,7 +15517,7 @@ function setupRoster() {
     save(); applyPesukMode();
   }
   function deleteTextSet(id){
-    if(id==="starter"){ alert("The starter set can't be deleted — import your own text set above to replace or supplement it."); return; }
+    if(id==="starter"){ notice("The starter set can't be deleted — import your own text set above to replace or supplement it."); return; }
     var s=null; for(var i=0;i<data.textSets.length;i++){ if(data.textSets[i].id===id) s=data.textSets[i]; }
     if(!s) return;
     if(!confirm("Delete the text set \""+s.label+"\"? Its testing marks and best times will be removed. (Your other sets are not affected.)")) return;
@@ -15427,7 +15608,7 @@ function setupRoster() {
     var s=null; for(var i=0;i<data.textSets.length;i++){ if(data.textSets[i].id===id) s=data.textSets[i]; }
     if(!s) return;
     var w=window.open("", "_blank");
-    if(!w){ alert("Please allow pop-ups for this site to print a handout."); return; }
+    if(!w){ notice("Please allow pop-ups for this site to print a handout."); return; }
     var esc=function(t){ return String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); };
     var body="";
     for(var n=s.from; n<=s.to; n++){
@@ -16639,7 +16820,7 @@ nameLine
   function newQuestion(){
     cancelGameAuto();
     var act=activeShorashim();
-    if(act.length<4){ alert("Mark at least 4 shorashim active (Words mode) for the corners game."); return; }
+    if(act.length<4){ notice("Mark at least 4 shorashim active (Words mode) for the corners game."); return; }
     var correct=shuffle(act)[0];
     var distract=shuffle(act.filter(function(s){return s.id!==correct.id;})).slice(0,3);
     gameQ={correct:correct, opts:shuffle([correct].concat(distract)), timer:null, t:gameSeconds()};
@@ -17158,11 +17339,11 @@ nameLine
     var name=(prompt("Name for this list:","")||" ").trim();
     if(!name) return;
     var included=activeStudents().filter(function(s){ return !data.spinnerExcluded[s.id]; });
-    if(!included.length){ alert("No students selected — check at least one name first."); return; }
+    if(!included.length){ notice("No students selected — check at least one name first."); return; }
     var list={id:"sl"+Date.now().toString(36), name:name, sids:included.map(function(s){ return s.id; }), savedTs:Date.now()};
     data.spinnerSavedLists.unshift(list);
     save();
-    alert("\u201C"+name+"\u201D saved with "+included.length+" student"+(included.length===1?"":"s")+".");
+    notice("\u201C"+name+"\u201D saved with "+included.length+" student"+(included.length===1?"":"s")+".");
     renderSpinner();
   });
 
@@ -17262,12 +17443,12 @@ nameLine
   $("spinAddItem").addEventListener("click", spinAddItem);
   $("spinNewItem").addEventListener("keydown", function(e){ if(e.key==="Enter") spinAddItem(); });
   $("spinSaveCustomList").addEventListener("click", function(){
-    if(!data.spinnerItems.length){ alert("Add some items first."); return; }
+    if(!data.spinnerItems.length){ notice("Add some items first."); return; }
     var name=(prompt("Name for this list:","")||" ").trim(); if(!name) return;
     var list={id:"sl"+Date.now().toString(36), name:name, sids:[], isCustom:true,
       customItems:data.spinnerItems.map(function(it){ return it.text; }), savedTs:Date.now()};
     data.spinnerSavedLists.unshift(list); save();
-    alert("\u201C"+name+"\u201D saved with "+data.spinnerItems.length+" item"+(data.spinnerItems.length===1?"":"s")+".");
+    notice("\u201C"+name+"\u201D saved with "+data.spinnerItems.length+" item"+(data.spinnerItems.length===1?"":"s")+".");
     renderSpinner();
   });
   $("spinClearAll").addEventListener("click", function(){
@@ -18352,8 +18533,15 @@ nameLine
       var edit=el("button","btn btn-sm","Rename");
       edit.addEventListener("click", function(){
         var nn=prompt("Name:", s.name); if(nn===null) return;
-        var ng=prompt("Group (blank for none):", s.group||""); 
-        s.name=nn.trim()||s.name; s.group=(ng||"").trim(); save(); renderStudents(); renderClassSel();
+        nn=nn.trim();
+        if(nn && !studentNameOk(nn)) return;
+        // Renaming onto ANOTHER student's exact name gets the same question the
+        // Add button asks — a rename is how a duplicate usually happens by
+        // accident (fixing a typo into the spelling the other boy already has).
+        var clash=nn && studentByName(nn);
+        if(clash && clash.id!==s.id && !confirm("Another student is already named “"+clash.name+"”"+(clash.group?" in "+clash.group:"")+".\n\nRename this one to the same name anyway?")) return;
+        var ng=prompt("Group (blank for none):", s.group||"");
+        s.name=nn||s.name; s.group=(ng||"").trim(); save(); renderStudents(); renderClassSel();
       });
       var photoUrlBtn=el("button","btn btn-sm","Photo URL…");
       photoUrlBtn.title="Paste a link to a photo (e.g. from Google Drive/Sheets) instead of uploading";
@@ -18371,7 +18559,12 @@ nameLine
       }
       var del=el("button","btn btn-sm btn-bad","Delete");
       del.addEventListener("click", function(){
-        if(confirm("Delete "+s.name+"? Their points will be removed.")){
+        // The confirm names more than the name: with duplicates allowed, two
+        // rows can read identically, and "Delete Moshe Cohen?" answers the
+        // question for NEITHER of them. Class and current points are the two
+        // things a rebbi can check against the boy he means.
+        var who=s.name+(s.group?" ("+s.group+", ":" (")+fmt(score(s.id))+" pts)";
+        if(confirm("Delete "+who+"? Their points will be removed.")){
           data.students=data.students.filter(function(x){return x.id!==s.id;});
           delete data.scores[s.id]; delete studentBreakdownOpen[s.id]; save(); renderStudents();
         }
@@ -18408,7 +18601,7 @@ nameLine
     cls=cls.trim();
     sel.forEach(function(s){ s.group=cls; });
     save(); renderStudents(); renderClassSel(); renderScanBoard(); renderTapPanel(); renderStandings();
-    alert(sel.length+" student"+(sel.length===1?"":"s")+(cls?(" moved to “"+cls+"”."):" cleared of their class."));
+    notice(sel.length+" student"+(sel.length===1?"":"s")+(cls?(" moved to “"+cls+"”."):" cleared of their class."));
   });
   // (b) Award the same amount, with a typed reason, to everyone selected.
   //
@@ -18424,9 +18617,9 @@ nameLine
     var raw=prompt("Give how many "+unit+" to each of the "+sel.length+" selected student"+(sel.length===1?"":"s")+"?\n\nUse a negative number to take "+unit+" away.", "1");
     if(raw===null) return;
     var amt=parseInt(raw,10);
-    if(!isFinite(amt) || amt===0){ alert("Enter a whole number other than zero."); return; }
+    if(!isFinite(amt) || amt===0){ notice("Enter a whole number other than zero."); return; }
     var reason=(prompt("What is this for?\n\nThis is what shows in History, in each student's breakdown, and on your Google Sheet — so make it something you'll recognise later.", "")||"").trim();
-    if(!reason){ alert("A reason is needed — it's what the History entry will say."); return; }
+    if(!reason){ notice("A reason is needed — it's what the History entry will say."); return; }
     if(!confirm(fmtDelta(amt)+" "+unit+" to "+sel.length+" student"+(sel.length===1?"":"s")+"\nReason: “"+reason+"”\n\nThis logs one entry per student, exactly like scanning them, so it can be undone from History.")) return;
     var done=0, skipped=[];
     // One shared id across the whole loop — this is what lets #127's undo find
@@ -18447,7 +18640,7 @@ nameLine
       msg+="\n\n"+skipped.length+" skipped — not in “"+data.currentClass+"”:\n"+skipped.join(", ")
          + "\n\nSwitch the class selector in the top-right corner to “All classes” to include them.";
     }
-    alert(msg);
+    notice(msg);
   });
   $("breakdownPeriod").addEventListener("change", function(){
     $("studCustomRangeRow").style.display = this.value==="custom" ? "flex" : "none";
@@ -18457,6 +18650,17 @@ nameLine
   $("studCustomTo").addEventListener("change", function(){ data.studCustomTo=this.value; save(); renderStudents(); });
   $("addStudent").addEventListener("click", function(){
     var name=$("newName").value.trim(); if(!name){ $("newName").focus(); return; }
+    if(!studentNameOk(name)) return;
+    // The paste-a-list importer has always deduplicated against the roster;
+    // this button never did, so a double-press (or two Enters) quietly made a
+    // second boy with the same name — and from that moment every surface that
+    // names students showed two identical entries with nothing to tell them
+    // apart. Twins and cousins are real, so a duplicate is a question, not a
+    // refusal.
+    var dup=studentByName(name);
+    if(dup && !confirm("You already have a student named “"+dup.name+"”"+(dup.group?" in "+dup.group:"")+".\n\nAdd ANOTHER student with the same name? (Fine if they really are two boys — give them different classes or add an initial so you can tell them apart.)")){
+      $("newName").focus(); return;
+    }
     var grp=$("newGroup").value.trim();
     data.students.push({id:nextStudentId(), name:name, group:grp});
     $("newName").value=""; save(); renderStudents(); renderClassSel(); $("newName").focus();
@@ -18485,7 +18689,7 @@ nameLine
       var cols = line.indexOf("\t") >= 0 ? line.split("\t") : line.split(",");
       var name = (cols[0] || "").trim();
       var grp  = (cols[1] || "").trim();
-      if (!name) return;
+      if (!name || name.length > STUDENT_NAME_MAX) return;
       var key = name.toLowerCase();
       if (seen[key]) return;
       seen[key] = true;
@@ -19344,7 +19548,7 @@ nameLine
     // student version does. Same number, same reasoning, kept the same on purpose.
     var spec=LABEL_SPECS[data.menuLabelFormat];
     var per = spec ? spec.cols*spec.rows : 30;
-    if(!$("menuWhich").value){ alert("Pick one code in the “All codes” dropdown first — then this fills a whole sheet with just that code."); return; }
+    if(!$("menuWhich").value){ notice("Pick one code in the “All codes” dropdown first — then this fills a whole sheet with just that code."); return; }
     $("menuCopies").value=per; renderMenuLabels();
   });
   $("personalFormat").addEventListener("change", function(){ data.personalLabelFormat=this.value; save(); renderPersonalPages(); });
@@ -19355,7 +19559,7 @@ nameLine
   $("fillSheet").addEventListener("click", function(){
     var spec=LABEL_SPECS[data.labelFormat];
     var per = spec ? spec.cols*spec.rows : 30;
-    if(!$("labelWho").value){ alert("Pick one student in the “Whole class” dropdown first — then this fills a whole sheet with just their code."); return; }
+    if(!$("labelWho").value){ notice("Pick one student in the “Whole class” dropdown first — then this fills a whole sheet with just their code."); return; }
     $("labelCopies").value=per; renderLabels();
   });
   $("printLabels").addEventListener("click", function(){ document.body.classList.add("print-students"); window.print(); });
@@ -19627,7 +19831,7 @@ nameLine
    */
   function seatReseatWith(order, question){
     var studs=activeStudents();
-    if(!studs.length){ alert("No students in this class yet."); return; }
+    if(!studs.length){ notice("No students in this class yet."); return; }
     if(!confirm(question(studs.length))) return;
     seatReseatAll(order(studs));
     seatPrintSyncDims(); renderTapPanel(); renderSeatChartPrint();
@@ -20532,7 +20736,7 @@ nameLine
   // active tab can be restored after printing.
   var seatPrintPrevView=null;
   function triggerSeatChartPrint(orientation){
-    if(!activeStudents().length){ alert("No students in this class to print. Pick a class in the header first."); return; }
+    if(!activeStudents().length){ notice("No students in this class to print. Pick a class in the header first."); return; }
     renderSeatChartPrint();
     var curActive=document.querySelector(".view.active");
     if(curActive && curActive.id!=="view-printSeats"){
@@ -20571,12 +20775,30 @@ nameLine
   // pushSnapshot() already uses, and it is exactly the weakness that let a
   // failed send stamp _sentAt in the first place — worth knowing before relying
   // on it for anything stricter.
+  // Almost every caller fires and forgets, so a failure here must be handled
+  // HERE: without the internal catch below, each failed send — including the
+  // everyday case of auto-sync switched on before a sheet link is saved —
+  // surfaces as an unhandled promise rejection on every single scan, undo,
+  // note and attendance mark. The catch is a branch off the returned promise,
+  // not a replacement for it, so the one caller that chains its own
+  // .then/.catch (the attendance re-send) still sees the rejection itself.
+  var pushToSheetWarned = {};
   function pushToSheet(payload){
     var url=(data.sheetUrl||"").trim();
-    if(!url) return Promise.reject(new Error("no sheet url"));
-    try{
-      return fetch(url, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)});
-    }catch(e){ return Promise.reject(e); }
+    var p;
+    if(!url) p = Promise.reject(new Error("no sheet url"));
+    else{
+      try{
+        p = fetch(url, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)});
+      }catch(e){ p = Promise.reject(e); }
+    }
+    p.catch(function(e){
+      var reason = (e && e.message) || String(e);
+      if(pushToSheetWarned[reason]) return;
+      pushToSheetWarned[reason] = true;
+      console.warn("Sheet sync failed ("+reason+") — scans are safe locally; check the sheet link under Backup & Sheets. Further identical failures won't be logged this session.");
+    });
+    return p;
   }
   function standingsRows(){
     return data.students.slice().map(function(s){ return {s:s, sc:score(s.id)}; })
@@ -20732,7 +20954,7 @@ nameLine
         showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
         if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
         if (statusEl) statusEl.textContent = "";
-        alert("Restored from Google Sheet.");
+        notice("Restored from Google Sheet.");
       })
       .catch(function(err) {
         if (statusEl) statusEl.textContent = "Couldn't reach your sheet. Check your connection and try again.";
@@ -21248,9 +21470,9 @@ nameLine
           showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
           if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
           renderShulchaniStatus();
-          alert("Backup restored.");
+          notice("Backup restored.");
         });
-      }catch(err){ alert("Sorry, that file couldn't be read as a backup."); }
+      }catch(err){ notice("Sorry, that file couldn't be read as a backup."); }
     };
     r.readAsText(file);
     e.target.value="";
@@ -21328,7 +21550,7 @@ nameLine
         $("sheetUrl").value=data.sheetUrl||""; $("autoSheet").checked=(data.autoSheet!==false);
         renderActButtons(); renderRecent(); renderStudents(); renderActivities(); renderClassSel();
         $("logCsvStatus").textContent="Restored "+fresh.students.length+" students, "+fresh.activities.length+" activities, and "+entries.length+" log entries.";
-        alert("Restored from Log CSV: "+fresh.students.length+" students, "+entries.length+" scan entries.");
+        notice("Restored from Log CSV: "+fresh.students.length+" students, "+entries.length+" scan entries.");
       }catch(err){
         $("logCsvStatus").textContent="Couldn't read that as a Log CSV. Make sure it's the export of your sheet's Log tab (Time, Student, Class/Group, Activity, Points, New total).";
       }
@@ -22301,7 +22523,7 @@ nameLine
   $("resetScores").addEventListener("click", function(){
     if(confirm(resetScoresConfirmText())){
       resetAllScores();
-      alert("All scores reset to zero, and the scan history cleared. Trends history was kept.");
+      notice("All scores reset to zero, and the scan history cleared. Trends history was kept.");
     }
   });
   // Full wipe — institution/class name, roster, activities, scores, log, raffle
@@ -22310,7 +22532,7 @@ nameLine
   $("clearAllData").addEventListener("click", function(){
     var typed=prompt("This permanently erases the institution name, class name, students, activities, scores, scan log, raffle history, and your saved Google Sheet link on this device. This cannot be undone.\n\nType CLEAR to confirm:");
     if(typed===null) return;
-    if(typed.trim().toUpperCase()!=="CLEAR"){ alert("Not cleared — typed text didn't match \u201CCLEAR\u201D."); return; }
+    if(typed.trim().toUpperCase()!=="CLEAR"){ notice("Not cleared — typed text didn't match \u201CCLEAR\u201D."); return; }
     data=JSON.parse(JSON.stringify(defaults));
     save();
     location.reload();
@@ -22679,6 +22901,8 @@ nameLine
         content: function(){
           return '<h2 style="font-family:Georgia,serif;margin:0 0 12px">About Menchmark</h2>' +
             '<p><strong>Menchmark</strong> is a classroom assistant for Yeshiva and Jewish Day School rebbeim &mdash; middos and derech eretz, attendance, homework, and learning, all from one scan.</p>' +
+            '<p style="color:#64748b;font-size:.9rem">Version <strong>' + (window.MENCHMARK_APP_VERSION || '—') + '</strong>' +
+              (location.protocol === 'file:' ? ' &mdash; downloaded copy' : '') + '</p>' +
             '<p>Built with ❤️ by Rabbi B. Steinerman.</p>' +
             '<p><a href="https://github.com/greenfrog367566/yeshiva-points-scanner" target="_blank" style="color:#2563eb">View on GitHub</a></p>' +
             '<hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb">' +
@@ -23695,6 +23919,15 @@ The app remembers the last serial connection and will try to reconnect automatic
 (function(){
   var isFileProto = location.protocol === "file:";
 
+  /* The version THIS file was shipped as. Bump it in the same commit that bumps
+     the released version in CHANGELOG.md and in version.json at the site root —
+     the three are compared against each other and mean nothing apart. Exposed on
+     window so the Help → About tab can show it; a rebbi reporting a problem can
+     then say which copy he is actually running, which until now nothing in the
+     app could tell him. */
+  var APP_VERSION = "0.9.0";
+  window.MENCHMARK_APP_VERSION = APP_VERSION;
+
   // 1) Service worker — only over http/https (a file:// offline copy can't use one).
   if("serviceWorker" in navigator && !isFileProto){
     window.addEventListener("load", function(){
@@ -23755,6 +23988,116 @@ The app remembers the last serial connection and will try to reconnect automatic
     t.appendChild(span); t.appendChild(btn);
     document.body.appendChild(t);
   }
+
+  /* 4) Update check — tell a rebbi when the copy he is running is behind the
+        live one. Two different problems wear one check here:
+
+        - The PWA / http copy can already fix itself. The service worker above
+          serves HTML network-first and offers a Reload when it sees a new
+          app.html, so this check deliberately STAYS OUT OF ITS WAY and speaks
+          up only when no service worker is in control — a browser that blocks
+          them, or app.html opened over plain http with none registered.
+        - The DOWNLOADED file:// copy cannot fix itself, ever. It gets no
+          service worker, no network-first HTML, no update path of any kind.
+          The only honest thing to tell that rebbi is "download a fresh copy",
+          with a link, because nothing the app does can update the file for him.
+
+        WHAT THIS DOES NOT DO, so nobody expects it to: it cannot reach a copy
+        downloaded BEFORE it shipped. Such a file contains no checking code, so
+        it will never ask. This makes every FUTURE stale copy self-announcing;
+        the copies already out there still have to be told by a person.
+
+        Fails silent by design. Offline, blocked, 404, malformed JSON and a
+        version string we can't parse all mean SAY NOTHING — a false "you are
+        out of date" teaches a rebbi to ignore the banner that matters. */
+  var VERSION_URL = "https://menchmark.app/version.json";
+
+  // Numeric dotted compare. Returns >0 when a is newer than b. Non-numeric or
+  // missing parts count as 0, so "0.9" and "0.9.0" compare equal.
+  function cmpVersion(a, b){
+    var pa = String(a).split("."), pb = String(b).split("."), n = Math.max(pa.length, pb.length);
+    for(var i = 0; i < n; i++){
+      var x = parseInt(pa[i], 10), y = parseInt(pb[i], 10);
+      if(isNaN(x)) x = 0;
+      if(isNaN(y)) y = 0;
+      if(x !== y) return x - y;
+    }
+    return 0;
+  }
+
+  // Only ask when the answer could actually help. A controlled PWA already has
+  // its own, better path (the toast above), and asking there would mean two
+  // notices for one fact.
+  function updateCheckApplies(){
+    if(isFileProto) return true;
+    return !(navigator.serviceWorker && navigator.serviceWorker.controller);
+  }
+
+  function showOutdatedBanner(latest, downloadUrl){
+    if(document.getElementById("mmUpdateBanner")) return;
+    // Dismissal is per session, not permanent: a rebbi who waves it away today
+    // should still be told tomorrow, because the copy is still out of date.
+    try { if(sessionStorage.getItem("mmUpdateDismissed") === latest) return; } catch(e){}
+
+    var bar = document.createElement("div");
+    bar.id = "mmUpdateBanner";
+    bar.setAttribute("role", "status");
+    // Sticky and IN THE FLOW, not fixed. A fixed bar sat on top of the app
+    // header and hid the class name behind it; in-flow means the page simply
+    // starts lower, with no padding compensation to keep in sync and nothing
+    // to undo when it is dismissed. `body` is a plain block box that scrolls
+    // with the document, so sticky pins it correctly here.
+    bar.style.cssText = "position:sticky;top:0;z-index:9998;background:#e8b321;color:#1b2440;padding:9px 14px;box-shadow:0 2px 12px rgba(20,26,46,.25);font:600 .88rem system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap";
+
+    var msg = document.createElement("span");
+    msg.textContent = isFileProto
+      ? "You're using a downloaded copy (version " + APP_VERSION + "). Version " + latest + " is out — a downloaded copy can't update itself."
+      : "Menchmark " + latest + " is available. You're running " + APP_VERSION + ".";
+    bar.appendChild(msg);
+
+    if(isFileProto){
+      var link = document.createElement("a");
+      link.href = downloadUrl || "https://menchmark.app/app.html";
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "Download the new copy";
+      link.style.cssText = "background:#1b2440;color:#fff;border-radius:8px;padding:5px 12px;font-weight:700;text-decoration:none";
+      bar.appendChild(link);
+    } else {
+      var reload = document.createElement("button");
+      reload.textContent = "Reload";
+      reload.style.cssText = "background:#1b2440;color:#fff;border:none;border-radius:8px;padding:5px 12px;font-weight:700;cursor:pointer";
+      reload.addEventListener("click", function(){ location.reload(); });
+      bar.appendChild(reload);
+    }
+
+    var x = document.createElement("button");
+    x.textContent = "✕";
+    x.setAttribute("aria-label", "Dismiss");
+    x.style.cssText = "background:transparent;border:none;color:#1b2440;font-weight:700;cursor:pointer;font-size:1rem;line-height:1";
+    x.addEventListener("click", function(){
+      try { sessionStorage.setItem("mmUpdateDismissed", latest); } catch(e){}
+      if(bar.parentNode) bar.parentNode.removeChild(bar);
+    });
+    bar.appendChild(x);
+
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+
+  function checkForUpdate(){
+    if(!updateCheckApplies() || typeof fetch !== "function") return;
+    fetch(VERSION_URL, { cache: "no-store", mode: "cors", credentials: "omit" })
+      .then(function(res){ return res && res.ok ? res.json() : null; })
+      .then(function(info){
+        if(!info || typeof info.version !== "string") return;
+        if(cmpVersion(info.version, APP_VERSION) > 0) showOutdatedBanner(info.version, info.downloadUrl);
+      })
+      .catch(function(){ /* offline or blocked — say nothing, by design */ });
+  }
+
+  // After load, and unhurried: nothing here is worth competing with startup,
+  // and a rebbi mid-scan should not have a bar appear under his hands.
+  window.addEventListener("load", function(){ setTimeout(checkForUpdate, 2500); });
 })();
 </script>
 </body>
