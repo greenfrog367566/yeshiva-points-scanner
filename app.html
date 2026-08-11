@@ -338,8 +338,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      list/grid re-render plus the beep. */
   #view-passes > .scan-box,
   #pesukChartMode > .scan-box{display:none}
-  #scanInput{width:100%;font-size:1.15rem;padding:16px 16px;border:2px dashed var(--ink);border-radius:12px;background:#fbfbfd;text-align:center;letter-spacing:1px}
-  #scanInput::placeholder{color:#9aa1b6;letter-spacing:0;font-size:.95rem}
   .scan-hint{font-size:.82rem;color:var(--muted);margin-top:8px;text-align:center}
 
   /* Seats tab scan bar — everything (input, armed activity, last scan +
@@ -422,6 +420,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .flash.ice .delta{color:var(--ice)}
   .flash .total{font-size:.95rem;color:var(--muted)}
   @media(prefers-reduced-motion:reduce){.flash{transition:none}}
+  /* The MAIN scan feedback is a floating toast, not a box inside the Dashboard —
+     scans land from every tab (global key capture) and from the full-screen
+     seating chart, and feedback buried in one tab's panel was invisible from
+     all of them. Same .flash palette/typography; only the positioning differs.
+     pointer-events:none so it can never sit between the rebbi and a seat tile.
+     z-index above the full-screen seating overlay (120) and the lifted scan
+     bar (130). */
+  .flash-toast{position:fixed;top:74px;left:50%;transform:translate(-50%,6px);z-index:140;width:min(420px,calc(100vw - 32px));min-height:0;padding:14px 20px;margin-top:0;box-shadow:0 10px 30px rgba(20,25,45,.22);pointer-events:none}
+  .flash-toast.show{transform:translate(-50%,0)}
 
   .recent h3{font-family:var(--serif);font-size:1.05rem;margin:0 0 10px}
   .recent-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:.92rem}
@@ -1914,9 +1921,17 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <button class="contest-c-badge" id="contestCBadge" style="display:none" title="A contest is running — these scans count for it. Tap to pause/resume contest-counting without ending the contest.">C</button>
   <input id="seatsScanInput" autocomplete="off" placeholder="Scan a QR code here  (or type a student code + Enter)">
   <div class="scan-strip" id="scanStrip"></div>
+  <button class="btn btn-sm" id="seatsUndoBtn" title="Reverse the most recent scan — same as the printed Undo card">↩ Undo</button>
   <button class="btn btn-sm seats-hist-btn" id="seatsHistoryBtn">History <span class="chev">▾</span></button>
   <div class="seats-hist-dropdown" id="seatsHistoryDropdown" style="display:none"></div>
 </div>
+
+<!-- Scan feedback toast. Lived inside the Dashboard's scan-box panel until that
+     panel retired (the box was the third redundant way to feed a scan in, after
+     the global key capture and #seatsScanInput above) — but flash() is how EVERY
+     scan confirms itself, so the element now floats at document level where all
+     tabs and the full-screen chart can see it. -->
+<div class="flash flash-toast" id="flash"></div>
 
 <main>
   <div id="saveWarn">
@@ -2004,16 +2019,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
               <span class="an">Custom (subtract)</span>
               <span class="av neg" id="customSubVal">−1 pts</span>
             </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel" id="panel-scanbar" data-panel="scanbar">
-        <div class="panel-tools"><span class="panel-name">Scan box</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
-        <div class="panel-body">
-          <div class="scan-box card pad">
-            <input id="scanInput" autocomplete="off" placeholder="Scan a QR code here  (or type a student code + Enter)">
-            <div class="flash" id="flash"></div>
           </div>
         </div>
       </div>
@@ -5496,7 +5501,7 @@ function setupRoster() {
     if(typeof stopGameShow==="function") stopGameShow();
     if(typeof resetDndStuck==="function") resetDndStuck();
     if(tab==="scan"){
-      renderScanBoard(); renderTapPanel(); setTimeout(function(){ $("scanInput").focus(); },50);
+      renderScanBoard(); renderTapPanel(); setTimeout(function(){ $("seatsScanInput").focus(); },50);
     }
     if(tab==="history") renderHistoryTab();
     if(tab==="standings") renderStandings();
@@ -8858,14 +8863,16 @@ function setupRoster() {
       // "+0" would read as "scanning this gives nothing". Name only. Both .an and
       // .av are display:block, so omitting .av just makes a shorter card.
       if(!reroutedActivity(a)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
-      b.addEventListener("click", function(){ setArmed(a.name, a.pts, a); $("scanInput").focus(); });
+      b.addEventListener("click", function(){ setArmed(a.name, a.pts, a); $("seatsScanInput").focus(); });
       wrap.appendChild(b);
     });
   }
 
   function flash(ok, line1, line2, line3){
     var f=$("flash");
-    f.className="flash show "+(ok==="ice"?"ice":(ok?"good":"bad"));
+    // flash-toast must survive this wholesale className write — it is what
+    // keeps the element a fixed toast rather than a block in the page flow.
+    f.className="flash flash-toast show "+(ok==="ice"?"ice":(ok?"good":"bad"));
     f.innerHTML="";
     if(line1) f.appendChild(el("div","who",line1));
     if(line2) f.appendChild(el("div","delta",line2));
@@ -10169,6 +10176,12 @@ function setupRoster() {
       wrap.appendChild(row);
     });
   }
+  // One-tap undo on the bar itself — the bar is present on every scanning
+  // surface (including the full-screen seating chart, which lifts it above the
+  // overlay), so a mis-scan no longer means opening the History dropdown and
+  // hunting a per-row ↩ mid-shiur. Same code path as the Dashboard button and
+  // the printed CTRL:UNDO card.
+  $("seatsUndoBtn").addEventListener("click", function(){ undoMostRecentScan(); });
   $("seatsHistoryBtn").addEventListener("click", function(e){
     e.stopPropagation();
     var dd=$("seatsHistoryDropdown");
@@ -10243,6 +10256,12 @@ function setupRoster() {
   }
   $("seatsPopOut").addEventListener("click", function(){
     var vs=$("view-seats");
+    // Remember the mode. For a rebbi who scans from the full-screen chart —
+    // the usual way to run a room — the app now reopens straight into it (see
+    // the init block) instead of starting him at the Dashboard every morning.
+    // Only the deliberate ✕ close clears this; a tab switch away is navigation,
+    // not a decision to stop scanning full screen.
+    if(data.seatsFsOpen!==true){ data.seatsFsOpen=true; save(); }
     vs.classList.add("seats-fullscreen");
     $("seatsCloseBtn").style.display="";
     document.body.style.overflow="hidden"; // no background scroll behind the overlay
@@ -10270,6 +10289,7 @@ function setupRoster() {
   function closeSeatsPopout(){
     var vs=$("view-seats");
     if(!vs) return;
+    if(data.seatsFsOpen!==false){ data.seatsFsOpen=false; save(); } // deliberate exit — stop reopening at boot
     $("seatsCloseBtn").style.display="none";
     var done=false;
     var finish=function(){
@@ -12120,14 +12140,14 @@ function setupRoster() {
   // by the Shorashim tap panel, which no longer exists on this page.
 
   /* ---------- Customizable Scan-tab (Dashboard) layout ---------- */
-  var SCAN_PANELS=["activities","scanbar","recent","tappanel","leaderboard"];
+  var SCAN_PANELS=["activities","recent","tappanel","leaderboard"];
   // Layout is {cols:2|3, columns:[[...],[...],[...]]} — always three column
   // arrays, but only the first `cols` are shown. The seating chart ("Class
   // list") is one of these movable panels here AND also has its own
   // dedicated Seats tab (full-screen, with a scan box pinned above it) —
   // both stay in sync since they render from the exact same underlying data
   // and the same renderTapPanel() logic, just into two different containers.
-  function defaultScanLayout(){ return {cols:2, columns:[["activities","scanbar","recent"],["leaderboard","tappanel"],[]]}; }
+  function defaultScanLayout(){ return {cols:2, columns:[["activities","recent"],["leaderboard","tappanel"],[]]}; }
   // Valid only if every known panel appears exactly once across the *active*
   // columns and none sit in a hidden column — so applyScanLayout() can never
   // lose, duplicate, or strand a panel. A corrupted pref falls back to default.
@@ -12167,6 +12187,14 @@ function setupRoster() {
       delete data.scanLayout.rowCollapsed;
       delete data.scanLayout.rowsSeatPos;
       delete data.scanLayout.rowsVisible;
+      // The "scanbar" panel (the Dashboard's dashed scan box) retired — strip it
+      // from a stored layout rather than letting validScanLayout() see an
+      // unknown id and throw the rebbi's whole arrangement back to default.
+      if(Array.isArray(data.scanLayout.columns)){
+        data.scanLayout.columns.forEach(function(col,i){
+          if(Array.isArray(col)) data.scanLayout.columns[i]=col.filter(function(id){ return id!=="scanbar"; });
+        });
+      }
     }
     if(!validScanLayout(data.scanLayout)) data.scanLayout=defaultScanLayout();
   }
@@ -12572,10 +12600,10 @@ function setupRoster() {
     }
     beep(true);
   }
-  // scan input (points)
-  $("scanInput").addEventListener("keydown", function(e){
-    if(e.key==="Enter"){ e.preventDefault(); var v=this.value; this.value=""; handleScannedCode(v); }
-  });
+  // The Dashboard's own dashed scan box retired — the global key capture below
+  // takes wedge scans with no input at all, and #seatsScanInput on the sticky
+  // bar is the typing path. What survives of it is the focus-keeping click
+  // handler, retargeted at the bar's input:
   // keep it focused while on scan tab — but never steal focus (which scrolls the
   // page to bring the input into view) for anything inside the Tap Panel. Seating-chart
   // tiles are plain <div>s rather than <button>s, so they need their own explicit
@@ -12591,7 +12619,7 @@ function setupRoster() {
     // just that one, which is why this tests the element type rather than
     // naming #customAmt.
     if(e.target.closest("input, textarea, select, [contenteditable=true]")) return;
-    $("scanInput").focus();
+    $("seatsScanInput").focus();
   });
 
   // ONE parse for every place a custom amount enters the app — the box itself,
@@ -12686,10 +12714,10 @@ function setupRoster() {
         handleScannedCode(scanned);
         return;
       }
-      // An amount, not a scan. Commit it and hand focus on to the scan box, so
+      // An amount, not a scan. Commit it and hand focus on to the scan bar, so
       // the next thing scanned is a student rather than more digits.
       commitCustomAmt();
-      $("scanInput").focus();
+      $("seatsScanInput").focus();
       return;
     }
     if(e.key.length===1) caBuf+=e.key;
@@ -21569,6 +21597,11 @@ nameLine
     // end, never something a rebbi chose, so there is nothing to preserve.
     // Reads data.seating and writes nothing to it.
     if(typeof data.seatListFallback!=="boolean") data.seatListFallback=true;
+    // Whether the full-screen seating chart was open when the rebbi left —
+    // reopened at boot so his scanning surface survives a reload. Additive
+    // boolean, defaults OFF: existing saves keep starting at the Dashboard
+    // until the ⛶ button is pressed once.
+    if(typeof data.seatsFsOpen!=="boolean") data.seatsFsOpen=false;
     if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
     if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
     // Dropped position per floating launcher FAB. Additive/empty-safe — an
@@ -22741,7 +22774,17 @@ nameLine
   // 1.5s delay so the full app is rendered before the toast appears.
   // Auto-generate only if teacher opted in (default: true)
   if (data.wizardLearning && data.wizardLearning.autoGenerate !== false) setTimeout(function(){ autoGenerateWizardTextSet(); }, 1500);
-  setTimeout(function(){ $("scanInput").focus(); },80);
+  setTimeout(function(){ $("seatsScanInput").focus(); },80);
+  // Reopen the full-screen seating chart if that is how the rebbi left the app
+  // (data.seatsFsOpen — set by ⛶, cleared by ✕). Goes through the button's own
+  // click path so the overlay, scan-bar lift and no-scroll fit all set up
+  // exactly as a manual open would. Deferred past first paint; guarded on the
+  // scan tab being active (it is at boot, but a hash/wizard flow may differ)
+  // and on the button existing at all.
+  setTimeout(function(){
+    var vscan=$("view-scan"), btn=$("seatsPopOut");
+    if(data.seatsFsOpen===true && btn && vscan && vscan.classList.contains("active")) btn.click();
+  },140);
   // Backup staleness check. Deferred so it never competes with first paint, and
   // wrapped like its neighbours — a nudge failing must never stop the app from
   // starting. Runs once per load; the bar is otherwise only touched by its own
