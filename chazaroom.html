@@ -922,16 +922,44 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
   }
 
   /* ---- local PTZ bridge (ptz-bridge.ps1): room sweep + manual aim ---- */
-  var ptzhttp={url:"http://localhost:8787",ok:false,pan:[-145,145],tilt:[-90,100],zoom:[100,400],cur:{pan:0,tilt:0,zoom:100}};
+  var ptzhttp={url:"http://localhost:8787",ok:false,err:"",pan:[-145,145],tilt:[-90,100],zoom:[100,400],cur:{pan:0,tilt:0,zoom:100}};
   function ptzRemember(j){ ["pan","tilt","zoom"].forEach(function(k){ if(j&&typeof j[k]==="number") ptzhttp.cur[k]=j[k]; }); return j; }
+  /* A 200 from the bridge is NOT proof the gimbal will move. If the camera is
+     unplugged or replugged, the bridge can still answer while its DirectShow
+     handle is dead — pan/tilt/zoom come back as int.MinValue and every range as
+     [0,0]. Trusting the status code alone showed "PTZ bridge found ✓" while
+     nothing moved, so the ranges are what we actually believe: a zero-width pan
+     range means no camera, whatever the bridge says. (Newer bridges also send
+     "camera": false, which is honoured when present; the range test keeps an
+     older bridge honest too.) */
+  function ptzUsable(j){
+    if(!j) return false;
+    if(j.camera===false) return false;
+    var p=j.panRange;
+    return !!(p && p.length===2 && p[1]>p[0]);
+  }
   function probePtzHttp(){
     return fetch(ptzhttp.url+"/status",{cache:"no-store"}).then(function(r){ return r.json(); })
-      .then(function(j){ ptzhttp.ok=true; if(j.panRange) ptzhttp.pan=j.panRange; if(j.tiltRange) ptzhttp.tilt=j.tiltRange; if(j.zoomRange) ptzhttp.zoom=j.zoomRange; ptzRemember(j); return true; })
-      .catch(function(){ ptzhttp.ok=false; return false; });
+      .then(function(j){
+        ptzhttp.err = ptzUsable(j) ? "" : ((j && j.error) || "unplug it and plug it back in, or close any app using it (the bridge is running, the camera isn't answering).");
+        ptzhttp.ok = ptzUsable(j);
+        if(!ptzhttp.ok) return false;
+        if(j.panRange) ptzhttp.pan=j.panRange; if(j.tiltRange) ptzhttp.tilt=j.tiltRange; if(j.zoomRange) ptzhttp.zoom=j.zoomRange;
+        ptzRemember(j); return true;
+      })
+      .catch(function(){ ptzhttp.ok=false; ptzhttp.err=""; return false; });
   }
   function ptzSet(p){ var qs=Object.keys(p).map(function(k){ return k+"="+Math.round(p[k]); }).join("&");
     return fetch(ptzhttp.url+"/set?"+qs,{cache:"no-store"}).then(function(r){ return r.json(); }).then(ptzRemember); }
   function showSweepSetup(){ if(ptzhttp.ok){ $("sweepSetup").hidden=false; $("sweepDetected").textContent="PTZ bridge found ✓"; $("sweepGameWrap").hidden=false; $("ptzPad").hidden=false; updateSetupHint(); } }
+  /* Bridge answering but camera unreachable — say so rather than going quiet,
+     because a silent missing panel looks identical to "no bridge installed". */
+  function showBridgeProblem(){
+    $("sweepSetup").hidden=false;
+    $("sweepDetected").innerHTML='<strong style="color:var(--bad)">Camera not reachable</strong> — '+ptzhttp.err;
+    $("sweepOn").checked=false; $("sweepOn").disabled=true;
+    $("sweepGameWrap").hidden=true; $("ptzPad").hidden=true;
+  }
 
   /* ---- manual aim pad: absolute nudges from the tracked position. A nudge
      pauses a continuous sweep (it would fight the rebbi's hand) but leaves the
@@ -1507,7 +1535,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
   listCams();
   renderQList();
   updateSetupHint();
-  probePtzHttp().then(function(ok){ if(ok) showSweepSetup(); });
+  probePtzHttp().then(function(ok){ if(ok) showSweepSetup(); else if(ptzhttp.err) showBridgeProblem(); });
 })();
 </script>
 </body>

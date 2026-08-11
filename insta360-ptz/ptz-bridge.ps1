@@ -32,7 +32,7 @@ public static class Insta360PTZ {
   static Guid IBF     = new Guid("56a86895-0ad4-11ce-b03a-0020af0ba770");
   static IAMCameraControl _cc;
   public static string DeviceName;
-  public static bool Open(string match) {
+  static bool OpenCore(string match) {
     var de = (ICreateDevEnum)Activator.CreateInstance(Type.GetTypeFromCLSID(SysEnum));
     IEnumMoniker en; Guid c = VidCat;
     if (de.CreateClassEnumerator(ref c, out en, 0) != 0 || en == null) return false;
@@ -49,10 +49,23 @@ public static class Insta360PTZ {
     }
     return false;
   }
-  public static bool SetProp(int prop, int val) { int mn,mx,st,df,fl; if (_cc==null || _cc.GetRange(prop, out mn,out mx,out st,out df,out fl)!=0) return false; int v = Math.Max(mn, Math.Min(mx, val)); return _cc.Set(prop, v, MANUAL)==0; }
-  public static int GetProp(int prop) { int v,f; return (_cc!=null && _cc.Get(prop, out v, out f)==0) ? v : int.MinValue; }
-  public static int RangeMin(int prop){ int mn,mx,st,df,fl; return _cc.GetRange(prop, out mn,out mx,out st,out df,out fl)==0?mn:0; }
-  public static int RangeMax(int prop){ int mn,mx,st,df,fl; return _cc.GetRange(prop, out mn,out mx,out st,out df,out fl)==0?mx:0; }
+  /* The camera interface is bound once and cached. Unplug/replug the camera (or
+     let it sleep) and that handle points at a device instance that no longer
+     exists: every call fails, and the bridge used to keep answering 200 with
+     int.MinValue and [0,0] ranges forever. Healthy() is the one probe every
+     entry point runs first, and it rebinds on failure so a replug self-heals. */
+  static string _match;
+  public static bool Healthy() {
+    int mn,mx,st,df,fl;
+    if (_cc != null && _cc.GetRange(0, out mn, out mx, out st, out df, out fl) == 0) return true;
+    _cc = null;                                   /* drop the dead interface  */
+    try { return Open(_match); } catch { return false; }
+  }
+  public static bool Open(string match) { _match = match; return OpenCore(match); }
+  public static bool SetProp(int prop, int val) { int mn,mx,st,df,fl; if (!Healthy() || _cc.GetRange(prop, out mn,out mx,out st,out df,out fl)!=0) return false; int v = Math.Max(mn, Math.Min(mx, val)); return _cc.Set(prop, v, MANUAL)==0; }
+  public static int GetProp(int prop) { int v,f; return (Healthy() && _cc.Get(prop, out v, out f)==0) ? v : int.MinValue; }
+  public static int RangeMin(int prop){ int mn,mx,st,df,fl; return (Healthy() && _cc.GetRange(prop, out mn,out mx,out st,out df,out fl)==0)?mn:0; }
+  public static int RangeMax(int prop){ int mn,mx,st,df,fl; return (Healthy() && _cc.GetRange(prop, out mn,out mx,out st,out df,out fl)==0)?mx:0; }
 }
 '@
 
@@ -60,8 +73,15 @@ if (-not [Insta360PTZ]::Open($Device)) { Write-Error "No camera found matching '
 $name = [Insta360PTZ]::DeviceName
 
 function Json {
+  # "camera": false means the bridge is up but cannot reach the camera — the
+  # caller must not treat a 200 as proof the gimbal will move.
+  $live=[Insta360PTZ]::Healthy()
+  if (-not $live) {
+    return '{"device":"'+$name+'","camera":false,"error":"camera not reachable — replug it, or it may be in use by another app",'+
+           '"pan":0,"tilt":0,"zoom":100,"panRange":[0,0],"tiltRange":[0,0],"zoomRange":[0,0]}'
+  }
   $p=[Insta360PTZ]::GetProp(0); $t=[Insta360PTZ]::GetProp(1); $z=[Insta360PTZ]::GetProp(3)
-  '{"device":"'+$name+'","pan":'+$p+',"tilt":'+$t+',"zoom":'+$z+
+  '{"device":"'+$name+'","camera":true,"pan":'+$p+',"tilt":'+$t+',"zoom":'+$z+
     ',"panRange":['+[Insta360PTZ]::RangeMin(0)+','+[Insta360PTZ]::RangeMax(0)+']'+
     ',"tiltRange":['+[Insta360PTZ]::RangeMin(1)+','+[Insta360PTZ]::RangeMax(1)+']'+
     ',"zoomRange":['+[Insta360PTZ]::RangeMin(3)+','+[Insta360PTZ]::RangeMax(3)+']}'
