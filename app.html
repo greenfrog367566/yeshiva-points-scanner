@@ -3701,6 +3701,42 @@ function setupRoster() {
     </div>
   </section>
 
+  <!-- ============ COIN DEPOSIT (Shulchani Mode only) ============ -->
+  <section id="view-coinbank" class="view">
+    <h2 class="view-title">Coin Deposit</h2>
+    <p class="view-note">Turn a student's physical Shulchani coins into a safe digital balance, or hand physical coins back. This is loss protection, not a separate savings account — deposited coins go straight onto the student's normal spendable balance, the same balance Standings and the Store already use.</p>
+
+    <div class="seg" id="cbMode">
+      <button data-cbmode="deposit">Deposit</button>
+      <button data-cbmode="withdraw">Withdraw</button>
+    </div>
+
+    <div class="toolbar" style="margin:12px 0">
+      <span style="font-weight:600">Student:</span>
+      <button id="cbStudPrev" class="btn btn-sm">‹ Prev</button>
+      <select id="cbStudSel" class="field" style="width:auto;max-width:240px"></select>
+      <button id="cbStudNext" class="btn btn-sm">Next ›</button>
+    </div>
+    <div id="cbBalance" class="pill-note" style="margin-bottom:10px"></div>
+    <div class="flash" id="cbFlash"></div>
+
+    <div class="card pad" style="margin-bottom:16px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px" id="cbAmountTitle">Coins to deposit</h3>
+      <div id="cbCoinRows" class="row-list"></div>
+      <div id="cbAmountTotal" style="margin-top:10px;font-weight:700"></div>
+      <p id="cbNote" class="view-note" style="margin:10px 0 0"></p>
+      <div class="toolbar" style="margin-top:10px">
+        <button id="cbClear" class="btn btn-sm">Clear amount</button>
+        <button id="cbConfirm" class="btn btn-sm btn-primary">Confirm</button>
+      </div>
+    </div>
+
+    <div class="card" id="cbHistoryCard">
+      <div class="board-head"><h3>Recent coin deposits &amp; withdrawals</h3></div>
+      <div id="cbHistory" class="row-list" style="padding:10px 14px"></div>
+    </div>
+  </section>
+
   <!-- ============ BATHROOM PASSES ============ -->
   <section id="view-passes" class="view">
     <h2 class="view-title">Bathroom Passes</h2>
@@ -5318,7 +5354,7 @@ function setupRoster() {
     // shown only in the group-tab nav (renderGroupTabs wraps it in the shared <svg> tag).
     scan:        { label:"Record",       icon:'<path d="M2 5V3.5A1.5 1.5 0 0 1 3.5 2H5"/><path d="M11 2h1.5A1.5 1.5 0 0 1 14 3.5V5"/><path d="M14 11v1.5a1.5 1.5 0 0 1-1.5 1.5H11"/><path d="M5 14H3.5A1.5 1.5 0 0 1 2 12.5V11"/><path d="M5 8h6"/>', tabs:["scan","history"] },
     standings:   { label:"Recognize",    icon:'<path d="M5 2.5h6V7a3 3 0 0 1-6 0V2.5z"/><path d="M5 4H2.5v.6A2.4 2.4 0 0 0 5 7"/><path d="M11 4h2.5v.6A2.4 2.4 0 0 1 11 7"/><path d="M8 10v3.5"/><path d="M5.5 13.5h5"/>', tabs:["standings","trends","contest"] },
-    rewards:     { label:"Reward",       icon:'<path d="M2 4.5h12V8H2z"/><path d="M3 8v5.5h10V8"/><path d="M8 4.5v9"/><path d="M8 4.5C8 3 7.2 1.7 6 1.7a1.4 1.4 0 0 0 0 2.8"/><path d="M8 4.5C8 3 8.8 1.7 10 1.7a1.4 1.4 0 0 1 0 2.8"/>', tabs:["raffle","auction","store"] },
+    rewards:     { label:"Reward",       icon:'<path d="M2 4.5h12V8H2z"/><path d="M3 8v5.5h10V8"/><path d="M8 4.5v9"/><path d="M8 4.5C8 3 7.2 1.7 6 1.7a1.4 1.4 0 0 0 0 2.8"/><path d="M8 4.5C8 3 8.8 1.7 10 1.7a1.4 1.4 0 0 1 0 2.8"/>', tabs:["raffle","auction","store","coinbank"] },
     // printSeats is IN the nav, unlike the other three print views, which stay
     // reachable only from the 🖨 buttons on their data-owner tabs. It is the one
     // sheet that has to be found: student codes in seat positions plus every
@@ -5335,7 +5371,7 @@ function setupRoster() {
   var TAB_LABELS = {
     scan:"Dashboard", history:"History",
     standings:"Leader Board", trends:"Trends", contest:"Contest",
-    raffle:"Raffle", auction:"Auction", store:"Store",
+    raffle:"Raffle", auction:"Auction", store:"Store", coinbank:"Coin Deposit",
     students:"Students", activities:"Activities", brachos:"Brachos", spinner:"Spinner",
     passes:"Passes", attendance:"Attendance", tracker:"Tracker", homework:"Homework", gradebook:"Gradebook",
     backup:"Backup & Restore", settings:"Settings",
@@ -5373,7 +5409,14 @@ function setupRoster() {
     if(!data.navHidden.tabs) data.navHidden.tabs={};
     return data.navHidden;
   }
-  function isTabVisible(t){ return t==="settings" || t==="scan" || !navHidden().tabs[t]; }
+  function isTabVisible(t){
+    if(t==="settings" || t==="scan") return true;
+    // Coin Deposit only makes sense in Shulchani Mode (physical-coin loss
+    // protection) — live-checked, same as syncCoinGuideButtons(), not a
+    // stored navHidden flag, so switching modes shows/hides it immediately.
+    if(t==="coinbank" && !isShulchani()) return false;
+    return !navHidden().tabs[t];
+  }
   // Contest is hidden pending the lifecycle rework (#133). It is HIDDEN, not
   // removed: every line of contest code is still here and still runs, because
   // it is woven through the scan log, the raffle's ticket sources and the merge
@@ -5503,6 +5546,7 @@ function setupRoster() {
     if(tab==="raffle") renderRaffle();
     if(tab==="auction") renderAuction();
     if(tab==="store") renderStore();
+    if(tab==="coinbank") renderCoinBank();
     if(tab==="trends") renderTrends();
     if(tab==="contest") renderContestTab();
     if(tab==="attendance") safeRenderTool(applyAttViewMode, "attList", "Attendance");
@@ -10746,9 +10790,10 @@ function setupRoster() {
       shown++;
       var isCorrection = entry.kind==="correction";
       var isTracked = isTrackedEntry(entry);
+      var isCoinBank = entry.kind==="coinBank";
       var row=el("div","recent-item history-item"+(entry.undone?" undone":"")+(isCorrection?" correction":"")+(isTracked?" tracked-item":""));
       var nameEl=el("span","rn", name+"  ");
-      var sub=el("span",null, entry.label); sub.style.color="var(--muted)"; sub.style.fontSize=".8rem";
+      var sub=el("span",null, (isCoinBank?"🪙 ":"")+entry.label); sub.style.color="var(--muted)"; sub.style.fontSize=".8rem";
       nameEl.appendChild(sub);
       row.appendChild(nameEl);
       var when=new Date(entry.ts);
@@ -14962,6 +15007,97 @@ function setupRoster() {
   $("storeClearHist").addEventListener("click", function(){ if(!confirm("Clear the purchase history? (This does NOT refund points.)")) return; data.store.log=[]; save(); renderStoreHistory(); });
   $("storeAutoReceived").addEventListener("change", function(){ data.store.autoReceived=this.checked; save(); });
   function storeScan(code){ code=(code||"").trim(); if(!code) return; var s=studentById(code); if(!s){ storeFlash(false,"Unknown code","\u201C"+code+"\u201D isn't a student"); beep(false); return; } if(!studentInCurrentClass(s)){ storeFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D", "switch class to spend for this student"); beep(false); return; } storeStudentId=s.id; renderStore(); storeFlash(true, s.name+" selected", fmtScore(s.id)+" to spend"); beep(true); }
+
+  /* ---------- COIN DEPOSIT / WITHDRAW (Shulchani Mode only) ----------
+   * Loss protection, not a savings account: there is no separate "banked"
+   * pool. Deposit/withdraw write straight to data.scores[sid] — the exact
+   * field Standings, the Store and every other spend/award already use —
+   * the same way storeBuy()/refundPurchase() do, and for the same reason:
+   * that path never calls recordEarn(), so Trends/lifetime-earned is
+   * untouched by a deposit or withdrawal, matching "spending never erases
+   * earning" for Store/Auction. Logged as one lump-sum entry (kind:"coinBank")
+   * rather than per-activity detail — a deliberate, accepted tradeoff. */
+  var cbStudentId=null, cbMode="deposit", cbAmount={};
+  COINS.forEach(function(c){ cbAmount[c.abbr]=0; });
+  function cbTotalPrutot(){ return COINS.reduce(function(sum,c){ return sum+(cbAmount[c.abbr]||0)*c.prutot; },0); }
+  function cbFlash(ok,l1,l2){ var f=$("cbFlash"); f.className="flash show "+(ok?"good":"bad"); f.innerHTML=""; if(l1) f.appendChild(el("div","who",l1)); if(l2) f.appendChild(el("div","total",l2)); clearTimeout(f._t); f._t=setTimeout(function(){ f.classList.remove("show"); },1600); }
+  function renderCoinBank(){
+    document.querySelectorAll("#cbMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.cbmode===cbMode); });
+    $("cbAmountTitle").textContent = cbMode==="deposit" ? "Coins to deposit" : "Coins to withdraw";
+    $("cbConfirm").textContent = cbMode==="deposit" ? "Confirm deposit" : "Confirm withdrawal";
+    var sel=$("cbStudSel"); sel.innerHTML="";
+    var studs=activeStudents().sort(function(a,b){return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name));});
+    if(!studs.length){ $("cbBalance").textContent="Add students on the Students tab first."; $("cbCoinRows").innerHTML=""; $("cbAmountTotal").textContent=""; $("cbNote").textContent=""; $("cbConfirm").disabled=true; renderCoinBankHistory(); return; }
+    studs.forEach(function(s){ var o=el("option",null,s.name+(s.group?" ("+s.group+")":"")); o.value=s.id; sel.appendChild(o); });
+    if(!cbStudentId || !studs.some(function(s){return s.id===cbStudentId;})) cbStudentId=studs[0].id;
+    sel.value=cbStudentId;
+    var sid=cbStudentId, s=studentById(sid);
+    var balEl=$("cbBalance"); balEl.textContent="";
+    balEl.appendChild(el("b",null,(s?s.name:"")));
+    balEl.appendChild(document.createTextNode(" has "));
+    balEl.appendChild(el("b",null,fmtScore(sid)));
+    balEl.appendChild(document.createTextNode(" on their digital balance"));
+    var rows=$("cbCoinRows"); rows.innerHTML="";
+    COINS.forEach(function(c){
+      var row=el("div","erow");
+      var nm=el("span","grow", c.name+" ("+c.abbr+")"); nm.style.color=c.color; nm.style.fontWeight="600";
+      var inp=el("input","field"); inp.type="number"; inp.min="0"; inp.step="1";
+      inp.style.width="72px"; inp.style.textAlign="center";
+      inp.value=cbAmount[c.abbr]||0;
+      inp.addEventListener("change", function(){ var n=parseInt(inp.value,10); cbAmount[c.abbr]=(isNaN(n)||n<0)?0:n; inp.value=cbAmount[c.abbr]; renderCoinBankAmount(); });
+      row.appendChild(nm); row.appendChild(inp);
+      rows.appendChild(row);
+    });
+    renderCoinBankAmount();
+    renderCoinBankHistory();
+  }
+  function renderCoinBankAmount(){
+    var total=cbTotalPrutot(), sid=cbStudentId, s=studentById(sid);
+    $("cbAmountTotal").textContent = total>0 ? "= "+formatCoins(total) : "Enter an amount above.";
+    var noteEl=$("cbNote"), enough = total<=score(sid);
+    if(!total){ noteEl.textContent=""; }
+    else if(cbMode==="deposit"){
+      noteEl.textContent="Recorded as one lump-sum entry — this doesn't preserve which activities the coins came from.";
+    } else {
+      noteEl.textContent="Hands "+(s?s.name:"the student")+" physical coins back — they're at risk of being lost again until deposited."+(enough?"":" "+(s?s.name:"This student")+" doesn't have that much on their digital balance.");
+    }
+    $("cbConfirm").disabled = !(total>0 && (cbMode==="deposit" || enough));
+  }
+  function renderCoinBankHistory(){
+    var h=$("cbHistory"); h.innerHTML="";
+    var entries=data.log.filter(function(e){ return e.kind==="coinBank"; }).slice(0,20);
+    if(!entries.length){ h.appendChild(el("div","recent-empty","No coin deposits or withdrawals yet.")); return; }
+    entries.forEach(function(e){
+      var row=el("div","erow");
+      var s=studentById(e.sid);
+      var nm=el("span","grow","🪙 "+(s?s.name:"(removed student)")+" — "+e.label);
+      row.appendChild(nm);
+      row.appendChild(el("span","grp-tag", formatCoins(e.delta,{signed:true})));
+      h.appendChild(row);
+    });
+  }
+  function cbConfirmAction(){
+    var sid=cbStudentId, s=studentById(sid); if(!s) return;
+    var total=cbTotalPrutot(); if(total<=0) return;
+    var delta = cbMode==="deposit" ? total : -total;
+    if(cbMode==="withdraw" && total>score(sid)){
+      cbFlash(false, "Not enough to withdraw", s.name+" has "+fmtScore(sid)); beep(false); return;
+    }
+    var label = cbMode==="deposit" ? "Physical coin deposit" : "Physical coin withdrawal";
+    data.scores[sid]=score(sid)+delta;
+    addLogEntry({ts:Date.now(), sid:sid, label:label, delta:delta, kind:"coinBank"});
+    save(); beep(true);
+    cbFlash(true, s.name+" — "+label, formatCoins(delta,{signed:true})+" → "+fmtScore(sid));
+    COINS.forEach(function(c){ cbAmount[c.abbr]=0; });
+    renderCoinBank(); renderScanBoard(); refreshLiveViews();
+  }
+  function cbStudGo(delta){ var studs=activeStudents().sort(function(a,b){return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name));}); if(!studs.length) return; var ids=studs.map(function(s){return s.id;}); var idx=ids.indexOf(cbStudentId); if(idx<0) idx=0; idx=(idx+delta+ids.length)%ids.length; cbStudentId=ids[idx]; renderCoinBank(); }
+  $("cbMode").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; cbMode=b.dataset.cbmode; renderCoinBank(); });
+  $("cbStudSel").addEventListener("change", function(){ cbStudentId=this.value; renderCoinBank(); });
+  $("cbStudPrev").addEventListener("click", function(){ cbStudGo(-1); });
+  $("cbStudNext").addEventListener("click", function(){ cbStudGo(1); });
+  $("cbClear").addEventListener("click", function(){ COINS.forEach(function(c){ cbAmount[c.abbr]=0; }); renderCoinBank(); });
+  $("cbConfirm").addEventListener("click", cbConfirmAction);
 
   /* ---------- PESUKIM ---------- */
   var selectedPasuk = 1;

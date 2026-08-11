@@ -12,6 +12,18 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **Shulchani Mode: a Coin Deposit tab, for turning physical coins into a safe digital balance and back.** Until now a student holding real Shulchani coin tokens — from a reward, or handed out separately from a scan — had no way to get them off his desk and into the app. If he lost them, they were just gone; the app never knew they existed.
+
+  **Rewards → Coin Deposit**, visible only in Shulchani Mode. Pick a direction (Deposit or Withdraw), pick a student, and enter what he's handing you or receiving — "2 Sela, 1 Dinar" — using the same coin breakdown you already see everywhere else in Shulchani Mode. Confirm, and it lands on his normal spendable balance, the same one Standings and the Store already use.
+
+  **This is loss protection, not a bank account.** There is no separate "banked" pool, no interest, no savings goal — deposited coins are simply added to the balance he already has, the same way a Store purchase already subtracts from it. That's also why it's named "Coin Deposit" and not "Bank".
+
+  **One tradeoff, made on purpose:** a deposit or withdrawal writes a single lump-sum entry, not the per-activity detail behind it — you'll see "Physical coin deposit" once, not a list of what earned those coins. A quiet note says so before you confirm. The entry is still fully visible in History, tagged with 🪙 so it reads differently from a normal scan.
+
+  **Withdrawing is the same tool in the other direction**, and reintroduces the physical loss risk deposit exists to remove — the screen says so, but it isn't a blocking warning; a rebbi handing coins back to a student knows what he's doing.
+
+  **What it deliberately does not touch:** Trends and lifetime-earned are unaffected, exactly like Store and Auction spending already work — spending never erases earning. Standings updates immediately, same as any other spend.
+
 - **The app now tells you when you are running an old copy of it.** Until now there was no way to find out. Two rebbeim could be using Menchmark side by side, months apart in version, and nothing on either screen would say so — including to whoever was trying to help them.
 
   **Help → About now shows your version number.** That alone answers the question that used to be unanswerable: "which Menchmark am I actually running?" If you ever report a problem, that number is the single most useful thing you can send.
