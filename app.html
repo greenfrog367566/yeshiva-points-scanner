@@ -3787,7 +3787,7 @@ function setupRoster() {
           <label class="lbl" style="margin:0">Include:</label>
           <span class="seg mini" id="attEmailScope">
             <button data-scope="exceptions" title="Only the boys who were absent or late">Absent &amp; late only</button>
-            <button data-scope="full" title="Every student, with his status">Full roll</button>
+            <button data-scope="full" title="Absent and late at the top, then the whole class listed underneath with each boy's status">＋ full list below</button>
           </span>
           <button class="btn btn-sm" id="attEmailRefresh" title="Rebuild the message from what is on screen now">↻ Rebuild</button>
         </div>
@@ -5341,6 +5341,9 @@ function setupRoster() {
     // And arming Attendance specifically is what puts "Mark the rest Present"
     // on the class list. Same in-place treatment, same reason — see there.
     if(typeof refreshAttFillBtn==="function") refreshAttFillBtn();
+    // "✉ Email attendance" rides along, since it is only ever offered while
+    // Attendance is armed — and disarming must take it away with the fill.
+    if(typeof refreshAttEmailBtn==="function") refreshAttEmailBtn();
   }
 
   /* ---------- TABS (grouped, with a subtab row) ---------- */
@@ -6386,6 +6389,10 @@ function setupRoster() {
   $("attMarkAllPresent").addEventListener("click", function(){
     attFillUnmarked(attDate);
     renderAttendance();
+    // The class list's send button is gated on the roll being complete, and
+    // this button is one of the two things that completes it. renderAttendance
+    // above redraws this tab only.
+    refreshAttEmailBtn();
   });
   $("attSendBtn").addEventListener("click", sendAttendance);
   $("attResendBtn").addEventListener("click", resendAttendanceDay);
@@ -6410,6 +6417,20 @@ function setupRoster() {
    * send gate above exists to prevent.
    */
   var attEmailScope = "exceptions"; // draft-local until the panel is opened
+  /* MAILTO LINKS HAVE A LENGTH CEILING and it is not ours to control — some
+   * mail clients (and Windows' handler registry) truncate or refuse well before
+   * 2,000 characters, which for a full roll of a large class is a real
+   * possibility. A truncated roll that opens anyway is the worst outcome, so
+   * both callers below check before handing anything over.
+   */
+  var ATT_MAILTO_MAX = 1900;
+  function attEmailHref(dateKey, to, body){
+    // Commas separate recipients and @ is legal in the address part — encoding
+    // them turns a two-address mailto into one nonsense address in some clients.
+    return "mailto:"+encodeURIComponent(to).replace(/%40/g,"@").replace(/%2C/gi,",")
+      +"?subject="+encodeURIComponent(attEmailSubject(dateKey))
+      +"&body="+encodeURIComponent(body);
+  }
   // Same honesty rule as sendAttendance(): an unmarked boy in presence-first is
   // one nobody has looked at, not a present one, so he is named as such rather
   // than folded into the present count.
@@ -6423,10 +6444,23 @@ function setupRoster() {
         return {name:s.name, status:st, ts:rec && rec.ts};
       });
   }
+  // Is today's roll actually finished — every boy in the class looked at? This
+  // is what "the rest are present" leaves behind, and it is the gate the class
+  // list's email button waits for. Deliberately reads the real marks, not the
+  // absence-first default: a boy nobody touched is not a completed roll.
+  function attRollComplete(dateKey){
+    var studs=activeStudents();
+    if(!studs.length) return false;
+    return studs.every(function(s){ return !!attMarkedRec(dateKey, s.id); });
+  }
   function attEmailSubject(dateKey){
     return "Attendance — "+(data.currentClass||data.className||data.school||"Class")+" — "+fmtDateLabel(dateKey);
   }
-  function attEmailText(dateKey){
+  // scope is passed explicitly rather than read from the panel's draft state,
+  // because the class-list button below builds the same message with no panel
+  // open — and may have to fall back to the shorter shape to fit a mailto.
+  function attEmailText(dateKey, scope){
+    var wantFull = (scope||attEmailScope)==="full";
     var rows=attEmailRows(dateKey);
     var bucket={present:[],late:[],absent:[],unmarked:[]};
     rows.forEach(function(r){ (bucket[r.status]||bucket.unmarked).push(r); });
@@ -6450,16 +6484,31 @@ function setupRoster() {
       });
       L.push("");
     }
-    if(attEmailScope==="full"){
-      section("Present", bucket.present, false);
-      section("Late", bucket.late, true);
-      section("Absent", bucket.absent, false);
-    }else{
-      section("Absent", bucket.absent, false);
-      section("Late", bucket.late, true);
-      if(!bucket.absent.length && !bucket.late.length) L.push("Everyone was present.", "");
-    }
+    /* ABSENT FIRST, THEN LATE, THEN THE WHOLE ROLL UNDERNEATH.
+     *
+     * The two things a school office has to act on are who is missing and who
+     * came in late, so those go where they will be read — at the top, before
+     * anything scrolls. The full list is the record rather than the message,
+     * and it belongs below it.
+     *
+     * The full list REPEATS the absent and late boys, in their place in the
+     * alphabet, with their status. Leaving them out would make the list quietly
+     * disagree with the counts above it, and a roll that skips names is not a
+     * roll — the office should be able to read the bottom half alone and have
+     * the complete picture.
+     */
+    section("Absent", bucket.absent, false);
+    section("Late", bucket.late, true);
+    if(!bucket.absent.length && !bucket.late.length) L.push("Everyone was present.", "");
     section("Not marked", bucket.unmarked, false);
+    if(wantFull){
+      L.push("Full list ("+rows.length+"):");
+      rows.forEach(function(r){
+        L.push("  "+r.name+" — "+(ATT_LABEL[r.status]||"Not marked")
+          +(r.status==="late" && r.ts ? "  "+fmtClockTime(r.ts) : ""));
+      });
+      L.push("");
+    }
     L.push("— Sent from Menchmark");
     return L.join("\n");
   }
@@ -6516,17 +6565,11 @@ function setupRoster() {
     var to=($("attEmailTo").value||"").trim();
     var body=$("attEmailBody").value;
     data.attEmailTo=to; save();   // remembered so the next day is one click
-    var href="mailto:"+encodeURIComponent(to).replace(/%40/g,"@").replace(/%2C/gi,",")
-      +"?subject="+encodeURIComponent(attEmailSubject(attDate))
-      +"&body="+encodeURIComponent(body);
-    /* MAILTO LINKS HAVE A LENGTH CEILING and it is not ours to control — some
-     * mail clients (and Windows' handler registry) truncate or refuse well
-     * before 2,000 characters, which for a full roll of a large class is a
-     * real possibility. A truncated roll that opens anyway is the worst
-     * outcome, so we refuse to open it and say what to do instead: the text is
-     * already on screen and one button away from the clipboard.
-     */
-    if(href.length>1900){
+    var href=attEmailHref(attDate, to, body);
+    // Over the ceiling we refuse rather than truncate, and say what to do
+    // instead: the text is already on screen and one button away from the
+    // clipboard. See ATT_MAILTO_MAX.
+    if(href.length>ATT_MAILTO_MAX){
       $("attEmailStatus").textContent="This message is too long to hand to your email app safely — press “Copy text”, then paste it into a new email yourself. (Switching to “Absent & late only” usually makes it short enough.)";
       return;
     }
@@ -9552,9 +9595,83 @@ function setupRoster() {
       // repaint — the same reason recordTrackedScan() calls this instead of
       // renderTapPanel(), which would rebuild every QR on the chart mid-scan.
       refreshTrackedBadges();
+      // Finishing the roll is exactly what makes the roll sendable, so the
+      // email button appears the moment this one has done its work.
+      refreshAttEmailBtn();
       refreshLiveViews();
     });
     return b;
+  }
+  /* "EMAIL IT TO THE OFFICE", ON THE CLASS LIST TOO — the step that comes after
+   * "the rest are present", without leaving the chart.
+   *
+   * The rebbi has just closed out the roll in front of the room, usually in
+   * full screen. Making him leave full screen, find Run → Attendance and open
+   * the draft panel to send the thing he has just finished is the same detour
+   * the fill button above was added to remove. Same message, same builder, same
+   * mailto — this is a shortcut to the panel's send, not a second way of
+   * deciding what "the day's attendance" means.
+   *
+   * IT ONLY EXISTS ONCE THE ROLL IS COMPLETE (attRollComplete). Half a roll
+   * mailed to an office is worse than none — and "complete" is precisely the
+   * state pressing "Mark the rest Present" produces, which is why the button
+   * appears when it does. It goes away again by itself if a boy is unmarked.
+   *
+   * ALWAYS TODAY, never attDate, for the same reason the fill button is: the
+   * chart has no day on screen.
+   *
+   * NOTHING IS SENT BY THE APP. This opens the rebbi's own mail app with the
+   * message filled in; he still presses Send there. So the one-tap shortcut
+   * cannot mail a class by accident.
+   */
+  function attEmailToolbarBtn(){
+    var b=el("button","seat-modebtn att-email-btn","✉ Email attendance");
+    b.title="Open your email app with today's attendance ready to send";
+    b.addEventListener("click", function(){
+      var dk=todayKey();
+      var to=(data.attEmailTo||"").trim();
+      /* No saved address means there is nothing this button can usefully do —
+       * and a blank mailto popped over a full-screen chart is a puzzle, not a
+       * prompt. Say where the address is set instead. It is set once, on the
+       * Attendance tab, and remembered from then on.
+       */
+      if(!to){
+        flash(false, "Attendance", "No email address saved",
+          "Set one on Run → Attendance → “Email this day…” first");
+        beep(false); return;
+      }
+      // Try the shape he chose; fall back to the short one if the long one
+      // won't fit a mailto, because a complete absent-and-late list beats a
+      // full roll that the mail app silently cuts in half.
+      var scope=data.attEmailScope==="full" ? "full" : "exceptions";
+      var href=attEmailHref(dk, to, attEmailText(dk, scope));
+      if(href.length>ATT_MAILTO_MAX && scope==="full"){
+        scope="exceptions";
+        href=attEmailHref(dk, to, attEmailText(dk, scope));
+      }
+      if(href.length>ATT_MAILTO_MAX){
+        flash(false, "Attendance", "Too long to email this way",
+          "Use Run → Attendance → “Email this day…” and press Copy text");
+        beep(false); return;
+      }
+      flash(true, "Attendance", "Opening your email", "Nothing is sent until you press Send there");
+      beep(true);
+      window.location.href=href;
+    });
+    return b;
+  }
+  /* Kept in step in place, never by renderTapPanel() — same reason as the fill
+   * button above, and it has to run on every attendance write rather than only
+   * on arming, since marking the last boy by hand completes the roll just as
+   * the fill button does.
+   */
+  function refreshAttEmailBtn(){
+    var want=attendanceActivity(armedActivity()) && attRollComplete(todayKey());
+    document.querySelectorAll(".seat-toolbar-main").forEach(function(tb){
+      var cur=tb.querySelector(".att-email-btn");
+      if(want && !cur) tb.appendChild(attEmailToolbarBtn());
+      else if(!want && cur && cur.parentNode) cur.parentNode.removeChild(cur);
+    });
   }
   /* Add it, drop it, or re-label it in place — never a renderTapPanel().
    *
@@ -9570,7 +9687,9 @@ function setupRoster() {
     document.querySelectorAll(".seat-toolbar-main").forEach(function(tb){
       var cur=tb.querySelector(".att-fill-btn");
       if(!want){ if(cur && cur.parentNode) cur.parentNode.removeChild(cur); return; }
-      if(!cur){ tb.appendChild(attFillToolbarBtn()); return; }
+      // Before the email button when that one is already up, so the two always
+      // read in the order they are used: finish the roll, then send it.
+      if(!cur){ tb.insertBefore(attFillToolbarBtn(), tb.querySelector(".att-email-btn")); return; }
       cur.textContent="✓ "+attFillLabel();
       cur.title=attFillTitle()+" — for today.";
     });
@@ -9628,6 +9747,11 @@ function setupRoster() {
     // full repaint. Every boy's tile, not only this one, because a limited-use
     // cap or a preset can move for the class rather than for one student.
     refreshTrackedBadges();
+    // Scanning the last unmarked boy completes the roll just as pressing "Mark
+    // the rest Present" does, so the email button has to be able to appear on
+    // this path too — otherwise it would depend on which way the roll was
+    // finished.
+    refreshAttEmailBtn();
     return true;
   }
   function award(s){
@@ -11593,7 +11717,13 @@ function setupRoster() {
     // Built here so it is present on the first paint if Attendance is already
     // armed; added and removed after that by refreshAttFillBtn(), which is what
     // keeps it in step with arming without redrawing the chart.
-    if(attendanceActivity(armedActivity())) toolbar.appendChild(attFillToolbarBtn());
+    if(attendanceActivity(armedActivity())){
+      toolbar.appendChild(attFillToolbarBtn());
+      // Same first-paint reason, plus its own gate: a roll finished earlier
+      // today is still finished after a repaint, so the send button has to come
+      // back with it rather than waiting for the next attendance write.
+      if(attRollComplete(todayKey())) toolbar.appendChild(attEmailToolbarBtn());
+    }
 
     if(effViewMode==="seating"){
       var lay=seatLayout();
