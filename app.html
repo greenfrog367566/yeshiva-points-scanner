@@ -6609,12 +6609,29 @@ function setupRoster() {
     // on-screen summary does — a day nobody touched must not read as a perfect
     // one once it has left the building.
     if(!attDayTaken(dateKey)) L.push("(Attendance has not been taken for this day yet.)");
+    /* EVERY NAME CARRIES THE TIME IT WAS MARKED, not only the late ones.
+     *
+     * It is what makes the message a record rather than a summary: the office
+     * can see that the absences were taken at 9:04 and the boy who came in was
+     * marked at 9:41, which is the difference between a roll somebody took and
+     * a roll somebody typed up afterwards.
+     *
+     * The key line is the one below it. The same column means "when he walked
+     * in" under Late and "when the rebbi marked him" under Absent — close
+     * enough to be read as one thing and different enough to matter, so it is
+     * stated once at the top rather than repeated on forty lines. Only printed
+     * when there is at least one time to explain, so a day of pure defaults
+     * doesn't carry a key to an empty column.
+     */
+    if(rows.some(function(r){ return typeof r.ts==="number"; })){
+      L.push("Times show when each boy was marked.");
+    }
     L.push("");
-    function section(title, list, withTime){
+    function section(title, list){
       if(!list.length) return;
       L.push(title+" ("+list.length+"):");
       list.forEach(function(r){
-        L.push("  "+r.name+(withTime && r.ts ? "  "+fmtClockTime(r.ts) : ""));
+        L.push("  "+r.name+(r.ts ? "  "+fmtClockTime(r.ts) : ""));
       });
       L.push("");
     }
@@ -6653,15 +6670,16 @@ function setupRoster() {
      * roll — the office should be able to read the bottom half alone and have
      * the complete picture.
      */
-    section("Absent", bucket.absent, false);
-    section("Late", bucket.late, true);
+    section("Absent", bucket.absent);
+    section("Late", bucket.late);
     if(!bucket.absent.length && !bucket.late.length) L.push("Everyone was present.", "");
-    section("Not marked", bucket.unmarked, false);
+    // Nothing to timestamp here by definition — an unmarked boy has no mark.
+    section("Not marked", bucket.unmarked);
     if(wantFull){
       L.push("Full list ("+rows.length+"):");
       rows.forEach(function(r){
         L.push("  "+r.name+" — "+(ATT_LABEL[r.status]||"Not marked")
-          +(r.status==="late" && r.ts ? "  "+fmtClockTime(r.ts) : ""));
+          +(r.ts ? "  "+fmtClockTime(r.ts) : ""));
       });
       L.push("");
     }
