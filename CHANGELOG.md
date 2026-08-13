@@ -12,6 +12,19 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **You can now email the day's attendance to the office, from your own email.** Until now the only way attendance left Menchmark was into a Google Sheet — which is exactly right for a school that uses one, and no use at all to a school whose secretary simply wants an email every morning. A rebbi with no sheet connected pressed **Send Attendance** and nothing happened.
+
+  On **Run → Attendance** there is now **✉ Email this day…** next to Send Attendance. It writes the message for you — the class, the date, the counts, and who was absent or late with the time he came in — and shows it to you before anything opens, so you can read it, add a line ("Dovid is at a bris"), and change it however you like.
+
+  **It is sent by you, not by Menchmark.** Pressing **Open in my email app** hands the message to whatever you already use for email — Gmail, Outlook, Mail on an iPad — with the address and subject filled in. Menchmark does not send it, and never sees the address on any server: it is saved in your own browser, on your own computer, so the next day is one click. The office receives a normal email **from you**, which they can reply to.
+
+  **Absent & late only** is what it writes by default, which is what most offices actually want. **Full roll** lists every student with his status, for a school that wants the whole roll on file. Whichever you pick is remembered.
+
+  **It will not claim you took attendance when you didn't.** If nobody has been marked for the day, the email says so in as many words. If you use "I mark who's here" and some boys are still unmarked, they are listed under **Not marked** — never quietly counted as present. That is the same rule the Google Sheet send follows, for the same reason: once it leaves the building it is somebody's official record.
+
+  **It records nothing and changes nothing.** Emailing a day does not mark it as sent to your Sheet, because Menchmark has no way of knowing whether you actually pressed Send in your email app. The Sheet, if you use one, works exactly as before.
+
+  One limit worth knowing: email apps can only accept a message of a certain length this way. A very large class on **Full roll** can exceed it — if so, Menchmark refuses to open a half-message and tells you to press **Copy text** and paste it into a new email yourself.
 - **The app now tells you when you are running an old copy of it.** Until now there was no way to find out. Two rebbeim could be using Menchmark side by side, months apart in version, and nothing on either screen would say so — including to whoever was trying to help them.
 
   **Help → About now shows your version number.** That alone answers the question that used to be unanswerable: "which Menchmark am I actually running?" If you ever report a problem, that number is the single most useful thing you can send.

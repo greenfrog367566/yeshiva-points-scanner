@@ -3769,7 +3769,35 @@ function setupRoster() {
              normal send skips anything already stamped as sent, which is
              precisely what makes a silently-failed send unrecoverable. -->
         <button class="btn btn-sm" id="attResendBtn" title="Send every record for the day shown, even ones already marked as sent">↻ Re-send this day…</button>
+        <!-- Emails the day from the rebbi's OWN mail app — the app never sends
+             anything itself and never sees the address at any server. That is
+             the whole point: the office receives a normal message from the
+             rebbi it already knows, and can reply to him. -->
+        <button class="btn btn-sm" id="attEmailBtn" title="Write this day's attendance as an email from your own mail app">✉ Email this day…</button>
         <button class="btn btn-primary" id="attSendBtn">Send Attendance</button>
+      </div>
+
+      <!-- Inline rather than a modal: the rebbi should be able to read the exact
+           words that will leave his mailbox, and edit them, before anything
+           opens. Everything here is a draft until he presses the button. -->
+      <div class="card pad" id="attEmailPanel" style="display:none;margin-top:10px">
+        <div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <label class="lbl" style="margin:0">Send to:</label>
+          <input type="email" id="attEmailTo" class="field" style="flex:1 1 220px" placeholder="office@school.org" multiple>
+          <label class="lbl" style="margin:0">Include:</label>
+          <span class="seg mini" id="attEmailScope">
+            <button data-scope="exceptions" title="Only the boys who were absent or late">Absent &amp; late only</button>
+            <button data-scope="full" title="Every student, with his status">Full roll</button>
+          </span>
+          <button class="btn btn-sm" id="attEmailRefresh" title="Rebuild the message from what is on screen now">↻ Rebuild</button>
+        </div>
+        <textarea id="attEmailBody" class="field" rows="10" style="width:100%;font-family:inherit;resize:vertical" spellcheck="false"></textarea>
+        <div class="toolbar" style="margin-top:8px;gap:8px;flex-wrap:wrap">
+          <span class="grow" id="attEmailStatus" style="color:var(--muted);font-size:.85rem"></span>
+          <button class="btn btn-sm" id="attEmailCopy">Copy text</button>
+          <button class="btn btn-sm" id="attEmailCancel">Close</button>
+          <button class="btn btn-primary" id="attEmailOpen">Open in my email app</button>
+        </div>
       </div>
     </div>
 
@@ -4410,6 +4438,10 @@ function setupRoster() {
     // Absence-first: unmarked means present. The mode a new install starts in,
     // and what every existing save backfills to — see attPresenceFirst().
     attMode: "absence",
+    // Who the daily attendance email goes to, and how much of the roll it
+    // carries. Stored only in this browser — the app never sends the mail.
+    attEmailTo: "",
+    attEmailScope: "exceptions",
     raffle: { mode:"auto", entries:{}, winners:[] },
     pasukSet: { label:"", ref:"", from:1, to:1 },
     pesukimDone: {},
@@ -6294,6 +6326,10 @@ function setupRoster() {
               : (taken ? "Not sent yet."
                        : "Not sent yet — and nobody has been marked for this day. Use “Mark the rest Present” if everyone is here."))
           : "");
+    // A draft left open while the rebbi changes the day, or marks another boy,
+    // would otherwise still describe the screen he was looking at a minute ago
+    // — and that draft is one button away from leaving the building.
+    if($("attEmailPanel").style.display!=="none") attEmailFollowScreen();
     // The fill-in button says which way it fills, because in presence-first the
     // useful sweep is the opposite one: the rebbi has marked everyone who is
     // here, and what is left over is the absences.
@@ -6353,6 +6389,150 @@ function setupRoster() {
   });
   $("attSendBtn").addEventListener("click", sendAttendance);
   $("attResendBtn").addEventListener("click", resendAttendanceDay);
+
+  /* ---------- EMAIL THIS DAY ----------
+   * A second way out of the Attendance tab, for the school whose office wants
+   * an email rather than a Google Sheet — and for the rebbi who has no sheet
+   * connected at all, for whom "Send Attendance" currently does nothing.
+   *
+   * IT IS SENT BY THE REBBI, NOT BY THE APP. We build the text and hand it to
+   * his own mail client through a mailto: link; nothing is transmitted from
+   * here, no address is stored anywhere but his own browser, and the message
+   * the office receives comes from the address they already know and can reply
+   * to. That also means it works with no Sheet, no Apps Script and no network
+   * beyond whatever his mail app needs — including on the downloaded file://
+   * copy, where the Sheet path is unavailable anyway.
+   *
+   * It records nothing. Emailing a day does NOT stamp it as sent (_sentAt is
+   * the Sheet's flag, and it drives the auto-sync of later corrections); the
+   * app cannot know whether the rebbi actually pressed Send in his mail app,
+   * so claiming it did would be the same manufactured-observation mistake the
+   * send gate above exists to prevent.
+   */
+  var attEmailScope = "exceptions"; // draft-local until the panel is opened
+  // Same honesty rule as sendAttendance(): an unmarked boy in presence-first is
+  // one nobody has looked at, not a present one, so he is named as such rather
+  // than folded into the present count.
+  function attEmailRows(dateKey){
+    var day=attDayRecord(dateKey);
+    return activeStudents()
+      .sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); })
+      .map(function(s){
+        var rec=attMarkedRec(dateKey, s.id);
+        var st=rec ? rec.status : (attPresenceFirst() ? "" : (day[s.id] && day[s.id].status) || "");
+        return {name:s.name, status:st, ts:rec && rec.ts};
+      });
+  }
+  function attEmailSubject(dateKey){
+    return "Attendance — "+(data.currentClass||data.className||data.school||"Class")+" — "+fmtDateLabel(dateKey);
+  }
+  function attEmailText(dateKey){
+    var rows=attEmailRows(dateKey);
+    var bucket={present:[],late:[],absent:[],unmarked:[]};
+    rows.forEach(function(r){ (bucket[r.status]||bucket.unmarked).push(r); });
+    var L=[];
+    L.push(attEmailSubject(dateKey));
+    if(data.school) L.push(data.school);
+    L.push("");
+    if(!rows.length){ L.push("No students in this class."); return L.join("\n"); }
+    L.push(bucket.present.length+" present, "+bucket.absent.length+" absent, "+bucket.late.length+" late"
+      + (bucket.unmarked.length ? ", "+bucket.unmarked.length+" not marked" : ""));
+    // Says out loud when the numbers are only defaults, for the same reason the
+    // on-screen summary does — a day nobody touched must not read as a perfect
+    // one once it has left the building.
+    if(!attDayTaken(dateKey)) L.push("(Attendance has not been taken for this day yet.)");
+    L.push("");
+    function section(title, list, withTime){
+      if(!list.length) return;
+      L.push(title+" ("+list.length+"):");
+      list.forEach(function(r){
+        L.push("  "+r.name+(withTime && r.ts ? "  "+fmtClockTime(r.ts) : ""));
+      });
+      L.push("");
+    }
+    if(attEmailScope==="full"){
+      section("Present", bucket.present, false);
+      section("Late", bucket.late, true);
+      section("Absent", bucket.absent, false);
+    }else{
+      section("Absent", bucket.absent, false);
+      section("Late", bucket.late, true);
+      if(!bucket.absent.length && !bucket.late.length) L.push("Everyone was present.", "");
+    }
+    section("Not marked", bucket.unmarked, false);
+    L.push("— Sent from Menchmark");
+    return L.join("\n");
+  }
+  function attEmailSyncScopeButtons(){
+    document.querySelectorAll("#attEmailScope button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.scope===attEmailScope);
+    });
+  }
+  var attEmailGenerated = "";   // last text we produced, to tell ours from his
+  function attEmailRebuild(){
+    attEmailGenerated=attEmailText(attDate);
+    $("attEmailBody").value=attEmailGenerated;
+    $("attEmailStatus").textContent="";
+  }
+  /* Keeps an open draft honest as the day changes underneath it — but never
+   * overwrites words the rebbi typed himself. If he has edited the message we
+   * leave it exactly as he left it and say that it no longer matches the
+   * screen; silently rewriting a note he added to the office would be worse
+   * than a stale one he can see is stale.
+   */
+  function attEmailFollowScreen(){
+    if($("attEmailBody").value===attEmailGenerated){ attEmailRebuild(); return; }
+    var fresh=attEmailText(attDate);
+    $("attEmailStatus").textContent = (fresh===attEmailGenerated)
+      ? "" : "Attendance has changed since this draft — press ↻ Rebuild to update it (your edits will be replaced).";
+  }
+  $("attEmailBtn").addEventListener("click", function(){
+    var p=$("attEmailPanel");
+    var opening = p.style.display==="none";
+    p.style.display = opening ? "" : "none";
+    if(!opening) return;
+    attEmailScope = data.attEmailScope==="full" ? "full" : "exceptions";
+    attEmailSyncScopeButtons();
+    $("attEmailTo").value=data.attEmailTo||"";
+    attEmailRebuild();
+  });
+  $("attEmailCancel").addEventListener("click", function(){ $("attEmailPanel").style.display="none"; });
+  $("attEmailRefresh").addEventListener("click", attEmailRebuild);
+  document.querySelectorAll("#attEmailScope button").forEach(function(b){
+    b.addEventListener("click", function(){
+      attEmailScope=this.dataset.scope;
+      data.attEmailScope=attEmailScope; save();
+      attEmailSyncScopeButtons();
+      attEmailRebuild();
+    });
+  });
+  $("attEmailCopy").addEventListener("click", function(){
+    var btn=this, txt=$("attEmailBody").value;
+    function done(){ var o=btn.textContent; btn.textContent="Copied ✓"; setTimeout(function(){ btn.textContent=o; },1500); }
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done, function(){ fallbackCopy(txt); done(); }); }
+    else { fallbackCopy(txt); done(); }
+  });
+  $("attEmailOpen").addEventListener("click", function(){
+    var to=($("attEmailTo").value||"").trim();
+    var body=$("attEmailBody").value;
+    data.attEmailTo=to; save();   // remembered so the next day is one click
+    var href="mailto:"+encodeURIComponent(to).replace(/%40/g,"@").replace(/%2C/gi,",")
+      +"?subject="+encodeURIComponent(attEmailSubject(attDate))
+      +"&body="+encodeURIComponent(body);
+    /* MAILTO LINKS HAVE A LENGTH CEILING and it is not ours to control — some
+     * mail clients (and Windows' handler registry) truncate or refuse well
+     * before 2,000 characters, which for a full roll of a large class is a
+     * real possibility. A truncated roll that opens anyway is the worst
+     * outcome, so we refuse to open it and say what to do instead: the text is
+     * already on screen and one button away from the clipboard.
+     */
+    if(href.length>1900){
+      $("attEmailStatus").textContent="This message is too long to hand to your email app safely — press “Copy text”, then paste it into a new email yourself. (Switching to “Absent & late only” usually makes it short enough.)";
+      return;
+    }
+    $("attEmailStatus").textContent="Opening your email app… nothing has been sent yet — check it over and press Send there.";
+    window.location.href=href;
+  });
 
   /* ==================== TRACKER (non-point tracked activities) ==================== */
   var trackerViewMode = "activity"; // "activity" or "student"
@@ -22003,6 +22183,11 @@ nameLine
     // hand-mangled value all land on the behaviour the app has always had —
     // nobody's attendance changes meaning because of an update.
     if(data.attMode!=="presence") data.attMode="absence";
+    // Attendance email: purely additive, so a backfill is all it needs — no
+    // DATA_VERSION bump. Anything that isn't "full" means exceptions-only,
+    // which is the shorter, safer default for a mailto: link.
+    if(typeof data.attEmailTo!=="string") data.attEmailTo="";
+    if(data.attEmailScope!=="full") data.attEmailScope="exceptions";
     if(!data.hw||typeof data.hw!=="object") data.hw={};
     if(!Array.isArray(data.trackerLog)) data.trackerLog=[];
     if(typeof data.trackerActId!=="string") data.trackerActId="";
