@@ -110,11 +110,14 @@
         </div>
         No client secret is needed — the browser token flow doesn't use one.
       </li>
-      <li>Paste the client ID into <code>CLIENT_ID</code> at the top of this
-        file's script, or into the box below to try it without editing:
+      <li>Paste the client ID into the box below. It is remembered in this
+        browser's <code>localStorage</code>, so it survives the redirect this
+        page performs — no need to edit the file, and no live client ID sits in
+        the repo:
         <div class="copybox">
           <input id="clientIdIn" placeholder="xxxxxxxx.apps.googleusercontent.com">
           <button id="useClientId">Use it</button>
+          <button id="forgetClientId">Forget</button>
         </div>
       </li>
     </ol>
@@ -227,13 +230,15 @@
 (function () {
   "use strict";
 
-  // ── Paste your client ID here (or use the box in step 1) ──────────────────
-  // Throwaway spike project, testing mode, drive.file only. Not a secret — a
-  // client ID identifies the project and authorises nothing on its own. It is
-  // hardcoded rather than typed because the redirect flow reloads this page,
-  // which would otherwise lose an ID entered into the box and break the
-  // silent-re-auth test. DELETE THE GCP PROJECT when the spike is finished.
-  var CLIENT_ID = "946052490406-f75ngccgmv3ddn6jebjifbnji0mi8c1i.apps.googleusercontent.com";
+  // ── Client ID: entered in step 1, remembered in localStorage ──────────────
+  // Deliberately NOT hardcoded. It was, originally, because the redirect flow
+  // reloads this page and would otherwise lose an ID typed into the box —
+  // which would break the silent-re-auth test. Storing it here solves that
+  // without shipping one project's ID in the repo: a client ID is not a secret,
+  // but a live one in a public file invites use of a throwaway project nobody
+  // is watching. DELETE THE GCP PROJECT when the spike is finished.
+  var CLIENT_ID = "";
+  try { CLIENT_ID = localStorage.getItem("driveSpikeClientId") || ""; } catch (e) {}
   // ──────────────────────────────────────────────────────────────────────────
 
   var SCOPE      = "https://www.googleapis.com/auth/drive.file";
@@ -636,9 +641,18 @@
     var v = $("clientIdIn").value.trim();
     if (!v) return;
     CLIENT_ID = v;
+    try { localStorage.setItem("driveSpikeClientId", v); } catch (e) {}
     refresh();
-    log("Client ID set for this page load only. Paste it into CLIENT_ID in the " +
-        "file to make it stick.", "dim");
+    log("Client ID saved in this browser — it survives the redirect, so the " +
+        "silent re-auth test works. Use ⑨ to forget it.", "dim");
+  });
+
+  $("forgetClientId").addEventListener("click", function () {
+    CLIENT_ID = "";
+    try { localStorage.removeItem("driveSpikeClientId"); } catch (e) {}
+    $("clientIdIn").value = "";
+    refresh();
+    log("Client ID forgotten.", "dim");
   });
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-copy]"), function (b) {
@@ -705,6 +719,7 @@
     }
   }
 
+  if (CLIENT_ID) $("clientIdIn").value = CLIENT_ID;
   refresh();
   setInterval(refresh, 1000);
   log("Spike loaded. Redirect URI is " + REDIRECT_URI, "dim");
