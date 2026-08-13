@@ -907,10 +907,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .cb-coin:active{transform:scale(.95)}
   .cb-coin .cbc-circle{width:42px;height:42px;border-radius:50%;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:.85rem;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18)}
   .cb-coin .cbc-name{font-size:.72rem;font-weight:600;color:var(--muted)}
-  .cb-coin .cbc-count{position:absolute;top:-8px;right:-8px;background:var(--ink);color:#fff;border-radius:999px;min-width:22px;padding:2px 6px;font-size:.75rem;font-weight:700;display:none}
-  .cb-coin.has .cbc-count{display:block}
-  .cb-coin .cbc-minus{position:absolute;top:-8px;left:-8px;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;font-size:.85rem;line-height:1;padding:0;display:none}
-  .cb-coin.has .cbc-minus{display:block}
+  .cb-coin.has{border-color:var(--ink)}
+  .cb-coin .cbc-step{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:7px}
+  .cb-coin .cbc-step button{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;font-size:.85rem;line-height:1;padding:0}
+  .cb-coin .cbc-step button:hover{border-color:var(--ink)}
+  .cb-coin .cbc-step button:disabled{opacity:.35}
+  .cb-coin .cbc-n{min-width:20px;text-align:center;font-weight:700;font-size:.9rem}
   .pchart-wrap{overflow:auto;max-height:560px;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:14px}
   table.pchart{border-collapse:separate;border-spacing:0;font-size:.8rem;white-space:nowrap}
   table.pchart th,table.pchart td{border-bottom:1px solid var(--line);border-right:1px solid var(--line)}
@@ -15054,18 +15056,24 @@ function setupRoster() {
   }
   function renderCoinBankCoins(){
     var rows=$("cbCoinRows"); rows.innerHTML="";
-    COINS.forEach(function(c){
+    // Smallest coin on the left, biggest on the right — the reverse of COINS,
+    // whose largest-first order the greedy breakdown depends on.
+    COINS.slice().reverse().forEach(function(c){
       var n=cbAmount[c.abbr]||0;
       var tile=el("div","cb-coin"+(n>0?" has":""));
       tile.title="Tap to add 1 "+c.name;
       var circ=el("div","cbc-circle",c.abbr); circ.style.background=c.color;
       tile.appendChild(circ);
       tile.appendChild(el("div","cbc-name",c.name));
-      tile.appendChild(el("div","cbc-count","×"+n));
-      var minus=el("button","cbc-minus","−");
-      minus.type="button"; minus.title="Remove 1 "+c.name;
+      var step=el("div","cbc-step");
+      var minus=el("button",null,"−");
+      minus.type="button"; minus.title="Remove 1 "+c.name; minus.disabled=!n;
       minus.addEventListener("click", function(ev){ ev.stopPropagation(); if(cbAmount[c.abbr]>0){ cbAmount[c.abbr]--; renderCoinBankCoins(); } });
-      tile.appendChild(minus);
+      var plus=el("button",null,"+");
+      plus.type="button"; plus.title="Add 1 "+c.name;
+      plus.addEventListener("click", function(ev){ ev.stopPropagation(); cbAmount[c.abbr]=(cbAmount[c.abbr]||0)+1; renderCoinBankCoins(); });
+      step.appendChild(minus); step.appendChild(el("span","cbc-n",String(n))); step.appendChild(plus);
+      tile.appendChild(step);
       tile.addEventListener("click", function(){ cbAmount[c.abbr]=(cbAmount[c.abbr]||0)+1; renderCoinBankCoins(); });
       rows.appendChild(tile);
     });
