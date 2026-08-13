@@ -70,6 +70,19 @@ theoretically: **when a shot has two beats, the second one silently
 disappears instead of erroring.** Always check the rendered take against the
 one action you asked for, not just against quality/likeness.
 
+**Three more things that first live take got wrong, now fixed in this doc —
+check for all of them on every take, not just these three:**
+
+1. **A girl appeared in the classroom.** This is a boys' yeshiva — Veo will
+   default to a mixed classroom unless every crowd prompt says "boys"
+   explicitly. Section 3 and every Act I/III crowd shot below now say it.
+2. **The scanner prop was generic** ("rounded white-and-green") instead of
+   the real device rebbeim actually hold — a Tera 1300 pocket scanner.
+   Section 3's hero-prop entry now describes its real form factor.
+3. **The boy was looking up, already reacting, at the moment of the scan**
+   instead of being caught mid-learning. Shot 9 below now has him looking
+   down into his open sefer when the scan lands, and only looks up after.
+
 ---
 
 ## 1. Why this workflow (read once before opening Flow)
@@ -134,6 +147,13 @@ Generate front / three-quarter / profile. **His whole arc lives in his shoulders
 and eyebrows** — every prompt below directs those two things explicitly.
 
 ### The three kids (recurring, named so prompts can direct them)
+**This is a boys' yeshiva classroom — every student in every shot is a boy.**
+No girls anywhere in frame, including background/crowd shots; Yeshiva and day
+school classrooms of this type are single-gender, and a mixed classroom would
+misrepresent the audience this video is for. State "boys" explicitly in every
+crowd-shot prompt below, not just "kids" or "students" — Veo defaults to mixed
+classrooms otherwise, and this got past the first live test (section 0).
+
 Same 3-angle treatment each, boys' day-school uniform: white shirt, dark pants,
 kippah, tzitzis strings visible at the waist.
 
@@ -143,7 +163,8 @@ kippah, tzitzis strings visible at the waist.
 - **"Dovid"** — tall for his age, glasses, neat, arms-crossed skeptic. His smile
   in Act III is the emotional proof the system works.
 - **"Meir"** — round-faced, shy, sits in front, flinches at the noise in Act I.
-  He gets the chesed beat (shot 9) — the heart of the video.
+  Tends to sit hunched over his open sefer, quietly absorbed. He gets the
+  chesed beat (shot 9) — the heart of the video.
 
 ### The set (one location plate)
 > A sunlit yeshiva day-school classroom, stylized 3D animation: warm wooden desks
@@ -162,9 +183,16 @@ the set instead.
   QR-code squares with a friendly rounded look, small seating chart, gentle green
   header bar. *Stylized suggestion of the real class sheet — not a legible
   reproduction, no readable names.*
-- **The scanner:** a rounded, friendly white-and-green handheld scanner, soft
-  pill shape, one gentle green light. Slightly toy-like proportions so it reads
-  as approachable, not industrial.
+- **The scanner:** matches the real device rebbeim actually use — a **Tera
+  1300** pocket 2D barcode scanner, not an invented prop. Compact "soap bar"
+  form factor sized to close inside one fist (not a pistol-grip gun), dark
+  blue or black body, a single large trigger button on the top face under the
+  thumb, a small dark scan window/lens at the front tip, one small LED status
+  light beside it, a short wrist-lanyard loop at the base. Stylized 3D
+  rendering of that same shape — soft edges, warm highlight — not a literal
+  photoreal reproduction, and never showing any printed configuration barcode
+  on or near it (CLAUDE.md rule 7 — the device's physical shape is fine to
+  depict, its config barcodes are not).
 
 ---
 
@@ -187,9 +215,10 @@ cluttered frames. The camera is as overwhelmed as he is.*
 Sruli, Dovid, Meir.
 
 > Wide establishing shot, slightly high angle, 24mm, subtle handheld shake. A
-> yeshiva classroom in joyful anarchy: paper airplanes crossing the frame, Sruli
-> standing on his chair conducting the noise like an orchestra, Dovid flicking a
-> paper football, crumpled papers everywhere. At the whiteboard, Rebbi Katz —
+> yeshiva classroom of BOYS ONLY in joyful anarchy: paper airplanes crossing
+> the frame, Sruli standing on his chair conducting the noise like an
+> orchestra, Dovid flicking a paper football, crumpled papers everywhere. At
+> the whiteboard, Rebbi Katz —
 > shoulders up around his ears, eyebrows lifted in overwhelmed disbelief — taps
 > a dry-erase marker for attention that never comes. Cool, slightly harsh
 > late-morning light. Audio: dense happy classroom roar, chair scrapes, one
@@ -248,7 +277,7 @@ Dovid.
 
 > Medium-wide, 28mm, slight low angle. Rebbi Katz holds up a glass jar of
 > wrapped candies with a hopeful salesman smile — and is instantly engulfed by
-> a wave of leaping kids, Sruli cresting the top of the pile. The jar wobbles
+> a wave of leaping boys, Sruli cresting the top of the pile. The jar wobbles
 > above the scrum in his outstretched hand like a lighthouse in a storm. Whip
 > of handheld shake on impact. Audio: one second of silence, then an eruption
 > of delighted shrieking; the musical sting stumbles over itself.
@@ -264,7 +293,7 @@ Dovid.
 > board — the marker squeaks dry halfway through the underline. He shakes it,
 > tries again: nothing. Beyond the dead marker, soft-focus Dovid watches with
 > polite unimpressed pity, chin on fist. Rebbi Katz's underline trails off.
-> Audio: squeak, squeak, the hollow shake-rattle of a dead marker, one kid's
+> Audio: squeak, squeak, the hollow shake-rattle of a dead marker, one boy's
 > stifled giggle.
 
 *Any board writing must be an unreadable scribble — prompt it as "an emphatic
@@ -294,9 +323,10 @@ scanner prop.
 
 > Next morning. Top-down overhead shot, 50mm, gliding slowly across his desk in
 > warm window light: hands lift a single freshly printed page — a friendly grid
-> of soft QR codes with a gentle green header — and set a small rounded white-
-> and-green handheld scanner beside it. The scanner's light blinks on, soft
-> green. Camera tilts up to Rebbi Katz's face: calm, curious, one eyebrow up.
+> of soft QR codes with a gentle green header — and set a Tera 1300 pocket
+> scanner beside it, dark blue-black soap-bar shape, single trigger button on
+> top. The scanner's light blinks on, soft green. Camera tilts up to Rebbi
+> Katz's face: calm, curious, one eyebrow up.
 > Audio: paper's crisp whisper, one soft optimistic chime, the warm piano
 > theme finding its melody.
 
@@ -307,16 +337,20 @@ page — the whole system in his hand is the promise. No legible text on it.*
 Katz, Meir, scanner prop.
 
 > Medium two-shot, 40mm, waist height, slow 20-degree arc around the moment.
-> Shy Meir kneels to gather another boy's dropped seforim and stacks them
-> gently on the desk. Rebbi Katz, mid-lesson, glances over, smiles, and — 
-> without breaking stride — points the little scanner: one soft green pulse of
-> light and one cheerful two-note chime. Meir looks up, startled, and breaks
-> into a huge slow smile. Audio: calm classroom murmur, the chime, the piano
-> swelling one step.
+> Shy Meir is bent over his desk, eyes down and fully absorbed inside his
+> open sefer, lips moving slightly as he learns quietly to himself — he does
+> not notice anything happening around him. Rebbi Katz, mid-lesson, glances
+> over, smiles, and — without breaking stride — points the Tera 1300 scanner
+> at him: one soft green confirmation pulse and one cheerful two-note chime.
+> Only THEN does Meir look up from his sefer, startled, and break into a huge
+> slow smile. Audio: calm classroom murmur, the chime, the piano swelling one
+> step.
 
-*The Video B trust beat, animated: he never stops teaching. The scan is a
-glance, not an event. Meir's smile is the single most important frame of the
-film — spend takes here.*
+*The Video B trust beat, animated: he never stops teaching, and the boy never
+stops learning until the chime pulls him out of it. The scan happens TO a boy
+who is looking inside his sefer, not to a boy already looking up waiting for
+it — that order is the whole point of the shot. Meir's smile is the single
+most important frame of the film — spend takes here.*
 
 **SHOT 10 — Sruli converted.** ⛓ CHAIN from shot 9's last frame + Sruli,
 Rebbi Katz, scanner ingredients.
@@ -326,7 +360,7 @@ Rebbi Katz, scanner ingredients.
 > eagerly his whole body stretches, kippah still crooked, grin enormous. Rebbi
 > Katz nods to him; another gentle green pulse and chime. Sruli pumps a quiet
 > fist. Audio: the murmur stays CALM — the chime lands inside the quiet, and
-> two kids softly chuckle.
+> two boys softly chuckle.
 
 *The redemption gag: same kid, same energy, new direction. Keep the sound
 small — the joke of Act III is that excitement no longer means noise.*
@@ -334,10 +368,10 @@ small — the joke of Act III is that excitement no longer means noise.*
 **SHOT 11 — The glow.** 🆕 NEW SETUP — set plate (reverse), Rebbi Katz, Sruli,
 Dovid, Meir.
 
-> Wide from the back of the room, 24mm, slow rising crane. The class faces a
-> soft-glowing wall screen showing an abstract, cheerful leaderboard — warm
-> bars of green and gold gently rising, no readable names or numbers. Kids
-> lean toward it; skeptical Dovid finally uncrosses his arms and smiles.
+> Wide from the back of the room, 24mm, slow rising crane. The class of boys
+> faces a soft-glowing wall screen showing an abstract, cheerful leaderboard —
+> warm bars of green and gold gently rising, no readable names or numbers.
+> The boys lean toward it; skeptical Dovid finally uncrosses his arms and smiles.
 > Rebbi Katz stands at the side, arms folded softly, shoulders fully down
 > for the first time. Audio: a warm collective "ooooh," the theme opening up.
 
@@ -350,7 +384,7 @@ looks like software, cut it.*
 once if the settle needs more air.
 
 > The crane completes its rise and settles into a perfectly symmetrical wide:
-> rows of kids learning in golden light, quiet and content, dust motes
+> rows of boys learning in golden light, quiet and content, dust motes
 > drifting. Rebbi Katz walks the center aisle unhurried, hands clasped behind
 > his back, and pauses — a small private smile, the smile of a man whose
 > classroom finally matches the picture he always had of it. Audio: the room
@@ -404,6 +438,14 @@ plain word "free" is fine — "free forever" licensing language is not).
   `docs/Onboarding_Video_Scripts.md` and CLAUDE.md rule 6.)
 - **"Rebbi/rebbeim," never "teacher,"** in any on-screen or accompanying copy
   (`docs/Positioning.md`).
+- **Boys only, every shot, no exceptions.** This is a boys' yeshiva classroom.
+  Say "boys" explicitly in crowd prompts, not "kids" or "students" — confirmed
+  necessary after the first live take (section 0) generated a girl.
+- **The scanner is a Tera 1300**, described accurately per section 3 — not an
+  invented prop — while never depicting its printed configuration barcodes
+  (CLAUDE.md rule 7).
+- **The scan lands on a boy who is looking down, inside his sefer** — mid-learning,
+  not mid-reaction. He notices only after the chime. See shot 9.
 - The video sells **calm and mentchlichkeit**, not prizes — the failed-candy
   beat exists precisely to distinguish Menchmark from bribery. Don't add a
   prize/reward shot.

@@ -16,6 +16,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
   **Updated after a live test in Flow:** there's already a real project with a built "Rabbi Meir" character and four Act I clips — use that character rather than starting over. The doc now documents Flow's native Characters panel (`@`-tag reference) and its built-in Agent coworker, and records one confirmed lesson from an actual generation: a two-beat prompt silently rendered only the first beat, which is the doc's "one action per clip" rule showing up in practice, not just in theory.
 
+  **Corrected three more issues the live test surfaced:** the test render put a girl in the classroom, which is wrong for a boys' yeshiva — every crowd prompt now says "boys" explicitly rather than "kids," since Veo defaults to a mixed classroom otherwise. The scanner prop was a generic invented shape — it's now specified as the real device rebbeim carry, a Tera 1300 pocket scanner, without depicting its printed configuration barcodes (CLAUDE.md rule 7 still applies to those, not to the device's shape). And the heart shot (shot 9) had the boy already looking up when scanned — he now stays down inside his sefer, absorbed in learning, and only looks up after the chime.
+
 - **The app now tells you when you are running an old copy of it.** Until now there was no way to find out. Two rebbeim could be using Menchmark side by side, months apart in version, and nothing on either screen would say so — including to whoever was trying to help them.
 
   **Help → About now shows your version number.** That alone answers the question that used to be unanswerable: "which Menchmark am I actually running?" If you ever report a problem, that number is the single most useful thing you can send.
