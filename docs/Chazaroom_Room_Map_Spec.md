@@ -245,6 +245,44 @@ ten minutes with four taped cards.
 
 ---
 
+## 11a. Build log — step 1, and the bug that is still open
+
+Step 1 is **written but NOT working**, and the room map should not be trusted
+until this is closed. Findings from a closed-loop simulation (a canvas that
+renders the corner cards from the gimbal's own reported angles, with a 300 ms
+video lag modelled, and a deliberately wrong lens: true 79° against the code's
+assumed 67°):
+
+**Working:**
+- `ROOM:` codes parse, print, and never count as an answer.
+- The calibration pass finds all four corners and completes.
+- **Tilt is accurate to ~1.4°** — the gap that motivated step 1.
+- **The lens measured 79.08° against a true 79°**, from a starting guess of 67.
+  The feedback-loop idea works: the FOV constant really can be retired.
+
+**Broken — corner PAN carries a systematic error of about one sweep step**
+(~32°, uniform across all four corners, reproducible run to run).
+
+Diagnosis so far: a decoded card is attributed to the gimbal angle read *at
+decode time*, but the video frame is older than that — so a sighting is pinned
+to where the camera is now, not where it was when the light hit the sensor.
+Adding a settle gate (`PIPE_LAG`, ignore sightings within N ms of a move) halved
+the error from ~67° (two steps) to ~32° (one step). Raising the gate from 450 ms
+to 900 ms did **not** reduce it further, so a fixed settle time is not the whole
+story.
+
+Better fix to try next, in order:
+1. **Require two consecutive agreeing readings** before accepting a sighting.
+   Lag-independent, so it does not need a constant tuned per machine.
+2. Timestamp frames at capture rather than at decode, and pair each frame with
+   the gimbal angle in force at that timestamp (keep a short history).
+3. Only measure corners while **stationary and confirmed**, never during the
+   scan pass — use the scan purely to discover *which* corners exist.
+
+Note the asymmetry that gives the game away: tilt is fine and pan is not,
+because the scan pass moves in pan and barely in tilt. Any explanation must
+account for that, and attribution lag does.
+
 ## 12. Open questions
 
 1. Does the Menchmark chart, in practice, get arranged to match the physical room

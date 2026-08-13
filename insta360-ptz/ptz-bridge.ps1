@@ -94,6 +94,11 @@ Write-Host "PTZ bridge on http://localhost:$Port/  ->  $name"
 Write-Host "Endpoints: /status  /set?pan=..&tilt=..&zoom=..  /center   (Ctrl+C to stop)"
 try {
   while ($listener.IsListening) {
+    # One whole request per iteration, and NOTHING in here may escape: a client
+    # that goes away mid-reply (reload the page during a sweep) makes the write
+    # below throw, and that used to escape the loop, hit the finally, and stop
+    # the listener — the bridge dying outright because one fetch was abandoned.
+    try {
     $ctx = $listener.GetContext()
     $req = $ctx.Request; $res = $ctx.Response
     $res.AddHeader("Access-Control-Allow-Origin","*")
@@ -119,6 +124,12 @@ try {
     $res.ContentLength64 = $buf.Length
     $res.OutputStream.Write($buf, 0, $buf.Length)
     $res.OutputStream.Close()
+    } catch {
+      # Abandoned request, or a camera call that blew up on its way out. Log and
+      # keep serving — never let a single bad request take the bridge down.
+      Write-Host ("request dropped: " + $_.Exception.Message)
+      try { if ($res) { $res.Abort() } } catch {}
+    }
   }
 } finally {
   [void][Insta360PTZ]::SetProp(0,0); [void][Insta360PTZ]::SetProp(1,0); [void][Insta360PTZ]::SetProp(3,100)

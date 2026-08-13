@@ -373,6 +373,11 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
         </div>
         <p class="hint">When the countdown ends, the camera pans across the room once to read every raised card — so a big class fits and each boy is counted once.</p>
         <p class="hint" id="sweepAnonWarn" hidden style="color:var(--bad)"><strong>Set a class list to sweep accurately.</strong> With shared A/B/C/D cards the camera can't tell one boy from another, so it can't add up cards seen at different points of the pan — the count is shown as "at least". Per-student cards fix this completely.</p>
+        <div class="row" style="margin-top:8px;align-items:center">
+          <button class="btn sec" id="roomMapBtn" type="button">🗺 Map the room</button>
+          <button class="btn sec" id="roomClearBtn" type="button" hidden>Forget the map</button>
+          <span class="hint" id="roomStatus" style="margin:0;align-self:center;flex:1;min-width:180px"></span>
+        </div>
         <details style="margin-top:6px">
           <summary class="hint" style="cursor:pointer;margin:0;display:list-item">Sweep settings</summary>
           <div class="row" style="margin-top:8px">
@@ -619,6 +624,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
         <div style="align-self:flex-end;padding-bottom:1px;display:flex;gap:8px">
           <button class="btn" id="genCardsBtn">Generate</button>
           <button class="btn sec" id="masterCardsBtn">Master control cards</button>
+          <button class="btn sec" id="roomCardsBtn">Room corner cards</button>
           <button class="btn sec" id="printCardsBtn">Print</button>
         </div>
       </div>
@@ -643,14 +649,21 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
 
   /* ---------------- state + persistence ---------------- */
   var LS_KEY="hadroom_mvp_v2";
-  var questions=[], roster=[], scores={}, opts={secondScreen:false};
+  var questions=[], roster=[], scores={}, opts={secondScreen:false, roomMap:null};
   function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify({questions:questions,roster:roster,scores:scores,opts:opts})); }catch(e){} }
   function load(){
     try{ var d=JSON.parse(localStorage.getItem(LS_KEY)||"{}");
       if(Array.isArray(d.questions)) questions=d.questions;
       if(Array.isArray(d.roster)) roster=d.roster;
       if(d.scores&&typeof d.scores==="object") scores=d.scores;
-      if(d.opts&&typeof d.opts==="object" && typeof d.opts.secondScreen==="boolean") opts.secondScreen=d.opts.secondScreen;
+      if(d.opts&&typeof d.opts==="object"){
+        if(typeof d.opts.secondScreen==="boolean") opts.secondScreen=d.opts.secondScreen;
+        /* a room map is only meaningful if it carries at least two corners */
+        var rm=d.opts.roomMap;
+        if(rm && typeof rm==="object" && CAL_KEYS.filter(function(k){ return rm[k] && typeof rm[k].pan==="number"; }).length>=2){
+          opts.roomMap=rm; roomMap=rm;
+        }
+      }
     }catch(e){}
   }
   function hasRoster(){ return roster.length>0; }
@@ -861,8 +874,18 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
     $("cardsMode").innerHTML="<strong>Game-master control cards.</strong> Hold one up to the camera to run the game hands-free — <em>Reveal</em> shows the answer, <em>Next</em> reveals (if needed) then moves on, <em>Pan</em> re-scans the room for stragglers. Print these small, just for yourself.";
     [["REVEAL","CTRL:REVEAL"],["NEXT","CTRL:NEXT"],["PAN","CTRL:PAN"],["CHECK","CTRL:CALIB"],["START","CTRL:PLAY"]].forEach(function(p){ sheet.appendChild(controlCard(p[0],p[1],px,size)); });
   }
+  /* Four corner markers for the room map. Printed bigger than the control cards
+     because they are read from across the room, taped to a wall, not held up. */
+  function buildRoomCards(){
+    var sheet=$("cardsheet"); sheet.innerHTML="";
+    if(typeof window.QRCode==="undefined"){ sheet.appendChild(el("div","bad-box","The QR library did not load.")); return; }
+    var size=Math.max(1,parseFloat($("cardSize").value)||5), px=Math.max(150,Math.min(1400,Math.round(size*220)));
+    $("cardsMode").innerHTML="<strong>Room corner cards.</strong> Tape these at the four corners of <em>where the boys sit</em> — at about card height, not floor or ceiling — then press <strong>Map the room</strong> on the Play tab. TL/TR go at the back corners, BL/BR at the front two. The camera finds them once and then knows how to aim at any seat.";
+    [["TL","ROOM:TL"],["TR","ROOM:TR"],["BL","ROOM:BL"],["BR","ROOM:BR"]].forEach(function(p){ sheet.appendChild(controlCard(p[0],p[1],px,size)); });
+  }
   $("genCardsBtn").addEventListener("click",buildCards);
   $("masterCardsBtn").addEventListener("click",buildControlCards);
+  $("roomCardsBtn").addEventListener("click",buildRoomCards);
   $("printCardsBtn").addEventListener("click",function(){ if(!$("cardsheet").firstChild) buildCards(); window.print(); });
 
   /* ================= PLAY ================= */
@@ -949,9 +972,18 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
       })
       .catch(function(){ ptzhttp.ok=false; ptzhttp.err=""; return false; });
   }
+  /* Every commanded move stamps movedAt. Nothing may attribute a decoded card to
+     a gimbal angle until the video pipeline has flushed (PIPE_LAG): the frame on
+     screen is always a little behind where the camera is NOW, so a card read
+     mid-move gets pinned to the wrong angle. Measured in simulation: without
+     this guard every corner came out ~67° off — about two sweep stops — while
+     tilt (which barely moves between stops) looked fine. */
+  var PIPE_LAG=900;   /* generous: the video element buffers on top of USB+decode. Measured in simulation, still to be confirmed against the real camera. */
+  function ptzSettled(){ return (Date.now()-(ptzhttp.movedAt||0))>PIPE_LAG; }
   function ptzSet(p){ var qs=Object.keys(p).map(function(k){ return k+"="+Math.round(p[k]); }).join("&");
-    return fetch(ptzhttp.url+"/set?"+qs,{cache:"no-store"}).then(function(r){ return r.json(); }).then(ptzRemember); }
-  function showSweepSetup(){ if(ptzhttp.ok){ $("sweepSetup").hidden=false; $("sweepDetected").textContent="PTZ bridge found ✓"; $("sweepGameWrap").hidden=false; $("ptzPad").hidden=false; updateSetupHint(); } }
+    ptzhttp.movedAt=Date.now();
+    return fetch(ptzhttp.url+"/set?"+qs,{cache:"no-store"}).then(function(r){ return r.json(); }).then(function(j){ ptzhttp.movedAt=Date.now(); return ptzRemember(j); }); }
+  function showSweepSetup(){ if(ptzhttp.ok){ $("sweepSetup").hidden=false; $("sweepDetected").textContent="PTZ bridge found ✓"; $("sweepGameWrap").hidden=false; $("ptzPad").hidden=false; updateSetupHint(); renderRoomState(); } }
   /* Bridge answering but camera unreachable — say so rather than going quiet,
      because a silent missing panel looks identical to "no bridge installed". */
   function showBridgeProblem(){
@@ -982,10 +1014,206 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
     $("ptzHomeBtn").addEventListener("click",function(){ if(ptzhttp.ok) ptzSet({pan:0,tilt:0,zoom:ptzhttp.zoom[0]}).catch(function(){}); });
   })();
 
+  /* ================= ROOM MAP (step 1 of docs/Chazaroom_Room_Map_Spec.md) ====
+     Four printed ROOM: corner cards, found once, give the camera the real extent
+     of where the boys sit — in pan AND tilt. That does two things nothing else
+     can: it teaches the hunt to tilt (it only ever aimed pan before), and it
+     MEASURES the lens instead of trusting HFOV_BASE.
+
+     The measurement trick: a corner is centred by feedback, not by arithmetic.
+     Command a pan step, see how far the code slid across the frame, and the
+     ratio IS the field of view. A feedback loop converges even when the starting
+     constant is wrong, so the guess stops mattering — which was the whole point
+     of building this before the chart import. */
+  var roomCal={on:false, sight:{}, best:{}, result:{}, tiltSign:1, lastPan:{}, lastU:{}, tiltTried:{}, status:""};
+  var roomMap=null;                    /* {TL,TR,BL,BR:{pan,tilt}, hfov, at} */
+  var CAL_KEYS=["TL","TR","BL","BR"];
+
+  /* Every ROOM: decode during a mapping pass lands here with where the camera
+     was pointing and where in frame the code sat. */
+  function roomSee(k, code, W, H){
+    if(!ptzSettled()) return;                            /* frame is older than the move — angle would be a lie */
+    var pts=code.cornerPoints; if(!pts||!pts.length) return;
+    var cx=0, cy=0; pts.forEach(function(p){ cx+=p.x; cy+=p.y; }); cx/=pts.length; cy/=pts.length;
+    var s={ u:cx/W, v:cy/H, pan:ptzhttp.cur.pan, tilt:ptzhttp.cur.tilt, zoom:ptzhttp.cur.zoom||100, t:Date.now() };
+    roomCal.sight[k]=s;                                  /* latest — only ever read with a freshness test */
+    /* Keep the BEST look at this corner too: the one nearest the middle of the
+       frame. A card at the edge of frame is the least trustworthy reading there
+       is (it leans hardest on the lens constant and on lens distortion), and the
+       centre of a sweep stop is the most trustworthy. This is what the estimate
+       starts from, so a corner glimpsed once at the frame edge cannot drag it. */
+    var off=Math.abs(s.u-0.5)+Math.abs(s.v-0.5);
+    var b=roomCal.best[k];
+    if(!b || off<b.off){ s.off=off; roomCal.best[k]=s; }
+  }
+  function bearingOf(s){                                  /* the angles that would centre this sighting */
+    var hf=hfovAt(s.zoom), vf=hf*0.5625;
+    return { pan:s.pan+(s.u-0.5)*hf, tilt:s.tilt-(s.v-0.5)*vf*roomCal.tiltSign };
+  }
+  function hfovAt(zoom){                /* degrees across the frame, measured if we have it */
+    var base=(roomMap&&roomMap.hfov)||HFOV_BASE;
+    return base/Math.max(1,(zoom||100)/100);
+  }
+  function calSay(s){ roomCal.status=s; var e=$("roomStatus"); if(e) e.textContent=s; }
+  function wait(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+  function goWait(p,ms){ return ptzSet(p).catch(function(){}).then(function(){ return wait(ms||900); }); }
+
+  /* Pass 1 — find the corners at all: step across the whole pan range at a few
+     tilts, letting the detector report whatever it sees. */
+  function roomScanPass(){
+    var lo=ptzhttp.pan[0]*0.9, hi=ptzhttp.pan[1]*0.9, steps=9;
+    var tilts=[18,0,-18], seq=[];
+    tilts.forEach(function(t,ti){
+      for(var i=0;i<steps;i++){ var f=(ti%2===0)? i : (steps-1-i); seq.push({pan:lo+(hi-lo)*f/(steps-1), tilt:t}); }
+    });
+    var k=0;
+    return (function step(){
+      if(k>=seq.length) return Promise.resolve();
+      var found=Object.keys(roomCal.sight).length;
+      calSay("Looking for the corner cards… "+found+" of 4 found");
+      return goWait(seq[k++],PIPE_LAG+550).then(step);
+    })();
+  }
+
+  /* Pass 2 — centre one corner by feedback. Each iteration also measures the
+     lens: commanded degrees vs observed slide across the frame. */
+  /* Centre one corner by feedback. Every reading used here must be FRESH — taken
+     after the move that was supposed to produce it. Trusting the last-known
+     sighting instead is what sent the first version chasing its own stale data
+     until corners landed 70-90° from the truth, while the lens measurement (which
+     only ever used deltas between two fresh looks) stayed correct. */
+  function roomCentre(k){
+    var measured=[], best=roomCal.best[k];
+    if(!best) return Promise.resolve(false);
+    var est=bearingOf(best);                                 /* start from the most central look */
+    roomMapSet(k,est);                                       /* usable even if refinement fails */
+    var tries=0;
+    function step(){
+      if(++tries>4) return Promise.resolve(true);
+      var mark=Date.now();
+      var aimFrom=roomCal.result[k];
+      return goWait({pan:aimFrom.pan,tilt:aimFrom.tilt},1200).then(function(){
+        var s=roomCal.sight[k];
+        if(!s || s.t<mark) return true;                      /* lost it — keep the estimate we have */
+        var du=s.u-0.5, dv=s.v-0.5;
+        if(Math.abs(du)<0.03 && Math.abs(dv)<0.04){          /* centred: this IS the corner */
+          roomMapSet(k,{pan:s.pan,tilt:s.tilt});
+          return true;
+        }
+        /* measure the lens from this move: commanded degrees vs observed slide */
+        var dPan=s.pan-(roomCal.lastPan[k]==null? s.pan : roomCal.lastPan[k]);
+        var dU=s.u-(roomCal.lastU[k]==null? s.u : roomCal.lastU[k]);
+        if(Math.abs(dPan)>2 && Math.abs(dU)>0.02){
+          var hfM=Math.abs(dPan/dU);
+          if(hfM>25 && hfM<160) measured.push(hfM*((s.zoom||100)/100));
+        }
+        roomCal.lastPan[k]=s.pan; roomCal.lastU[k]=s.u;
+        if(Math.abs(dv)>0.35 && roomCal.tiltTried[k]) roomCal.tiltSign*=-1;   /* sign convention was backwards */
+        roomCal.tiltTried[k]=true;
+        roomMapSet(k,bearingOf(s));
+        return step();
+      });
+    }
+    return step().then(function(ok){
+      if(measured.length) roomCal.hfovSamples.push(measured.reduce(function(a,b){return a+b;},0)/measured.length);
+      return ok;
+    });
+  }
+  function roomMapSet(k,v){ roomCal.result[k]=v; }
+
+  function roomMapRun(){
+    if(!ptzhttp.ok || !running){ calSay("Start the camera first."); return; }
+    if(roomCal.on) return;
+    roomCal={on:true, sight:{}, best:{}, result:{}, hfovSamples:[], tiltSign:1,
+             lastPan:{}, lastU:{}, tiltTried:{}, status:""};
+    sweepStopFn(false);
+    var wasZoom=ptzhttp.cur.zoom||100;
+    calSay("Mapping the room…");
+    goWait({zoom:100,tilt:0},600)
+      .then(roomScanPass)
+      .then(function(){
+        var found=CAL_KEYS.filter(function(k){ return roomCal.best[k]; });
+        if(!found.length){ throw new Error("none"); }
+        var k=0;
+        return (function next(){
+          if(k>=found.length) return Promise.resolve();
+          var key=found[k++];
+          calSay("Centring "+key+"… ("+k+" of "+found.length+")");
+          return roomCentre(key).then(next);
+        })();
+      })
+      .then(function(){
+        var got=Object.keys(roomCal.result);
+        if(got.length<2){ throw new Error("few"); }
+        var map={at:Date.now()};
+        got.forEach(function(k){ map[k]=roomCal.result[k]; });
+        if(roomCal.hfovSamples.length){
+          map.hfov=roomCal.hfovSamples.reduce(function(a,b){return a+b;},0)/roomCal.hfovSamples.length;
+        }
+        roomMap=map; opts.roomMap=map; save();
+        roomCal.on=false;
+        return goWait({pan:0,tilt:0,zoom:wasZoom},400).then(function(){
+          calSay(roomMapSummary());
+          renderRoomState();
+        });
+      })
+      .catch(function(e){
+        roomCal.on=false;
+        calSay(e && e.message==="none"
+          ? "No corner cards seen. Print them on the Answer cards tab, tape them where the boys sit, and try again."
+          : "Only found "+Object.keys(roomCal.result||{}).length+" corner(s) — need at least 2. Check they're visible and lit.");
+        goWait({pan:0,tilt:0,zoom:wasZoom},200);
+      });
+  }
+  function roomMapSummary(){
+    if(!roomMap) return "";
+    var got=CAL_KEYS.filter(function(k){ return roomMap[k]; });
+    return "Room mapped ✓ "+got.join(" ")+
+      (roomMap.hfov? (" · lens measured at "+roomMap.hfov.toFixed(0)+"°") : "")+
+      " · re-map if you move the camera";
+  }
+  function renderRoomState(){
+    var e=$("roomStatus"); if(!e) return;
+    if(roomCal.on) return;
+    e.textContent = roomMap ? roomMapSummary() : "Not mapped — the camera will still sweep, it just can't aim at a seat.";
+    $("roomClearBtn").hidden = !roomMap;
+  }
+  /* Bilinear over whatever corners we have: the quad tells us the tilt that goes
+     with a given pan, which is what a bare bearing could never say. */
+  function tiltForPan(pan){
+    if(!roomMap) return null;
+    var T=roomMap.TL, R=roomMap.TR, B=roomMap.BL, Q=roomMap.BR;
+    var back=(T&&R)?[T,R]:null, front=(B&&Q)?[B,Q]:null;
+    function lerpOn(pair){
+      var a=pair[0], b=pair[1], span=b.pan-a.pan;
+      var f=Math.abs(span)<1 ? 0.5 : (pan-a.pan)/span;
+      f=Math.max(0,Math.min(1,f));
+      return a.tilt+(b.tilt-a.tilt)*f;
+    }
+    if(back&&front) return (lerpOn(back)+lerpOn(front))/2;   /* mid-depth: safest single guess */
+    if(back) return lerpOn(back);
+    if(front) return lerpOn(front);
+    var any=CAL_KEYS.map(function(k){return roomMap[k];}).filter(Boolean);
+    return any.length? any.reduce(function(a,c){return a+c.tilt;},0)/any.length : null;
+  }
+
   /* ---- sweep engine: absolute pan stops via the bridge, ping-pong ---- */
   var sweep={on:false,stops:[],idx:0,dir:1,moving:false,arrivedAt:0}, SWEEP_SETTLE=380;
-  function sweepBuild(){ var arc=clampInt($("sweepSpan").value,20,280,120), n=clampInt($("sweepStops").value,2,12,4);
-    var half=arc/2; sweep.stops=[]; for(var i=0;i<n;i++) sweep.stops.push(-half+arc*i/(n-1)); sweep.idx=0; sweep.dir=1; }
+  /* Once the room is mapped, the sweep covers where the boys ACTUALLY are
+     rather than a guessed arc centred on wherever the camera happens to face. */
+  function sweepSpanNow(){
+    if(roomMap){
+      var ps=CAL_KEYS.map(function(k){ return roomMap[k]&&roomMap[k].pan; }).filter(function(p){ return typeof p==="number"; });
+      if(ps.length>=2){
+        var lo=Math.min.apply(null,ps), hi=Math.max.apply(null,ps), pad=6;
+        return {lo:lo-pad, hi:hi+pad, mapped:true};
+      }
+    }
+    var arc=clampInt($("sweepSpan").value,20,280,120);
+    return {lo:-arc/2, hi:arc/2, mapped:false};
+  }
+  function sweepBuild(){ var sp=sweepSpanNow(), n=clampInt($("sweepStops").value,2,12,4);
+    sweep.stops=[]; for(var i=0;i<n;i++) sweep.stops.push(sp.lo+(sp.hi-sp.lo)*i/(n-1)); sweep.idx=0; sweep.dir=1; }
   function sweepGo(i){ sweep.moving=true; var p=sweep.stops[Math.max(0,Math.min(sweep.stops.length-1,i))];
     ptzSet({pan:p}).catch(function(){ $("sweepStatusLine").textContent="Lost the PTZ bridge — sweep stopped. Is ptz-bridge.ps1 running?"; sweep.on=false; $("sweepOn").checked=false; })
     .then(function(){ setTimeout(function(){ sweep.moving=false; sweep.arrivedAt=Date.now(); },SWEEP_SETTLE); }); }
@@ -1180,8 +1408,8 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
   function scanPass(done){
     if(!ptzhttp.ok || !$("sweepOn").checked){ done(); return; }
     sweep.on=false;                                   /* halt any continuous sweep */
-    var arc=clampInt($("sweepSpan").value,20,280,120), n=clampInt($("sweepStops").value,2,12,4);
-    var half=arc/2, stops=[]; for(var i=0;i<n;i++) stops.push(-half+arc*i/(n-1));
+    var sp=sweepSpanNow(), n=clampInt($("sweepStops").value,2,12,4);
+    var stops=[]; for(var i=0;i<n;i++) stops.push(sp.lo+(sp.hi-sp.lo)*i/(n-1));
     var dwell=clampInt($("sweepDwell").value,300,4000,900), k=0;
     sweptThisQ=true;                                  /* counts become a floor, not a total */
     $("sweepStatusLine").textContent="Scanning the room…";
@@ -1198,7 +1426,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
   function huntMissing(done){
     if(!ptzhttp.ok || !perStudent || mode!=="game"){ done(); return; }
     var missing=roster.filter(function(s){ return !studentAnswer[s.id] && seatMap[s.id]!=null; })
-                      .sort(function(a,b){ return seatMap[a.id]-seatMap[b.id]; });
+                      .sort(function(a,b){ return seatMap[a.id].pan-seatMap[b.id].pan; });
     if(!missing.length){ done(); return; }
     var t0=Date.now(), k=0;
     (function nextBoy(){
@@ -1210,7 +1438,12 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
       var s=missing[k++];
       if(studentAnswer[s.id]){ nextBoy(); return; }        /* found since the sweep */
       $("sweepStatusLine").textContent="Looking for "+s.name+"…";
-      ptzSet({pan:seatMap[s.id],zoom:HUNT_ZOOM}).catch(function(){});
+      /* Aim in both axes now: his learned tilt if we have one, else the tilt the
+         room map says goes with that bearing, else leave tilt alone. */
+      var seat=seatMap[s.id], aim={pan:seat.pan,zoom:HUNT_ZOOM};
+      var t=(typeof seat.tilt==="number") ? seat.tilt : tiltForPan(seat.pan);
+      if(typeof t==="number") aim.tilt=t;
+      ptzSet(aim).catch(function(){});
       var w0=Date.now();
       (function waitRead(){
         if(studentAnswer[s.id] || Date.now()-w0>HUNT_DWELL){ nextBoy(); return; }
@@ -1399,6 +1632,10 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
       var v=String(c.rawValue||""), L=null, sid=null;
       var mC=/^CTRL:(REVEAL|NEXT|PAN|CALIB|PLAY)$/i.exec(v);
       if(mC){ handleCtrl(mC[1].toUpperCase()); return; }
+      /* Room corner markers. Never an answer, never a boy — they only ever feed
+         the room map, and only while a mapping pass is running. */
+      var mR=/^ROOM:(TL|TR|BL|BR)$/i.exec(v);
+      if(mR){ if(roomCal.on) roomSee(mR[1].toUpperCase(), c, W, H); return; }
       var mS=/^HAD:([^:]+):([ABCD])$/i.exec(v), mA=/^ANS:([ABCD])$/i.exec(v);
       if(mS){ sid=mS[1]; L=mS[2].toUpperCase(); if(!perStudent) return; if(!nameKnown(sid)) return; }
       else if(mA){ L=mA[1].toUpperCase(); if(perStudent) return; }
@@ -1408,12 +1645,17 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
       /* Privacy: the overlay shows only WHO was scanned — a neutral box and the
          boy's name, never which letter he chose (no colour-coding by choice). */
       var pts=c.cornerPoints;
-      if(sid && ptzhttp.ok && pts && pts.length){
-        /* learn where he sits: gimbal pan + the card's angular offset in frame */
-        var cxs=0; pts.forEach(function(p){ cxs+=p.x; }); cxs/=pts.length;
-        var hfov=HFOV_BASE/Math.max(1,(ptzhttp.cur.zoom||100)/100);
+      if(sid && ptzhttp.ok && ptzSettled() && pts && pts.length){
+        /* Learn where he sits: the gimbal's angle plus the card's offset in
+           frame, in BOTH axes. Tilt used to be thrown away, which is why the
+           hunt could only ever aim left/right. hfovAt() is the measured lens
+           once the room has been mapped, and the guess until then. */
+        var cxs=0, cys=0; pts.forEach(function(p){ cxs+=p.x; cys+=p.y; }); cxs/=pts.length; cys/=pts.length;
+        var hfov=hfovAt(ptzhttp.cur.zoom), vfov=hfov*(H/W);
         var bearing=ptzhttp.cur.pan+((cxs/W)-0.5)*hfov;
-        seatMap[sid]=Math.max(ptzhttp.pan[0],Math.min(ptzhttp.pan[1],bearing));
+        var lift=ptzhttp.cur.tilt-((cys/H)-0.5)*vfov;
+        seatMap[sid]={ pan:Math.max(ptzhttp.pan[0],Math.min(ptzhttp.pan[1],bearing)),
+                       tilt:Math.max(ptzhttp.tilt[0],Math.min(ptzhttp.tilt[1],lift)) };
       }
       if(pts&&pts.length){
         octx.lineWidth=3; octx.strokeStyle="#e8b321"; octx.beginPath(); var bx,by;
@@ -1521,6 +1763,11 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
     $("secondScreen").checked=opts.secondScreen; save();
   });
   $("boardPresentBtn").addEventListener("click",function(){ presentOpen(); if(present.win&&!present.win.closed){ opts.secondScreen=true; $("secondScreen").checked=true; save(); } });
+  $("roomMapBtn").addEventListener("click",roomMapRun);
+  $("roomClearBtn").addEventListener("click",function(){
+    if(!confirm("Forget the room map? The camera will go back to sweeping a plain arc until you map it again.")) return;
+    roomMap=null; opts.roomMap=null; save(); renderRoomState();
+  });
   $("secondScreen").addEventListener("change",function(){
     opts.secondScreen=this.checked; save();
     if(this.checked && running) presentOpen();      /* mid-game tick: open it now */
