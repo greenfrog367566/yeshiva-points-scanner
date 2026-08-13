@@ -14,9 +14,8 @@ made that you may want to overrule.
 Everything in Part 1 was checked against the code or the settled docs. **The six
 blanks were decided by Ben on 2026-08-13 and are filled in** (see Part 2, section
 A, for each decision and its rationale); the only remaining placeholder is the
-publication date. `privacy@menchmark.app` exists and forwards to Ben's Gmail
-(Cloudflare Email Routing, set up 2026-08-13) — send it one test message
-before publication.
+publication date. `privacy@menchmark.app` is live, forwarding to Ben's Gmail
+(Cloudflare Email Routing, set up and delivery-tested 2026-08-13).
 
 ---
 ---
@@ -166,10 +165,10 @@ you will be told in the app rather than only on this page.
 
 1. **Contact email: `privacy@menchmark.app`.** A dedicated address, not a
    personal one, so it survives the day someone else answers it.
-   **The address exists as of 2026-08-13:** a Cloudflare Email Routing rule
-   forwards it to Ben's Gmail, alongside the existing berel@ / feedback@ /
-   beta@ / support@ rules. Remaining: send it one test message before
-   publication — the rule is active but has never been exercised.
+   **The address is live and tested as of 2026-08-13:** a Cloudflare Email
+   Routing rule forwards it to Ben's Gmail, alongside the existing berel@ /
+   feedback@ / beta@ / support@ rules, and a test message was delivered
+   successfully. Nothing remains on this item.
 2. **Deletion window: 30 days.** The ordinary answer, easy to honor given the
    record is one document, with margin for a person to reliably act.
 3. **Legal identity: an entity will be formed before launch.** None exists
