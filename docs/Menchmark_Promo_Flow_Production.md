@@ -17,6 +17,61 @@ nothing frames the app as a "classroom economy."
 
 ---
 
+## 0. Live in Flow already — read this before starting fresh
+
+**There is an existing Flow project with real prior work.** Signed in as
+`bsteinerman@gmail.com`, Flow's project list (labs.google/fx/tools/flow) shows
+two projects; the first one open contains:
+
+- **A built character** ("Untitled Character," internally described as "Rabbi
+  Meir") with a full personality note already close to this doc's Rebbi Katz:
+  mid-30s, short dark beard, black kippah, dark suit and tie, gets visibly
+  tired and rubs his forehead under pressure, speaks calmly, lights up with a
+  quick smile and a nod when things go well. **Use this character rather than
+  building a new one from scratch** — either rename it to match this doc or
+  fold its personality note into section 3's bible.
+- **Four rendered clips**, all Act I material: classroom chaos with kids at
+  the chalkboard, a frustrated close-up, a wide chalkboard shot, and an empty-
+  room scanner-on-desk shot. **No Act III (calm/resolution) shots exist yet** —
+  that gap is exactly what this doc's Act III fills.
+
+**Two native Flow tools change the workflow described below — use them
+instead of manual ingredient-reattachment where they're available:**
+
+1. **Characters (left sidebar → Characters).** Flow has a proper character
+   system: a name, a personality/behavior note ("Character Info," which the
+   Flow Agent reads when crafting scenes), a portrait, and a "Create Body"
+   full-body reference. Reference a character in any prompt with **`@`** —
+   typing `@` opens an asset picker (Images / Videos / Characters / Uploads)
+   and inserts a chip, which is more reliable than manually re-attaching
+   ingredient images every clip. Build the character once in this panel, not
+   as loose reference images.
+2. **The Agent (the "Agent" toggle on the prompt bar).** This is Flow's
+   built-in Gemini coworker — literally the "use Gemini to help" workflow.
+   Paste a full director's prompt (style block + shot description + `@`
+   character) and the Agent visibly reasons in stages ("Analyzing the
+   Request" → "Examining Model Capabilities" → "Analyzing Video Generation")
+   before rendering. **Verified live in this project (2026-08-13):** given the
+   existing photoreal "Rabbi Meir" reference plus this doc's global style
+   block, the Agent's first move was to *restyle the character into the
+   Pixar-style 3D look on its own* — producing a genuinely on-model stylized
+   portrait — before it would render any video from it. That restyle-then-
+   render sequence is worth deliberately reproducing for every character
+   before shooting: get the Agent to convert your photoreal or rough
+   reference into the stylized target look first, save *that* image as the
+   character's portrait, then shoot from it.
+
+**One live lesson that confirms a rule already in this doc:** a prompt
+describing two beats (boy drops books → rebbi notices and scans him) came
+back as a video of only the first beat — the Agent quietly dropped the
+rebbi/scanner payoff rather than cramming both into 8 seconds. This is
+section 1's "one action per clip" rule, now confirmed empirically rather than
+theoretically: **when a shot has two beats, the second one silently
+disappears instead of erroring.** Always check the rendered take against the
+one action you asked for, not just against quality/likeness.
+
+---
+
 ## 1. Why this workflow (read once before opening Flow)
 
 Flow gives four continuity mechanisms. Most people use only Extend and get
