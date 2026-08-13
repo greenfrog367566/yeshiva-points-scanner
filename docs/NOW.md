@@ -12,11 +12,13 @@ The current working queue. Read this at the start of a session.
 
 **#244 is why the first item under "Waiting on Ben" is the most urgent thing on this page.** The fix is in the repo and it cannot reach a copy already sitting on a rebbi's machine — a `file://` copy has no update path at all. Someone has to tell those rebbeim to re-download.
 
-**Open drafts:** **#249** (offline capability probe + automatic folder backup) needs one run on a managed Chromebook before anything relies on it. Two findings from it worth not re-deriving: `showDirectoryPicker` **does** work on `file://` and the folder permission survives a reopen with no prompt — that reversed the prediction going in, and is the only reason the folder backup exists at all — and the backup nudge has no network dependency, so it already works offline. **#250** (fetch & generate whole chapters) is in flight from another session. **#240** (hadroom camera diagnostic) predates this queue and is conflicting.
+**Open drafts:** **#249** (offline capability probe + automatic folder backup) needs one run on a managed Chromebook before anything relies on it — and it **moved up the queue on 2026-08-12**: the folder backup is now build-order step **0c**, shipping *before* the cutover rather than after the rebuild, because it depends on nothing and shipping it late leaves a window with no automatic backup at all once Sheets retires. Two findings from it worth not re-deriving: `showDirectoryPicker` **does** work on `file://` and the folder permission survives a reopen with no prompt — that reversed the prediction going in, and is the only reason the folder backup exists at all — and the backup nudge has no network dependency, so it already works offline. **#250** (fetch & generate whole chapters) is in flight from another session. **#240** (hadroom camera diagnostic) predates this queue and is conflicting.
 
 **On the horizon:** the Firebase/Firestore rebuild is fully scoped in `docs/Firebase_Rebuild_Scope.md` — real accounts, Firestore replacing localStorage, three tiers, incremental-write data model, converter tool, 8-step build order. Not started; step 1 (data model design session) hasn't begun.
 
-Its phase mapping was reconciled against the code on 2026-08-04 and it now carries an **"Open questions for step 1"** list — read that first when the rebuild becomes the active queue item. Two things were locked in that pass: **2d runs before step 1**, and Secretary Mode folds into the rebuild. Per-phase status for everything else lives in `Menchmark_Phased_Build_Plan.md`, which is the authority on what has shipped.
+**Step 1 is no longer blocked (2026-08-12).** The rule-3 / SDK call was the last gate on it and Ben has taken it — the SDK ships as a vendored same-origin file, tier 1 only. Three of the "Open questions for step 1" are now locked with it (1 the SDK, 3 write ids, 4 photos), so that list opens shorter: what remains is 2, 5, 6, 7, 8, 9, 10, 11, and the class entity (2) is the one to start with. **The rebuild is now sequencing-ready but not started** — step 1 is a real design session, not a prompt.
+
+Its phase mapping was reconciled against the code on 2026-08-04. Two things were locked in that pass: **2d runs before step 1**, and Secretary Mode folds into the rebuild. Per-phase status for everything else lives in `Menchmark_Phased_Build_Plan.md`, which is the authority on what has shipped.
 
 ---
 
@@ -28,7 +30,7 @@ Its phase mapping was reconciled against the code on 2026-08-04 and it now carri
 
 **Q1/Q2/Q4/Q5 are adopted as recommended; Q3 is still on Ben** (what a school has to sign — see "Not code, still owed"). The rebuild scope is amended to match: the split is its first locked decision, Path B is reframed (self-serve defaults to tier 2, a school code promotes to tier 1), and open question 1 is narrowed to a clear recommendation.
 
-**The spike is DONE (PR #243, merged 2026-08-10) and it answered its question.** The whole Drive API surface worked first time with no SDK and no external script — folder, 509-byte write in ~1.1s, read-back, in-place update, and a 3599s token. Silent re-auth **works**, invisibly, and recovers from a real 401 — but **only when the app sends a `login_hint`**. Without it, `prompt=none` fails on any browser holding more than one Google account, which is the normal case and which cost an hour of wrong conclusions before it was found. The 60-minute token cannot be lengthened (a refresh token needs a client secret, and Google uniquely won't accept PKCE instead) and no longer needs to be. Still owed there: one run on a shared/logged-out Chromebook, and a decision on whether to strip the hardcoded client ID before anything else builds on the spike.
+**The spike is DONE (PR #243, merged 2026-08-10) and it answered its question.** The whole Drive API surface worked first time with no SDK and no external script — folder, 509-byte write in ~1.1s, read-back, in-place update, and a 3599s token. Silent re-auth **works**, invisibly, and recovers from a real 401 — but **only when the app sends a `login_hint`**. Without it, `prompt=none` fails on any browser holding more than one Google account, which is the normal case and which cost an hour of wrong conclusions before it was found. The 60-minute token cannot be lengthened (a refresh token needs a client secret, and Google uniquely won't accept PKCE instead) and no longer needs to be. Still owed there: **one run on a shared/logged-out Chromebook.** The hardcoded client ID is dealt with (2026-08-12) — the spike now takes it from a box in step 1 and remembers it in `localStorage`, which is what the redirect flow needed and why it was hardcoded to begin with.
 
 **Also decided 2026-08-09: universal sign-in** (`docs/Universal_SignIn_Proposal.md`, ACCEPTED). Ben's read of the tier-2 story was that it looked "half baked and not professional" — correct, and the audit located the fault precisely: the Drive-JSON storage pattern is fine (it is WhatsApp's chat-backup architecture, and local-first is mainstream), but **tier 2 had been sketched anonymous**, and no comparable product ships browser-profile-as-account. So **every rebbi signs in, both tiers, same Google button; the tier decides only where class data lives.** Firestore holds an account row for a tier-2 rebbi — email, name, tier — and no student records ever. Custody is unchanged. It costs nothing architecturally (the spike already proved no-SDK sign-in; Firestore's REST API takes plain `fetch`) and it solves the `login_hint` requirement structurally, since the account *is* the hint.
 
@@ -36,7 +38,7 @@ Its phase mapping was reconciled against the code on 2026-08-04 and it now carri
 
 **What's actually next, and it is now a gate rather than a task: the existing-cohort upload path.** Ben's condition on accepting sign-in — *"make sure to include a data upload for current beta rebbeim."* The beta cohort onboarded on v0.9.0 (2026-07-18) and has real classes in `localStorage` **today**, so sign-in shipping first would mean a rebbi signs in and his class isn't there. **No beta rebbi is asked to sign in until this works.** Three routes: same-device adoption (the common case — detect the local class, one tap to claim it, no file), self-serve backup upload, and Drive restore. Full spec in `Universal_SignIn_Proposal.md` §10; safety properties there are non-negotiable and each is a lesson already paid for (the #244 seed-guard shape especially — never silently overwrite a class already in the account).
 
-**Still on Ben, and now the earliest gate of all:** a plain-language privacy note for the account record itself. Smaller than Q3's school agreement, but it comes first — it is needed before *any* self-serve signup in *either* tier, including his own school.
+**The earliest gate of all, and its six answers are now DECIDED:** a plain-language privacy note for the account record itself. Smaller than Q3's school agreement, but it comes first — it is needed before *any* self-serve signup in *either* tier, including his own school. **Drafted 2026-08-12 — `docs/Account_Privacy_Note.md` — and Ben answered all six blanks 2026-08-13** (recorded with rationale in the note's Part 2, section A): `privacy@menchmark.app` / 30 days / an entity will be formed before launch / **view-as is logged server-side AND shown in the rebbi's settings** (now a build requirement for the Firebase rebuild's step 1) / 72 hours breach notification (Q3's agreement must reuse this number) / Firestore region `nam5`. Part 1 has no placeholders left except the publication date. **Remaining before it can ship:** Ben's read-through of the prose and the three flagged judgment calls — nothing else. `privacy@menchmark.app` is live and delivery-tested (Cloudflare Email Routing → Ben's Gmail, 2026-08-13).
 
 **1. The app update check — fully designed, not started, blocked on one call.**
 
@@ -67,10 +69,28 @@ What is left of the old "small standalone features" item once Freeze and the raf
 Roughly in the order of what they unblock. Nothing below is a task Claude can take.
 
 1. **Tell rebbeim holding an old offline copy to re-download** (#244). The only item on this page with real data at risk, and **nothing in code can ever substitute for it** — the update check in #252 cannot reach a file that was downloaded before the check existed. This one is a message from a person or it does not happen.
-2. **The privacy note for the account record** (item 0 above). The earliest gate in the whole sign-in plan — it blocks any self-serve signup in *either* tier, including Ben's own school.
-3. **The rule-3 / Firebase SDK call.** Recommendation: vendor the SDK as a same-origin file, tier 1 only. **Rebuild step 1 stays blocked until this is settled** — see `Firebase_Rebuild_Scope.md` open question 1 and the conflict note in `CLAUDE.md`.
-4. **The CORS route for the update check** — a `_headers` file (recommended) or a `<script src>`. Blocks item 1 of "Next, in order" and nothing else.
-5. **Q3: what a school signs** (detail below). Gates onboarding school #2; blocks no code.
+2. **The privacy note for the account record** (item 0 above) — **drafted, `docs/Account_Privacy_Note.md`, six answers DECIDED 2026-08-13 and filled in.** Still on Ben: a read-through of the prose and the three flagged judgment calls — nothing else; `privacy@menchmark.app` is already live and delivery-tested. The earliest gate in the whole sign-in plan: it blocks any self-serve signup in *either* tier, including Ben's own school. **With the six decisions below taken, this is now the only thing gating the sign-in work.**
+3. **Q3: what a school signs** (detail below). Gates onboarding school #2; blocks no code.
+
+✅ **Cleared 2026-08-12 — six decisions taken, don't re-ask.** All recorded in
+`Firebase_Rebuild_Scope.md` and `CLAUDE.md`:
+1. **The rule-3 / Firebase SDK call.** Vendor the SDK as a **separate
+   same-origin file, tier 1 only, precached in `sw.js`** — `app.html` stays one
+   file, no build step, offline holds for both tiers, tier 2 never loads it.
+   Rule 3 amended inline, scoped to the SDK and nothing else. **This was the
+   last gate on rebuild step 1, and step 1 is now unblocked.**
+2. **Deterministic write IDs** — locked. Client-generated `device+ts+seq`,
+   written with `set()` not `add()`. Retries idempotent by construction; the
+   Log-vs-Attendance-Log dedup asymmetry dissolves.
+3. **Photos stay inline; Firebase Storage is out of scope** — locked.
+4. **CORS for the update check: `_headers`** — which is how #252 was already
+   built, so this was a confirmation rather than a change.
+5. **The File System Access folder backup is pulled forward** to *before* the
+   cutover (new build-order step 0c). It depends on nothing, and shipping it
+   late would leave a window with no automatic backup at all.
+6. **The Drive spike's hardcoded client ID is gone** — it now comes from a box
+   and is remembered in `localStorage`, which survives the redirect the
+   silent-re-auth test depends on.
 
 ---
 
