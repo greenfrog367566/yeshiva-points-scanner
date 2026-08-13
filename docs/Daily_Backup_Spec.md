@@ -3,9 +3,12 @@
 **Status (2026-08-04): PR A has SHIPPED; PR B is still a proposal.** The staleness
 nudge below is live — `data.lastBackupAt` and `data.backupNudgeSince` are in
 `defaults`, so the app can now tell a rebbi how long it has been. **PR B (the File
-System Access folder backup) is unbuilt**, and its one open sequencing question —
-before or after the Firebase cutover — is still open in
-`docs/Firebase_Rebuild_Scope.md`.
+System Access folder backup) is unbuilt**, but its one open sequencing question
+— before or after the Firebase cutover — was **settled 2026-08-12: before.**
+Ben took this spec's recommendation, and `Firebase_Rebuild_Scope.md` now carries
+it as build-order step **0c** rather than a post-rebuild addition. Draft #249
+carries the probe; **one run on a managed Chromebook is owed before anything
+relies on it.**
 
 Originally raised by a beta rebbi, who noticed
 that the Firebase rebuild retires Google Sheets and asked what replaces the
@@ -159,7 +162,8 @@ build on. Noted so it is not re-investigated.
 1. **Staleness nudge (Option 3) now.** Small, additive, universal, and it closes
    a gap that exists today independent of the rebuild.
 2. **File System Access (Option 1) before the Firebase cutover, not after.**
-   `Firebase_Rebuild_Scope.md` sequences this after steps 1–8. That ordering
+   ✅ **ACCEPTED 2026-08-12 — it is now step 0c of the rebuild's build order.**
+   `Firebase_Rebuild_Scope.md` used to sequence this after steps 1–8. That ordering
    leaves a window where the automatic Sheet snapshot is gone and nothing
    automatic has replaced it. Pulling it forward closes the window — and it has
    no dependency on accounts or Firestore, so nothing blocks it.
@@ -360,8 +364,9 @@ confirmed on hardware, no user-facing copy may promise it.
 
 ## Open questions for the maintainer
 
-- Is pulling File System Access **before** the cutover acceptable, or does it
-  stay sequenced after the rebuild as currently written?
+- ~~Is pulling File System Access **before** the cutover acceptable, or does it
+  stay sequenced after the rebuild as currently written?~~ **ANSWERED
+  2026-08-12: before. It is build-order step 0c.**
 - Default folder guidance: do we actively steer rebbeim to a **Google Drive**
   folder on ChromeOS (making it a real off-device backup), or stay neutral and
   let them pick anything?

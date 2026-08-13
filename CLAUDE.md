@@ -384,6 +384,29 @@ Then open `test-migration.html` in a browser and confirm every scenario passes �
 
 No splitting into separate JS/CSS files. No build tools, no npm, no frameworks. The single-file architecture is deliberate — it lets teachers download one file and run it anywhere by double-clicking.
 
+**AMENDED 2026-08-12 by Ben — one narrow exception, for the Firebase SDK
+only.** The tier-1 Firebase SDK is **vendored as a separate same-origin file**
+(committed to this repo, not a CDN), loaded **only for tier 1**, and precached
+in `sw.js`. Everything else about this rule stands, and the amendment is
+deliberately shaped so that it costs nothing:
+
+- **`app.html` is still one file, for everyone.** The SDK is not inlined into
+  it, so the ~1.2 MB file does not grow and the tier-2 majority — who never
+  authenticate and never load the SDK — re-download nothing extra on a deploy.
+- **Still no build step.** A plain local `<script src="...">` needs no bundler,
+  no npm, and no toolchain. Vendored means committed, not compiled.
+- **The offline promise holds for both tiers.** Same-origin means `sw.js` can
+  precache it, which a cross-origin CDN script cannot reliably guarantee — that
+  is the second, independent reason the CDN option is out.
+- **This exception is for the Firebase SDK and nothing else.** It is not a
+  general licence to split `app.html`, add a second app script, or move CSS
+  out. Anything beyond the SDK is a fresh PROPOSE FIRST.
+
+Rule 3's original justification — download one file, double-click it — survives
+untouched for tier 2, which never touches Firebase Auth. It was only ever going
+to die for tier 1, where Firebase Auth cannot work from a `file://` origin at
+all. See `docs/Firebase_Rebuild_Scope.md`, formerly open question 1, now locked.
+
 ### 4. Surgical edits only
 
 Find the exact string, replace it, nothing else. Never rewrite large sections or whole functions unless explicitly asked. Use `grep -n` to locate before editing. Never call `location.reload()` — re-render individual components instead.
@@ -456,7 +479,7 @@ These docs in `docs/` are the settled design. They answer most "should we..." qu
 - **Offline_NoComputer_Secretary_Spec.md** — Offline Mode, Batch Import parser (spec'd against real scanner data), Secretary Mode.
 - **Positioning.md** — settled copy decisions: the canonical self-description, "classroom economy" rejected as positioning (with its one permitted exception), "rebbeim" not "teachers", no licensing/free-forever language in user-facing copy, no AI framing. **Check it before writing or editing any user-facing copy.**
 - **Firebase_Rebuild_Scope.md** — the settled scope for the upcoming Firebase/Firestore rebuild: real accounts, Firestore replacing localStorage-as-database, three tiers (rebbi/admin/superadmin), the incremental-write data model (not one JSON blob per class), the converter tool, what retires (file:// offline copy, Sheets-as-database, Apps Script), and the 8-step build order. **Not started — build order step 1 (data model design session) hasn't begun**, and **Phase 2d is locked to run before it.** Read before touching anything auth/sync/data-model shaped, and before assuming the current localStorage-only architecture described elsewhere in this file is the long-term plan. Its phase mapping was reconciled against the code on 2026-08-04; it now carries an **"Open questions for step 1"** list that has to be worked before the data-model session starts.
-  - ⚠️ **Open conflict, unresolved by design — decide before step 1.** That rebuild needs the Firebase SDK, which cannot coexist with **rule 3 above** (single file, no build step) untouched: the modular SDK is ESM-for-bundlers, so it is either a forbidden CDN `<script src>` or a vendored compat bundle inlined into an already ~1.2 MB file. Neither rule wins by default. Per the conflict rule below, CLAUDE.md wins until a human decides otherwise — so **rule 3 stands, and the rebuild cannot start step 1 until this is settled.** The trade-offs are written up in the rebuild doc's open question 1; note that the back button and app security do *not* depend on this choice, though earlier drafts implied they did. **Narrowed 2026-08-07:** tier-1 rebbeim must get PWA/offline capability too, which rules the CDN option out for a second reason (a service worker can't reliably precache a cross-origin script) and leaves inline-vendored vs. same-origin-file-vendored as the only two live options. **Narrowed again 2026-08-09 — the two-tier custody split is ACCEPTED** (`docs/Data_Custody_Decision.md`), which was the thing that choice was gated on. Tier 2 never loads the SDK at all, and self-serve signup now *defaults* to tier 2, so the inline option would grow the file permanently for most users to no benefit. That points at **vendoring the SDK as a separate same-origin file, loaded only for tier 1 and precached in `sw.js`** — one `app.html` for everyone, no build step, offline intact for both tiers. **Still a recommendation, not a decision: it amends rule 3, so only Ben makes it**, and step 1 stays blocked until he does.
+  - ✅ **The rule-3 conflict is SETTLED (Ben, 2026-08-12) and step 1 is no longer blocked by it.** The rebuild needs the Firebase SDK, which could not coexist with **rule 3 above** untouched. The decision: **vendor the SDK as a separate same-origin file, loaded only for tier 1 and precached in `sw.js`** — one `app.html` for everyone, no build step, offline intact for both tiers, and the tier-2 majority never downloads the SDK at all. Rule 3 carries the amendment inline; the reasoning that got here is in the rebuild doc's formerly-open question 1. Two things this choice never depended on, though earlier drafts implied it did: the back button (History API, works the same either way) and app security (Firebase keys are public by design; gating is server-side security rules). **The exception is the SDK and nothing else** — it is not a general licence to split `app.html`.
 
 If a spec and this CLAUDE.md ever conflict, **CLAUDE.md wins**; flag the conflict to the maintainer.
 
