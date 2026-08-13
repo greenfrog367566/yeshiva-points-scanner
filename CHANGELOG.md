@@ -340,6 +340,14 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Fixed
 
+- **The Quick Start guide was sending you to a tab that had been renamed.** It told you to back up in "Run → Backup & Sheets"; that tab has been **Backup & Restore** for a while now, so the one instruction in the guide whose whole job is stopping you from losing your class pointed at a name that isn't on the screen. It now says the right thing.
+
+  Two things the guide had never caught up with have been added to that same section, because both of them protect a rebbi better than remembering to press a button ever will: **backing up to a folder automatically** (choose a folder once — or a USB stick you leave plugged in — and it saves into it by itself, with no internet and nothing to remember), and **installing Menchmark as an app** (its own window, storage that resists the browser clearing your data, and it works fully offline).
+
+  The printing step also now mentions **Run → Seating chart & print** — the one sheet that carries your boys' codes in their seat positions *and* every activity code together, which is what you actually clip to a board to run the day. It was reachable, but a rebbi following the Quick Start had no reason to know it existed. That tab is also where you arrange your room, which the guide never said either.
+
+  **`docs/scanner-setup.md`** still told you to click into the "Scan" tab and go to the "Settings" tab — pre-redesign names. Now **Record** and **Run → Settings**, matching what is on the screen.
+
 - **Two open Menchmark windows no longer erase each other's scans.** This was the most serious thing found in a deliberate hunt for silent failures, and it needed nothing unusual to happen: the app open on your desktop *and* on the smartboard, or a tab left over from the morning behind today's one. Each window kept its own working copy of the class and wrote **the whole copy** back on every scan — without ever looking at what the other window had written. So a window that had been open since 9:00 and scanned one boy at 9:05 put its 9:00 memory back over everything the other window had recorded in between. Hours of scans could vanish, **with no error and nothing to notice in either window** — the scans simply weren't there the next time anyone looked.
 
   Now the windows keep each other up to date. The moment one window saves anything, every other open window picks the change up and folds it into what it is showing — scores, History, the seating chart, attendance, all of it, within a moment and without you touching anything. A window's save is built **on top of** the other window's scans instead of over them. Both windows also show an amber notice saying the app is open twice: everything is kept either way, but scanning from one window at a time is still the tidiest way to work.
