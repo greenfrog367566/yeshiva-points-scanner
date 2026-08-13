@@ -340,6 +340,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Fixed
 
+- **Your COM/serial scanner reconnects by itself again — and when it can't, it finally says why.** A rebbi reported having to reconnect his scanner in Settings every time he reopened the app. Auto-reconnect was already built and was supposed to handle exactly that, which made the report worth chasing.
+
+  **The cause: the app was looking for the scanner by counting, not by name.** On reopening, it asked the browser which serial devices this computer had given it permission for, and reconnected **only if there was exactly one.** One single leftover permission — an older scanner, a Bluetooth-SPP device, a virtual COM port some other program installed — and the count came back as two, and the app quietly did nothing at all. It didn't try, and it didn't say it had given up. The screen just read "Not connected.", exactly as if auto-reconnect had never existed, so the only reasonable conclusion was that reconnecting by hand each morning was simply how it worked.
+
+  **Now Menchmark remembers *which* scanner it was.** When you connect, it records that scanner's USB identity and looks for that one specifically next time — however many other serial devices your computer happens to remember. If it can't find that exact scanner but only one device is remembered, it still connects to it, which is the old behavior kept for the case where it was right.
+
+  **And every remaining way this can fail now names itself in Settings, instead of showing a bare "Not connected."** Three messages, because they need three different responses from you:
+
+  - **Several devices remembered and none is your scanner** — it won't guess, because opening the wrong port could seize a COM port another program is using. It tells you to click "Connect scanner…" once, and remembers your choice from then on.
+  - **Running a downloaded copy of `app.html`** — this one was never fixable and pretending otherwise wasted people's time. A file on your computer has no permanent web address, so the browser has nowhere to file the scanner permission and forgets it every launch. It now says so plainly, and points at `menchmark.app`, where it does stick.
+  - **Found it but couldn't open it** — usually the port is still held by the last session or another program. Unplug, replug, connect once.
+
+  **If you already use a serial scanner, nothing is asked of you beyond one last manual connect.** Your existing setup has no scanner identity recorded yet; the first time you connect after this update, it's saved, and auto-reconnect works from then on. Keyboard-style USB scanners — which is most of them — were never affected by any of this and need no setup at all.
+
+  Saved data is untouched apart from one new field holding that scanner id, which starts empty and is filled by your next connect.
 - **Two open Menchmark windows no longer erase each other's scans.** This was the most serious thing found in a deliberate hunt for silent failures, and it needed nothing unusual to happen: the app open on your desktop *and* on the smartboard, or a tab left over from the morning behind today's one. Each window kept its own working copy of the class and wrote **the whole copy** back on every scan — without ever looking at what the other window had written. So a window that had been open since 9:00 and scanned one boy at 9:05 put its 9:00 memory back over everything the other window had recorded in between. Hours of scans could vanish, **with no error and nothing to notice in either window** — the scans simply weren't there the next time anyone looked.
 
   Now the windows keep each other up to date. The moment one window saves anything, every other open window picks the change up and folds it into what it is showing — scores, History, the seating chart, attendance, all of it, within a moment and without you touching anything. A window's save is built **on top of** the other window's scans instead of over them. Both windows also show an amber notice saying the app is open twice: everything is kept either way, but scanning from one window at a time is still the tidiest way to work.

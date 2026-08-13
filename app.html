@@ -7699,8 +7699,28 @@ function setupRoster() {
 
   /* ---------- SERIAL/COM SCANNER ---------- */
   var serialPort=null, serialReader=null, serialClosing=null;
+  /* Last thing we told the rebbi while disconnected. renderSerialUI() repaints
+     the status line every time Settings opens, and used to flatten every
+     explanation back to a bare "Not connected." — which is exactly the message
+     that made a failed auto-reconnect look like nothing had happened. */
+  var serialNote="Not connected.";
   function serialSupported(){ return !!(navigator.serial); }
+  /* The browser hands back every serial port this origin was ever granted, not
+     just the scanner. USB vendor/product ids are all Web Serial exposes, so
+     they are what identifies it — that names the MODEL rather than the
+     individual unit, which is enough when a rebbi has one scanner. */
+  function serialPortFingerprint(port){
+    var info=null; try{ info=port.getInfo(); }catch(_){ }
+    if(!info || typeof info.usbVendorId!=="number" || typeof info.usbProductId!=="number") return null;
+    return {v:info.usbVendorId, p:info.usbProductId};
+  }
+  function serialPortMatches(port, fp){
+    if(!fp || typeof fp!=="object") return false;
+    var got=serialPortFingerprint(port);
+    return !!got && got.v===fp.v && got.p===fp.p;
+  }
   function setSerialStatus(text, connected){
+    if(!connected) serialNote=text;
     var el2=$("serialStatus"); if(el2) el2.textContent=text;
     $("serialConnectBtn").style.display = connected ? "none" : "";
     $("serialDisconnectBtn").style.display = connected ? "" : "none";
@@ -7715,7 +7735,7 @@ function setupRoster() {
     $("serialUnsupported").style.display="none";
     $("serialSupportedBlock").style.display="block";
     $("serialBaud").value=String(data.serialBaud);
-    if(!serialPort) setSerialStatus("Not connected.", false);
+    if(!serialPort) setSerialStatus(serialNote, false);
   }
   async function serialReadLoop(port){
     var decoder=new TextDecoderStream();
@@ -7744,7 +7764,7 @@ function setupRoster() {
       var port = await navigator.serial.requestPort();
       var baud = data.serialBaud||9600;
       await port.open({baudRate: baud});
-      serialPort=port; data.serialAutoConnect=true; save();
+      serialPort=port; data.serialAutoConnect=true; data.serialPortId=serialPortFingerprint(port); save();
       setSerialStatus("Connected · "+baud+" baud. Scans anywhere in the app will be read from the port.", true);
       serialReadLoop(port);
     } catch(e){
@@ -7756,18 +7776,55 @@ function setupRoster() {
     if(serialReader){ try{ await serialReader.cancel(); }catch(_){} }
     else if(serialPort){ try{ await serialPort.close(); }catch(_){} serialPort=null; setSerialStatus("Disconnected.", false); }
   }
+  /* Reconnect the scanner the rebbi already picked, without asking again.
+     This used to require getPorts() to return EXACTLY ONE port and said
+     nothing when it didn't — so one leftover grant (an older scanner, a
+     Bluetooth-SPP device, a virtual COM port) turned auto-reconnect off
+     permanently and invisibly, and rebbeim reconnected by hand every morning
+     believing that was normal. Now the saved scanner is identified rather
+     than assumed, and every way this can fail says so in the status line. */
   async function serialTryAutoReconnect(){
     if(!serialSupported() || !data.serialAutoConnect) return;
-    try{
-      var ports = await navigator.serial.getPorts();
-      if(ports.length===1){
-        var port=ports[0];
-        await port.open({baudRate: data.serialBaud||9600});
-        serialPort=port;
-        setSerialStatus("Connected · "+(data.serialBaud||9600)+" baud (reconnected automatically).", true);
-        serialReadLoop(port);
-      }
-    } catch(e){ /* silent — user can connect manually */ }
+    var ports=[];
+    try{ ports = await navigator.serial.getPorts(); }catch(_){ ports=[]; }
+    if(!ports.length){
+      /* A downloaded copy of app.html runs on an opaque origin, which cannot
+         hold a serial permission at all — the grant is gone every launch and
+         no amount of retrying brings it back. Say which of the two it is. */
+      setSerialStatus(location.protocol==="file:"
+        ? "Not connected. A downloaded copy of the app can't remember your scanner between launches — connect it here each time, or use the app at menchmark.app and it will reconnect on its own."
+        : "Not connected. Click “Connect scanner…” once and it will reconnect by itself from now on.", false);
+      return;
+    }
+    var fp = data.serialPortId;
+    var candidates = ports.filter(function(p){ return serialPortMatches(p, fp); });
+    /* No fingerprint saved yet (connected before this fix shipped) and only one
+       port remembered — that is the old behavior, and it was right. */
+    if(!candidates.length && !fp && ports.length===1) candidates=[ports[0]];
+    if(!candidates.length){
+      /* Several remembered ports and none is the saved scanner. Opening the
+         wrong one would seize another device's COM port, so ask instead of
+         guessing — but ask out loud, which is the whole bug. */
+      setSerialStatus("Not connected. "+(ports.length===1
+        ? "The one serial device this computer remembers isn't the scanner last used here."
+        : "This computer remembers "+ports.length+" serial devices and none of them is the scanner last used here.")
+        +" Click “Connect scanner…” to pick it — it will be remembered after that.", false);
+      return;
+    }
+    var baud=data.serialBaud||9600, lastErr=null;
+    for(var i=0;i<candidates.length;i++){
+      try{
+        await candidates[i].open({baudRate: baud});
+        serialPort=candidates[i];
+        if(!fp){ data.serialPortId=serialPortFingerprint(serialPort); save(); }
+        setSerialStatus("Connected · "+baud+" baud (reconnected automatically).", true);
+        serialReadLoop(serialPort);
+        return;
+      } catch(e){ lastErr=e; }
+    }
+    /* Found it, couldn't open it — usually still busy from the last session or
+       claimed by another program. Previously this was swallowed entirely. */
+    setSerialStatus("Found your scanner but couldn't open it"+((lastErr&&lastErr.message)?(" ("+lastErr.message+")"):"")+". Unplug and replug it, then click “Connect scanner…”.", false);
   }
   $("serialConnectBtn").addEventListener("click", serialConnect);
   $("serialDisconnectBtn").addEventListener("click", serialDisconnect);
@@ -21847,6 +21904,12 @@ nameLine
     if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
     if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
+    /* USB vendor/product ids of the serial scanner last connected, so
+       auto-reconnect can find it among several remembered ports. Purely
+       additive: null means "not known yet", and the first manual connect
+       stamps it. Object-shaped, so guard with typeof, not falsiness. */
+    if(!data.serialPortId || typeof data.serialPortId!=="object"
+       || typeof data.serialPortId.v!=="number" || typeof data.serialPortId.p!=="number") data.serialPortId=null;
     if(typeof data.grade!=="string") data.grade="";
     if(!data.features||typeof data.features!=="object") data.features={};
     if(typeof data.features.shulchani!=="boolean") data.features.shulchani=true;

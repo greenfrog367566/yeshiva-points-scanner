@@ -53,7 +53,14 @@ Some industrial, handheld, or Bluetooth-SPP scanners connect as an actual **seri
 
 ### Auto-reconnect
 
-The app remembers the last serial connection and will try to reconnect automatically the next time you open it, as long as you're on the same browser/computer and didn't manually disconnect.
+The app remembers which scanner you connected — by its USB vendor/product id — and reconnects to that one automatically the next time you open it, as long as you're on the same browser/computer and didn't press **Disconnect**. Other serial devices this computer has been given permission for (an older scanner, a Bluetooth-SPP device, a virtual COM port) no longer get in the way.
+
+Two cases where it genuinely can't reconnect, and the app now says which one you're in rather than sitting on "Not connected.":
+
+- **You're running a downloaded copy of `app.html`.** A downloaded file has no permanent web address, so the browser cannot store the scanner permission against it — you'll reconnect once per launch. Using the app at `menchmark.app` in the same browser fixes this for good.
+- **The port is busy.** Something else is holding it, or the last session hasn't released it. Unplug and replug the scanner, then connect once from Settings.
+
+If you connected your scanner before this was added, the first manual reconnect records it and auto-reconnect takes over from then on.
 
 ## Troubleshooting
 
@@ -64,5 +71,5 @@ The app remembers the last serial connection and will try to reconnect automatic
 | Scanned codes come through with extra characters attached, or don't match any student | Time Stamp prefix/suffix is likely turned on — scan the manual's "Time Prefix/Suffix Off" barcode |
 | "Not supported" message in Settings | Wrong browser/device for serial — use Chrome/Edge on a computer, or switch to a USB keyboard-emulation scanner |
 | COM-port scanner doesn't show up in the browser's connect picker | Check Windows Device Manager under "Ports (COM & LPT)" first — if nothing's there, the scanner hasn't actually switched into USB-COM mode yet. Re-scan the setup barcode, then unplug/replug the USB cable |
-| Serial scanner won't reconnect after restart | Reconnect manually once via Settings; auto-reconnect should pick it up next time |
+| Serial scanner won't reconnect after restart | Read the status line in Settings — it now names the reason. Most often you're on a downloaded copy of the file (permissions can't persist there; use menchmark.app), or the scanner was connected before auto-reconnect learned to identify it, in which case one manual reconnect fixes it for good |
 | Scans appear duplicated or garbled | Wrong baud rate selected — check your scanner's manual for its default |
