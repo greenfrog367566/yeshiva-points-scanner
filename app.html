@@ -5856,15 +5856,35 @@ function setupRoster() {
     if(!data.attendance[dateKey]) data.attendance[dateKey]={};
     return data.attendance[dateKey];
   }
-  // Everything about a day's attendance lives under student-id keys, plus one
-  // reserved "_sentAt" meta key (student ids always look like "S001" so this
-  // can never collide) marking when "Send Attendance" was last clicked for
+  // Everything about a day's attendance lives under student-id keys, plus a few
+  // reserved "_"-prefixed meta keys (student ids always look like "S001" so
+  // these can never collide). "_sentAt" marks when "Send Attendance" was last clicked for
   // that day. Before that first send, individual changes are just staged
   // locally. After it, the day is considered "live" — any further change
   // (e.g. an absent student showing up late) is recognized as a correction
   // and pushed to the Sheet immediately on its own, without needing another
   // manual send.
   function attDaySent(dateKey){ return !!(data.attendance[dateKey] && data.attendance[dateKey]._sentAt); }
+  /* "_emailedAt" is the same idea for the email path, and it is deliberately a
+   * SEPARATE key that means a WEAKER thing.
+   *
+   * _sentAt above means the Sheet received the day, and it drives real
+   * behaviour: after it, every later change auto-syncs on its own. _emailedAt
+   * means only that the rebbi's mail app was OPENED with the day in it. The app
+   * hands the message over and loses sight of it — whether Send was ever
+   * pressed is his business and unknowable here. So it must never be allowed to
+   * stand in for _sentAt, or a day the Sheet never received would look sent.
+   *
+   * What it is good for is the one thing that was missing: telling a LATER
+   * change apart from the roll that already left. A boy marked absent who walks
+   * in at 9:40 is exactly the common case, and until now the office simply kept
+   * the 9:12 version with nothing to say otherwise.
+   */
+  function attDayEmailedAt(dateKey){
+    var day=data.attendance[dateKey];
+    var t=day && day._emailedAt;
+    return (typeof t==="number" && isFinite(t)) ? t : 0;
+  }
   /* Has anyone actually been MARKED on this day, or is the screen just showing
    * defaults?
    *
@@ -6329,6 +6349,9 @@ function setupRoster() {
               : (taken ? "Not sent yet."
                        : "Not sent yet — and nobody has been marked for this day. Use “Mark the rest Present” if everyone is here."))
           : "");
+    // Says which of the two it will write before it is opened, exactly as the
+    // class list's copy of this button does.
+    $("attEmailBtn").textContent = attEmailBtnTabLabel();
     // A draft left open while the rebbi changes the day, or marks another boy,
     // would otherwise still describe the screen he was looking at a minute ago
     // — and that draft is one button away from leaving the building.
@@ -6410,11 +6433,12 @@ function setupRoster() {
    * beyond whatever his mail app needs — including on the downloaded file://
    * copy, where the Sheet path is unavailable anyway.
    *
-   * It records nothing. Emailing a day does NOT stamp it as sent (_sentAt is
-   * the Sheet's flag, and it drives the auto-sync of later corrections); the
-   * app cannot know whether the rebbi actually pressed Send in his mail app,
-   * so claiming it did would be the same manufactured-observation mistake the
-   * send gate above exists to prevent.
+   * It does NOT stamp the day as sent (_sentAt is the Sheet's flag, and it
+   * drives the auto-sync of later corrections); the app cannot know whether the
+   * rebbi actually pressed Send in his mail app, so claiming it did would be
+   * the same manufactured-observation mistake the send gate above exists to
+   * prevent. It stamps _emailedAt instead — see there for why that is a
+   * different, weaker claim, and what it is for.
    */
   var attEmailScope = "exceptions"; // draft-local until the panel is opened
   /* MAILTO LINKS HAVE A LENGTH CEILING and it is not ours to control — some
@@ -6453,8 +6477,32 @@ function setupRoster() {
     if(!studs.length) return false;
     return studs.every(function(s){ return !!attMarkedRec(dateKey, s.id); });
   }
+  /* WHO HAS MOVED SINCE THE EMAIL WENT OUT.
+   *
+   * The same diff sendAttendance() runs against the Sheet (`rec.ts > _sentAt`),
+   * read against _emailedAt instead — which is why this needs no new storage:
+   * every attendance record already carries the instant it was written.
+   *
+   * Empty before the first email, always: with no _emailedAt there is no
+   * "since" to be after, and a first email that announced changes to a message
+   * nobody has received would be nonsense.
+   */
+  function attEmailChangedSince(dateKey){
+    var since=attDayEmailedAt(dateKey);
+    if(!since) return [];
+    return attEmailRows(dateKey).filter(function(r){
+      return typeof r.ts==="number" && r.ts>since;
+    });
+  }
+  /* The subject says "update" once the day has moved since the last email, and
+   * this is the single most load-bearing word in the feature. Without it the
+   * correction arrives with a subject byte-identical to the message it
+   * corrects, and a secretary holding two of those has to diff them by eye to
+   * find out which is current — or, worse, reads the first one and stops.
+   */
   function attEmailSubject(dateKey){
-    return "Attendance — "+(data.currentClass||data.className||data.school||"Class")+" — "+fmtDateLabel(dateKey);
+    return "Attendance — "+(data.currentClass||data.className||data.school||"Class")+" — "+fmtDateLabel(dateKey)
+      + (attEmailChangedSince(dateKey).length ? " — update" : "");
   }
   // scope is passed explicitly rather than read from the panel's draft state,
   // because the class-list button below builds the same message with no panel
@@ -6481,6 +6529,28 @@ function setupRoster() {
       L.push(title+" ("+list.length+"):");
       list.forEach(function(r){
         L.push("  "+r.name+(withTime && r.ts ? "  "+fmtClockTime(r.ts) : ""));
+      });
+      L.push("");
+    }
+    /* THE CHANGES GO ABOVE EVERYTHING, INCLUDING THE ABSENCES.
+     *
+     * On a first email the absences are the news. On an update they are not —
+     * the office already has them, and the only new information in the whole
+     * message is the handful of boys who moved. Anything above that block is
+     * something the reader has already read once and will skim past.
+     *
+     * Each line carries the boy's status NOW and the time it was recorded, so
+     * the office can act on it without holding the earlier email alongside.
+     * The full roll below is rewritten too, so the update stands alone as the
+     * current record rather than being a patch that only makes sense in
+     * sequence with a message that may never have arrived.
+     */
+    var moved=attEmailChangedSince(dateKey);
+    if(moved.length){
+      L.push("Changed since the "+fmtClockTime(attDayEmailedAt(dateKey))+" email ("+moved.length+"):");
+      moved.forEach(function(r){
+        L.push("  "+r.name+" — "+(ATT_LABEL[r.status]||"Not marked")
+          +(r.ts ? "  "+fmtClockTime(r.ts) : ""));
       });
       L.push("");
     }
@@ -6518,10 +6588,27 @@ function setupRoster() {
     });
   }
   var attEmailGenerated = "";   // last text we produced, to tell ours from his
+  /* What the tab says about a day that has already been emailed.
+   *
+   * "Opened an email", never "sent" — the app watched the message go to the
+   * mail client and no further, and a footer claiming a send it cannot see is
+   * the one thing this whole feature is careful not to do.
+   */
+  function attEmailStateLine(dateKey){
+    var at=attDayEmailedAt(dateKey);
+    if(!at) return "";
+    var n=attEmailChangedSince(dateKey).length;
+    return "Opened an email for this day at "+fmtClockTime(at)+
+      (n ? (" — "+n+(n===1?" change":" changes")+" since, so this message is an update.")
+         : " — nothing has changed since.");
+  }
+  function attEmailBtnTabLabel(){
+    return attEmailChangedSince(attDate).length ? "✉ Email an update…" : "✉ Email this day…";
+  }
   function attEmailRebuild(){
     attEmailGenerated=attEmailText(attDate);
     $("attEmailBody").value=attEmailGenerated;
-    $("attEmailStatus").textContent="";
+    $("attEmailStatus").textContent=attEmailStateLine(attDate);
   }
   /* Keeps an open draft honest as the day changes underneath it — but never
    * overwrites words the rebbi typed himself. If he has edited the message we
@@ -6533,7 +6620,8 @@ function setupRoster() {
     if($("attEmailBody").value===attEmailGenerated){ attEmailRebuild(); return; }
     var fresh=attEmailText(attDate);
     $("attEmailStatus").textContent = (fresh===attEmailGenerated)
-      ? "" : "Attendance has changed since this draft — press ↻ Rebuild to update it (your edits will be replaced).";
+      ? attEmailStateLine(attDate)
+      : "Attendance has changed since this draft — press ↻ Rebuild to update it (your edits will be replaced).";
   }
   $("attEmailBtn").addEventListener("click", function(){
     var p=$("attEmailPanel");
@@ -6574,8 +6662,29 @@ function setupRoster() {
       return;
     }
     $("attEmailStatus").textContent="Opening your email app… nothing has been sent yet — check it over and press Send there.";
+    attStampEmailed(attDate);
     window.location.href=href;
   });
+  /* Stamped only once the message is actually being handed over — never on
+   * opening the panel, rebuilding a draft, or either of the refusals above. The
+   * stamp is what every later change is measured against, so stamping a
+   * message that was never handed to a mail app would mean the real changes
+   * before it silently stopped counting as changes.
+   *
+   * ORDER MATTERS AT EVERY CALL SITE: the href has to be built BEFORE this
+   * runs, because attEmailSubject() reads the diff this stamp resets — stamp
+   * first and the update loses the word "update" from its own subject line.
+   */
+  function attStampEmailed(dateKey){
+    attDayRecord(dateKey)._emailedAt=Date.now();
+    save();
+    // The class list's button says "Email update" only while there is one to
+    // send, and this is what settles that question either way.
+    refreshAttEmailBtn();
+    // The tab's own footer line reports it too, when the tab is what is open.
+    if($("view-attendance") && $("view-attendance").classList.contains("active")
+       && attViewMode!=="student") renderAttendance();
+  }
 
   /* ==================== TRACKER (non-point tracked activities) ==================== */
   var trackerViewMode = "activity"; // "activity" or "student"
@@ -9625,10 +9734,11 @@ function setupRoster() {
    * cannot mail a class by accident.
    */
   function attEmailToolbarBtn(){
-    var b=el("button","seat-modebtn att-email-btn","✉ Email attendance");
-    b.title="Open your email app with today's attendance ready to send";
+    var b=el("button","seat-modebtn att-email-btn",attEmailBtnLabel());
+    b.title=attEmailBtnTitle();
     b.addEventListener("click", function(){
       var dk=todayKey();
+      var isUpd=attEmailChangedSince(dk).length>0;
       var to=(data.attEmailTo||"").trim();
       /* No saved address means there is nothing this button can usefully do —
        * and a blank mailto popped over a full-screen chart is a puzzle, not a
@@ -9654,11 +9764,24 @@ function setupRoster() {
           "Use Run → Attendance → “Email this day…” and press Copy text");
         beep(false); return;
       }
-      flash(true, "Attendance", "Opening your email", "Nothing is sent until you press Send there");
+      flash(true, "Attendance", isUpd ? "Opening your email — update" : "Opening your email",
+        "Nothing is sent until you press Send there");
       beep(true);
+      // After the href is built, never before — see attStampEmailed().
+      attStampEmailed(dk);
       window.location.href=href;
     });
     return b;
+  }
+  // "Email update" once the day has moved since the last one went out, so the
+  // button says which of the two things it is about to do before it is pressed.
+  function attEmailBtnLabel(){
+    return attEmailChangedSince(todayKey()).length ? "✉ Email update" : "✉ Email attendance";
+  }
+  function attEmailBtnTitle(){
+    return attEmailChangedSince(todayKey()).length
+      ? "Open your email app with the changes since your last attendance email"
+      : "Open your email app with today's attendance ready to send";
   }
   /* Kept in step in place, never by renderTapPanel() — same reason as the fill
    * button above, and it has to run on every attendance write rather than only
@@ -9669,8 +9792,13 @@ function setupRoster() {
     var want=attendanceActivity(armedActivity()) && attRollComplete(todayKey());
     document.querySelectorAll(".seat-toolbar-main").forEach(function(tb){
       var cur=tb.querySelector(".att-email-btn");
-      if(want && !cur) tb.appendChild(attEmailToolbarBtn());
-      else if(!want && cur && cur.parentNode) cur.parentNode.removeChild(cur);
+      if(want && !cur){ tb.appendChild(attEmailToolbarBtn()); return; }
+      if(!want){ if(cur && cur.parentNode) cur.parentNode.removeChild(cur); return; }
+      // Re-label in place as well as add and drop — a boy marked late after the
+      // roll went out turns this from "Email attendance" into "Email update"
+      // without anything else about the chart changing.
+      cur.textContent=attEmailBtnLabel();
+      cur.title=attEmailBtnTitle();
     });
   }
   /* Add it, drop it, or re-label it in place — never a renderTapPanel().
@@ -22583,7 +22711,7 @@ nameLine
         if(!day || typeof day!=="object" || Array.isArray(day)) return;
         attStats.days++;
         Object.keys(day).forEach(function(sid){
-          // _sentAt and _lastSendCount sit alongside student ids in this very
+          // _sentAt, _lastSendCount and _emailedAt sit alongside student ids in
           // object. They are day metadata, not students.
           if(sid.charAt(0)==="_") return;
           var rec=day[sid];
@@ -22646,7 +22774,7 @@ nameLine
         var day=data.attendance[dk];
         if(!day || typeof day!=="object" || Array.isArray(day)) return;
         Object.keys(day).forEach(function(sid){
-          // _sentAt and _lastSendCount sit alongside student ids in this very
+          // _sentAt, _lastSendCount and _emailedAt sit alongside student ids in
           // object. They are day metadata, not students. (Same guard as 2c's.)
           if(sid.charAt(0)==="_") return;
           var rec=day[sid];
