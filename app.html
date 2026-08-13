@@ -901,6 +901,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .pasuk-btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 0;width:44px;text-align:center;font-weight:700;font-size:.85rem}
   .pasuk-btn:hover{border-color:var(--ink)}
   .pasuk-btn.selected{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .cb-coins{display:flex;flex-wrap:wrap;gap:12px;padding:8px 0 2px}
+  .cb-coin{position:relative;border:1px solid var(--line);background:#fff;border-radius:12px;width:88px;padding:12px 6px 8px;text-align:center;cursor:pointer;user-select:none}
+  .cb-coin:hover{border-color:var(--ink)}
+  .cb-coin:active{transform:scale(.95)}
+  .cb-coin .cbc-circle{width:42px;height:42px;border-radius:50%;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:.85rem;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18)}
+  .cb-coin .cbc-name{font-size:.72rem;font-weight:600;color:var(--muted)}
+  .cb-coin .cbc-count{position:absolute;top:-8px;right:-8px;background:var(--ink);color:#fff;border-radius:999px;min-width:22px;padding:2px 6px;font-size:.75rem;font-weight:700;display:none}
+  .cb-coin.has .cbc-count{display:block}
+  .cb-coin .cbc-minus{position:absolute;top:-8px;left:-8px;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;font-size:.85rem;line-height:1;padding:0;display:none}
+  .cb-coin.has .cbc-minus{display:block}
   .pchart-wrap{overflow:auto;max-height:560px;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:14px}
   table.pchart{border-collapse:separate;border-spacing:0;font-size:.8rem;white-space:nowrap}
   table.pchart th,table.pchart td{border-bottom:1px solid var(--line);border-right:1px solid var(--line)}
@@ -3722,11 +3732,12 @@ function setupRoster() {
 
     <div class="card pad" style="margin-bottom:16px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px" id="cbAmountTitle">Coins to deposit</h3>
-      <div id="cbCoinRows" class="row-list"></div>
+      <div id="cbCoinRows" class="cb-coins"></div>
       <div id="cbAmountTotal" style="margin-top:10px;font-weight:700"></div>
       <p id="cbNote" class="view-note" style="margin:10px 0 0"></p>
       <div class="toolbar" style="margin-top:10px">
-        <button id="cbClear" class="btn btn-sm">Clear amount</button>
+        <button id="cbAll" class="btn btn-sm" title="Their entire balance, in coins">All</button>
+        <button id="cbClear" class="btn btn-sm" title="Clear the amount">None</button>
         <button id="cbConfirm" class="btn btn-sm btn-primary">Confirm</button>
       </div>
     </div>
@@ -15025,6 +15036,7 @@ function setupRoster() {
     document.querySelectorAll("#cbMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.cbmode===cbMode); });
     $("cbAmountTitle").textContent = cbMode==="deposit" ? "Coins to deposit" : "Coins to withdraw";
     $("cbConfirm").textContent = cbMode==="deposit" ? "Confirm deposit" : "Confirm withdrawal";
+    $("cbAll").style.display = cbMode==="withdraw" ? "" : "none";
     var sel=$("cbStudSel"); sel.innerHTML="";
     var studs=activeStudents().sort(function(a,b){return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name));});
     if(!studs.length){ $("cbBalance").textContent="Add students on the Students tab first."; $("cbCoinRows").innerHTML=""; $("cbAmountTotal").textContent=""; $("cbNote").textContent=""; $("cbConfirm").disabled=true; renderCoinBankHistory(); return; }
@@ -15037,23 +15049,31 @@ function setupRoster() {
     balEl.appendChild(document.createTextNode(" has "));
     balEl.appendChild(el("b",null,fmtScore(sid)));
     balEl.appendChild(document.createTextNode(" on their digital balance"));
+    renderCoinBankCoins();
+    renderCoinBankHistory();
+  }
+  function renderCoinBankCoins(){
     var rows=$("cbCoinRows"); rows.innerHTML="";
     COINS.forEach(function(c){
-      var row=el("div","erow");
-      var nm=el("span","grow", c.name+" ("+c.abbr+")"); nm.style.color=c.color; nm.style.fontWeight="600";
-      var inp=el("input","field"); inp.type="number"; inp.min="0"; inp.step="1";
-      inp.style.width="72px"; inp.style.textAlign="center";
-      inp.value=cbAmount[c.abbr]||0;
-      inp.addEventListener("change", function(){ var n=parseInt(inp.value,10); cbAmount[c.abbr]=(isNaN(n)||n<0)?0:n; inp.value=cbAmount[c.abbr]; renderCoinBankAmount(); });
-      row.appendChild(nm); row.appendChild(inp);
-      rows.appendChild(row);
+      var n=cbAmount[c.abbr]||0;
+      var tile=el("div","cb-coin"+(n>0?" has":""));
+      tile.title="Tap to add 1 "+c.name;
+      var circ=el("div","cbc-circle",c.abbr); circ.style.background=c.color;
+      tile.appendChild(circ);
+      tile.appendChild(el("div","cbc-name",c.name));
+      tile.appendChild(el("div","cbc-count","×"+n));
+      var minus=el("button","cbc-minus","−");
+      minus.type="button"; minus.title="Remove 1 "+c.name;
+      minus.addEventListener("click", function(ev){ ev.stopPropagation(); if(cbAmount[c.abbr]>0){ cbAmount[c.abbr]--; renderCoinBankCoins(); } });
+      tile.appendChild(minus);
+      tile.addEventListener("click", function(){ cbAmount[c.abbr]=(cbAmount[c.abbr]||0)+1; renderCoinBankCoins(); });
+      rows.appendChild(tile);
     });
     renderCoinBankAmount();
-    renderCoinBankHistory();
   }
   function renderCoinBankAmount(){
     var total=cbTotalPrutot(), sid=cbStudentId, s=studentById(sid);
-    $("cbAmountTotal").textContent = total>0 ? "= "+formatCoins(total) : "Enter an amount above.";
+    $("cbAmountTotal").textContent = total>0 ? "= "+formatCoins(total) : "Tap coins above to build the amount.";
     var noteEl=$("cbNote"), enough = total<=score(sid);
     if(!total){ noteEl.textContent=""; }
     else if(cbMode==="deposit"){
@@ -15096,7 +15116,8 @@ function setupRoster() {
   $("cbStudSel").addEventListener("change", function(){ cbStudentId=this.value; renderCoinBank(); });
   $("cbStudPrev").addEventListener("click", function(){ cbStudGo(-1); });
   $("cbStudNext").addEventListener("click", function(){ cbStudGo(1); });
-  $("cbClear").addEventListener("click", function(){ COINS.forEach(function(c){ cbAmount[c.abbr]=0; }); renderCoinBank(); });
+  $("cbClear").addEventListener("click", function(){ COINS.forEach(function(c){ cbAmount[c.abbr]=0; }); renderCoinBankCoins(); });
+  $("cbAll").addEventListener("click", function(){ var bd=convertPrutotToCoins(Math.max(0,score(cbStudentId))); COINS.forEach(function(c){ cbAmount[c.abbr]=bd[c.abbr]||0; }); renderCoinBankCoins(); });
   $("cbConfirm").addEventListener("click", cbConfirmAction);
 
   /* ---------- PESUKIM ---------- */

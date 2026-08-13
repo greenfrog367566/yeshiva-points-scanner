@@ -14,7 +14,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 - **Shulchani Mode: a Coin Deposit tab, for turning physical coins into a safe digital balance and back.** Until now a student holding real Shulchani coin tokens — from a reward, or handed out separately from a scan — had no way to get them off his desk and into the app. If he lost them, they were just gone; the app never knew they existed.
 
-  **Rewards → Coin Deposit**, visible only in Shulchani Mode. Pick a direction (Deposit or Withdraw), pick a student, and enter what he's handing you or receiving — "2 Sela, 1 Dinar" — using the same coin breakdown you already see everywhere else in Shulchani Mode. Confirm, and it lands on his normal spendable balance, the same one Standings and the Store already use.
+  **Rewards → Coin Deposit**, visible only in Shulchani Mode. Pick a direction (Deposit or Withdraw), pick a student, and tap the coins he's handing you or receiving — one tile per denomination, each tap adds one coin, a small − takes one back — building "2 Sela, 1 Dinar" the same way you'd count the physical pile on the desk. No typing. **All** (withdraw only) fills in his entire balance as its coin breakdown, **None** clears the count. Confirm, and it lands on his normal spendable balance, the same one Standings and the Store already use.
 
   **This is loss protection, not a bank account.** There is no separate "banked" pool, no interest, no savings goal — deposited coins are simply added to the balance he already has, the same way a Store purchase already subtracts from it. That's also why it's named "Coin Deposit" and not "Bank".
 
