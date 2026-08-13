@@ -1989,6 +1989,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
             <!-- margin-left:auto, not .grow — .grow is only defined inside
                  .toolbar and .erow, and .armed-bar is neither. -->
             <button class="btn btn-sm" id="giveAllBtn" type="button" style="margin-left:auto" title="Give the armed activity to every student in the selected class">👥 Give to all</button>
+            <!-- Hidden until somebody is actually frozen — see
+                 renderFreezeAllBtn(), which owns its label, title and
+                 visibility and is re-run every second by tickFreezes(). -->
+            <button class="btn btn-sm" id="freezeAllBtn" type="button" style="display:none"></button>
           </div>
           <div class="act-buttons" id="actButtons"></div>
           <div class="custom-row">
@@ -8003,6 +8007,14 @@ function setupRoster() {
       if(!a){ fpFlash(false,"Add an activity first"); beep(false); return; }
       label=a.name; delta=a.pts;
     }
+    // The floating panel is a scanning surface, so it answers to freeze like
+    // the scan bar does — it goes through awardPointsSilent() rather than
+    // awardWith(), so it needs the check spelled out here. Deductions pass.
+    if(isFrozen(s.id) && delta>0){
+      fpFlash(false, s.name+" — ❄️ frozen, "+fmtFreezeTime(freezeRemainingMs(s.id))+" left");
+      beep(false);
+      return;
+    }
     var entry=awardPointsSilent(s, label, delta);
     fpLastLogId=entry.id;
     beep(delta>=0);
@@ -10218,6 +10230,25 @@ function setupRoster() {
     if(!f) return false;
     return f.paused ? f.remainingMs>0 : f.endTs>Date.now();
   }
+  /* Would a tap on a FROZEN student's tile do something award() would accept?
+   *
+   * Deliberately mirrors award()'s own two exemptions rather than restating
+   * them: a tracked activity (which reroutes to recordTrackedScan() before the
+   * freeze check is ever reached) and a deduction (which award() lets past,
+   * because the block is `armed.delta>0`). Kept next to isFrozen() so the two
+   * halves of "what a freeze actually blocks" sit together — if award()'s rule
+   * ever changes, this is the other line to change.
+   *
+   * A freeze activity is NOT a pass-through: award() stacks it on a scan, but
+   * a tap is the gesture the modal's friction was built against.
+   */
+  function tapPassesFreeze(){
+    if(!armed) return false;
+    var a=armedActivity();
+    if(a && freezeActivity(a)) return false;
+    if(a && a.tracked) return true;
+    return armed.delta<0;
+  }
   function freezeRemainingMs(sid){
     var f=data.freezes[sid];
     if(!f) return 0;
@@ -10286,13 +10317,114 @@ function setupRoster() {
     flash("ice", s.name, "❄️ "+fmtFreezeDuration(seconds), "now "+fmtFreezeTime(freezeRemainingMs(s.id))+" frozen");
     beep(true);
     refreshFreezeTile(s.id, true);
+    renderFreezeAllBtn();
     return true;
+  }
+  /* ---------- Pause / resume EVERY freeze at once ----------------------
+   *
+   * The freeze modal can already pause one boy, and that is the right control
+   * for one boy. This is for the other case: the whole room stops. Davening
+   * starts, a rebbi is called out, the class goes to an assembly — and three
+   * separate countdowns keep running through it, so the consequence is served
+   * while nothing is happening and it is over before the class comes back. One
+   * button holds all of them and one button lets them all go again.
+   *
+   * Scoped to the class selected in the top-right corner, exactly as "Give to
+   * all" is: a rebbi looking at Shiur A should not silently reach into a boy
+   * in Shiur B. Choose "All classes" and it covers everyone.
+   *
+   * Deliberately NOT a fourth freeze state. It is the existing per-boy pause
+   * (remainingMs/paused, see isFrozen()) applied across a list, so a freeze
+   * paused this way is indistinguishable from one paused in the boy's own
+   * modal — which means the modal, the badge, Resume, Adjust and End all keep
+   * working on it with no special case anywhere.
+   */
+  function frozenInView(){
+    return Object.keys(data.freezes).filter(function(sid){
+      if(!isFrozen(sid)) return false;
+      var s=studentById(sid);
+      return !!s && studentInCurrentClass(s);
+    });
+  }
+  // The button is a TOGGLE with a mixed state to resolve: if anything is still
+  // running it offers Pause (so one press stops the room, whatever state the
+  // rest were in); only once every freeze in view is paused does it offer
+  // Resume. Re-run every second by tickFreezes(), which is also what makes it
+  // disappear on its own when the last freeze expires.
+  function freezeAllState(){
+    var ids=frozenInView();
+    var running=ids.filter(function(sid){ return !data.freezes[sid].paused; }).length;
+    return {
+      ids:ids,
+      label:(running?"❄️ Pause all":"▶ Resume all")+" ("+ids.length+")",
+      title:running
+        ? "Hold every running freeze in "+classLabelForFreezeAll()+" where it is — nobody's time ticks down until you resume"
+        : "Start all "+ids.length+" paused freeze"+(ids.length===1?"":"s")+" counting down again"
+    };
+  }
+  // The seating chart carries its own copy of the toggle, popping in while
+  // anybody is frozen exactly as the attendance fill button pops in while
+  // Attendance is armed — the rebbi scanning full-screen is the one most
+  // likely to need it, and the armed bar isn't on his screen at all.
+  function freezeAllToolbarBtn(){
+    var st=freezeAllState();
+    var b=el("button","seat-modebtn freeze-all-btn",st.label);
+    b.title=st.title;
+    b.addEventListener("click", function(){ toggleAllFreezes(); });
+    return b;
+  }
+  function renderFreezeAllBtn(){
+    var st=freezeAllState();
+    var b=$("freezeAllBtn");
+    if(b){
+      if(!st.ids.length){ b.style.display="none"; }
+      else { b.style.display=""; b.textContent=st.label; b.title=st.title; }
+    }
+    // Maintained in place, never via renderTapPanel() — same reasoning as
+    // refreshAttFillBtn(): a full repaint would regenerate every QR and lose
+    // the scroll position mid-scan.
+    document.querySelectorAll(".seat-toolbar-main").forEach(function(tb){
+      var cur=tb.querySelector(".freeze-all-btn");
+      if(!st.ids.length){ if(cur && cur.parentNode) cur.parentNode.removeChild(cur); return; }
+      if(!cur){ tb.appendChild(freezeAllToolbarBtn()); return; }
+      cur.textContent=st.label;
+      cur.title=st.title;
+    });
+  }
+  function classLabelForFreezeAll(){ return data.currentClass ? "“"+data.currentClass+"”" : "the class"; }
+  // One press, both directions. Writes the same fields the modal's own Pause
+  // and Resume write, then saves once for the whole sweep rather than per boy.
+  function toggleAllFreezes(){
+    var ids=frozenInView();
+    if(!ids.length) return;
+    var running=ids.filter(function(sid){ return !data.freezes[sid].paused; }).length;
+    var n=0;
+    ids.forEach(function(sid){
+      var f=data.freezes[sid];
+      if(running){
+        if(f.paused) return;
+        f.remainingMs=freezeRemainingMs(sid); f.paused=true; n++;
+      } else {
+        if(!f.paused) return;
+        f.endTs=Date.now()+f.remainingMs; f.remainingMs=null; f.paused=false; n++;
+      }
+    });
+    if(!n) return;
+    save();
+    ids.forEach(function(sid){ refreshFreezeTile(sid, false); });
+    renderFreezeAllBtn();
+    flash("ice", running?"❄️ All freezes paused":"▶ All freezes resumed", String(n),
+          n+" student"+(n===1?"":"s")+(running?" — nobody's time is ticking down":" — counting down again"));
+    beep(true);
   }
   // Walks every active freeze once a second, updating badges live and — on
   // natural expiry only, never on a manual End — clearing the entry and
   // firing the same ice flash applyFreeze() uses. A paused freeze never
   // expires on its own; only Resume (or Adjust in the freeze modal) can.
   function tickFreezes(){
+    // Before the early return, so the Pause-all button hides itself the moment
+    // the last freeze expires rather than lingering with a stale count.
+    renderFreezeAllBtn();
     var ids=Object.keys(data.freezes);
     if(!ids.length) return;
     var changed=false;
@@ -10377,6 +10509,24 @@ function setupRoster() {
       }
       return false;
     }
+    /* FREEZE BLOCKS GIVING ON EVERY SURFACE THAT GIVES — the same rule award()
+     * enforces for a scan, restated here because this is the second points
+     * path. It had no freeze check at all, so a frozen boy was refused by the
+     * scan bar and the seating chart and then quietly collected the same points
+     * from the whole-class button, the Students-tab batch, or a personal code.
+     *
+     * Deductions pass, exactly as they do in award() (`delta>0`, not `delta`):
+     * freeze has only ever blocked giving, never taking away. The two batch
+     * callers ask isFrozen() themselves to word their skip lists, so a ticked
+     * box is never silently dropped or mislabelled "not in class".
+     */
+    if(isFrozen(s.id) && delta>0){
+      if(!quiet){
+        flash(false, s.name, "❄️ Frozen", fmtFreezeTime(freezeRemainingMs(s.id))+" left — can't give points");
+        beep(false);
+      }
+      return false;
+    }
     var tag=contestTagForScan();
     // Same held-aside branch as applyScore(). A batch award of 25 boys during a
     // contest is 25 held scans, not 25 points — the two paths must agree or the
@@ -10455,16 +10605,21 @@ function setupRoster() {
                 +"This logs one entry per student, exactly like scanning them, so it can be undone in one action from History.")) return;
     // One id for the whole press, and one save at the end rather than one per
     // boy — see awardWith()'s deferSave note.
-    var bid=newId(), done=0, skipped=0;
+    // Frozen boys are counted apart from the class-guard skips so the note can
+    // say why — a quiet:true award flashes nothing, so without this a frozen
+    // student would just be missing from the total with no explanation.
+    var bid=newId(), done=0, skipped=0, frozen=0;
     targets.forEach(function(s){
       if(awardWith(s, armed.label, delta, {quiet:true, batchId:bid, deferSave:true})) done++;
+      else if(isFrozen(s.id)) frozen++;
       else skipped++;
     });
     save();
     renderRecent(); renderScanBoard(); renderStandings(); renderTapPanel(); refreshLiveViews();
     flash(delta>=0, "Whole class", fmtDeltaBare(delta),
           armed.label+" · "+done+" student"+(done===1?"":"s")
-          +(absent.length && targets.length!==list.length ? "  ("+absent.length+" absent skipped)" : ""));
+          +(absent.length && targets.length!==list.length ? "  ("+absent.length+" absent skipped)" : "")
+          +(frozen ? "  ("+frozen+" ❄️ frozen skipped)" : ""));
     beep(delta>=0);
   }
   // 6-7 celebration (optional — data.sixSeven, Settings tab). Checked after any
@@ -11085,6 +11240,7 @@ function setupRoster() {
     return false;
   }
   $("giveAllBtn").addEventListener("click", function(){ giveArmedToAll(); });
+  $("freezeAllBtn").addEventListener("click", function(){ toggleAllFreezes(); });
   $("undoLast").addEventListener("click", function(){ undoMostRecentScan(); });
   // The dashboard and seating-chart undos are the SAME action, not a second
   // implementation — all three call undoMostRecentScan(), so undo behaves
@@ -12036,6 +12192,10 @@ function setupRoster() {
       // back with it rather than waiting for the next attendance write.
       if(attRollComplete(todayKey())) toolbar.appendChild(attEmailToolbarBtn());
     }
+    // Same first-paint treatment for the Pause-all toggle: present immediately
+    // if anybody is frozen, then kept in step by renderFreezeAllBtn() via
+    // tickFreezes() — including appearing/vanishing as freezes start and end.
+    if(frozenInView().length) toolbar.appendChild(freezeAllToolbarBtn());
 
     if(effViewMode==="seating"){
       var lay=seatLayout();
@@ -12602,12 +12762,30 @@ function setupRoster() {
   // points breakdown. Scanning a QR code always scores normally either way;
   // this only changes what tapping a tile in the Tap Panel does.
   function tapClick(s, btn){
-    // A frozen student always lands here on tap, regardless of what's armed —
-    // scanning a freeze code on a frozen student still just stacks time
-    // silently through award() (see applyFreeze()); tapping is the one
-    // deliberate control surface, so it's deliberately more friction than a
-    // scoring tap, not less.
-    if(isFrozen(s.id)){ showFreezeModal(s); return; }
+    /* A frozen student normally lands in the freeze modal on tap: that is the
+     * one deliberate control surface for a running freeze (Pause / Adjust /
+     * End), and it is meant to be MORE friction than a scoring tap, not less,
+     * so a stray double-tap can't silently extend a consequence.
+     *
+     * But freeze only ever blocked GIVING. award() has always let a demerit
+     * and a tracked scan through on a frozen boy — the deduction lands, the
+     * tracked record is written, and the freeze itself is untouched either way
+     * (see the two branches above applyScore()). Tapping did not agree: this
+     * check fired before anything looked at what was armed, so on a frozen
+     * student a tapped deduction and a tapped attendance/homework/pass/tracker
+     * mark both went nowhere and silently opened a dialog instead. A rebbi
+     * taking attendance down the seating chart simply skipped the frozen boy.
+     *
+     * So the modal is now the fallback, not the gate: whatever award() would
+     * accept on a frozen student, a tap hands straight to it and lets award()
+     * do the deciding. Everything else — nothing armed, a positive activity,
+     * a freeze activity — still opens the modal, which keeps it reachable and
+     * keeps the anti-double-tap friction where it was aimed. Freeze stays out
+     * of the pass-through on purpose: scanning a freeze code stacks time
+     * silently, but tapping one is exactly the stray gesture that friction
+     * exists for.
+     */
+    if(isFrozen(s.id) && !tapPassesFreeze()){ showFreezeModal(s); return; }
     if(data.tapShowsBreakdown){ showBreakdownModal(s); return; }
     tapAward(s, btn);
   }
@@ -12685,6 +12863,9 @@ function setupRoster() {
       delete data.freezes[s.id];
       save();
       refreshFreezeTile(s.id, false);
+      // This boy may have been the last one frozen, or the last one still
+      // running — either way the Pause-all button's count and direction move.
+      renderFreezeAllBtn();
       close();
     });
     body.appendChild(endBtn);
@@ -12704,7 +12885,7 @@ function setupRoster() {
       var f=data.freezes[s.id]; if(!f) return;
       if(f.paused){ f.endTs=Date.now()+f.remainingMs; f.remainingMs=null; f.paused=false; }
       else { f.remainingMs=freezeRemainingMs(s.id); f.paused=true; }
-      save(); refreshFreezeTile(s.id, false); refresh();
+      save(); refreshFreezeTile(s.id, false); renderFreezeAllBtn(); refresh();
     });
     refresh();
     // The modal's own countdown, separate from tickFreezes() — this is a
@@ -19116,13 +19297,14 @@ nameLine
     var reason=(prompt("What is this for?\n\nThis is what shows in History, in each student's breakdown, and on your Google Sheet — so make it something you'll recognise later.", "")||"").trim();
     if(!reason){ notice("A reason is needed — it's what the History entry will say."); return; }
     if(!confirm(fmtDelta(amt)+" "+unit+" to "+sel.length+" student"+(sel.length===1?"":"s")+"\nReason: “"+reason+"”\n\nThis logs one entry per student, exactly like scanning them, so it can be undone from History.")) return;
-    var done=0, skipped=[];
+    var done=0, skipped=[], frozen=[];
     // One shared id across the whole loop — this is what lets #127's undo find
     // the siblings later. deferSave means the 25 awards write once at the end
     // rather than 25 times; save() is ~24 ms against a full log.
     var bid=newId();
     sel.forEach(function(s){
       if(awardWith(s, reason, amt, {quiet:true, batchId:bid, deferSave:true})) done++;
+      else if(isFrozen(s.id)) frozen.push(s.name);
       else skipped.push(s.name);
     });
     save();
@@ -19134,6 +19316,13 @@ nameLine
     if(skipped.length){
       msg+="\n\n"+skipped.length+" skipped — not in “"+data.currentClass+"”:\n"+skipped.join(", ")
          + "\n\nSwitch the class selector in the top-right corner to “All classes” to include them.";
+    }
+    // Same reasoning for the other refusal awardWith can give. Reported apart
+    // from the list above, because "not in this class" and "frozen right now"
+    // need two different things from the rebbi.
+    if(frozen.length){
+      msg+="\n\n"+frozen.length+" skipped — ❄️ frozen right now:\n"+frozen.join(", ")
+         + "\n\nEnd or wait out the freeze (tap the student’s tile) and give it again.";
     }
     notice(msg);
   });
