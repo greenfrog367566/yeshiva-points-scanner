@@ -9735,16 +9735,45 @@ function setupRoster() {
   // rest were in); only once every freeze in view is paused does it offer
   // Resume. Re-run every second by tickFreezes(), which is also what makes it
   // disappear on its own when the last freeze expires.
-  function renderFreezeAllBtn(){
-    var b=$("freezeAllBtn"); if(!b) return;
+  function freezeAllState(){
     var ids=frozenInView();
-    if(!ids.length){ b.style.display="none"; return; }
     var running=ids.filter(function(sid){ return !data.freezes[sid].paused; }).length;
-    b.style.display="";
-    b.textContent=(running?"❄️ Pause all":"▶ Resume all")+" ("+ids.length+")";
-    b.title=running
-      ? "Hold every running freeze in "+classLabelForFreezeAll()+" where it is — nobody's time ticks down until you resume"
-      : "Start all "+ids.length+" paused freeze"+(ids.length===1?"":"s")+" counting down again";
+    return {
+      ids:ids,
+      label:(running?"❄️ Pause all":"▶ Resume all")+" ("+ids.length+")",
+      title:running
+        ? "Hold every running freeze in "+classLabelForFreezeAll()+" where it is — nobody's time ticks down until you resume"
+        : "Start all "+ids.length+" paused freeze"+(ids.length===1?"":"s")+" counting down again"
+    };
+  }
+  // The seating chart carries its own copy of the toggle, popping in while
+  // anybody is frozen exactly as the attendance fill button pops in while
+  // Attendance is armed — the rebbi scanning full-screen is the one most
+  // likely to need it, and the armed bar isn't on his screen at all.
+  function freezeAllToolbarBtn(){
+    var st=freezeAllState();
+    var b=el("button","seat-modebtn freeze-all-btn",st.label);
+    b.title=st.title;
+    b.addEventListener("click", function(){ toggleAllFreezes(); });
+    return b;
+  }
+  function renderFreezeAllBtn(){
+    var st=freezeAllState();
+    var b=$("freezeAllBtn");
+    if(b){
+      if(!st.ids.length){ b.style.display="none"; }
+      else { b.style.display=""; b.textContent=st.label; b.title=st.title; }
+    }
+    // Maintained in place, never via renderTapPanel() — same reasoning as
+    // refreshAttFillBtn(): a full repaint would regenerate every QR and lose
+    // the scroll position mid-scan.
+    document.querySelectorAll(".seat-toolbar-main").forEach(function(tb){
+      var cur=tb.querySelector(".freeze-all-btn");
+      if(!st.ids.length){ if(cur && cur.parentNode) cur.parentNode.removeChild(cur); return; }
+      if(!cur){ tb.appendChild(freezeAllToolbarBtn()); return; }
+      cur.textContent=st.label;
+      cur.title=st.title;
+    });
   }
   function classLabelForFreezeAll(){ return data.currentClass ? "“"+data.currentClass+"”" : "the class"; }
   // One press, both directions. Writes the same fields the modal's own Pause
@@ -11541,6 +11570,10 @@ function setupRoster() {
     // armed; added and removed after that by refreshAttFillBtn(), which is what
     // keeps it in step with arming without redrawing the chart.
     if(attendanceActivity(armedActivity())) toolbar.appendChild(attFillToolbarBtn());
+    // Same first-paint treatment for the Pause-all toggle: present immediately
+    // if anybody is frozen, then kept in step by renderFreezeAllBtn() via
+    // tickFreezes() — including appearing/vanishing as freezes start and end.
+    if(frozenInView().length) toolbar.appendChild(freezeAllToolbarBtn());
 
     if(effViewMode==="seating"){
       var lay=seatLayout();

@@ -14,7 +14,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 - **Hold every freeze at once when the whole room stops.** A freeze is a countdown, and until now it kept counting through anything — davening starting, an assembly, you being called out of the room. Three boys frozen while the class is not even sitting there means the consequence is served while nothing is happening, and it is over before anyone comes back.
 
-  **Now a ❄️ Pause all button appears next to "Give to all" the moment anybody is frozen**, with the number of boys on it. One press holds every one of their clocks exactly where it is; the button becomes **▶ Resume all**, and one press starts them all again from the same time they stopped at. When the last freeze finishes the button takes itself away.
+  **Now a ❄️ Pause all button appears the moment anybody is frozen**, with the number of boys on it — next to "Give to all" on the Record tab, **and on the seating chart's own toolbar, including full screen**, popping in and out exactly the way the attendance ✓ button does, so it is there on the screen you actually scan from. One press holds every one of their clocks exactly where it is; the button becomes **▶ Resume all**, and one press starts them all again from the same time they stopped at. When the last freeze finishes the button takes itself away.
 
   **It only touches the class you are looking at**, exactly like "Give to all" — a boy in another shiur keeps counting down. Choose "All classes" in the top-right corner and it covers everyone.
 
