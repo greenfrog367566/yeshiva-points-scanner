@@ -199,6 +199,15 @@ what is stored, why, that it is never sold or shared, and how to have it
 deleted. But it is the earlier gate of the two, so don't let it ride along
 behind the school agreement.
 
+**Drafted 2026-08-12 — `docs/Account_Privacy_Note.md`.** Unpublished and
+unlinked, deliberately: it is user-facing copy that is hard to walk back, so the
+wording gets Ben's approval before it gets a URL. It carries six blanks that must
+be filled before it can ship, two of which are real decisions rather than facts
+to look up — **whether a superadmin view-as session is logged and disclosed to
+the rebbi** (recommended yes to both; cheap now, expensive to retrofit), and the
+**breach-notification timeframe**, which has to match whatever Q3's school
+agreement ends up saying. Decide that number once and use it in both.
+
 ### Q4 — Does tier 2 still get the fragile-storage warning and CSV export? — ADOPTED AS RECOMMENDED
 
 **Recommendation: yes to both, and more load-bearing than they are today, not
