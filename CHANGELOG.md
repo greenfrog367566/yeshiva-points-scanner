@@ -12,6 +12,16 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **Hold every freeze at once when the whole room stops.** A freeze is a countdown, and until now it kept counting through anything — davening starting, an assembly, you being called out of the room. Three boys frozen while the class is not even sitting there means the consequence is served while nothing is happening, and it is over before anyone comes back.
+
+  **Now a ❄️ Pause all button appears next to "Give to all" the moment anybody is frozen**, with the number of boys on it. One press holds every one of their clocks exactly where it is; the button becomes **▶ Resume all**, and one press starts them all again from the same time they stopped at. When the last freeze finishes the button takes itself away.
+
+  **It only touches the class you are looking at**, exactly like "Give to all" — a boy in another shiur keeps counting down. Choose "All classes" in the top-right corner and it covers everyone.
+
+  **If some are already paused and some are running, it pauses the ones still running** and leaves the others exactly as they are. Nothing is restarted and no time is added or lost, whichever way you press it.
+
+  **This is the same pause the boy's own freeze box already had**, just applied to everybody at once — so a freeze paused this way is an ordinary paused freeze. Tapping that boy still opens his box, and Resume, Adjust and End freeze all work on him as usual.
+
 - **The app now tells you when you are running an old copy of it.** Until now there was no way to find out. Two rebbeim could be using Menchmark side by side, months apart in version, and nothing on either screen would say so — including to whoever was trying to help them.
 
   **Help → About now shows your version number.** That alone answers the question that used to be unanswerable: "which Menchmark am I actually running?" If you ever report a problem, that number is the single most useful thing you can send.

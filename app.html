@@ -1989,6 +1989,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
             <!-- margin-left:auto, not .grow — .grow is only defined inside
                  .toolbar and .erow, and .armed-bar is neither. -->
             <button class="btn btn-sm" id="giveAllBtn" type="button" style="margin-left:auto" title="Give the armed activity to every student in the selected class">👥 Give to all</button>
+            <!-- Hidden until somebody is actually frozen — see
+                 renderFreezeAllBtn(), which owns its label, title and
+                 visibility and is re-run every second by tickFreezes(). -->
+            <button class="btn btn-sm" id="freezeAllBtn" type="button" style="display:none"></button>
           </div>
           <div class="act-buttons" id="actButtons"></div>
           <div class="custom-row">
@@ -9697,13 +9701,85 @@ function setupRoster() {
     flash("ice", s.name, "❄️ "+fmtFreezeDuration(seconds), "now "+fmtFreezeTime(freezeRemainingMs(s.id))+" frozen");
     beep(true);
     refreshFreezeTile(s.id, true);
+    renderFreezeAllBtn();
     return true;
+  }
+  /* ---------- Pause / resume EVERY freeze at once ----------------------
+   *
+   * The freeze modal can already pause one boy, and that is the right control
+   * for one boy. This is for the other case: the whole room stops. Davening
+   * starts, a rebbi is called out, the class goes to an assembly — and three
+   * separate countdowns keep running through it, so the consequence is served
+   * while nothing is happening and it is over before the class comes back. One
+   * button holds all of them and one button lets them all go again.
+   *
+   * Scoped to the class selected in the top-right corner, exactly as "Give to
+   * all" is: a rebbi looking at Shiur A should not silently reach into a boy
+   * in Shiur B. Choose "All classes" and it covers everyone.
+   *
+   * Deliberately NOT a fourth freeze state. It is the existing per-boy pause
+   * (remainingMs/paused, see isFrozen()) applied across a list, so a freeze
+   * paused this way is indistinguishable from one paused in the boy's own
+   * modal — which means the modal, the badge, Resume, Adjust and End all keep
+   * working on it with no special case anywhere.
+   */
+  function frozenInView(){
+    return Object.keys(data.freezes).filter(function(sid){
+      if(!isFrozen(sid)) return false;
+      var s=studentById(sid);
+      return !!s && studentInCurrentClass(s);
+    });
+  }
+  // The button is a TOGGLE with a mixed state to resolve: if anything is still
+  // running it offers Pause (so one press stops the room, whatever state the
+  // rest were in); only once every freeze in view is paused does it offer
+  // Resume. Re-run every second by tickFreezes(), which is also what makes it
+  // disappear on its own when the last freeze expires.
+  function renderFreezeAllBtn(){
+    var b=$("freezeAllBtn"); if(!b) return;
+    var ids=frozenInView();
+    if(!ids.length){ b.style.display="none"; return; }
+    var running=ids.filter(function(sid){ return !data.freezes[sid].paused; }).length;
+    b.style.display="";
+    b.textContent=(running?"❄️ Pause all":"▶ Resume all")+" ("+ids.length+")";
+    b.title=running
+      ? "Hold every running freeze in "+classLabelForFreezeAll()+" where it is — nobody's time ticks down until you resume"
+      : "Start all "+ids.length+" paused freeze"+(ids.length===1?"":"s")+" counting down again";
+  }
+  function classLabelForFreezeAll(){ return data.currentClass ? "“"+data.currentClass+"”" : "the class"; }
+  // One press, both directions. Writes the same fields the modal's own Pause
+  // and Resume write, then saves once for the whole sweep rather than per boy.
+  function toggleAllFreezes(){
+    var ids=frozenInView();
+    if(!ids.length) return;
+    var running=ids.filter(function(sid){ return !data.freezes[sid].paused; }).length;
+    var n=0;
+    ids.forEach(function(sid){
+      var f=data.freezes[sid];
+      if(running){
+        if(f.paused) return;
+        f.remainingMs=freezeRemainingMs(sid); f.paused=true; n++;
+      } else {
+        if(!f.paused) return;
+        f.endTs=Date.now()+f.remainingMs; f.remainingMs=null; f.paused=false; n++;
+      }
+    });
+    if(!n) return;
+    save();
+    ids.forEach(function(sid){ refreshFreezeTile(sid, false); });
+    renderFreezeAllBtn();
+    flash("ice", running?"❄️ All freezes paused":"▶ All freezes resumed", String(n),
+          n+" student"+(n===1?"":"s")+(running?" — nobody's time is ticking down":" — counting down again"));
+    beep(true);
   }
   // Walks every active freeze once a second, updating badges live and — on
   // natural expiry only, never on a manual End — clearing the entry and
   // firing the same ice flash applyFreeze() uses. A paused freeze never
   // expires on its own; only Resume (or Adjust in the freeze modal) can.
   function tickFreezes(){
+    // Before the early return, so the Pause-all button hides itself the moment
+    // the last freeze expires rather than lingering with a stale count.
+    renderFreezeAllBtn();
     var ids=Object.keys(data.freezes);
     if(!ids.length) return;
     var changed=false;
@@ -10519,6 +10595,7 @@ function setupRoster() {
     return false;
   }
   $("giveAllBtn").addEventListener("click", function(){ giveArmedToAll(); });
+  $("freezeAllBtn").addEventListener("click", function(){ toggleAllFreezes(); });
   $("undoLast").addEventListener("click", function(){ undoMostRecentScan(); });
   // The dashboard and seating-chart undos are the SAME action, not a second
   // implementation — all three call undoMostRecentScan(), so undo behaves
@@ -12131,6 +12208,9 @@ function setupRoster() {
       delete data.freezes[s.id];
       save();
       refreshFreezeTile(s.id, false);
+      // This boy may have been the last one frozen, or the last one still
+      // running — either way the Pause-all button's count and direction move.
+      renderFreezeAllBtn();
       close();
     });
     body.appendChild(endBtn);
@@ -12150,7 +12230,7 @@ function setupRoster() {
       var f=data.freezes[s.id]; if(!f) return;
       if(f.paused){ f.endTs=Date.now()+f.remainingMs; f.remainingMs=null; f.paused=false; }
       else { f.remainingMs=freezeRemainingMs(s.id); f.paused=true; }
-      save(); refreshFreezeTile(s.id, false); refresh();
+      save(); refreshFreezeTile(s.id, false); renderFreezeAllBtn(); refresh();
     });
     refresh();
     // The modal's own countdown, separate from tickFreezes() — this is a
