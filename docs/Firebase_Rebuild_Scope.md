@@ -95,6 +95,47 @@ reversible. Do not unpick the architecture to get there.
 - **Offline promise, restated precisely:** one connected moment to log in per device, ever. After that, fully offline via Firestore's persistent local cache, syncing when connectivity returns. Most rebbeim can get wifi once; nobody needs it daily.
 - **The old approval-Sheet automation retires** for the bulk beta invite. Berel has the full beta list; the provisioning tool gets a **bulk mode** — feed the whole list in, accounts created and codes/links sent in one pass.
 
+### How the SDK ships (LOCKED 2026-08-12, #218-era open question 1)
+
+**The Firebase SDK is vendored as a separate same-origin file, loaded only for
+tier 1, and precached in `sw.js`.** Ben amended `CLAUDE.md` rule 3 to allow
+exactly this and nothing more. What that buys, and why the other two candidates
+lost:
+
+- **`app.html` stays one file for everyone.** Inlining the compat bundle would
+  have added a few hundred KB to an already ~1.2 MB file served network-first —
+  re-downloaded on every deploy by the tier-2 majority, who never authenticate
+  and would never use a byte of it.
+- **A CDN `<script type="module">` is out twice over:** forbidden by rule 3, and
+  it cannot honor the tier-1 PWA/offline guarantee, because a service worker
+  cannot reliably precache a cross-origin script (no precache control, opaque
+  responses, CDN outages). A rebbi who lost signal mid-lesson could lose the
+  whole app rather than just sync.
+- **No build step is introduced.** Vendored means *committed*, not compiled — a
+  plain local `<script src>` needs no bundler.
+- **Tier 2 never loads it at all**, which is what makes the whole arrangement
+  cheap. Firestore's REST API takes a bearer token from plain `fetch`, so even
+  the tier-2 account record needs no SDK (see the custody section).
+- **Scope discipline:** this exception covers the Firebase SDK only. Splitting
+  anything else out of `app.html` is a fresh PROPOSE FIRST.
+
+### Write identity — deterministic ids (LOCKED 2026-08-12, open question 3)
+
+**Every appendable record carries a client-generated deterministic id — device
+id + timestamp + sequence — written with `set()` at that path, never `add()`.**
+
+- **Retries are idempotent by construction.** A retry overwrites its own prior
+  write instead of creating a second one. No server-side dedup, no reconcile
+  pass.
+- **The Log-vs-Attendance-Log asymmetry dissolves** rather than needing per-tab
+  handling. Today the Log dedups by ID so re-pushing is safe while the
+  Attendance Log duplicates rows on retry; under this model neither can.
+- **Incremental writes make retries routine, not exceptional**, which is why
+  this had to be settled at model-design time rather than bolted on after.
+- **It is also what makes the existing-cohort upload path re-runnable** for
+  tier 1 — see "Bringing the existing cohort in", where tier 2 still needs
+  idempotence stated explicitly because it has no Firestore behind it.
+
 ### Tiers and gating
 
 - **Three tiers: rebbi, admin, superadmin.**
@@ -246,9 +287,9 @@ Phase 2 of the original 9-phase plan had four slices: 2a (tracked-item data mode
 
 ### Open questions for step 1
 
-Not features — the decisions the data-model session cannot start without, plus the ones that change what gets built. **Work this list at the top of step 1.** Two items that were on it are now locked and have moved into the body of this document: 2d is sequenced before step 1, and Secretary Mode folds into the rebuild.
+Not features — the decisions the data-model session cannot start without, plus the ones that change what gets built. **Work this list at the top of step 1.** Items that were on it and are now locked, with their answers moved into the body of this document: 2d is sequenced before step 1, Secretary Mode folds into the rebuild, and — **as of 2026-08-12 — questions 1 (the SDK), 3 (write ids) and 4 (photos) are decided.** Their entries below are kept for the reasoning that got there, marked LOCKED; **do not re-open them.** What actually remains for step 1 is 2, 5, 6, 7, 8, 9, 10 and 11.
 
-**1. Single file, or split? — down to two candidates, and one of them is now clearly ahead.** `CLAUDE.md` rule 3 says `app.html` stays one file with no build step. Firebase Auth + Firestore cannot honor that untouched: the modular SDK is ESM built for bundlers, so it's either a CDN `<script type="module">` (forbidden, and breaks the offline promise) or a vendored compat bundle inlined the way the QR library already is — a few hundred KB onto a file that is already ~1.2 MB and served network-first by `sw.js`, so every deploy re-downloads all of it.
+**1. Single file, or split? — ✅ LOCKED 2026-08-12 by Ben. Moved to "How the SDK ships" under Locked decisions; the record below is kept for the reasoning, not for the decision.** `CLAUDE.md` rule 3 says `app.html` stays one file with no build step. Firebase Auth + Firestore cannot honor that untouched: the modular SDK is ESM built for bundlers, so it's either a CDN `<script type="module">` (forbidden, and breaks the offline promise) or a vendored compat bundle inlined the way the QR library already is — a few hundred KB onto a file that is already ~1.2 MB and served network-first by `sw.js`, so every deploy re-downloads all of it.
 
   **Two things this decision is NOT about,** both of which the old Navigation section implied it was:
   - *The back button.* Real routing needs the History API — `pushState`/`popstate` or hash routing — and that works identically in one file or twenty. Step 4 costs the same either way. Only a multi-*page* app gets "native" back, and that's the worst option here: full reload per tab switch on classroom Chromebooks, shared state through storage on every navigation.
@@ -262,13 +303,13 @@ Not features — the decisions the data-model session cannot start without, plus
 
   **The split is ACCEPTED as of 2026-08-09, which settles the tiebreaker above rather than merely raising it.** With custody split, tier 2 is not a hypothetical minority — it is the *default* landing place for every self-serve signup (see the Path B reframe). So "who'd re-download the inline option's bytes for nothing" is most users, permanently, on a file already ~1.2 MB served network-first. **That points hard at vendoring the SDK as a separate same-origin file, loaded only for tier 1 and precached in `sw.js`.** `app.html` stays one file for everyone, no build step is introduced (a plain local `<script src>` needs no bundler), the PWA/offline guarantee holds for both tiers, and the majority who never authenticate never pay for the SDK at all.
 
-  **Still an open question rather than a locked decision, deliberately** — it is a `CLAUDE.md` rule-3 amendment, and rule 3 is a hard rule that only Ben changes (CLAUDE.md: "Changing anything in this file's hard rules" is PROPOSE FIRST). What changed is that the option space is now two, with a clear recommendation, instead of two with a coin-flip. **Rule 3 still stands until Ben amends it, and step 1 still cannot start until this is settled.**
+  **✅ Ben took the recommendation on 2026-08-12.** Rule 3 in `CLAUDE.md` now carries the amendment inline, scoped to the Firebase SDK and nothing else. **Step 1 is unblocked.**
 
 **2. A "class" does not exist in the data model.** Students are `{id, name, group}` with a single top-level `className`. There is no class entity — `group` is a free-text label on each student. But the entire tier design rests on one ("a rebbi's rules physically cannot read another class"), and so does the motivating story of a class that couldn't move from Braun to Weinberg. Step 1 must design the entity **and** decide what existing `group` values become: separate classes, or subdivisions within one. This has roster, permission, and migration consequences and is currently unwritten anywhere.
 
-**3. Deterministic write IDs — proposed, promote to locked.** Give every appendable record a client-generated deterministic id (device id + timestamp + sequence) and write it with `set()` at that path rather than `add()`. Every retry then overwrites its own prior write instead of creating a duplicate — idempotent by construction, no server-side dedup, and **the Log-vs-Attendance-Log asymmetry disappears entirely** rather than needing per-tab handling. Since incremental writes make retries routine, this wants deciding at model-design time, not after.
+**3. Deterministic write IDs — ✅ LOCKED 2026-08-12 by Ben. See "Write identity" under Locked decisions.** Give every appendable record a client-generated deterministic id (device id + timestamp + sequence) and write it with `set()` at that path rather than `add()`. Every retry then overwrites its own prior write instead of creating a duplicate — idempotent by construction, no server-side dedup, and **the Log-vs-Attendance-Log asymmetry disappears entirely** rather than needing per-tab handling. Since incremental writes make retries routine, this wants deciding at model-design time, not after.
 
-**4. Photos: inline, and drop Firebase Storage.** Student photos are 128px JPEG data URLs at q0.72 — roughly 4–8 KB each. Inside a per-student document that is comfortable, so they can stay exactly where they are. #154 raised Firebase Storage only because it assumed one blob per class; the collections model removes the reason. Confirm and drop Storage from scope.
+**4. Photos: inline, and drop Firebase Storage — ✅ LOCKED 2026-08-12 by Ben.** Student photos are 128px JPEG data URLs at q0.72 — roughly 4–8 KB each. Inside a per-student document that is comfortable, so they can stay exactly where they are. #154 raised Firebase Storage only because it assumed one blob per class; the collections model removes the reason. **Firebase Storage is out of scope for this build.** One thing step 1 still has to *check* rather than assume: photos are the largest field on a student document, so confirm the per-student doc stays clear of the 1 MiB limit with a photo plus that student's denormalised fields — the limit is per document, and the collections model is what keeps this comfortable rather than tight.
 
 **5. Cutover detection is one sentence for a hard problem.** "The app detects a converted device and shows a one-time 'your class has moved' screen" — the mechanism is unspecified. Related and entirely absent from this doc: #154's §5 point that during transition `localStorage` remains the working store while Firestore's IndexedDB cache becomes a second persistence layer, and the two can hold different versions of the same class. This is where data actually gets lost in practice. Design it explicitly.
 
@@ -305,10 +346,10 @@ Not features — the decisions the data-model session cannot start without, plus
 - **Not truly silent from first launch — one real permission click, then silent after that.** Browsers sandbox web apps on purpose; a site writing to disk with zero prompt ever is exactly what that sandboxing exists to prevent. The File System Access API gets close: rebbi picks a folder once, grants permission once, and after that the app writes backup files into it with no further prompts.
 - **Chromium-only (Chrome, Edge) — no Safari, no Firefox.** This happens to line up exactly with the fragile-storage audience already at the center of this build: Chromebooks run Chrome. Not a generic nice-to-have, a targeted fit.
 - **A third layer, not a replacement.** Firestore stays the real source of truth. CSV export stays the "I can open and read this myself" option. This becomes a quiet local safety net underneath both — a real file on the rebbi's own disk regardless of what the cloud is doing.
-- **Sequencing:** after the core rebuild (steps 1–8 below), not part of it. Small, self-contained addition once accounts and sync exist.
+- **Sequencing: ✅ PULLED FORWARD — LOCKED 2026-08-12 by Ben.** It ships **before the cutover**, not after the core rebuild. This reverses what this line said, and the reasoning is `Daily_Backup_Spec.md`'s: it depends on nothing — not accounts, not Firestore, not the SDK decision above — and leaving it until step 8 opens a window where the automatic 30-second Sheet snapshot is gone and nothing automatic has replaced it. A manual CSV button is not a replacement for an automatic backup. Build it against today's localStorage app; it keeps working unchanged on either side of the cutover, and for tier 2 it is permanent.
 - **Challenged by `docs/Daily_Backup_Spec.md` — and half of that challenge is already answered.** A beta rebbi pointed out that retiring Sheets removes the only *automatic* backup the app has (the 30-second snapshot push), and that the named replacement above — a CSV export button — is manual. That spec proposed two layers: a browser-universal staleness nudge, and this File System Access folder backup.
   - **The nudge shipped** (its PR A — `data.lastBackupAt` / `backupNudgeSince` are in `defaults`), so the app can now tell a rebbi he is weeks stale. That gap is closed.
-  - **Still open: this section's own sequencing.** The spec argues for pulling File System Access forward to *before* the cutover, since it has no dependency on accounts or Firestore and otherwise leaves a window where the automatic Sheet snapshot is gone and nothing automatic has replaced it. Decide before step 1.
+  - **Settled 2026-08-12: the spec won.** It argued for pulling File System Access forward to before the cutover, for the reasons now recorded in the sequencing bullet above. Note that #249's probe already found the two things this depends on: `showDirectoryPicker` works even on `file://`, and the folder permission survives a reopen with no re-prompt. **That draft still needs one run on a managed Chromebook before anything relies on it** — the audience this exists for is exactly the one it has not been tested against.
 
 ### Navigation
 
@@ -353,8 +394,9 @@ That's "make it real."
 ## Build order
 
 0. **Phase 2d, first.** Locked 2026-08-04 — it pins the count value shape step 1 has to model, and un-hides the Gradebook. Not a rebuild step, but a prerequisite to one. ✅ **Shipped 2026-08-05.**
-0b. **The Drive OAuth spike — runs in parallel, gates nothing, is gated by nothing** (added 2026-08-09 with the custody split). Sign-in → create-a-file → write-JSON → re-auth-after-expiry against a throwaway GCP project, on a page not yet wired into `app.html`. It de-risks the one genuine unknown in tier 2 (the re-auth UX on a shared Chromebook mid-lesson, not the API), and it pays off whatever else happens: it is a better backup than the Sheet today, independent of whether the rebuild has started. Needs Ben to create the GCP project + OAuth client ID. Keep it a spike — the deliverable is confidence and a little reusable `fetch` code, not a merged feature.
-1. **Data model design session** — the collections, the incremental-write shape, the migration map from the current `data` object (including tracked items), `firstName`/`lastName`, archive states, the `sharedWithAdmin` flag. **This is its own real session, the biggest single step, and everything else stands on it.** Do not compress it into a prompt. **Open the session by working the "Open questions for step 1" list above** — and open *that* with the two-tier split's consequence: the storage seam has **two implementations**, which shapes every collection decision after it. The class entity (question 2) and the write-id model (question 3) are likewise inputs to the collection design, not follow-ups to it.
+0b. **The Drive OAuth spike — runs in parallel, gates nothing, is gated by nothing** (added 2026-08-09 with the custody split). Sign-in → create-a-file → write-JSON → re-auth-after-expiry against a throwaway GCP project, on a page not yet wired into `app.html`. It de-risks the one genuine unknown in tier 2 (the re-auth UX on a shared Chromebook mid-lesson, not the API), and it pays off whatever else happens: it is a better backup than the Sheet today, independent of whether the rebuild has started. Needs Ben to create the GCP project + OAuth client ID. Keep it a spike — the deliverable is confidence and a little reusable `fetch` code, not a merged feature. ✅ **Done — PR #243, merged 2026-08-10.** The whole surface worked first time with no SDK: folder, write, read-back, in-place update, 3599s token. Silent re-auth works and recovers from a real 401, **but only when the app sends a `login_hint`** — without it, `prompt=none` fails on any browser holding more than one Google account, which is the normal case. Universal sign-in solves that structurally (the account *is* the hint). **Still owed: one run on a shared/logged-out Chromebook.** The hardcoded client ID was removed 2026-08-12 — the spike now takes it from a box and remembers it in `localStorage`, which survives the redirect the silent-re-auth test depends on.
+0c. **The File System Access folder backup — pulled forward 2026-08-12, ships before the cutover.** Depends on nothing in this build (no accounts, no Firestore, no SDK), and closes the window where the automatic Sheet snapshot is gone with nothing automatic behind it. Draft #249. **Owed first: one run on a managed Chromebook.**
+1. **Data model design session — ✅ UNBLOCKED 2026-08-12.** The rule-3/SDK call was the last gate and Ben has taken it. Open questions 1, 3 and 4 are now locked and have moved into the body of this document, so the step-1 agenda opens shorter than it did: work the *remaining* open questions (2, 5, 6, 7, 8, 9, 10, 11), starting with the class entity (2) and the two-implementation storage seam. The collections, the incremental-write shape, the migration map from the current `data` object (including tracked items), `firstName`/`lastName`, archive states, the `sharedWithAdmin` flag. **This is its own real session, the biggest single step, and everything else stands on it.** Do not compress it into a prompt. **Open the session by working the "Open questions for step 1" list above** — and open *that* with the two-tier split's consequence: the storage seam has **two implementations**, which shapes every collection decision after it. The class entity (question 2) is likewise an input to the collection design, not a follow-up to it; the write-id model is no longer a question at all — it is locked, and the collections are designed *against* it.
 2. **Auth + tiers + security rules** — both sign-in paths, the three tiers, gating proven with no real UI yet.
 3. **The converter tool** — both modes plus bulk. Prove the migration carries a real class (with gradebook data) on a throwaway account. **Scope it as migration tool + verification harness** (open question 6), and build the **self-serve own-account restore** here too — bulk and provisioning stay superadmin-gated.
 3b. **The existing-cohort upload path — and it must land before step 8, not with it.** Same-device adoption, self-serve backup upload, Drive restore. See "Bringing the existing cohort in" above. **No beta rebbi is asked to sign in until this works**, because sign-in without it is a downgrade for every rebbi who already has a class. Shares step 3's verification harness.
