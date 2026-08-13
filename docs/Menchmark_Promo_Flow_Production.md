@@ -167,11 +167,44 @@ kippah, tzitzis strings visible at the waist.
   chesed beat (shot 9) — the heart of the video.
 
 ### The set (one location plate)
-> A sunlit yeshiva day-school classroom, stylized 3D animation: warm wooden desks
-> in rows, a large whiteboard, a bookshelf of oversized seforim with Hebrew
-> lettering suggested but unreadable, aleph-beis chart on the wall, big windows
-> with warm morning light, soft dust motes. Empty of people. Painterly warm
-> palette: honey wood, cream walls, forest-green accents.
+> A sunlit yeshiva day-school classroom, stylized 3D animation, traditional
+> front-facing layout: individual wooden student desks arranged in straight
+> rows and columns like a grid, every desk facing the front of the room, all
+> chairs on the same side of their desks so every student faces the
+> chalkboard. At the front: a large chalkboard and the rebbi's desk. Along
+> the side wall: a bookshelf of oversized seforim with Hebrew lettering
+> suggested but unreadable, aleph-beis chart. Big windows with warm morning
+> light, soft dust motes. Empty of people. Painterly warm palette: honey
+> wood, cream walls, forest-green accents.
+
+**The seating geometry is a hard rule, not set dressing.** A real yeshiva
+classroom is the traditional layout: straight rows, everyone facing front
+toward the board and the rebbi. Veo's default is the modern collaborative
+classroom — desks scattered at angles, clusters, kids facing each other or
+the camera — and it produced exactly that in the live takes. Every prompt
+with the room in frame must restate: **"desks in straight rows, all students
+facing the front of the classroom."** When the camera shoots from the front
+of the room, the boys are seen from the front *because they face front*;
+when it shoots from the back, rows of backs of heads facing the board — never
+a room where different desks point different directions.
+
+**Ground truth: real classroom frames exist.** Ben has actual video stills of
+Menchmark in use in his classroom (2026-08-10 screenshots: the rebbi scanning
+a QR card on a boy's desk while the boy learns from his sefer; scanning the
+printed class sheet at the front; a boy watching the raffle wheel on the wall
+display). What they settle:
+
+- **The scan points at a QR code card lying on the desk beside the open
+  sefer — never at the boy himself.** The boy keeps learning; the code gets
+  scanned. Shot 9 is written this way now; keep it that way in every retake.
+- The real room: whiteboard at the front (not a chalkboard), a large
+  wall-mounted display beside/behind the rebbi (the leaderboard surface for
+  shot 11 — keep its content an abstract glow in the promo), bright
+  teal-accent walls, light tan desks with black metal legs. The stylized set
+  may warm this up, but those are the honest furnishings — prefer whiteboard
+  + wall display over chalkboard when a prompt names the front of the room.
+- The rebbi's real look matches the character: dark suit, black kippah,
+  tzitzis strings visible.
 
 Generate one wide plate + one reverse angle (facing the windows/back of room).
 Attach the matching plate as an ingredient whenever a shot introduces a **new**
@@ -339,18 +372,22 @@ Katz, Meir, scanner prop.
 > Medium two-shot, 40mm, waist height, slow 20-degree arc around the moment.
 > Shy Meir is bent over his desk, eyes down and fully absorbed inside his
 > open sefer, lips moving slightly as he learns quietly to himself — he does
-> not notice anything happening around him. Rebbi Katz, mid-lesson, glances
-> over, smiles, and — without breaking stride — points the Tera 1300 scanner
-> at him: one soft green confirmation pulse and one cheerful two-note chime.
-> Only THEN does Meir look up from his sefer, startled, and break into a huge
-> slow smile. Audio: calm classroom murmur, the chime, the piano swelling one
-> step.
+> not notice anything happening around him. A small QR code card lies flat on
+> the desk beside his open sefer. Rebbi Katz, mid-lesson, walks up the aisle,
+> smiles, and — without breaking stride — points the Tera 1300 scanner DOWN
+> at the QR card on the desk, not at the boy: one soft green confirmation
+> pulse on the card and one cheerful two-note chime. Only THEN does Meir look
+> up from his sefer, startled, and break into a huge slow smile. Audio: calm
+> classroom murmur, the chime, the piano swelling one step.
 
 *The Video B trust beat, animated: he never stops teaching, and the boy never
-stops learning until the chime pulls him out of it. The scan happens TO a boy
-who is looking inside his sefer, not to a boy already looking up waiting for
-it — that order is the whole point of the shot. Meir's smile is the single
-most important frame of the film — spend takes here.*
+stops learning until the chime pulls him out of it. **The scanner aims at the
+code card on the desk, never at the child** — that's how the product actually
+works (confirmed by Ben's real classroom footage), and pointing a device at a
+boy reads wrong besides. The scan happens TO a boy who is looking inside his
+sefer, not to a boy already looking up waiting for it — that order is the
+whole point of the shot. Meir's smile is the single most important frame of
+the film — spend takes here.*
 
 **SHOT 10 — Sruli converted.** ⛓ CHAIN from shot 9's last frame + Sruli,
 Rebbi Katz, scanner ingredients.
@@ -446,6 +483,9 @@ plain word "free" is fine — "free forever" licensing language is not).
   (CLAUDE.md rule 7).
 - **The scan lands on a boy who is looking down, inside his sefer** — mid-learning,
   not mid-reaction. He notices only after the chime. See shot 9.
+- **Traditional seating, every shot with the room in frame:** desks in
+  straight rows, all students facing the front board. Never the scattered
+  "collaborative" layout Veo defaults to. See the set bible.
 - The video sells **calm and mentchlichkeit**, not prizes — the failed-candy
   beat exists precisely to distinguish Menchmark from bribery. Don't add a
   prize/reward shot.
