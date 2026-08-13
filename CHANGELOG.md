@@ -12,6 +12,31 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **You can now email the day's attendance to the office, from your own email.** Until now the only way attendance left Menchmark was into a Google Sheet — which is exactly right for a school that uses one, and no use at all to a school whose secretary simply wants an email every morning. A rebbi with no sheet connected pressed **Send Attendance** and nothing happened.
+
+  On **Run → Attendance** there is now **✉ Email this day…** next to Send Attendance. It writes the message for you — the class, the date, the counts, and who was absent or late with the time he came in — and shows it to you before anything opens, so you can read it, add a line ("Dovid is at a bris"), and change it however you like.
+
+  **It is sent by you, not by Menchmark.** Pressing **Open in my email app** hands the message to whatever you already use for email — Gmail, Outlook, Mail on an iPad — with the address and subject filled in. Menchmark does not send it, and never sees the address on any server: it is saved in your own browser, on your own computer, so the next day is one click. The office receives a normal email **from you**, which they can reply to.
+
+  **Emailing is now the main button on the Attendance tab**, and the Google Sheet one says what it is: **Send to Google Sheets**. Nothing about the Sheet changed — it works exactly as before — it just no longer presents itself as *the* way to send attendance. The email is the one that works for every rebbi with nothing set up at all, which is why it is the button your thumb lands on. If no Sheet is connected, the tab now says so and points at the email instead of leaving you with a button that does nothing.
+
+  **Every name carries the time it was marked**, not just the boys who came in late — with one line at the top saying so, since the same column means "when he walked in" under Late and "when you marked him" under Absent. It is what makes the email a record rather than a summary: the office can see the absences were taken at 9:04 and the boy who turned up was marked at 9:41.
+
+  **Who was absent comes first, then who was late** — the two things an office actually has to do something about, at the top where they will be read. **＋ full list below** adds the whole class underneath with each boy's status, for a school that wants the complete roll on file; the absent and late boys appear there too, in their place in the list, so the bottom half is a roll and not a leftover. **Absent & late only** — just the top part — is the default, and whichever you pick is remembered.
+
+  From the seating chart it opens as a **small window floating over the chart** rather than a new tab — so the chart is still there behind it, and closing the window puts you back exactly where you were instead of switching away from the class in front of you.
+
+  **And you can send it without leaving the seating chart.** Arm Attendance, tap the boys who are away, press **✓ Mark the rest Present** — and an **✉ Email attendance** button appears next to it. One tap opens the email, already written, for today. It only appears once every boy has been accounted for, because half a roll arriving at an office is worse than none, and it disappears again by itself if somebody is left unmarked. This is the same message the Attendance tab writes, sent the same way — it saves the trip out of full screen, mid-shiur, to send the roll you have just finished taking.
+
+  **And when a boy walks in after the email has gone, the next one is an update.** This is the ordinary case, not an edge case: you send the roll at 9:12, and at 9:40 the boy you marked absent walks in. Mark him late as usual — the button now reads **Email an update**, and pressing it writes a message that opens with **"Changed since the 9:12 AM email (1): Dovid Berkowitz — Late 9:40 AM"**, above everything else, because that is the only part the office hasn't already read. Its subject line ends in **— update**, so a secretary holding both messages can tell at a glance which one is current instead of comparing them line by line. The whole roll is rewritten underneath, so the update stands on its own even if the first email never arrived.
+
+  Menchmark can only tell you it **opened** an email at 9:12, never that you sent it — pressing Send is yours, and it says so in those words. It does not touch your Google Sheet's own record of the day, which keeps working exactly as before.
+
+  **It will not claim you took attendance when you didn't.** If nobody has been marked for the day, the email says so in as many words. If you use "I mark who's here" and some boys are still unmarked, they are listed under **Not marked** — never quietly counted as present. That is the same rule the Google Sheet send follows, for the same reason: once it leaves the building it is somebody's official record.
+
+  **It records nothing and changes nothing.** Emailing a day does not mark it as sent to your Sheet, because Menchmark has no way of knowing whether you actually pressed Send in your email app. The Sheet, if you use one, works exactly as before.
+
+  One limit worth knowing: email apps can only accept a message of a certain length this way. A very large class on **Full roll** can exceed it — if so, Menchmark refuses to open a half-message and tells you to press **Copy text** and paste it into a new email yourself.
 - **The app now tells you when you are running an old copy of it.** Until now there was no way to find out. Two rebbeim could be using Menchmark side by side, months apart in version, and nothing on either screen would say so — including to whoever was trying to help them.
 
   **Help → About now shows your version number.** That alone answers the question that used to be unanswerable: "which Menchmark am I actually running?" If you ever report a problem, that number is the single most useful thing you can send.
