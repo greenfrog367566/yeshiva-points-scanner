@@ -6,7 +6,7 @@ You need a **2D scanner** — 1D scanners can only read old-style striped barcod
 
 ## Most people need to do nothing
 
-Cheap USB barcode/QR scanners act like a keyboard — plug one in, click into the **Scan** tab, and start scanning. No pairing, no drivers, no settings.
+Cheap USB barcode/QR scanners act like a keyboard — plug one in, click into the **Record** tab, and start scanning. No pairing, no drivers, no settings.
 
 ## Scanner modes worth knowing about (Tera 1300 series and similar)
 
@@ -31,9 +31,9 @@ Key Trigger Mode (scan once per button press) is the default and what most class
 
 ## Serial (COM port) scanners
 
-Some industrial, handheld, or Bluetooth-SPP scanners connect as an actual **serial/COM port** device instead of acting like a keyboard — including the Tera 1300 series, if you specifically switch it into USB-COM mode. Use the **Settings** tab only if that's what you want:
+Some industrial, handheld, or Bluetooth-SPP scanners connect as an actual **serial/COM port** device instead of acting like a keyboard — including the Tera 1300 series, if you specifically switch it into USB-COM mode. Use **Run → Settings** only if that's what you want:
 
-1. Go to **Settings**.
+1. Go to **Run → Settings**.
 2. Choose the baud rate your scanner uses (supported: 9600, 19200, 38400, 57600, 115200 — 9600 is the common default).
 3. Click **Connect scanner…** and select the port when your browser prompts you.
 4. Once connected, scans from that device are read everywhere in the app — not just on one tab.
@@ -66,10 +66,10 @@ If you connected your scanner before this was added, the first manual reconnect 
 
 | Symptom | Likely cause |
 |---|---|
-| Scans don't appear anywhere | Scanner isn't in keyboard-emulation mode and hasn't been connected via Settings |
+| Scans don't appear anywhere | Scanner isn't in keyboard-emulation mode and hasn't been connected via Run → Settings |
 | Scanner beeps normally but nothing shows up, even in Notepad | Scanner may be in Storage Mode — scan the manual's Real-Time/Instant Upload Mode barcode to switch back |
 | Scanned codes come through with extra characters attached, or don't match any student | Time Stamp prefix/suffix is likely turned on — scan the manual's "Time Prefix/Suffix Off" barcode |
-| "Not supported" message in Settings | Wrong browser/device for serial — use Chrome/Edge on a computer, or switch to a USB keyboard-emulation scanner |
+| "Not supported" message in Run → Settings | Wrong browser/device for serial — use Chrome/Edge on a computer, or switch to a USB keyboard-emulation scanner |
 | COM-port scanner doesn't show up in the browser's connect picker | Check Windows Device Manager under "Ports (COM & LPT)" first — if nothing's there, the scanner hasn't actually switched into USB-COM mode yet. Re-scan the setup barcode, then unplug/replug the USB cable |
 | Serial scanner won't reconnect after restart | Read the status line in Settings — it now names the reason. Most often you're on a downloaded copy of the file (permissions can't persist there; use menchmark.app), or the scanner was connected before auto-reconnect learned to identify it, in which case one manual reconnect fixes it for good |
 | Scans appear duplicated or garbled | Wrong baud rate selected — check your scanner's manual for its default |
