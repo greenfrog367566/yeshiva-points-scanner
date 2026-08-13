@@ -3772,8 +3772,65 @@ function setupRoster() {
         <!-- Recovery path for a day the Sheet never actually received. The
              normal send skips anything already stamped as sent, which is
              precisely what makes a silently-failed send unrecoverable. -->
-        <button class="btn btn-sm" id="attResendBtn" title="Send every record for the day shown, even ones already marked as sent">↻ Re-send this day…</button>
-        <button class="btn btn-primary" id="attSendBtn">Send Attendance</button>
+        <!-- "to Sheets", not "this day", now that the button beside it says
+             Google Sheets out loud: next to an explicit Sheets button, a
+             generic "re-send this day" reads as if it might re-send the email. -->
+        <button class="btn btn-sm" id="attResendBtn" title="Send every record for the day shown to your Google Sheet, even ones already marked as sent">↻ Re-send to Sheets…</button>
+        <!-- The Sheet is no longer the primary way out of this tab — it is the
+             one that needs a Google Sheet, an Apps Script deployment and a
+             connection, and a rebbi with none of those pressed it and nothing
+             happened. It keeps working exactly as before; it just no longer
+             claims to be THE way to send attendance. -->
+        <button class="btn btn-sm" id="attSendBtn">Send to Google Sheets</button>
+        <!-- Emails the day from the rebbi's OWN mail app — the app never sends
+             anything itself and never sees the address at any server. That is
+             the whole point: the office receives a normal message from the
+             rebbi it already knows, and can reply to him. Primary, because it
+             is the one that works for every rebbi with no setup at all. -->
+        <button class="btn btn-primary" id="attEmailBtn" title="Write this day's attendance as an email you send from your own account">✉ Email this day…</button>
+      </div>
+
+      <!-- Inline rather than a modal: the rebbi should be able to read the exact
+           words that will leave his mailbox, and edit them, before anything
+           opens. Everything here is a draft until he presses the button. -->
+      <div class="card pad" id="attEmailPanel" style="display:none;margin-top:10px">
+        <div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <label class="lbl" style="margin:0">Send to:</label>
+          <input type="email" id="attEmailTo" class="field" style="flex:1 1 220px" placeholder="office@school.org" multiple>
+          <label class="lbl" style="margin:0">Include:</label>
+          <span class="seg mini" id="attEmailScope">
+            <button data-scope="exceptions" title="Only the boys who were absent or late">Absent &amp; late only</button>
+            <button data-scope="full" title="Absent and late at the top, then the whole class listed underneath with each boy's status">＋ full list below</button>
+          </span>
+          <button class="btn btn-sm" id="attEmailRefresh" title="Rebuild the message from what is on screen now">↻ Rebuild</button>
+        </div>
+        <!-- Which way the message gets handed over. It is here rather than in
+             Settings because "nothing happened when I pressed the button" is
+             discovered on this screen, and this is the fix for it. -->
+        <div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <label class="lbl" style="margin:0">Open with:</label>
+          <span class="seg mini" id="attEmailVia">
+            <button data-via="app" title="Your computer's own email program. The only one that works with no internet — but on Windows it does nothing at all if no email app is set up">Your email app</button>
+            <button data-via="gmail" title="Opens a Gmail compose window in a new tab. Needs internet, but cannot silently fail">Gmail</button>
+            <button data-via="outlook" title="Opens an Outlook compose window in a new tab. Needs internet, but cannot silently fail">Outlook</button>
+          </span>
+        </div>
+        <textarea id="attEmailBody" class="field" rows="10" style="width:100%;font-family:inherit;resize:vertical" spellcheck="false"></textarea>
+        <div class="toolbar" style="margin-top:8px;gap:8px;flex-wrap:wrap">
+          <span class="grow" id="attEmailStatus" style="color:var(--muted);font-size:.85rem"></span>
+          <button class="btn btn-sm" id="attEmailCopy">Copy text</button>
+          <button class="btn btn-sm" id="attEmailCancel">Close</button>
+          <button class="btn btn-primary" id="attEmailOpen">Open in my email app</button>
+        </div>
+        <!-- The honest half of the mailto problem: the page cannot tell whether
+             the hand-off worked, so it asks rather than claiming. Shown only
+             after pressing Open with "Your email app", and only until the
+             rebbi picks one of the two answers. -->
+        <div id="attEmailDidntOpen" class="toolbar" style="display:none;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
+          <span class="grow" style="font-size:.85rem">Nothing opened? Windows may have no email app set up — that fails silently and Menchmark can't see it.</span>
+          <button class="btn btn-sm btn-primary" id="attEmailTryGmail">Use Gmail instead</button>
+          <button class="btn btn-sm" id="attEmailTryOutlook">Use Outlook</button>
+        </div>
       </div>
     </div>
 
@@ -4414,6 +4471,12 @@ function setupRoster() {
     // Absence-first: unmarked means present. The mode a new install starts in,
     // and what every existing save backfills to — see attPresenceFirst().
     attMode: "absence",
+    // Who the daily attendance email goes to, and how much of the roll it
+    // carries. Stored only in this browser — the app never sends the mail.
+    attEmailTo: "",
+    attEmailScope: "exceptions",
+    // "app" (a mailto: link), "gmail" or "outlook" — see attEmailVia().
+    attEmailVia: "app",
     raffle: { mode:"auto", entries:{}, winners:[] },
     pasukSet: { label:"", ref:"", from:1, to:1 },
     pesukimDone: {},
@@ -5313,6 +5376,9 @@ function setupRoster() {
     // And arming Attendance specifically is what puts "Mark the rest Present"
     // on the class list. Same in-place treatment, same reason — see there.
     if(typeof refreshAttFillBtn==="function") refreshAttFillBtn();
+    // "✉ Email attendance" rides along, since it is only ever offered while
+    // Attendance is armed — and disarming must take it away with the fill.
+    if(typeof refreshAttEmailBtn==="function") refreshAttEmailBtn();
   }
 
   /* ---------- TABS (grouped, with a subtab row) ---------- */
@@ -5825,15 +5891,35 @@ function setupRoster() {
     if(!data.attendance[dateKey]) data.attendance[dateKey]={};
     return data.attendance[dateKey];
   }
-  // Everything about a day's attendance lives under student-id keys, plus one
-  // reserved "_sentAt" meta key (student ids always look like "S001" so this
-  // can never collide) marking when "Send Attendance" was last clicked for
+  // Everything about a day's attendance lives under student-id keys, plus a few
+  // reserved "_"-prefixed meta keys (student ids always look like "S001" so
+  // these can never collide). "_sentAt" marks when "Send Attendance" was last clicked for
   // that day. Before that first send, individual changes are just staged
   // locally. After it, the day is considered "live" — any further change
   // (e.g. an absent student showing up late) is recognized as a correction
   // and pushed to the Sheet immediately on its own, without needing another
   // manual send.
   function attDaySent(dateKey){ return !!(data.attendance[dateKey] && data.attendance[dateKey]._sentAt); }
+  /* "_emailedAt" is the same idea for the email path, and it is deliberately a
+   * SEPARATE key that means a WEAKER thing.
+   *
+   * _sentAt above means the Sheet received the day, and it drives real
+   * behaviour: after it, every later change auto-syncs on its own. _emailedAt
+   * means only that the rebbi's mail app was OPENED with the day in it. The app
+   * hands the message over and loses sight of it — whether Send was ever
+   * pressed is his business and unknowable here. So it must never be allowed to
+   * stand in for _sentAt, or a day the Sheet never received would look sent.
+   *
+   * What it is good for is the one thing that was missing: telling a LATER
+   * change apart from the roll that already left. A boy marked absent who walks
+   * in at 9:40 is exactly the common case, and until now the office simply kept
+   * the 9:12 version with nothing to say otherwise.
+   */
+  function attDayEmailedAt(dateKey){
+    var day=data.attendance[dateKey];
+    var t=day && day._emailedAt;
+    return (typeof t==="number" && isFinite(t)) ? t : 0;
+  }
   /* Has anyone actually been MARKED on this day, or is the screen just showing
    * defaults?
    *
@@ -6014,7 +6100,7 @@ function setupRoster() {
   // auto-synced on its own (see setAttendance above).
   function sendAttendance(){
     var url=(data.sheetUrl||"").trim();
-    if(!url){ $("attSendStatus").textContent="No Google Sheet connected \u2014 add one on Backup & Sheets first."; return; }
+    if(!url){ $("attSendStatus").textContent="No Google Sheet connected \u2014 add one on Backup & Sheets first, or use \u201cEmail this day\u201d instead."; return; }
     var day=attDayRecord(attDate);
     var studs=activeStudents();
     /* A DAY NOBODY MARKED IS NOT A FULL PRESENT ROLL, and this is the gate that
@@ -6117,7 +6203,7 @@ function setupRoster() {
   // a decision only he can make.
   function resendAttendanceDay(){
     var url=(data.sheetUrl||"").trim();
-    if(!url){ $("attSendStatus").textContent="No Google Sheet connected — add one on Backup & Sheets first."; return; }
+    if(!url){ $("attSendStatus").textContent="No Google Sheet connected — add one on Backup & Sheets first, or use “Email this day” instead."; return; }
     var day=attDayRecord(attDate);
     var studs=activeStudents();
     var rows=[];
@@ -6285,7 +6371,7 @@ function setupRoster() {
     });
     // Send status footer
     var sentAt=day._sentAt;
-    $("attSendBtn").textContent = sentAt ? "\u2713 Sent \u2014 send again" : "Send Attendance";
+    $("attSendBtn").textContent = sentAt ? "\u2713 Sent to Sheets \u2014 send again" : "Send to Google Sheets";
     $("attSendStatus").textContent = sentAt
       ? ("Sent at "+fmtClockTime(sentAt)+
          (typeof day._lastSendCount==="number" ? (" ("+day._lastSendCount+(day._lastSendCount===1?" student":" students")+" sent)") : "")+
@@ -6298,6 +6384,13 @@ function setupRoster() {
               : (taken ? "Not sent yet."
                        : "Not sent yet — and nobody has been marked for this day. Use “Mark the rest Present” if everyone is here."))
           : "");
+    // Says which of the two it will write before it is opened, exactly as the
+    // class list's copy of this button does.
+    $("attEmailBtn").textContent = attEmailBtnTabLabel();
+    // A draft left open while the rebbi changes the day, or marks another boy,
+    // would otherwise still describe the screen he was looking at a minute ago
+    // — and that draft is one button away from leaving the building.
+    if($("attEmailPanel").style.display!=="none") attEmailFollowScreen();
     // The fill-in button says which way it fills, because in presence-first the
     // useful sweep is the opposite one: the rebbi has marked everyone who is
     // here, and what is left over is the absences.
@@ -6354,9 +6447,425 @@ function setupRoster() {
   $("attMarkAllPresent").addEventListener("click", function(){
     attFillUnmarked(attDate);
     renderAttendance();
+    // The class list's send button is gated on the roll being complete, and
+    // this button is one of the two things that completes it. renderAttendance
+    // above redraws this tab only.
+    refreshAttEmailBtn();
   });
   $("attSendBtn").addEventListener("click", sendAttendance);
   $("attResendBtn").addEventListener("click", resendAttendanceDay);
+
+  /* ---------- EMAIL THIS DAY ----------
+   * A second way out of the Attendance tab, for the school whose office wants
+   * an email rather than a Google Sheet — and for the rebbi who has no sheet
+   * connected at all, for whom "Send Attendance" currently does nothing.
+   *
+   * IT IS SENT BY THE REBBI, NOT BY THE APP. We build the text and hand it to
+   * his own mail client through a mailto: link; nothing is transmitted from
+   * here, no address is stored anywhere but his own browser, and the message
+   * the office receives comes from the address they already know and can reply
+   * to. That also means it works with no Sheet, no Apps Script and no network
+   * beyond whatever his mail app needs — including on the downloaded file://
+   * copy, where the Sheet path is unavailable anyway.
+   *
+   * It does NOT stamp the day as sent (_sentAt is the Sheet's flag, and it
+   * drives the auto-sync of later corrections); the app cannot know whether the
+   * rebbi actually pressed Send in his mail app, so claiming it did would be
+   * the same manufactured-observation mistake the send gate above exists to
+   * prevent. It stamps _emailedAt instead — see there for why that is a
+   * different, weaker claim, and what it is for.
+   */
+  var attEmailScope = "exceptions"; // draft-local until the panel is opened
+  /* MAILTO LINKS HAVE A LENGTH CEILING and it is not ours to control — some
+   * mail clients (and Windows' handler registry) truncate or refuse well before
+   * 2,000 characters, which for a full roll of a large class is a real
+   * possibility. A truncated roll that opens anyway is the worst outcome, so
+   * both callers below check before handing anything over.
+   */
+  var ATT_MAILTO_MAX = 1900;
+  /* A WEB COMPOSE URL IS A NORMAL PAGE, so it has none of mailto's ceiling —
+   * this is well clear of what Gmail and Outlook accept, and comfortably fits a
+   * full roll for any class this app will ever see.
+   */
+  var ATT_WEBMAIL_MAX = 7000;
+  function attEmailHref(dateKey, to, body){
+    // Commas separate recipients and @ is legal in the address part — encoding
+    // them turns a two-address mailto into one nonsense address in some clients.
+    return "mailto:"+encodeURIComponent(to).replace(/%40/g,"@").replace(/%2C/gi,",")
+      +"?subject="+encodeURIComponent(attEmailSubject(dateKey))
+      +"&body="+encodeURIComponent(body);
+  }
+  /* HOW THE MESSAGE GETS HANDED OVER — and why there is a choice at all.
+   *
+   * "Your email app" is a mailto: link, and on Windows it is a genuinely
+   * common dead end: Chrome only handles mailto: if a webmail handler has been
+   * registered with it, and when none has, choosing Chrome from Windows'
+   * "how do you want to open this" box does NOTHING AT ALL. No error, no tab,
+   * nothing. The page cannot detect it either — a mailto navigation that goes
+   * nowhere is indistinguishable from one that worked, so there is no clever
+   * fix to be had, only a different route.
+   *
+   * Gmail and Outlook are that route: plain https compose URLs that open in a
+   * tab like any other page and cannot silently fail. A rebbi whose school is
+   * on Google — which is most of them — should probably just pick Gmail once
+   * and never think about it again.
+   *
+   * "Your email app" stays the default and stays offered, because it is the
+   * only one of the three that works with NO INTERNET, which matters on the
+   * downloaded file:// copy and in a classroom with no wifi. The others need
+   * the network by definition.
+   */
+  function attEmailVia(){
+    var v=data.attEmailVia;
+    return (v==="gmail" || v==="outlook") ? v : "app";
+  }
+  var ATT_VIA_LABEL={app:"your email app", gmail:"Gmail", outlook:"Outlook"};
+  // Returns what to open and how, or null when it will not fit.
+  function attEmailCompose(dateKey, to, body){
+    var via=attEmailVia();
+    var subj=attEmailSubject(dateKey);
+    if(via==="gmail"){
+      var g="https://mail.google.com/mail/?view=cm&fs=1"
+        +"&to="+encodeURIComponent(to)
+        +"&su="+encodeURIComponent(subj)
+        +"&body="+encodeURIComponent(body);
+      return g.length>ATT_WEBMAIL_MAX ? null : {url:g, newTab:true, via:via};
+    }
+    if(via==="outlook"){
+      var o="https://outlook.office.com/mail/deeplink/compose?"
+        +"to="+encodeURIComponent(to)
+        +"&subject="+encodeURIComponent(subj)
+        +"&body="+encodeURIComponent(body);
+      return o.length>ATT_WEBMAIL_MAX ? null : {url:o, newTab:true, via:via};
+    }
+    var m=attEmailHref(dateKey, to, body);
+    return m.length>ATT_MAILTO_MAX ? null : {url:m, newTab:false, via:via};
+  }
+  /* An ANCHOR CLICK, not location.href, for the mailto case. Assigning
+   * location.href to a protocol the browser cannot handle can leave the page in
+   * a half-navigated state; a synthesized click on a real <a> is the idiom
+   * browsers handle cleanly, and it is what a link on any other page would do.
+   */
+  function attEmailLaunch(c){
+    if(c.newTab){
+      /* A POPUP WINDOW RATHER THAN A TAB when the caller asks for one.
+       *
+       * The seating chart's full screen is a CSS state on THIS page, not the
+       * browser's Fullscreen API — so a new tab doesn't merely cover the chart,
+       * it switches away from the page holding it, in front of a room. A popup
+       * floats over it, and closing the popup puts the rebbi back exactly where
+       * he was with the chart still up.
+       *
+       * Deliberately NO "noopener" on this path: Chrome treats it as a hint to
+       * open a tab instead of a window, which defeats the entire point. The
+       * only two origins this ever opens are Gmail and Outlook.
+       *
+       * The window is NAMED, so pressing the button twice reuses the same one
+       * instead of stacking a second compose window on the first.
+       */
+      if(c.popup){
+        var vw=Math.min(760, (screen.availWidth||1024)-80);
+        var vh=Math.min(820, (screen.availHeight||768)-80);
+        var vx=Math.max(0, Math.round(((screen.availWidth||1024)-vw)/2));
+        var vy=Math.max(0, Math.round(((screen.availHeight||768)-vh)/2));
+        var win=window.open(c.url, "menchmarkMail",
+          "width="+vw+",height="+vh+",left="+vx+",top="+vy+",resizable=yes,scrollbars=yes");
+        // A blocked popup returns null. A tab is worse than a popup here, but
+        // it is far better than the button doing nothing at all.
+        if(win){ try{ win.focus(); }catch(e){} return; }
+      }
+      window.open(c.url, "_blank", "noopener"); return;
+    }
+    var a=document.createElement("a");
+    a.href=c.url; a.style.display="none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+  // Same honesty rule as sendAttendance(): an unmarked boy in presence-first is
+  // one nobody has looked at, not a present one, so he is named as such rather
+  // than folded into the present count.
+  function attEmailRows(dateKey){
+    var day=attDayRecord(dateKey);
+    return activeStudents()
+      .sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); })
+      .map(function(s){
+        var rec=attMarkedRec(dateKey, s.id);
+        var st=rec ? rec.status : (attPresenceFirst() ? "" : (day[s.id] && day[s.id].status) || "");
+        return {name:s.name, status:st, ts:rec && rec.ts};
+      });
+  }
+  // Is today's roll actually finished — every boy in the class looked at? This
+  // is what "the rest are present" leaves behind, and it is the gate the class
+  // list's email button waits for. Deliberately reads the real marks, not the
+  // absence-first default: a boy nobody touched is not a completed roll.
+  function attRollComplete(dateKey){
+    var studs=activeStudents();
+    if(!studs.length) return false;
+    return studs.every(function(s){ return !!attMarkedRec(dateKey, s.id); });
+  }
+  /* WHO HAS MOVED SINCE THE EMAIL WENT OUT.
+   *
+   * The same diff sendAttendance() runs against the Sheet (`rec.ts > _sentAt`),
+   * read against _emailedAt instead — which is why this needs no new storage:
+   * every attendance record already carries the instant it was written.
+   *
+   * Empty before the first email, always: with no _emailedAt there is no
+   * "since" to be after, and a first email that announced changes to a message
+   * nobody has received would be nonsense.
+   */
+  function attEmailChangedSince(dateKey){
+    var since=attDayEmailedAt(dateKey);
+    if(!since) return [];
+    return attEmailRows(dateKey).filter(function(r){
+      return typeof r.ts==="number" && r.ts>since;
+    });
+  }
+  /* The subject says "update" once the day has moved since the last email, and
+   * this is the single most load-bearing word in the feature. Without it the
+   * correction arrives with a subject byte-identical to the message it
+   * corrects, and a secretary holding two of those has to diff them by eye to
+   * find out which is current — or, worse, reads the first one and stops.
+   */
+  function attEmailSubject(dateKey){
+    return "Attendance — "+(data.currentClass||data.className||data.school||"Class")+" — "+fmtDateLabel(dateKey)
+      + (attEmailChangedSince(dateKey).length ? " — update" : "");
+  }
+  // scope is passed explicitly rather than read from the panel's draft state,
+  // because the class-list button below builds the same message with no panel
+  // open — and may have to fall back to the shorter shape to fit a mailto.
+  function attEmailText(dateKey, scope){
+    var wantFull = (scope||attEmailScope)==="full";
+    var rows=attEmailRows(dateKey);
+    var bucket={present:[],late:[],absent:[],unmarked:[]};
+    rows.forEach(function(r){ (bucket[r.status]||bucket.unmarked).push(r); });
+    var L=[];
+    L.push(attEmailSubject(dateKey));
+    if(data.school) L.push(data.school);
+    L.push("");
+    if(!rows.length){ L.push("No students in this class."); return L.join("\n"); }
+    L.push(bucket.present.length+" present, "+bucket.absent.length+" absent, "+bucket.late.length+" late"
+      + (bucket.unmarked.length ? ", "+bucket.unmarked.length+" not marked" : ""));
+    // Says out loud when the numbers are only defaults, for the same reason the
+    // on-screen summary does — a day nobody touched must not read as a perfect
+    // one once it has left the building.
+    if(!attDayTaken(dateKey)) L.push("(Attendance has not been taken for this day yet.)");
+    /* EVERY NAME CARRIES THE TIME IT WAS MARKED, not only the late ones.
+     *
+     * It is what makes the message a record rather than a summary: the office
+     * can see that the absences were taken at 9:04 and the boy who came in was
+     * marked at 9:41, which is the difference between a roll somebody took and
+     * a roll somebody typed up afterwards.
+     *
+     * The key line is the one below it. The same column means "when he walked
+     * in" under Late and "when the rebbi marked him" under Absent — close
+     * enough to be read as one thing and different enough to matter, so it is
+     * stated once at the top rather than repeated on forty lines. Only printed
+     * when there is at least one time to explain, so a day of pure defaults
+     * doesn't carry a key to an empty column.
+     */
+    if(rows.some(function(r){ return typeof r.ts==="number"; })){
+      L.push("Times show when each boy was marked.");
+    }
+    L.push("");
+    function section(title, list){
+      if(!list.length) return;
+      L.push(title+" ("+list.length+"):");
+      list.forEach(function(r){
+        L.push("  "+r.name+(r.ts ? "  "+fmtClockTime(r.ts) : ""));
+      });
+      L.push("");
+    }
+    /* THE CHANGES GO ABOVE EVERYTHING, INCLUDING THE ABSENCES.
+     *
+     * On a first email the absences are the news. On an update they are not —
+     * the office already has them, and the only new information in the whole
+     * message is the handful of boys who moved. Anything above that block is
+     * something the reader has already read once and will skim past.
+     *
+     * Each line carries the boy's status NOW and the time it was recorded, so
+     * the office can act on it without holding the earlier email alongside.
+     * The full roll below is rewritten too, so the update stands alone as the
+     * current record rather than being a patch that only makes sense in
+     * sequence with a message that may never have arrived.
+     */
+    var moved=attEmailChangedSince(dateKey);
+    if(moved.length){
+      L.push("Changed since the "+fmtClockTime(attDayEmailedAt(dateKey))+" email ("+moved.length+"):");
+      moved.forEach(function(r){
+        L.push("  "+r.name+" — "+(ATT_LABEL[r.status]||"Not marked")
+          +(r.ts ? "  "+fmtClockTime(r.ts) : ""));
+      });
+      L.push("");
+    }
+    /* ABSENT FIRST, THEN LATE, THEN THE WHOLE ROLL UNDERNEATH.
+     *
+     * The two things a school office has to act on are who is missing and who
+     * came in late, so those go where they will be read — at the top, before
+     * anything scrolls. The full list is the record rather than the message,
+     * and it belongs below it.
+     *
+     * The full list REPEATS the absent and late boys, in their place in the
+     * alphabet, with their status. Leaving them out would make the list quietly
+     * disagree with the counts above it, and a roll that skips names is not a
+     * roll — the office should be able to read the bottom half alone and have
+     * the complete picture.
+     */
+    section("Absent", bucket.absent);
+    section("Late", bucket.late);
+    if(!bucket.absent.length && !bucket.late.length) L.push("Everyone was present.", "");
+    // Nothing to timestamp here by definition — an unmarked boy has no mark.
+    section("Not marked", bucket.unmarked);
+    if(wantFull){
+      L.push("Full list ("+rows.length+"):");
+      rows.forEach(function(r){
+        L.push("  "+r.name+" — "+(ATT_LABEL[r.status]||"Not marked")
+          +(r.ts ? "  "+fmtClockTime(r.ts) : ""));
+      });
+      L.push("");
+    }
+    L.push("— Sent from Menchmark");
+    return L.join("\n");
+  }
+  function attEmailSyncScopeButtons(){
+    document.querySelectorAll("#attEmailScope button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.scope===attEmailScope);
+    });
+  }
+  var attEmailGenerated = "";   // last text we produced, to tell ours from his
+  /* What the tab says about a day that has already been emailed.
+   *
+   * "Opened an email", never "sent" — the app watched the message go to the
+   * mail client and no further, and a footer claiming a send it cannot see is
+   * the one thing this whole feature is careful not to do.
+   */
+  function attEmailStateLine(dateKey){
+    var at=attDayEmailedAt(dateKey);
+    if(!at) return "";
+    var n=attEmailChangedSince(dateKey).length;
+    return "Opened an email for this day at "+fmtClockTime(at)+
+      (n ? (" — "+n+(n===1?" change":" changes")+" since, so this message is an update.")
+         : " — nothing has changed since.");
+  }
+  function attEmailBtnTabLabel(){
+    return attEmailChangedSince(attDate).length ? "✉ Email an update…" : "✉ Email this day…";
+  }
+  function attEmailRebuild(){
+    attEmailGenerated=attEmailText(attDate);
+    $("attEmailBody").value=attEmailGenerated;
+    $("attEmailStatus").textContent=attEmailStateLine(attDate);
+  }
+  /* Keeps an open draft honest as the day changes underneath it — but never
+   * overwrites words the rebbi typed himself. If he has edited the message we
+   * leave it exactly as he left it and say that it no longer matches the
+   * screen; silently rewriting a note he added to the office would be worse
+   * than a stale one he can see is stale.
+   */
+  function attEmailFollowScreen(){
+    if($("attEmailBody").value===attEmailGenerated){ attEmailRebuild(); return; }
+    var fresh=attEmailText(attDate);
+    $("attEmailStatus").textContent = (fresh===attEmailGenerated)
+      ? attEmailStateLine(attDate)
+      : "Attendance has changed since this draft — press ↻ Rebuild to update it (your edits will be replaced).";
+  }
+  $("attEmailBtn").addEventListener("click", function(){
+    var p=$("attEmailPanel");
+    var opening = p.style.display==="none";
+    p.style.display = opening ? "" : "none";
+    if(!opening) return;
+    attEmailScope = data.attEmailScope==="full" ? "full" : "exceptions";
+    attEmailSyncScopeButtons();
+    attEmailSyncViaButtons();
+    // A fresh draft has nothing to have failed yet.
+    $("attEmailDidntOpen").style.display="none";
+    $("attEmailTo").value=data.attEmailTo||"";
+    attEmailRebuild();
+  });
+  $("attEmailCancel").addEventListener("click", function(){ $("attEmailPanel").style.display="none"; });
+  $("attEmailRefresh").addEventListener("click", attEmailRebuild);
+  document.querySelectorAll("#attEmailScope button").forEach(function(b){
+    b.addEventListener("click", function(){
+      attEmailScope=this.dataset.scope;
+      data.attEmailScope=attEmailScope; save();
+      attEmailSyncScopeButtons();
+      attEmailRebuild();
+    });
+  });
+  $("attEmailCopy").addEventListener("click", function(){
+    var btn=this, txt=$("attEmailBody").value;
+    function done(){ var o=btn.textContent; btn.textContent="Copied ✓"; setTimeout(function(){ btn.textContent=o; },1500); }
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done, function(){ fallbackCopy(txt); done(); }); }
+    else { fallbackCopy(txt); done(); }
+  });
+  function attEmailSyncViaButtons(){
+    var v=attEmailVia();
+    document.querySelectorAll("#attEmailVia button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.via===v);
+    });
+    $("attEmailOpen").textContent = v==="app" ? "Open in my email app"
+      : ("Open in "+ATT_VIA_LABEL[v]);
+  }
+  function attEmailSetVia(v){
+    data.attEmailVia=v; save();
+    attEmailSyncViaButtons();
+    // Picking a route answers the "did it open?" question by itself.
+    $("attEmailDidntOpen").style.display="none";
+  }
+  document.querySelectorAll("#attEmailVia button").forEach(function(b){
+    b.addEventListener("click", function(){ attEmailSetVia(this.dataset.via); });
+  });
+  // The rescue buttons switch the saved route AND send straight away, because
+  // the rebbi pressing them has already written the message once and should not
+  // have to press Open a second time to find out whether this one works.
+  $("attEmailTryGmail").addEventListener("click", function(){ attEmailSetVia("gmail"); attEmailDoOpen(); });
+  $("attEmailTryOutlook").addEventListener("click", function(){ attEmailSetVia("outlook"); attEmailDoOpen(); });
+  function attEmailDoOpen(){
+    var to=($("attEmailTo").value||"").trim();
+    var body=$("attEmailBody").value;
+    data.attEmailTo=to; save();   // remembered so the next day is one click
+    var c=attEmailCompose(attDate, to, body);
+    // Over the ceiling we refuse rather than truncate, and say what to do
+    // instead: the text is already on screen and one button away from the
+    // clipboard. Only the mailto route has a ceiling this tight, so the advice
+    // names the way out of it.
+    if(!c){
+      $("attEmailStatus").textContent = attEmailVia()==="app"
+        ? "This message is too long to hand to your email app safely — press “Copy text” and paste it into a new email, or switch “Open with” to Gmail or Outlook, which have no such limit."
+        : "This message is too long to send this way — press “Copy text” and paste it into a new email yourself.";
+      return;
+    }
+    // Stamp first, THEN write the status line — attStampEmailed() re-renders
+    // the tab, which rewrites this line from the day's state and would
+    // otherwise wipe the sentence the rebbi needs to read right now.
+    attStampEmailed(attDate);
+    $("attEmailStatus").textContent="Opening "+ATT_VIA_LABEL[c.via]+"… nothing has been sent yet — check it over and press Send there.";
+    // Asked only where it can actually happen. A tab either opens or it
+    // doesn't, and the rebbi can see which; a mailto hand-off is the one that
+    // can vanish without a trace.
+    $("attEmailDidntOpen").style.display = c.via==="app" ? "" : "none";
+    attEmailLaunch(c);
+  }
+  $("attEmailOpen").addEventListener("click", attEmailDoOpen);
+  /* Stamped only once the message is actually being handed over — never on
+   * opening the panel, rebuilding a draft, or either of the refusals above. The
+   * stamp is what every later change is measured against, so stamping a
+   * message that was never handed to a mail app would mean the real changes
+   * before it silently stopped counting as changes.
+   *
+   * ORDER MATTERS AT EVERY CALL SITE: the href has to be built BEFORE this
+   * runs, because attEmailSubject() reads the diff this stamp resets — stamp
+   * first and the update loses the word "update" from its own subject line.
+   */
+  function attStampEmailed(dateKey){
+    attDayRecord(dateKey)._emailedAt=Date.now();
+    save();
+    // The class list's button says "Email update" only while there is one to
+    // send, and this is what settles that question either way.
+    refreshAttEmailBtn();
+    // The tab's own footer line reports it too, when the tab is what is open.
+    if($("view-attendance") && $("view-attendance").classList.contains("active")
+       && attViewMode!=="student") renderAttendance();
+  }
 
   /* ==================== TRACKER (non-point tracked activities) ==================== */
   var trackerViewMode = "activity"; // "activity" or "student"
@@ -9384,9 +9893,109 @@ function setupRoster() {
       // repaint — the same reason recordTrackedScan() calls this instead of
       // renderTapPanel(), which would rebuild every QR on the chart mid-scan.
       refreshTrackedBadges();
+      // Finishing the roll is exactly what makes the roll sendable, so the
+      // email button appears the moment this one has done its work.
+      refreshAttEmailBtn();
       refreshLiveViews();
     });
     return b;
+  }
+  /* "EMAIL IT TO THE OFFICE", ON THE CLASS LIST TOO — the step that comes after
+   * "the rest are present", without leaving the chart.
+   *
+   * The rebbi has just closed out the roll in front of the room, usually in
+   * full screen. Making him leave full screen, find Run → Attendance and open
+   * the draft panel to send the thing he has just finished is the same detour
+   * the fill button above was added to remove. Same message, same builder, same
+   * mailto — this is a shortcut to the panel's send, not a second way of
+   * deciding what "the day's attendance" means.
+   *
+   * IT ONLY EXISTS ONCE THE ROLL IS COMPLETE (attRollComplete). Half a roll
+   * mailed to an office is worse than none — and "complete" is precisely the
+   * state pressing "Mark the rest Present" produces, which is why the button
+   * appears when it does. It goes away again by itself if a boy is unmarked.
+   *
+   * ALWAYS TODAY, never attDate, for the same reason the fill button is: the
+   * chart has no day on screen.
+   *
+   * NOTHING IS SENT BY THE APP. This opens the rebbi's own mail app with the
+   * message filled in; he still presses Send there. So the one-tap shortcut
+   * cannot mail a class by accident.
+   */
+  function attEmailToolbarBtn(){
+    var b=el("button","seat-modebtn att-email-btn",attEmailBtnLabel());
+    b.title=attEmailBtnTitle();
+    b.addEventListener("click", function(){
+      var dk=todayKey();
+      var isUpd=attEmailChangedSince(dk).length>0;
+      var to=(data.attEmailTo||"").trim();
+      /* No saved address means there is nothing this button can usefully do —
+       * and a blank mailto popped over a full-screen chart is a puzzle, not a
+       * prompt. Say where the address is set instead. It is set once, on the
+       * Attendance tab, and remembered from then on.
+       */
+      if(!to){
+        flash(false, "Attendance", "No email address saved",
+          "Set one on Run → Attendance → “Email this day…” first");
+        beep(false); return;
+      }
+      // Try the shape he chose; fall back to the short one if the long one
+      // won't fit, because a complete absent-and-late list beats a full roll
+      // that the mail app silently cuts in half. Only the mailto route is
+      // usually tight enough for this to trigger.
+      var scope=data.attEmailScope==="full" ? "full" : "exceptions";
+      var c=attEmailCompose(dk, to, attEmailText(dk, scope));
+      if(!c && scope==="full"){
+        scope="exceptions";
+        c=attEmailCompose(dk, to, attEmailText(dk, scope));
+      }
+      if(!c){
+        flash(false, "Attendance", "Too long to email this way",
+          "Use Run → Attendance → “Email this day…” and press Copy text");
+        beep(false); return;
+      }
+      flash(true, "Attendance",
+        (isUpd ? "Opening "+ATT_VIA_LABEL[c.via]+" — update" : "Opening "+ATT_VIA_LABEL[c.via]),
+        c.via==="app" ? "If nothing opens, switch to Gmail on the Attendance tab"
+                      : "Nothing is sent until you press Send there");
+      beep(true);
+      // After the compose URL is built, never before — see attStampEmailed().
+      attStampEmailed(dk);
+      // Popup, not a tab — this button is pressed from the chart, usually in
+      // full screen. See attEmailLaunch(). The tab's own panel keeps opening a
+      // normal tab, because nothing there is at risk of being switched away.
+      c.popup=true;
+      attEmailLaunch(c);
+    });
+    return b;
+  }
+  // "Email update" once the day has moved since the last one went out, so the
+  // button says which of the two things it is about to do before it is pressed.
+  function attEmailBtnLabel(){
+    return attEmailChangedSince(todayKey()).length ? "✉ Email update" : "✉ Email attendance";
+  }
+  function attEmailBtnTitle(){
+    return attEmailChangedSince(todayKey()).length
+      ? "Open your email app with the changes since your last attendance email"
+      : "Open your email app with today's attendance ready to send";
+  }
+  /* Kept in step in place, never by renderTapPanel() — same reason as the fill
+   * button above, and it has to run on every attendance write rather than only
+   * on arming, since marking the last boy by hand completes the roll just as
+   * the fill button does.
+   */
+  function refreshAttEmailBtn(){
+    var want=attendanceActivity(armedActivity()) && attRollComplete(todayKey());
+    document.querySelectorAll(".seat-toolbar-main").forEach(function(tb){
+      var cur=tb.querySelector(".att-email-btn");
+      if(want && !cur){ tb.appendChild(attEmailToolbarBtn()); return; }
+      if(!want){ if(cur && cur.parentNode) cur.parentNode.removeChild(cur); return; }
+      // Re-label in place as well as add and drop — a boy marked late after the
+      // roll went out turns this from "Email attendance" into "Email update"
+      // without anything else about the chart changing.
+      cur.textContent=attEmailBtnLabel();
+      cur.title=attEmailBtnTitle();
+    });
   }
   /* Add it, drop it, or re-label it in place — never a renderTapPanel().
    *
@@ -9402,7 +10011,9 @@ function setupRoster() {
     document.querySelectorAll(".seat-toolbar-main").forEach(function(tb){
       var cur=tb.querySelector(".att-fill-btn");
       if(!want){ if(cur && cur.parentNode) cur.parentNode.removeChild(cur); return; }
-      if(!cur){ tb.appendChild(attFillToolbarBtn()); return; }
+      // Before the email button when that one is already up, so the two always
+      // read in the order they are used: finish the roll, then send it.
+      if(!cur){ tb.insertBefore(attFillToolbarBtn(), tb.querySelector(".att-email-btn")); return; }
       cur.textContent="✓ "+attFillLabel();
       cur.title=attFillTitle()+" — for today.";
     });
@@ -9460,6 +10071,11 @@ function setupRoster() {
     // full repaint. Every boy's tile, not only this one, because a limited-use
     // cap or a preset can move for the class rather than for one student.
     refreshTrackedBadges();
+    // Scanning the last unmarked boy completes the roll just as pressing "Mark
+    // the rest Present" does, so the email button has to be able to appear on
+    // this path too — otherwise it would depend on which way the roll was
+    // finished.
+    refreshAttEmailBtn();
     return true;
   }
   function award(s){
@@ -11569,7 +12185,13 @@ function setupRoster() {
     // Built here so it is present on the first paint if Attendance is already
     // armed; added and removed after that by refreshAttFillBtn(), which is what
     // keeps it in step with arming without redrawing the chart.
-    if(attendanceActivity(armedActivity())) toolbar.appendChild(attFillToolbarBtn());
+    if(attendanceActivity(armedActivity())){
+      toolbar.appendChild(attFillToolbarBtn());
+      // Same first-paint reason, plus its own gate: a roll finished earlier
+      // today is still finished after a repaint, so the send button has to come
+      // back with it rather than waiting for the next attendance write.
+      if(attRollComplete(todayKey())) toolbar.appendChild(attEmailToolbarBtn());
+    }
     // Same first-paint treatment for the Pause-all toggle: present immediately
     // if anybody is frozen, then kept in step by renderFreezeAllBtn() via
     // tickFreezes() — including appearing/vanishing as freezes start and end.
@@ -22192,6 +22814,14 @@ nameLine
     // hand-mangled value all land on the behaviour the app has always had —
     // nobody's attendance changes meaning because of an update.
     if(data.attMode!=="presence") data.attMode="absence";
+    // Attendance email: purely additive, so a backfill is all it needs — no
+    // DATA_VERSION bump. Anything that isn't "full" means exceptions-only,
+    // which is the shorter, safer default for a mailto: link.
+    if(typeof data.attEmailTo!=="string") data.attEmailTo="";
+    if(data.attEmailScope!=="full") data.attEmailScope="exceptions";
+    // Anything that isn't a route we know means the mail app, which is the one
+    // that needs no internet — the safe answer when the value is unreadable.
+    if(data.attEmailVia!=="gmail" && data.attEmailVia!=="outlook") data.attEmailVia="app";
     if(!data.hw||typeof data.hw!=="object") data.hw={};
     if(!Array.isArray(data.trackerLog)) data.trackerLog=[];
     if(typeof data.trackerActId!=="string") data.trackerActId="";
@@ -22457,7 +23087,7 @@ nameLine
         if(!day || typeof day!=="object" || Array.isArray(day)) return;
         attStats.days++;
         Object.keys(day).forEach(function(sid){
-          // _sentAt and _lastSendCount sit alongside student ids in this very
+          // _sentAt, _lastSendCount and _emailedAt sit alongside student ids in
           // object. They are day metadata, not students.
           if(sid.charAt(0)==="_") return;
           var rec=day[sid];
@@ -22520,7 +23150,7 @@ nameLine
         var day=data.attendance[dk];
         if(!day || typeof day!=="object" || Array.isArray(day)) return;
         Object.keys(day).forEach(function(sid){
-          // _sentAt and _lastSendCount sit alongside student ids in this very
+          // _sentAt, _lastSendCount and _emailedAt sit alongside student ids in
           // object. They are day metadata, not students. (Same guard as 2c's.)
           if(sid.charAt(0)==="_") return;
           var rec=day[sid];
