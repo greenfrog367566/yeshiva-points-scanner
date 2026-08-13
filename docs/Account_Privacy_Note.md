@@ -11,9 +11,11 @@ ready to become a page once approved. Part 2 is **not for publication** — it i
 what still needs your answer, what I could not verify, and the judgment calls I
 made that you may want to overrule.
 
-Everything in Part 1 was checked against the code or the settled docs. Where a
-fact is not yet settled it appears as a **[BRACKETED PLACEHOLDER]** rather than a
-plausible guess — a privacy note that guesses is worse than one that is late.
+Everything in Part 1 was checked against the code or the settled docs. **The six
+blanks were decided by Ben on 2026-08-13 and are filled in** (see Part 2, section
+A, for each decision and its rationale); the only remaining placeholder is the
+publication date. One decision creates work before this can ship:
+`privacy@menchmark.app` must actually exist (Part 2, item 1).
 
 ---
 ---
@@ -27,8 +29,8 @@ is kept about you, where your class's information actually lives, who can see it
 and how to have it removed. It is written to be read once, in full, in a few
 minutes.
 
-If anything here is unclear, ask — **[CONTACT EMAIL]**. A privacy note you have
-to interpret is not doing its job.
+If anything here is unclear, ask — **privacy@menchmark.app**. A privacy note you
+have to interpret is not doing its job.
 
 ### What we keep about you
 
@@ -80,8 +82,9 @@ Being honest about this matters more than making it sound reassuring.
   book. Private notes stop being honest the moment they are read by default.
 - **Menchmark's administrator can open your account to help you.** When you
   report a problem, he can look at what you are actually seeing rather than
-  guessing from an email. **[DECISION NEEDED — see Part 2, item 4: is this
-  logged, and are you told afterwards?]**
+  guessing from an email. **Every such session is recorded, and your own
+  settings show when your account was last opened for support** — it never
+  happens without a trace you can see.
 - **Other rebbeim cannot see your class.** This is enforced by the server, not
   by the screen — the request simply fails, so no mistake in the app can expose
   one class to another rebbi.
@@ -112,8 +115,8 @@ Menchmark keeps reminding you to keep one.
 
 ### Removing your account
 
-**Ask at [CONTACT EMAIL] and your account record will be deleted within
-[N] days.** You do not have to give a reason.
+**Ask at privacy@menchmark.app and your account record will be deleted within
+30 days.** You do not have to give a reason.
 
 Two things worth being clear about, because people are often surprised by them
 afterwards:
@@ -131,20 +134,20 @@ You can also ask for a copy of everything held about you, at the same address.
 ### If something goes wrong
 
 If information is ever exposed in a way it should not be, **we will tell the
-people affected, and the school, rather than hope it goes unnoticed.**
-**[DECISION NEEDED — see Part 2, item 5: within what timeframe?]**
+people affected, and the school, within 72 hours of learning of it** — rather
+than hope it goes unnoticed.
 
 ### Where this information is kept
 
 Your account record, and class information for school accounts, is kept on
-Google's servers **[REGION — see Part 2, item 6]** using Google Firebase.
+Google's servers **in the United States** using Google Firebase.
 
 ### Children's information
 
 For schools using Menchmark together with us, your boys' information is held
 **on the school's behalf**, under the agreement between Menchmark and the
 school. If you are a menahel or administrator and want that agreement, ask at
-**[CONTACT EMAIL]**.
+**privacy@menchmark.app**.
 
 ### Changes to this page
 
@@ -158,36 +161,33 @@ you will be told in the app rather than only on this page.
 
 # Part 2 — NOT FOR PUBLICATION: what this draft needs from you
 
-## A. The six blanks
+## A. The six blanks — ALL DECIDED by Ben, 2026-08-13. Part 1 is filled in.
 
-Nothing here can ship with a placeholder in it.
-
-1. **`[CONTACT EMAIL]`** — appears four times. A privacy note without a working
-   address is not a privacy note. Recommend a dedicated address rather than a
+1. **Contact email: `privacy@menchmark.app`.** A dedicated address, not a
    personal one, so it survives the day someone else answers it.
-2. **`[N] days` for deletion.** 30 is the ordinary answer and is easy to honor
-   given the record is one document. Don't promise faster than a person can
-   reliably act.
-3. **Legal identity.** The note deliberately says "Menchmark" throughout and
-   never names a company, because I don't know whether one exists. If Menchmark
-   is you personally, that is fine and common for a free school tool — but a
-   school's administration will eventually ask *who* they are agreeing with, and
-   that answer belongs in Q3's school agreement rather than here.
-4. **The view-as disclosure.** I wrote it in plainly, because a support tool that
-   opens a rebbi's real account is exactly the thing that damages trust if
-   discovered rather than disclosed. **What I could not decide for you: is a
-   view-as session logged, and is the rebbi told it happened?** My
-   recommendation is yes to both, and that it is cheap to build now and
-   expensive to retrofit — a `viewAsLog` collection written server-side, plus a
-   quiet line in the rebbi's own settings showing when his account was last
-   opened for support. If you'd rather not, the sentence has to change, because
-   as written it implies nothing more than "he can look."
-5. **Breach notification timeframe.** 72 hours is the common commitment. This
-   overlaps Q3's school agreement and the two should not contradict each other —
-   decide once, use the same number in both.
-6. **Firestore region.** Set deliberately at project creation and effectively
-   permanent afterwards. If any school outside the US ever comes into scope this
-   matters much more, so it is worth a minute now rather than a migration later.
+   **To do before publication:** the address does not exist yet — set up
+   Cloudflare Email Routing to forward it to Ben's Gmail (free, ~5 minutes),
+   and send a test message. A privacy note pointing at a dead address is worse
+   than a placeholder.
+2. **Deletion window: 30 days.** The ordinary answer, easy to honor given the
+   record is one document, with margin for a person to reliably act.
+3. **Legal identity: an entity will be formed before launch.** None exists
+   today. The note stays "Menchmark" throughout (correct either way), and Q3's
+   school agreement waits on the entity — it names the party a school agrees
+   with, so it cannot be finalized first.
+4. **View-as: logged AND shown to the rebbi.** Every view-as session is
+   recorded server-side (a `viewAsLog` collection), and the rebbi's own
+   settings show when his account was last opened for support. The note's
+   sentence now promises this, which makes it a **build requirement for the
+   Firebase rebuild** — carry it into the step-1 data-model session. Server-side
+   logging is today's industry baseline (SOC 2 expects it); the visible
+   settings line is the trust tier above it. Consent-gated access (the ed-tech
+   gold standard) can still be added later without breaking this promise.
+5. **Breach notification: 72 hours.** The standard commitment. Q3's school
+   agreement must use the same number — decided once here, reuse it there.
+6. **Firestore region: `nam5` (US multi-region).** Highest durability, still
+   plainly "in the United States" for the note. Set this at project creation —
+   it is effectively permanent afterwards.
 
 ## B. Three judgment calls I made that you may want to reverse
 
