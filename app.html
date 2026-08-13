@@ -5018,6 +5018,13 @@ function setupRoster() {
     return str;
   }
 
+  /** Full coin names when they fit, acronyms when the breakdown is too long
+   *  for the surface. maxChars is the surface's budget for the FULL-NAME
+   *  string — returns the abbr flag to pass to formatCoins/formatCoinsHtml. */
+  function coinAbbr(total, maxChars){
+    return formatCoins(total,{abbr:false}).length > (maxChars||24);
+  }
+
   /* Mode-aware display helpers — drop-in replacements for
      the old  score(id)+" pts"  and  fmt(delta)+" pts"  patterns. */
   function isShulchani(){ return !!data.shulchaniMode; }
@@ -5050,7 +5057,7 @@ function setupRoster() {
       return el("span", cls, v+" pts");
     }
     var span=el("span", cls);
-    span.innerHTML=formatCoinsHtml(v,{abbr:true})
+    span.innerHTML=formatCoinsHtml(v,{abbr:coinAbbr(v,20)})
       +(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+v+' pr)</span>':"");
     span.title=formatCoins(v,{abbr:false})+(data.showPrutot?"  ("+v+" prutot)":"");
     return span;
@@ -5062,7 +5069,7 @@ function setupRoster() {
   function fmtScoreShort(id){
     var v=score(id);
     if(!isShulchani()) return v+" pts";
-    var short=formatCoins(v,{abbr:true});
+    var short=formatCoins(v,{abbr:coinAbbr(v,20)});
     return data.showPrutot ? short+" ("+v+" pr)" : short;
   }
   /** Full breakdown for tooltips — never truncated */
@@ -7537,7 +7544,7 @@ function setupRoster() {
     var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
     if(!studs.length){ wrap.appendChild(el("div","scan-hint","No students in this class. Pick a different class in the top corner, or add students.")); return; }
     studs.forEach(function(s){
-      var b=el("button","fs-name"); b.appendChild(document.createTextNode(data.fpCompact?firstName(s.name):s.name)); var fpPtsSpan=el("span","pts"); if(isShulchani()){ fpPtsSpan.innerHTML=formatCoinsHtml(score(s.id),{abbr:true})+(data.showPrutot?' <span style="color:var(--muted)">('+score(s.id)+' pr)</span>':""); } else { fpPtsSpan.textContent=String(score(s.id)); } b.appendChild(fpPtsSpan);
+      var b=el("button","fs-name"); b.appendChild(document.createTextNode(data.fpCompact?firstName(s.name):s.name)); var fpPtsSpan=el("span","pts"); if(isShulchani()){ fpPtsSpan.innerHTML=formatCoinsHtml(score(s.id),{abbr:coinAbbr(score(s.id),20)})+(data.showPrutot?' <span style="color:var(--muted)">('+score(s.id)+' pr)</span>':""); } else { fpPtsSpan.textContent=String(score(s.id)); } b.appendChild(fpPtsSpan);
       b.title=isShulchani()?s.name+"  —  "+formatCoins(score(s.id),{abbr:false})+(data.showPrutot?"  ("+score(s.id)+" prutot)":""):s.name;
       b.addEventListener("click", function(){ fpAward(s); });
       wrap.appendChild(b);
@@ -9620,7 +9627,7 @@ function setupRoster() {
       var t=tb.querySelector(".ts");
       if(t){
         if(isShulchani()){
-          t.innerHTML=formatCoinsHtml(score(sid),{abbr:true})+(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+score(sid)+' pr)</span>':"");
+          t.innerHTML=formatCoinsHtml(score(sid),{abbr:coinAbbr(score(sid),20)})+(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+score(sid)+' pr)</span>':"");
           t.title=fmtScoreFull(sid);
         } else { t.textContent=score(sid)+" pts"; }
       }
@@ -11021,7 +11028,7 @@ function setupRoster() {
       row.appendChild(name);
       var sc=el("span","mini-score");
       if(isShulchani()){
-        sc.innerHTML=formatCoinsHtml(it.sc,{abbr:true})
+        sc.innerHTML=formatCoinsHtml(it.sc,{abbr:coinAbbr(it.sc,32)})
           +(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+it.sc+' pr)</span>':"");
         sc.title=formatCoins(it.sc,{abbr:false})+(data.showPrutot?"  ("+it.sc+" prutot)":"");
       } else {
@@ -12988,7 +12995,7 @@ function setupRoster() {
 
     var hero=el("div","lb-hero-compact");
     hero.appendChild(el("span","lb-kicker","Live"));
-    var leaderTxt = top ? ("👑 "+top.s.name+" — "+(isShulchani()?formatCoins(topScore,{abbr:true}):topScore+" pts")) : "No students yet";
+    var leaderTxt = top ? ("👑 "+top.s.name+" — "+(isShulchani()?formatCoins(topScore,{abbr:coinAbbr(topScore,32)}):topScore+" pts")) : "No students yet";
     hero.appendChild(el("div","lb-hc-leader", leaderTxt));
     var hcStats=el("div","lb-hc-stats");
     [
@@ -13023,7 +13030,7 @@ function setupRoster() {
         var pct = topScore>0 ? Math.max(0, Math.min(100,(item.score/positiveMax)*100)) : 0;
         bar.style.width=pct+"%"; barWrap.appendChild(bar); main.appendChild(barWrap);
         row.appendChild(main);
-        row.appendChild(el("div","lb-score-c", isShulchani()?formatCoins(item.score,{abbr:true}):String(item.score)));
+        row.appendChild(el("div","lb-score-c", isShulchani()?formatCoins(item.score,{abbr:coinAbbr(item.score,32)}):String(item.score)));
         compactList.appendChild(row);
       });
       stage.appendChild(compactList);
@@ -13036,7 +13043,7 @@ function setupRoster() {
     card.appendChild(el("div","lb-medal", medalForRank(rankIndex)));
     card.appendChild(avatarEl(item.s, rankIndex===0?64:52));
     card.appendChild(el("div","lb-podium-name", item.s.name));
-    card.appendChild(el("div","lb-podium-score", isShulchani()?formatCoins(item.score,{abbr:true}):item.score+" pts"));
+    card.appendChild(el("div","lb-podium-score", isShulchani()?formatCoins(item.score,{abbr:coinAbbr(item.score,24)}):item.score+" pts"));
     card.appendChild(el("div","lb-podium-group", item.s.group ? item.s.group : rankTitle(rankIndex)));
     return card;
   }
@@ -14034,7 +14041,7 @@ function setupRoster() {
     var card=el("div","point-card");
     card.appendChild(el("div","pc-name", s.name));
     if(s.group) card.appendChild(el("div","pc-group", s.group));
-    card.appendChild(el("div","pc-num", isShulchani()?formatCoins(standScoreFor(s),{abbr:true}):String(standScoreFor(s))));
+    card.appendChild(el("div","pc-num", isShulchani()?formatCoins(standScoreFor(s),{abbr:coinAbbr(standScoreFor(s),16)}):String(standScoreFor(s))));
     card.appendChild(el("div","pc-sub", data.standingsActivity ? (data.standingsActivity+(standRange==="week"?" · this week":"")) : (standRange==="week"?(isShulchani()?"coins this week":"points this week"):(isShulchani()?"total coins":"total points"))));
     return card;
   }
@@ -14058,7 +14065,7 @@ function setupRoster() {
     if(avery){
       var subLine = data.standingsActivity ? (data.standingsActivity+(standRange==="week"?" · this week":"")) : (standRange==="week"?(isShulchani()?"coins this week":"points this week"):(isShulchani()?"total coins":"total points"));
       var items=list.map(function(s){
-        return {line1:s.name, line2:(isShulchani()?formatCoins(standScoreFor(s),{abbr:true}):standScoreFor(s))+" "+subLine, line3:s.group};
+        return {line1:s.name, line2:(isShulchani()?formatCoins(standScoreFor(s),{abbr:coinAbbr(standScoreFor(s),24)}):standScoreFor(s))+" "+subLine, line3:s.group};
       });
       renderAverySheetGeneric(items, sheet, data.pointsPrint.format, false, true);
       return;
@@ -14951,7 +14958,7 @@ function setupRoster() {
     var balEl=$("storeBalance"); balEl.textContent="";
     balEl.appendChild(el("b",null,(s?s.name:"")));
     balEl.appendChild(document.createTextNode(" has "));
-    balEl.appendChild(el("b",null,isShulchani()?formatCoins(score(sid),{abbr:true}):String(score(sid))));
+    balEl.appendChild(el("b",null,isShulchani()?formatCoins(score(sid),{abbr:coinAbbr(score(sid),48)}):String(score(sid))));
     balEl.appendChild(document.createTextNode(isShulchani()?" to spend":" point"+(score(sid)===1?"":"s")+" to spend"));
     var buy=$("storeBuy"); buy.innerHTML="";
     if(!data.store.items.length){ buy.appendChild(el("div","recent-empty","Add prizes above to start selling.")); }
@@ -14959,7 +14966,7 @@ function setupRoster() {
       var canAfford=score(sid)>=it.cost;
       var b=el("button","fs-name"+(canAfford?"":" store-cant"));
       b.appendChild(document.createTextNode((it.emoji||"🎁")+" "+it.name+"  "));
-      b.appendChild(el("span","pts", isShulchani()?formatCoins(it.cost,{abbr:true}):it.cost+"pt"));
+      b.appendChild(el("span","pts", isShulchani()?formatCoins(it.cost,{abbr:coinAbbr(it.cost,20)}):it.cost+"pt"));
       b.addEventListener("click", function(){ storeBuy(sid, it); });
       buy.appendChild(b);
     });
