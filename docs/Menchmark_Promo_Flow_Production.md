@@ -137,7 +137,7 @@ per subject; use all three every time.
 
 ### Rebbi Katz (protagonist)
 > A warm 40-something rebbi: short dark beard flecked with grey, kind tired brown
-> eyes behind round wire-rim glasses, black velvet kippah, white dress shirt with
+> eyes behind round wire-rim glasses, black velvet yarmulke, white dress shirt with
 > sleeves rolled to the forearm, charcoal vest, dark trousers. Slightly stocky,
 > rounded friendly silhouette. Stylized 3D animation character, soft shapes,
 > expressive oversized eyes, warm neutral studio lighting, full body, plain
@@ -155,9 +155,9 @@ crowd-shot prompt below, not just "kids" or "students" — Veo defaults to mixed
 classrooms otherwise, and this got past the first live test (section 0).
 
 Same 3-angle treatment each, boys' day-school uniform: white shirt, dark pants,
-kippah, tzitzis strings visible at the waist.
+yarmulke, tzitzis strings visible at the waist.
 
-- **"Sruli"** — small, springy, gap-toothed grin, freckles, kippah always
+- **"Sruli"** — small, springy, gap-toothed grin, freckles, yarmulke always
   slightly crooked. The class's chaos engine, later its most enthusiastic scanner
   customer.
 - **"Dovid"** — tall for his age, glasses, neat, arms-crossed skeptic. His smile
@@ -171,7 +171,7 @@ kippah, tzitzis strings visible at the waist.
 > front-facing layout: individual wooden student desks arranged in straight
 > rows and columns like a grid, every desk facing the front of the room, all
 > chairs on the same side of their desks so every student faces the
-> chalkboard. At the front: a large chalkboard and the rebbi's desk. Along
+> whiteboard. At the front: a large whiteboard and the rebbi's desk. Along
 > the side wall: a bookshelf of oversized seforim with Hebrew lettering
 > suggested but unreadable, aleph-beis chart. Big windows with warm morning
 > light, soft dust motes. Empty of people. Painterly warm palette: honey
@@ -183,10 +183,29 @@ toward the board and the rebbi. Veo's default is the modern collaborative
 classroom — desks scattered at angles, clusters, kids facing each other or
 the camera — and it produced exactly that in the live takes. Every prompt
 with the room in frame must restate: **"desks in straight rows, all students
-facing the front of the classroom."** When the camera shoots from the front
-of the room, the boys are seen from the front *because they face front*;
-when it shoots from the back, rows of backs of heads facing the board — never
-a room where different desks point different directions.
+facing the front of the classroom."**
+
+**Anchor the geometry to the CAMERA, not just the room — this is what
+finally makes Veo obey.** Saying "everyone faces front" still let takes
+through where the whiteboard sat *behind* boys who faced the camera — which
+means they were facing the back of the room. The board and the boys' faces
+must never be on the same side of frame. Write one of these three blocks
+into every room prompt, verbatim:
+
+- **Camera at the front (rebbi's position):** "The camera stands where the
+  whiteboard is, facing the class. Every boy faces TOWARD the camera because
+  every desk faces the front board. The whiteboard is behind the camera and
+  is NOT visible in frame."
+- **Camera at the back:** "The camera is at the back of the room. We see
+  rows of the backs of boys' heads, every one of them facing away from
+  camera toward the whiteboard visible at the far end."
+- **Camera in the side aisle:** "Profile view down a side aisle: every desk
+  points the same direction, toward the whiteboard at the frame's edge; we
+  see every boy from the side."
+
+**Reject any take where the whiteboard appears in frame together with boys'
+faces looking at camera** — that geometry is impossible in a real classroom,
+and it is the single most common way a take fails.
 
 **Ground truth: real classroom frames exist.** Ben has actual video stills of
 Menchmark in use in his classroom (2026-08-10 screenshots: the rebbi scanning
@@ -203,7 +222,7 @@ display). What they settle:
   teal-accent walls, light tan desks with black metal legs. The stylized set
   may warm this up, but those are the honest furnishings — prefer whiteboard
   + wall display over chalkboard when a prompt names the front of the room.
-- The rebbi's real look matches the character: dark suit, black kippah,
+- The rebbi's real look matches the character: dark suit, black yarmulke,
   tzitzis strings visible.
 
 Generate one wide plate + one reverse angle (facing the windows/back of room).
@@ -370,10 +389,13 @@ page — the whole system in his hand is the promise. No legible text on it.*
 Katz, Meir, scanner prop.
 
 > Medium two-shot, 40mm, waist height, slow 20-degree arc around the moment.
-> Shy Meir is bent over his desk, eyes down and fully absorbed inside his
-> open sefer, lips moving slightly as he learns quietly to himself — he does
-> not notice anything happening around him. A small QR code card lies flat on
-> the desk beside his open sefer. Rebbi Katz, mid-lesson, walks up the aisle,
+> The camera stands at the front of the room where the whiteboard is, facing
+> the class — every boy faces toward the camera because every desk faces the
+> front board, and the whiteboard is behind the camera, not visible in frame.
+> Shy Meir is bent over his front-row desk, eyes down and fully absorbed
+> inside his open sefer (large Hebrew holy book), lips moving slightly as he
+> learns quietly to himself — he does not notice anything happening around
+> him. A small QR code card lies flat on the desk beside his open sefer. Rebbi Katz, mid-lesson, walks up the aisle,
 > smiles, and — without breaking stride — points the Tera 1300 scanner DOWN
 > at the QR card on the desk, not at the boy: one soft green confirmation
 > pulse on the card and one cheerful two-note chime. Only THEN does Meir look
@@ -394,7 +416,7 @@ Rebbi Katz, scanner ingredients.
 
 > Continuing in the same warm light and camera height, the arc drifts to
 > Sruli's desk: the former chaos-conductor sits bolt upright, hand raised so
-> eagerly his whole body stretches, kippah still crooked, grin enormous. Rebbi
+> eagerly his whole body stretches, yarmulke still crooked, grin enormous. Rebbi
 > Katz nods to him; another gentle green pulse and chime. Sruli pumps a quiet
 > fist. Audio: the murmur stays CALM — the chime lands inside the quiet, and
 > two boys softly chuckle.
@@ -475,6 +497,15 @@ plain word "free" is fine — "free forever" licensing language is not).
   `docs/Onboarding_Video_Scripts.md` and CLAUDE.md rule 6.)
 - **"Rebbi/rebbeim," never "teacher,"** in any on-screen or accompanying copy
   (`docs/Positioning.md`).
+- **Use the yeshivish transliterations, consistently** — the spellings that
+  sound right to the audience, in the doc, in prompts, and in any copy:
+  **rebbi** (never "rebbe" or "rabbi"), **rebbeim**, **yarmulke** (not
+  "kippah"), **sefer/seforim**, **tzitzis**, **chesed**, **seder**,
+  **mentchlichkeit**. In Veo prompts, gloss an uncommon word once so the
+  model understands it — "his open sefer (large Hebrew holy book)" — and
+  keep the authentic word as the primary term. (The Flow character is still
+  internally named "Rabbi Meir" — rename it to "Rebbi Katz" in the
+  Characters panel when next in the project.)
 - **Boys only, every shot, no exceptions.** This is a boys' yeshiva classroom.
   Say "boys" explicitly in crowd prompts, not "kids" or "students" — confirmed
   necessary after the first live take (section 0) generated a girl.
