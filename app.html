@@ -3791,12 +3791,32 @@ function setupRoster() {
           </span>
           <button class="btn btn-sm" id="attEmailRefresh" title="Rebuild the message from what is on screen now">↻ Rebuild</button>
         </div>
+        <!-- Which way the message gets handed over. It is here rather than in
+             Settings because "nothing happened when I pressed the button" is
+             discovered on this screen, and this is the fix for it. -->
+        <div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <label class="lbl" style="margin:0">Open with:</label>
+          <span class="seg mini" id="attEmailVia">
+            <button data-via="app" title="Your computer's own email program. The only one that works with no internet — but on Windows it does nothing at all if no email app is set up">Your email app</button>
+            <button data-via="gmail" title="Opens a Gmail compose window in a new tab. Needs internet, but cannot silently fail">Gmail</button>
+            <button data-via="outlook" title="Opens an Outlook compose window in a new tab. Needs internet, but cannot silently fail">Outlook</button>
+          </span>
+        </div>
         <textarea id="attEmailBody" class="field" rows="10" style="width:100%;font-family:inherit;resize:vertical" spellcheck="false"></textarea>
         <div class="toolbar" style="margin-top:8px;gap:8px;flex-wrap:wrap">
           <span class="grow" id="attEmailStatus" style="color:var(--muted);font-size:.85rem"></span>
           <button class="btn btn-sm" id="attEmailCopy">Copy text</button>
           <button class="btn btn-sm" id="attEmailCancel">Close</button>
           <button class="btn btn-primary" id="attEmailOpen">Open in my email app</button>
+        </div>
+        <!-- The honest half of the mailto problem: the page cannot tell whether
+             the hand-off worked, so it asks rather than claiming. Shown only
+             after pressing Open with "Your email app", and only until the
+             rebbi picks one of the two answers. -->
+        <div id="attEmailDidntOpen" class="toolbar" style="display:none;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
+          <span class="grow" style="font-size:.85rem">Nothing opened? Windows may have no email app set up — that fails silently and Menchmark can't see it.</span>
+          <button class="btn btn-sm btn-primary" id="attEmailTryGmail">Use Gmail instead</button>
+          <button class="btn btn-sm" id="attEmailTryOutlook">Use Outlook</button>
         </div>
       </div>
     </div>
@@ -4442,6 +4462,8 @@ function setupRoster() {
     // carries. Stored only in this browser — the app never sends the mail.
     attEmailTo: "",
     attEmailScope: "exceptions",
+    // "app" (a mailto: link), "gmail" or "outlook" — see attEmailVia().
+    attEmailVia: "app",
     raffle: { mode:"auto", entries:{}, winners:[] },
     pasukSet: { label:"", ref:"", from:1, to:1 },
     pesukimDone: {},
@@ -6448,12 +6470,76 @@ function setupRoster() {
    * both callers below check before handing anything over.
    */
   var ATT_MAILTO_MAX = 1900;
+  /* A WEB COMPOSE URL IS A NORMAL PAGE, so it has none of mailto's ceiling —
+   * this is well clear of what Gmail and Outlook accept, and comfortably fits a
+   * full roll for any class this app will ever see.
+   */
+  var ATT_WEBMAIL_MAX = 7000;
   function attEmailHref(dateKey, to, body){
     // Commas separate recipients and @ is legal in the address part — encoding
     // them turns a two-address mailto into one nonsense address in some clients.
     return "mailto:"+encodeURIComponent(to).replace(/%40/g,"@").replace(/%2C/gi,",")
       +"?subject="+encodeURIComponent(attEmailSubject(dateKey))
       +"&body="+encodeURIComponent(body);
+  }
+  /* HOW THE MESSAGE GETS HANDED OVER — and why there is a choice at all.
+   *
+   * "Your email app" is a mailto: link, and on Windows it is a genuinely
+   * common dead end: Chrome only handles mailto: if a webmail handler has been
+   * registered with it, and when none has, choosing Chrome from Windows'
+   * "how do you want to open this" box does NOTHING AT ALL. No error, no tab,
+   * nothing. The page cannot detect it either — a mailto navigation that goes
+   * nowhere is indistinguishable from one that worked, so there is no clever
+   * fix to be had, only a different route.
+   *
+   * Gmail and Outlook are that route: plain https compose URLs that open in a
+   * tab like any other page and cannot silently fail. A rebbi whose school is
+   * on Google — which is most of them — should probably just pick Gmail once
+   * and never think about it again.
+   *
+   * "Your email app" stays the default and stays offered, because it is the
+   * only one of the three that works with NO INTERNET, which matters on the
+   * downloaded file:// copy and in a classroom with no wifi. The others need
+   * the network by definition.
+   */
+  function attEmailVia(){
+    var v=data.attEmailVia;
+    return (v==="gmail" || v==="outlook") ? v : "app";
+  }
+  var ATT_VIA_LABEL={app:"your email app", gmail:"Gmail", outlook:"Outlook"};
+  // Returns what to open and how, or null when it will not fit.
+  function attEmailCompose(dateKey, to, body){
+    var via=attEmailVia();
+    var subj=attEmailSubject(dateKey);
+    if(via==="gmail"){
+      var g="https://mail.google.com/mail/?view=cm&fs=1"
+        +"&to="+encodeURIComponent(to)
+        +"&su="+encodeURIComponent(subj)
+        +"&body="+encodeURIComponent(body);
+      return g.length>ATT_WEBMAIL_MAX ? null : {url:g, newTab:true, via:via};
+    }
+    if(via==="outlook"){
+      var o="https://outlook.office.com/mail/deeplink/compose?"
+        +"to="+encodeURIComponent(to)
+        +"&subject="+encodeURIComponent(subj)
+        +"&body="+encodeURIComponent(body);
+      return o.length>ATT_WEBMAIL_MAX ? null : {url:o, newTab:true, via:via};
+    }
+    var m=attEmailHref(dateKey, to, body);
+    return m.length>ATT_MAILTO_MAX ? null : {url:m, newTab:false, via:via};
+  }
+  /* An ANCHOR CLICK, not location.href, for the mailto case. Assigning
+   * location.href to a protocol the browser cannot handle can leave the page in
+   * a half-navigated state; a synthesized click on a real <a> is the idiom
+   * browsers handle cleanly, and it is what a link on any other page would do.
+   */
+  function attEmailLaunch(c){
+    if(c.newTab){ window.open(c.url, "_blank", "noopener"); return; }
+    var a=document.createElement("a");
+    a.href=c.url; a.style.display="none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
   // Same honesty rule as sendAttendance(): an unmarked boy in presence-first is
   // one nobody has looked at, not a present one, so he is named as such rather
@@ -6630,6 +6716,9 @@ function setupRoster() {
     if(!opening) return;
     attEmailScope = data.attEmailScope==="full" ? "full" : "exceptions";
     attEmailSyncScopeButtons();
+    attEmailSyncViaButtons();
+    // A fresh draft has nothing to have failed yet.
+    $("attEmailDidntOpen").style.display="none";
     $("attEmailTo").value=data.attEmailTo||"";
     attEmailRebuild();
   });
@@ -6649,22 +6738,55 @@ function setupRoster() {
     if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done, function(){ fallbackCopy(txt); done(); }); }
     else { fallbackCopy(txt); done(); }
   });
-  $("attEmailOpen").addEventListener("click", function(){
+  function attEmailSyncViaButtons(){
+    var v=attEmailVia();
+    document.querySelectorAll("#attEmailVia button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.via===v);
+    });
+    $("attEmailOpen").textContent = v==="app" ? "Open in my email app"
+      : ("Open in "+ATT_VIA_LABEL[v]);
+  }
+  function attEmailSetVia(v){
+    data.attEmailVia=v; save();
+    attEmailSyncViaButtons();
+    // Picking a route answers the "did it open?" question by itself.
+    $("attEmailDidntOpen").style.display="none";
+  }
+  document.querySelectorAll("#attEmailVia button").forEach(function(b){
+    b.addEventListener("click", function(){ attEmailSetVia(this.dataset.via); });
+  });
+  // The rescue buttons switch the saved route AND send straight away, because
+  // the rebbi pressing them has already written the message once and should not
+  // have to press Open a second time to find out whether this one works.
+  $("attEmailTryGmail").addEventListener("click", function(){ attEmailSetVia("gmail"); attEmailDoOpen(); });
+  $("attEmailTryOutlook").addEventListener("click", function(){ attEmailSetVia("outlook"); attEmailDoOpen(); });
+  function attEmailDoOpen(){
     var to=($("attEmailTo").value||"").trim();
     var body=$("attEmailBody").value;
     data.attEmailTo=to; save();   // remembered so the next day is one click
-    var href=attEmailHref(attDate, to, body);
+    var c=attEmailCompose(attDate, to, body);
     // Over the ceiling we refuse rather than truncate, and say what to do
     // instead: the text is already on screen and one button away from the
-    // clipboard. See ATT_MAILTO_MAX.
-    if(href.length>ATT_MAILTO_MAX){
-      $("attEmailStatus").textContent="This message is too long to hand to your email app safely — press “Copy text”, then paste it into a new email yourself. (Switching to “Absent & late only” usually makes it short enough.)";
+    // clipboard. Only the mailto route has a ceiling this tight, so the advice
+    // names the way out of it.
+    if(!c){
+      $("attEmailStatus").textContent = attEmailVia()==="app"
+        ? "This message is too long to hand to your email app safely — press “Copy text” and paste it into a new email, or switch “Open with” to Gmail or Outlook, which have no such limit."
+        : "This message is too long to send this way — press “Copy text” and paste it into a new email yourself.";
       return;
     }
-    $("attEmailStatus").textContent="Opening your email app… nothing has been sent yet — check it over and press Send there.";
+    // Stamp first, THEN write the status line — attStampEmailed() re-renders
+    // the tab, which rewrites this line from the day's state and would
+    // otherwise wipe the sentence the rebbi needs to read right now.
     attStampEmailed(attDate);
-    window.location.href=href;
-  });
+    $("attEmailStatus").textContent="Opening "+ATT_VIA_LABEL[c.via]+"… nothing has been sent yet — check it over and press Send there.";
+    // Asked only where it can actually happen. A tab either opens or it
+    // doesn't, and the rebbi can see which; a mailto hand-off is the one that
+    // can vanish without a trace.
+    $("attEmailDidntOpen").style.display = c.via==="app" ? "" : "none";
+    attEmailLaunch(c);
+  }
+  $("attEmailOpen").addEventListener("click", attEmailDoOpen);
   /* Stamped only once the message is actually being handed over — never on
    * opening the panel, rebuilding a draft, or either of the refusals above. The
    * stamp is what every later change is measured against, so stamping a
@@ -9751,25 +9873,28 @@ function setupRoster() {
         beep(false); return;
       }
       // Try the shape he chose; fall back to the short one if the long one
-      // won't fit a mailto, because a complete absent-and-late list beats a
-      // full roll that the mail app silently cuts in half.
+      // won't fit, because a complete absent-and-late list beats a full roll
+      // that the mail app silently cuts in half. Only the mailto route is
+      // usually tight enough for this to trigger.
       var scope=data.attEmailScope==="full" ? "full" : "exceptions";
-      var href=attEmailHref(dk, to, attEmailText(dk, scope));
-      if(href.length>ATT_MAILTO_MAX && scope==="full"){
+      var c=attEmailCompose(dk, to, attEmailText(dk, scope));
+      if(!c && scope==="full"){
         scope="exceptions";
-        href=attEmailHref(dk, to, attEmailText(dk, scope));
+        c=attEmailCompose(dk, to, attEmailText(dk, scope));
       }
-      if(href.length>ATT_MAILTO_MAX){
+      if(!c){
         flash(false, "Attendance", "Too long to email this way",
           "Use Run → Attendance → “Email this day…” and press Copy text");
         beep(false); return;
       }
-      flash(true, "Attendance", isUpd ? "Opening your email — update" : "Opening your email",
-        "Nothing is sent until you press Send there");
+      flash(true, "Attendance",
+        (isUpd ? "Opening "+ATT_VIA_LABEL[c.via]+" — update" : "Opening "+ATT_VIA_LABEL[c.via]),
+        c.via==="app" ? "If nothing opens, switch to Gmail on the Attendance tab"
+                      : "Nothing is sent until you press Send there");
       beep(true);
-      // After the href is built, never before — see attStampEmailed().
+      // After the compose URL is built, never before — see attStampEmailed().
       attStampEmailed(dk);
-      window.location.href=href;
+      attEmailLaunch(c);
     });
     return b;
   }
@@ -22446,6 +22571,9 @@ nameLine
     // which is the shorter, safer default for a mailto: link.
     if(typeof data.attEmailTo!=="string") data.attEmailTo="";
     if(data.attEmailScope!=="full") data.attEmailScope="exceptions";
+    // Anything that isn't a route we know means the mail app, which is the one
+    // that needs no internet — the safe answer when the value is unreadable.
+    if(data.attEmailVia!=="gmail" && data.attEmailVia!=="outlook") data.attEmailVia="app";
     if(!data.hw||typeof data.hw!=="object") data.hw={};
     if(!Array.isArray(data.trackerLog)) data.trackerLog=[];
     if(typeof data.trackerActId!=="string") data.trackerActId="";
