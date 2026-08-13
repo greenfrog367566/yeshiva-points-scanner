@@ -6543,7 +6543,35 @@ function setupRoster() {
    * browsers handle cleanly, and it is what a link on any other page would do.
    */
   function attEmailLaunch(c){
-    if(c.newTab){ window.open(c.url, "_blank", "noopener"); return; }
+    if(c.newTab){
+      /* A POPUP WINDOW RATHER THAN A TAB when the caller asks for one.
+       *
+       * The seating chart's full screen is a CSS state on THIS page, not the
+       * browser's Fullscreen API — so a new tab doesn't merely cover the chart,
+       * it switches away from the page holding it, in front of a room. A popup
+       * floats over it, and closing the popup puts the rebbi back exactly where
+       * he was with the chart still up.
+       *
+       * Deliberately NO "noopener" on this path: Chrome treats it as a hint to
+       * open a tab instead of a window, which defeats the entire point. The
+       * only two origins this ever opens are Gmail and Outlook.
+       *
+       * The window is NAMED, so pressing the button twice reuses the same one
+       * instead of stacking a second compose window on the first.
+       */
+      if(c.popup){
+        var vw=Math.min(760, (screen.availWidth||1024)-80);
+        var vh=Math.min(820, (screen.availHeight||768)-80);
+        var vx=Math.max(0, Math.round(((screen.availWidth||1024)-vw)/2));
+        var vy=Math.max(0, Math.round(((screen.availHeight||768)-vh)/2));
+        var win=window.open(c.url, "menchmarkMail",
+          "width="+vw+",height="+vh+",left="+vx+",top="+vy+",resizable=yes,scrollbars=yes");
+        // A blocked popup returns null. A tab is worse than a popup here, but
+        // it is far better than the button doing nothing at all.
+        if(win){ try{ win.focus(); }catch(e){} return; }
+      }
+      window.open(c.url, "_blank", "noopener"); return;
+    }
     var a=document.createElement("a");
     a.href=c.url; a.style.display="none";
     document.body.appendChild(a);
@@ -9921,6 +9949,10 @@ function setupRoster() {
       beep(true);
       // After the compose URL is built, never before — see attStampEmailed().
       attStampEmailed(dk);
+      // Popup, not a tab — this button is pressed from the chart, usually in
+      // full screen. See attEmailLaunch(). The tab's own panel keeps opening a
+      // normal tab, because nothing there is at risk of being switched away.
+      c.popup=true;
       attEmailLaunch(c);
     });
     return b;
