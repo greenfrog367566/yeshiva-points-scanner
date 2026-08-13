@@ -12,6 +12,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Added
 
+- **A production plan for a Pixar-style animated promo video** (`docs/Menchmark_Promo_Flow_Production.md`). Nothing in the app changes — this is a document for making the video in Google Flow (Veo 3.1): a 13-shot story of a rebbi whose classroom is out of control, whose sticker charts and candy jars fail him, and who finds calm with Menchmark. It carries the full character bible, per-shot director's prompts, and the Flow workflow that keeps the characters looking like themselves from clip to clip (reference-image "ingredients" for identity, last-frame chaining for framing). Two standing rules are baked in: the video never shows a mocked-up copy of the real app (the honesty rule from the onboarding-video scripts), and all copy follows the positioning doc — rebbeim, not teachers.
+
 - **The app now tells you when you are running an old copy of it.** Until now there was no way to find out. Two rebbeim could be using Menchmark side by side, months apart in version, and nothing on either screen would say so — including to whoever was trying to help them.
 
   **Help → About now shows your version number.** That alone answers the question that used to be unanswerable: "which Menchmark am I actually running?" If you ever report a problem, that number is the single most useful thing you can send.
