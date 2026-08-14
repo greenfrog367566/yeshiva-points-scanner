@@ -400,6 +400,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Fixed
 
+- **Your COM/serial scanner reconnects by itself again — and when it can't, it finally says why.** A rebbi reported having to reconnect his scanner in Settings every time he reopened the app. Auto-reconnect was already built and was supposed to handle exactly that, which made the report worth chasing.
+
+  **The cause: the app was looking for the scanner by counting, not by name.** On reopening, it asked the browser which serial devices this computer had given it permission for, and reconnected **only if there was exactly one.** One single leftover permission — an older scanner, a Bluetooth-SPP device, a virtual COM port some other program installed — and the count came back as two, and the app quietly did nothing at all. It didn't try, and it didn't say it had given up. The screen just read "Not connected.", exactly as if auto-reconnect had never existed, so the only reasonable conclusion was that reconnecting by hand each morning was simply how it worked.
+
+  **Now Menchmark remembers *which* scanner it was.** When you connect, it records that scanner's USB identity and looks for that one specifically next time — however many other serial devices your computer happens to remember. If it can't find that exact scanner but only one device is remembered, it still connects to it, which is the old behavior kept for the case where it was right.
+
+  **And every remaining way this can fail now names itself in Settings, instead of showing a bare "Not connected."** Three messages, because they need three different responses from you:
+
+  - **Several devices remembered and none is your scanner** — it won't guess, because opening the wrong port could seize a COM port another program is using. It tells you to click "Connect scanner…" once, and remembers your choice from then on.
+  - **Running a downloaded copy of `app.html`** — this one was never fixable and pretending otherwise wasted people's time. A file on your computer has no permanent web address, so the browser has nowhere to file the scanner permission and forgets it every launch. It now says so plainly, and points at `menchmark.app`, where it does stick.
+  - **Found it but couldn't open it** — usually the port is still held by the last session or another program. Unplug, replug, connect once.
+
+  **If you already use a serial scanner, nothing is asked of you beyond one last manual connect.** Your existing setup has no scanner identity recorded yet; the first time you connect after this update, it's saved, and auto-reconnect works from then on. Keyboard-style USB scanners — which is most of them — were never affected by any of this and need no setup at all.
+
+  Saved data is untouched apart from one new field holding that scanner id, which starts empty and is filled by your next connect.
 - **Fetch & generate now brings the *whole* perek — not one lone pasuk.** In the Pesukim/Mishnayos import, tapping a chapter to fetch it from Sefaria and build flashcards was quietly treating the *chapter number as a verse number*. Choose Perek 6 and it fetched only "6:6" — the single sixth pasuk of the sixth perek. Choose chapters 6 and 7 and it fetched "6:6-7" — two verses of one perek — instead of the two whole perakim you picked. So the feature looked like it worked but generated almost none of the text you asked for.
 
   **What changed.** A tapped chip is now understood as a whole chapter: pick Perek 6 and you get *all* of Perek 6, start to finish. Because a long perek can be dozens of pesukim, the text is fetched and sent to the AI in small batches so it can't time out on the way — the status line counts the parts as it goes.
