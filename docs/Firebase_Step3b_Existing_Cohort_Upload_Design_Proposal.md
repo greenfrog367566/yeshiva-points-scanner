@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft proposal from an ultraplan design-panel session, pending Ben's review — same status steps 1, 2, and 3 had before approval.
+**✅ APPROVED 2026-08-13 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s build order as step 3b's design. This doc is now the reference for the same-device adoption, Drive-restore, conflict-resolution, and tier-2 custody decisions below.
 
 ## Recommended design
 
