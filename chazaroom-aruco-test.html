@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chazaroom ArUco Sandbox — wand detection prototype</title>
+<!--
+  SANDBOX / PROTOTYPE — not wired into the real game.
+
+  This is a standalone, throwaway evaluation of an ArUco-marker-based wand
+  pipeline as a PROPOSED REPLACEMENT for chazaroom.html's current QR-based
+  answer-card pipeline. It touches no Menchmark data, no localStorage, and
+  is linked from no navigation — chazaroom.html itself is untouched.
+
+  Question this file exists to answer: can a single library (js-aruco2, pure
+  JS, no WASM/OpenCV) detect a couple hundred small printed markers at once
+  from a live classroom-distance camera feed, and can those same markers be
+  laid out and printed cleanly onto a standard Avery-compatible 2"x2" label
+  sheet so each printed "wand" carries one? Two independent modules, no game
+  logic, no roster:
+
+    1. Label Generator & Print — lay out N ArUco markers (one per wand) on
+       the OL330 / generic-Avery-22806-equivalent 2"x2", 20-per-sheet grid
+       and print them at actual size.
+    2. Live ArUco Scanner — open a camera, run js-aruco2's detector every
+       frame, draw boxes + IDs over whatever it finds, and show a simple
+       "which IDs have been seen, and when" panel. No roster, no scoring —
+       purely a detection proof-of-concept.
+
+  Library: js-aruco2 (github.com/damianofalcioni/js-aruco2, MIT), loaded
+  from jsDelivr as three plain <script> tags below — CDN is fine for this
+  sandbox stage; vendoring/inlining an offline-safe copy (the pattern
+  tools/chazaroom-inline-deps.js already uses for chazaroom.html's QR/ZXing
+  dependencies) is later work, once this approach is actually proven out.
+-->
+
+<!-- js-aruco2 core (MIT, github.com/damianofalcioni/js-aruco2). Load order
+     matters: cv.js defines the CV helper namespace that aruco.js's top-level
+     `this.CV || require(...)` guard expects to already exist (so it never
+     hits the require() branch, which would throw in a browser); the
+     dictionary file below has the identical guard for `AR`/`AR.DICTIONARIES`.
+     All three attach to the page's global scope as plain non-module scripts. -->
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
+<!-- NOTE: despite the lowercase filename, the dictionary this file registers
+     is keyed "ARUCO_4X4_1000" (capital X) — that's the exact string the
+     Detector/Dictionary constructors below must be given; the all-lowercase
+     "aruco_4x4_1000" spelling does not exist as a dictionary key. Confirmed
+     by reading the vendored source directly (not assumed from docs). -->
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/dictionaries/aruco_4x4_1000.js"></script>
+
+<style>
+  :root{
+    --ink:#1b2440; --paper:#eceef3; --card:#ffffff; --line:#d8dbe4; --muted:#6a7187;
+    --brass:#a8772a; --gold:#e8b321;
+    --good:#1f8a5b; --good-soft:#e3f3ea; --bad:#b04432; --bad-soft:#f6e6e2;
+    --shadow:0 1px 2px rgba(27,36,64,.06),0 8px 24px rgba(27,36,64,.07);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit;font-size:1rem}
+
+  header{background:var(--ink);color:#fff;padding:12px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header .logo{width:34px;height:34px;border-radius:9px;background:var(--gold);color:#1b1400;font-family:var(--serif);font-weight:700;font-size:1.2rem;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+  header .ttl{font-family:var(--serif);font-size:1.3rem;font-weight:600}
+  header .sub{font-size:.76rem;color:#aeb6d2;letter-spacing:.4px;text-transform:uppercase}
+  nav.views{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  nav.views button{background:transparent;border:1px solid #41507f;color:#cfd5ea;border-radius:8px;padding:7px 14px;font-size:.9rem}
+  nav.views button:hover{background:#26315a}
+  nav.views button.active{background:var(--gold);border-color:var(--brass);color:#1b1400;font-weight:700}
+
+  .wrap{max-width:1150px;margin:0 auto;padding:18px 20px 60px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 10px;font-size:1.02rem}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  label.f{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted);font-weight:600}
+  label.f input,label.f select,label.f textarea{border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff;color:var(--ink)}
+  label.f input[type=number]{width:100px}
+  .btn{background:var(--ink);color:#fff;border:1px solid var(--ink);border-radius:8px;padding:9px 18px;font-size:.92rem;font-weight:600}
+  .btn:hover{background:#2c3860}
+  .btn.sec{background:#fff;color:var(--ink);border-color:var(--line)}
+  .btn.sec:hover{background:#f4f5f9}
+  .btn.gold{background:var(--gold);border-color:var(--brass);color:#1b1400}
+  .btn.gold:hover{background:#f0c53f}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .hint{font-size:.82rem;color:var(--muted);margin:8px 0 0}
+  .note{background:#f4f5f9;border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:8px;padding:10px 12px;font-size:.85rem;margin:10px 0 0}
+  .bad-box{background:var(--bad-soft);border:1px solid #e0bcb3;border-left:3px solid var(--bad);border-radius:8px;padding:12px 14px;font-size:.9rem;margin:10px 0 0}
+  .good-box{background:var(--good-soft);border:1px solid #bcdfcd;border-left:3px solid var(--good);border-radius:8px;padding:10px 12px;font-size:.85rem;margin:10px 0 0}
+
+  /* ---- camera stage ---- */
+  .stage{position:relative;display:inline-block;line-height:0;background:#000;border-radius:10px;overflow:hidden;max-width:100%}
+  .stage video{display:block;width:100%;max-width:980px;height:auto}
+  .stage canvas.ov{position:absolute;left:0;top:0;pointer-events:none}
+
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .stat{background:#f4f5f9;border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:110px}
+  .stat .k{font-size:.7rem;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+  .stat .v{font-size:1.25rem;font-weight:800;font-variant-numeric:tabular-nums}
+  .stat.hot .v{color:var(--good)}
+
+  #camInfo{font-family:var(--mono);font-size:.78rem;color:var(--muted);margin-top:10px;word-break:break-all}
+
+  /* ---- results panel ---- */
+  table.results{border-collapse:collapse;width:100%;font-size:.88rem}
+  table.results th{text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);padding:5px 8px;border-bottom:1px solid var(--line)}
+  table.results td{padding:6px 8px;border-bottom:1px solid #eef0f5;font-family:var(--mono)}
+  table.results tr:last-child td{border-bottom:none}
+  table.results td.id{font-weight:800;color:var(--ink)}
+  table.results .empty td{color:var(--muted);font-style:italic;font-family:var(--sans);text-align:center}
+
+  /* ---- label sheet (screen preview) ---- */
+  #labelSheet{display:flex;flex-direction:column;align-items:center;gap:24px}
+  .sheet-page{width:8.5in;max-width:100%;padding:.25in;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow)}
+  .label-grid{
+    display:grid;
+    grid-template-columns:repeat(4,2in);
+    grid-template-rows:repeat(5,2in);
+    column-gap:0in;
+    row-gap:.125in;
+    justify-content:center;
+  }
+  .label-cell{
+    width:2in;height:2in;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    overflow:hidden;
+    outline:1px dashed #c7cbd6;   /* screen-only alignment guide, stripped in print */
+    border-radius:.0625in;         /* cosmetic — matches Avery's die-cut corner radius */
+    padding:.05in;
+  }
+  .label-cell.empty{outline-style:solid;outline-color:#eef0f5}
+  .lbl-top{font-size:.11in;font-weight:700;letter-spacing:.3px;color:var(--muted);display:flex;align-items:center;gap:2px;line-height:1}
+  .lbl-marker{width:1.15in;height:1.15in;margin:.03in 0}
+  .lbl-marker svg{width:100%;height:100%;display:block}
+  .lbl-marker .missing{width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:.09in;color:var(--bad);border:1px solid var(--bad)}
+  .lbl-name{font-weight:800;font-size:.19in;line-height:1;margin-top:.02in}
+
+  @page{ size:8.5in 11in; margin:0; }
+  @media print{
+    body{background:#fff}
+    .noprint{display:none!important}
+    .wrap{max-width:none;padding:0;margin:0}
+    .card{border:none;box-shadow:none;padding:0;margin:0}
+    #viewScan{display:none!important}
+    .sheet-page{border:none;box-shadow:none;width:8.5in;page-break-after:always}
+    .sheet-page:last-child{page-break-after:auto}
+    .label-cell{outline:none}
+    .label-cell.empty{outline:none}
+  }
+</style>
+</head>
+<body>
+
+<header class="noprint">
+  <div class="logo">練</div>
+  <div>
+    <div class="ttl">Chazaroom ArUco Sandbox</div>
+    <div class="sub">Wand detection prototype — not wired into the game</div>
+  </div>
+  <nav class="views">
+    <button id="navLabels" class="active">Label Generator</button>
+    <button id="navScan">Live Scanner</button>
+  </nav>
+</header>
+
+<div class="wrap">
+
+  <!-- =============== VIEW 1: LABEL GENERATOR & PRINT =============== -->
+  <section id="viewLabels">
+
+    <div class="card noprint">
+      <h2>1 &middot; Generate wand labels</h2>
+      <div class="row">
+        <label class="f">Number of wands
+          <input type="number" id="wandCount" value="30" min="1" max="200" step="1">
+        </label>
+        <label class="f">Starting ArUco ID
+          <input type="number" id="startId" value="0" min="0" max="999" step="1">
+        </label>
+        <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:1px">
+          <button class="btn" id="genBtn">Generate</button>
+          <button class="btn gold" id="printBtn">Print Labels</button>
+        </div>
+      </div>
+      <p class="hint" id="labelInfo"></p>
+      <div id="labelWarn"></div>
+      <div class="note">
+        Layout targets the generic <strong>2"&times;2", 20-per-sheet</strong> US-Letter label
+        grid (4 columns &times; 5 rows, e.g. OnlineLabels OL330 and equivalents — this is
+        <em>not</em> Avery's own 22806 template, which is actually 12-per-sheet; see the
+        report notes for why this grid was used instead). Print at
+        <strong>100% / actual size</strong> ("Fit to page" will throw off the alignment) with
+        <strong>margins set to "None"</strong> in the print dialog. The dashed cell outlines
+        are a screen-only alignment guide and do not print. Each marker's ID is the wand's
+        identifier — the same number the Live Scanner tab reports back.
+      </div>
+    </div>
+
+    <div class="card" id="sheetCard">
+      <div id="labelSheet"></div>
+    </div>
+
+  </section>
+
+  <!-- =============== VIEW 2: LIVE ARUCO SCANNER =============== -->
+  <section id="viewScan" hidden>
+
+    <div class="card noprint">
+      <h2>1 &middot; Camera</h2>
+      <div class="row">
+        <label class="f" style="flex:1;min-width:260px">Video input
+          <select id="camSel"><option value="">(looking for cameras&hellip;)</option></select>
+        </label>
+        <label class="f">Detect width (px)
+          <input type="number" id="detWidth" value="1280" min="320" max="3840" step="80">
+        </label>
+        <label class="f">Detect interval (ms)
+          <input type="number" id="intervalMs" value="100" min="30" max="2000" step="10">
+        </label>
+        <label class="f">Max Hamming distance
+          <input type="number" id="hamming" value="2" min="0" max="8" step="1">
+        </label>
+        <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:1px">
+          <button class="btn" id="startBtn">Start</button>
+          <button class="btn sec" id="stopBtn" disabled>Stop</button>
+        </div>
+      </div>
+      <p class="hint" id="permHint" hidden>
+        Camera names are hidden until you grant permission once.
+        <button class="btn sec" id="permBtn" style="padding:3px 10px;font-size:.82rem">Show camera names</button>
+      </p>
+      <div id="libStatus"></div>
+      <div id="camInfo"></div>
+      <p class="hint">
+        Requests the highest resolution the camera offers, up to 4K, and falls back to 1080p
+        then to whatever the browser grants if that's refused. <strong>Detect width</strong> is
+        the separate lever that controls detection cost — it downsamples the frame handed to
+        the detector (never upsamples); lower it if the passes/sec stat below is too low for
+        your marker density, at the cost of range on small/distant markers.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>2 &middot; Live feed</h2>
+      <div class="stage" id="stage">
+        <video id="vid" playsinline muted autoplay></video>
+        <canvas class="ov" id="ov" width="10" height="10"></canvas>
+      </div>
+      <div class="stats">
+        <div class="stat hot"><div class="k">Passes / sec</div><div class="v" id="sFps">&ndash;</div></div>
+        <div class="stat hot"><div class="k">Markers this pass</div><div class="v" id="sNow">&ndash;</div></div>
+        <div class="stat"><div class="k">Most at once</div><div class="v" id="sMax">&ndash;</div></div>
+        <div class="stat"><div class="k">Detect time</div><div class="v" id="sMs">&ndash;</div></div>
+      </div>
+    </div>
+
+    <div class="card noprint">
+      <h2>3 &middot; Detected wands <span class="hint" style="font-weight:400" id="modeLabel"></span></h2>
+      <div class="row">
+        <button class="btn" id="lockBtn">Capture / Lock</button>
+        <button class="btn sec" id="resumeBtn" disabled>Resume live</button>
+        <label class="f" style="align-self:flex-end;padding-bottom:6px">
+          <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.9rem;color:var(--ink)">
+            <input type="checkbox" id="autoLock"> Auto-lock (freeze to each new frame's set)
+          </span>
+        </label>
+        <button class="btn sec" id="clearResults" style="margin-left:auto">Clear</button>
+      </div>
+      <table class="results" style="margin-top:10px">
+        <thead><tr><th>Wand ID</th><th>Times seen</th><th>Last seen</th></tr></thead>
+        <tbody id="resultsBody"><tr class="empty"><td colspan="3">Nothing detected yet.</td></tr></tbody>
+      </table>
+    </div>
+
+  </section>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  function $(id){ return document.getElementById(id); }
+  function el(tag,cls,txt){ var n=document.createElement(tag); if(cls) n.className=cls; if(txt!=null) n.textContent=txt; return n; }
+  function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+
+  /* ================= view switching ================= */
+  var navLabels=$("navLabels"), navScan=$("navScan"), viewLabels=$("viewLabels"), viewScan=$("viewScan");
+  function showView(which){
+    var labels = which==="labels";
+    viewLabels.hidden=!labels; viewScan.hidden=labels;
+    navLabels.classList.toggle("active",labels);
+    navScan.classList.toggle("active",!labels);
+  }
+  navLabels.addEventListener("click",function(){ showView("labels"); });
+  navScan.addEventListener("click",function(){ showView("scan"); });
+
+  /* ================= js-aruco2 wiring ================= */
+  var DICT_NAME = "ARUCO_4X4_1000";   /* the dictionary file's real key — capital X, not "4x4" */
+  var arucoReady = (typeof AR !== "undefined" && AR.Dictionary && AR.Detector);
+  var labelDict = null, maxMarkerId = 999;
+
+  if(arucoReady){
+    try{
+      labelDict = new AR.Dictionary(DICT_NAME);
+      maxMarkerId = labelDict.codeList.length - 1;
+    }catch(e){
+      arucoReady = false;
+      $("libStatus").innerHTML = '<div class="bad-box">js-aruco2 loaded but the '+DICT_NAME+' dictionary failed to initialize: '+e+'</div>';
+    }
+  } else {
+    var msg = '<div class="bad-box">js-aruco2 did not load (it comes from jsDelivr, so this sandbox needs an internet connection on first use). '+
+      'Reload with a connection — detection and label generation are both dead without it.</div>';
+    $("libStatus").innerHTML = msg;
+    $("labelWarn").innerHTML = msg;
+  }
+
+  function markerMarkup(id){
+    if(!arucoReady) return '<div class="missing">library<br>not loaded</div>';
+    if(id<0 || id>maxMarkerId) return '<div class="missing">ID '+id+'<br>out of range<br>(0&ndash;'+maxMarkerId+')</div>';
+    var svg = labelDict.generateSVG(id);
+    /* crispEdges keeps the module edges sharp at small print sizes instead of
+       letting the renderer anti-alias them into gray, which costs contrast
+       right where the detector's threshold step needs it most. */
+    return svg.replace("<svg ", '<svg shape-rendering="crispEdges" ');
+  }
+
+  /* ================= VIEW 1: label generator ================= */
+
+  function buildLabels(){
+    var sheet=$("labelSheet");
+    sheet.innerHTML="";
+
+    var count=parseInt($("wandCount").value,10);
+    if(!isFinite(count)||count<1) count=1;
+    count=clamp(count,1,200);
+
+    var startId=parseInt($("startId").value,10);
+    if(!isFinite(startId)||startId<0) startId=0;
+    startId=clamp(startId,0,maxMarkerId);
+
+    var warn="";
+    if(startId+count-1 > maxMarkerId){
+      var allowed = maxMarkerId-startId+1;
+      warn='<div class="bad-box">Starting ID '+startId+' + '+count+' wands would need IDs up to '+
+        (startId+count-1)+', but the '+DICT_NAME+' dictionary only defines 0&ndash;'+maxMarkerId+
+        '. Generating only '+allowed+' label(s); lower the starting ID or the count to get all '+count+'.</div>';
+      count = Math.max(0, allowed);
+    }
+    $("labelWarn").innerHTML = arucoReady ? warn : $("labelWarn").innerHTML;
+
+    var perPage=20;
+    var pages=Math.max(1,Math.ceil(count/perPage));
+
+    for(var p=0;p<pages;p++){
+      var page=el("div","sheet-page");
+      var grid=el("div","label-grid");
+      for(var i=0;i<perPage;i++){
+        var idx=p*perPage+i;
+        var cell=el("div","label-cell"+(idx>=count?" empty":""));
+        if(idx<count){
+          var arucoId=startId+idx;
+          var top=el("div","lbl-top"); top.innerHTML="&#9650; TOP";
+          var marker=el("div","lbl-marker"); marker.innerHTML=markerMarkup(arucoId);
+          var name=el("div","lbl-name","WAND #"+arucoId);
+          cell.appendChild(top);
+          cell.appendChild(marker);
+          cell.appendChild(name);
+        }
+        grid.appendChild(cell);
+      }
+      page.appendChild(grid);
+      sheet.appendChild(page);
+    }
+
+    $("labelInfo").textContent = arucoReady ?
+      count+" label(s) across "+pages+" sheet(s) of up to 20. ArUco IDs "+startId+"–"+(startId+Math.max(0,count-1))+
+      " (dictionary "+DICT_NAME+", valid range 0–"+maxMarkerId+")." :
+      "Library not loaded — cannot generate real markers yet.";
+  }
+
+  $("genBtn").addEventListener("click",buildLabels);
+  $("printBtn").addEventListener("click",function(){ buildLabels(); window.print(); });
+
+  /* ================= VIEW 2: live scanner ================= */
+
+  var camSel=$("camSel"), startBtn=$("startBtn"), stopBtn=$("stopBtn"),
+      permHint=$("permHint"), permBtn=$("permBtn"), camInfo=$("camInfo"),
+      vid=$("vid"), ov=$("ov"), octx=ov.getContext("2d");
+  var stream=null, detector=null, running=false, rafHandle=null;
+
+  var work=document.createElement("canvas");
+  var wctx=work.getContext("2d",{willReadFrequently:true});
+
+  function listCams(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices){
+      camSel.innerHTML=""; camSel.appendChild(el("option","","(this browser cannot list cameras)"));
+      return Promise.resolve();
+    }
+    return navigator.mediaDevices.enumerateDevices().then(function(devs){
+      var cams=devs.filter(function(d){ return d.kind==="videoinput"; });
+      var keep=camSel.value;
+      camSel.innerHTML="";
+      if(!cams.length){
+        camSel.appendChild(el("option","","(no video inputs found)"));
+        permHint.hidden=true;
+        return;
+      }
+      var unnamed=false;
+      cams.forEach(function(d,i){
+        var o=el("option");
+        o.value=d.deviceId;
+        if(d.label) o.textContent=d.label;
+        else { o.textContent="Camera "+(i+1)+" (name hidden until permission granted)"; unnamed=true; }
+        camSel.appendChild(o);
+      });
+      if(keep) camSel.value=keep;
+      permHint.hidden=!unnamed;
+    });
+  }
+
+  permBtn.addEventListener("click",function(){
+    navigator.mediaDevices.getUserMedia({video:true}).then(function(s){
+      s.getTracks().forEach(function(t){ t.stop(); });
+      return listCams();
+    }).catch(function(e){
+      camInfo.textContent="Permission request failed: "+e.name+" — "+e.message;
+    });
+  });
+
+  if(navigator.mediaDevices && navigator.mediaDevices.addEventListener){
+    navigator.mediaDevices.addEventListener("devicechange",listCams);
+  }
+
+  function stopStream(){
+    if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream=null; }
+    vid.srcObject=null;
+  }
+
+  function sizeOverlay(){
+    var w=vid.clientWidth, h=vid.clientHeight;
+    if(w && h && (ov.width!==w || ov.height!==h)){ ov.width=w; ov.height=h; }
+  }
+  window.addEventListener("resize",sizeOverlay);
+  vid.addEventListener("loadedmetadata",sizeOverlay);
+
+  function showTrackInfo(){
+    if(!stream) return;
+    var t=stream.getVideoTracks()[0];
+    if(!t){ camInfo.textContent=""; return; }
+    var s={}; try{ s=t.getSettings()||{}; }catch(e){}
+    camInfo.textContent="Negotiated: "+(s.width||"?")+"×"+(s.height||"?")+
+      (s.frameRate? " @ "+Math.round(s.frameRate)+"fps":"")+
+      (s.deviceId? "  ·  "+t.label : "");
+  }
+
+  startBtn.addEventListener("click",function(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      camInfo.textContent="This browser has no getUserMedia — a camera cannot be opened here.";
+      return;
+    }
+    if(!arucoReady){
+      camInfo.textContent="js-aruco2 did not load, so detection cannot run even once a camera opens.";
+    }
+    stopStream();
+    var id=camSel.value;
+    startBtn.disabled=true;
+
+    function constraintsFor(w,h){
+      var v={ width:{ideal:w}, height:{ideal:h} };
+      if(id) v.deviceId={exact:id};
+      return {video:v,audio:false};
+    }
+
+    /* Highest resolution first (up to 4K), falling back gracefully — many
+       webcams silently clamp `ideal` to their real max rather than refusing,
+       but some strict/virtual devices do reject an unreachable ideal outright. */
+    navigator.mediaDevices.getUserMedia(constraintsFor(3840,2160))
+      .catch(function(){ return navigator.mediaDevices.getUserMedia(constraintsFor(1920,1080)); })
+      .catch(function(){ return navigator.mediaDevices.getUserMedia({video:id?{deviceId:{exact:id}}:true,audio:false}); })
+      .then(function(s){
+        stream=s;
+        vid.srcObject=s;
+        return vid.play().catch(function(){ /* autoplay policies — muted video should be fine */ });
+      }).then(function(){
+        stopBtn.disabled=false;
+        listCams();
+        showTrackInfo();
+        sizeOverlay();
+        try{
+          detector = arucoReady ? new AR.Detector({
+            dictionaryName: DICT_NAME,
+            maxHammingDistance: parseInt($("hamming").value,10) || 2
+          }) : null;
+        }catch(e){
+          detector=null;
+          camInfo.textContent="Could not create the detector: "+e;
+        }
+        running=true;
+        passTimes=[];
+        rafHandle=requestAnimationFrame(loop);
+      }).catch(function(e){
+        startBtn.disabled=false;
+        camInfo.textContent="Could not open that camera: "+e.name+" — "+e.message;
+      });
+  });
+
+  stopBtn.addEventListener("click",function(){
+    running=false;
+    if(rafHandle) cancelAnimationFrame(rafHandle);
+    stopStream();
+    startBtn.disabled=false;
+    stopBtn.disabled=true;
+    octx.clearRect(0,0,ov.width,ov.height);
+  });
+
+  /* ---------- detection loop ---------- */
+  var lastPassTs=0, passTimes=[], maxSeenOnce=0;
+
+  function loop(ts){
+    if(!running) return;
+    rafHandle=requestAnimationFrame(loop);
+    var interval=parseInt($("intervalMs").value,10)||100;
+    if(ts-lastPassTs < interval) return;
+    lastPassTs=ts;
+    runPass();
+  }
+
+  function runPass(){
+    if(!vid.videoWidth || !vid.videoHeight) return;
+    var wantW=clamp(parseInt($("detWidth").value,10)||1280, 160, 3840);
+    var scale=Math.min(1, wantW/vid.videoWidth);   /* never upscale past native */
+    var w=Math.max(160, Math.round(vid.videoWidth*scale));
+    var h=Math.max(120, Math.round(vid.videoHeight*scale));
+    if(work.width!==w || work.height!==h){ work.width=w; work.height=h; }
+
+    var t0=performance.now();
+    wctx.drawImage(vid,0,0,w,h);
+    var imageData;
+    try{ imageData=wctx.getImageData(0,0,w,h); }catch(e){ return; }
+
+    var markers=[];
+    if(detector){
+      try{ markers=detector.detect(imageData); }catch(e){ /* keep the loop alive */ }
+    }
+    var dt=performance.now()-t0;
+
+    passTimes.push(performance.now());
+    var cutoff=performance.now()-1000;
+    while(passTimes.length && passTimes[0]<cutoff) passTimes.shift();
+
+    maxSeenOnce=Math.max(maxSeenOnce, markers.length);
+    $("sFps").textContent=String(passTimes.length);
+    $("sNow").textContent=String(markers.length);
+    $("sMax").textContent=String(maxSeenOnce);
+    $("sMs").textContent=Math.round(dt)+" ms";
+
+    drawOverlay(markers,w,h);
+    feedResults(markers);
+  }
+
+  function drawOverlay(markers,w,h){
+    sizeOverlay();
+    octx.clearRect(0,0,ov.width,ov.height);
+    if(!ov.width||!ov.height) return;
+    var sx=ov.width/w, sy=ov.height/h;
+    octx.lineWidth=2;
+    octx.strokeStyle="#1f8a5b";
+    octx.font="bold 15px "+getComputedStyle(document.body).fontFamily;
+    octx.textAlign="center";
+    octx.textBaseline="middle";
+    markers.forEach(function(m){
+      var pts=m.corners.map(function(c){ return {x:c.x*sx, y:c.y*sy}; });
+      octx.beginPath();
+      pts.forEach(function(p,i){ if(i===0) octx.moveTo(p.x,p.y); else octx.lineTo(p.x,p.y); });
+      octx.closePath();
+      octx.stroke();
+      var cx=pts.reduce(function(s,p){return s+p.x;},0)/pts.length;
+      var cy=pts.reduce(function(s,p){return s+p.y;},0)/pts.length;
+      var label=String(m.id);
+      var tw=octx.measureText(label).width;
+      octx.fillStyle="rgba(27,36,64,.78)";
+      octx.fillRect(cx-tw/2-5, cy-11, tw+10, 22);
+      octx.fillStyle="#fff";
+      octx.fillText(label,cx,cy+1);
+    });
+  }
+
+  /* ---------- results panel: rolling / manual-lock / auto-lock ---------- */
+  var seenMap={};        /* id -> {count, last} */
+  var locked=false;      /* manual "Capture / Lock" freeze */
+  var lastMarkers=[];
+
+  function feedResults(markers){
+    lastMarkers=markers;
+    var autoLock=$("autoLock").checked;
+    if(autoLock){
+      renderSnapshot(markers);
+    } else if(!locked){
+      var now=Date.now();
+      markers.forEach(function(m){
+        if(!seenMap[m.id]) seenMap[m.id]={count:0,last:0};
+        seenMap[m.id].count++;
+        seenMap[m.id].last=now;
+      });
+      renderRolling();
+    }
+    /* manual-locked and auto-lock off: panel stays frozen, nothing to do */
+  }
+
+  function agoText(ts){
+    var s=Math.round((Date.now()-ts)/1000);
+    if(s<1) return "just now";
+    if(s<60) return s+"s ago";
+    return Math.round(s/60)+"m ago";
+  }
+
+  function renderRolling(){
+    $("modeLabel").textContent="— live, accumulating (last-seen resets per ID, not per pass)";
+    var ids=Object.keys(seenMap).map(Number).sort(function(a,b){return a-b;});
+    renderRows(ids.map(function(id){ return {id:id,count:seenMap[id].count,last:agoText(seenMap[id].last)}; }));
+  }
+
+  function renderSnapshot(markers){
+    $("modeLabel").textContent="— auto-locked to the current frame only";
+    var ids=markers.map(function(m){return m.id;}).sort(function(a,b){return a-b;});
+    renderRows(ids.map(function(id){ return {id:id,count:1,last:"this frame"}; }));
+  }
+
+  function renderRows(rows){
+    var body=$("resultsBody");
+    body.innerHTML="";
+    if(!rows.length){
+      var tr=el("tr","empty"); var td=el("td",null,"Nothing detected yet."); td.colSpan=3; tr.appendChild(td); body.appendChild(tr);
+      return;
+    }
+    rows.forEach(function(r){
+      var tr=el("tr");
+      var idTd=el("td","id","#"+r.id);
+      var cntTd=el("td",null,String(r.count));
+      var lastTd=el("td",null,r.last);
+      tr.appendChild(idTd); tr.appendChild(cntTd); tr.appendChild(lastTd);
+      body.appendChild(tr);
+    });
+  }
+
+  $("lockBtn").addEventListener("click",function(){
+    locked=true;
+    $("autoLock").checked=false;
+    $("resumeBtn").disabled=false;
+    $("modeLabel").textContent="— locked to the frame at capture time";
+    var ids=lastMarkers.map(function(m){return m.id;}).sort(function(a,b){return a-b;});
+    renderRows(ids.map(function(id){ return {id:id,count:1,last:"captured"}; }));
+  });
+  $("resumeBtn").addEventListener("click",function(){
+    locked=false;
+    $("resumeBtn").disabled=true;
+    renderRolling();
+  });
+  $("autoLock").addEventListener("change",function(){
+    if($("autoLock").checked){ locked=false; $("resumeBtn").disabled=true; }
+    else renderRolling();
+  });
+  $("clearResults").addEventListener("click",function(){
+    seenMap={}; maxSeenOnce=0;
+    $("sMax").textContent="–";
+    renderRolling();
+  });
+
+  /* ---------- boot ---------- */
+  listCams();
+  buildLabels();
+  renderRolling();
+})();
+</script>
+</body>
+</html>
