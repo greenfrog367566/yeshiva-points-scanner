@@ -61,6 +61,7 @@ The snapshot recovers after being offline; logged scans do not unless "resync al
 What is left of the old "small standalone features" item once Freeze and the raffle note shipped. **Not the behavior ladder** — no marks store, no rung counting, no reset periods. Those stay in `docs/Behavior_Ladder_Spec.md`.
 - Warning flash: reuses the minus flash, **records nothing**. A recorded warning implies a count, a count implies rungs, and rungs are the ladder. Verified not started — nothing in `app.html` matches.
 - The raffle removal *note* shipped (`renderRaffleAdjustNote()`, "N students removed … from past wins"). What did **not** ship is the question it was filed with: report how a removal could clear itself after the next draw rather than staying sticky. Still open, still a report before a change.
+- **Double-scan detection** (adopted 2026-08-14 from the external UI review — `Menchmark_UI_Redesign_Summary.md` §12): a soft inline "scanned a moment ago — again?" nudge when the same student is scanned twice within ~2 seconds. Never a modal, records nothing, blocks nothing — the second scan still lands unless the rebbi undoes it. Not started.
 
 ---
 
