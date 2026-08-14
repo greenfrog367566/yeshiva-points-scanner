@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft proposal from an ultraplan design-panel session, pending Ben's review — same status steps 1, 2, 3, and 3b had before approval.
+**✅ APPROVED 2026-08-13 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s build order as step 4's design. This doc is now the reference for the route shape, router-as-choke-point discipline, class-switcher contract, tier guard, 2d/Phase-3 re-anchoring, and migration path below.
 
 ## Recommended routing design
 
