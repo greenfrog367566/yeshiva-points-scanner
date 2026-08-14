@@ -75,14 +75,26 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
   button{font-family:inherit;cursor:pointer}
   input,select,textarea{font-family:inherit;font-size:1rem}
 
-  header{background:var(--ink);color:#fff;padding:12px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header{background:linear-gradient(180deg,#232d52,var(--ink));color:#fff;padding:10px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-bottom:1px solid #2c3860}
   header .logo{width:34px;height:34px;border-radius:9px;background:var(--gold);color:#1b1400;font-family:var(--serif);font-weight:700;font-size:1.2rem;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
   header .ttl{font-family:var(--serif);font-size:1.3rem;font-weight:600}
   header .sub{font-size:.76rem;color:#aeb6d2;letter-spacing:.4px;text-transform:uppercase}
-  nav.views{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
-  nav.views button{background:transparent;border:1px solid #41507f;color:#cfd5ea;border-radius:8px;padding:7px 14px;font-size:.9rem}
-  nav.views button:hover{background:#26315a}
+  /* "a game is running" pill — always visible so hopping to another tab never feels
+     like it costs you the game; click it to jump straight back to Play */
+  .live-badge{display:none;align-items:center;gap:7px;background:rgba(232,179,33,.14);
+    border:1px solid var(--gold);color:var(--gold);border-radius:999px;padding:5px 12px;
+    font-size:.78rem;font-weight:700;white-space:nowrap}
+  .live-badge.on{display:inline-flex}
+  .live-badge .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);animation:pulse 1.2s ease-in-out infinite}
+  nav.views{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap;background:rgba(0,0,0,.22);border:1px solid #2c3860;border-radius:12px;padding:4px}
+  nav.views button{background:transparent;border:1px solid transparent;color:#aeb6d2;border-radius:8px;padding:7px 14px;font-size:.86rem;font-weight:600;transition:background .15s,color .15s}
+  nav.views button:hover{background:#26315a;color:#fff}
   nav.views button.active{background:var(--gold);border-color:var(--brass);color:#1b1400;font-weight:700}
+
+  /* light crossfade when a section swaps in, so tab-to-tab feels like a real
+     non-linear nav rather than a hard cut */
+  .view-pane{animation:viewIn .18s ease both}
+  @keyframes viewIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 
   .wrap{max-width:1150px;margin:0 auto;padding:18px 20px 60px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:16px;margin-bottom:16px}
@@ -209,8 +221,8 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
   .board-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px;flex-wrap:wrap}
   .board-foot .answered{font-size:1.05rem;font-weight:700;color:#e6eaf6;margin-right:auto}
   .board-foot .controls{display:flex;gap:8px;flex-wrap:wrap}
-  #boardLobbyBtn{background:transparent;color:#aeb6d2;border-color:#41507f;padding:7px 12px;font-size:.85rem}
-  #boardLobbyBtn:hover{background:#26315a;color:#fff}
+  #boardLobbyBtn,#boardPauseBtn{background:transparent;color:#aeb6d2;border-color:#41507f;padding:7px 12px;font-size:.85rem}
+  #boardLobbyBtn:hover,#boardPauseBtn:hover{background:#26315a;color:#fff}
   #revealResult{background:rgba(232,179,33,.12);border:1px solid #41507f;border-left:4px solid var(--gold);border-radius:10px;color:#eef1f8;font-size:1.05rem;padding:12px 14px;margin-top:16px}
   #revealResult strong{color:var(--gold)}
 
@@ -332,6 +344,9 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
     <div class="ttl">Chazaroom</div>
     <div class="sub">Whole-class review game</div>
   </div>
+  <button type="button" class="live-badge" id="liveBadge" title="Jump back to the game — it's still running">
+    <span class="dot"></span><span id="liveBadgeTxt">Live</span>
+  </button>
   <nav class="views">
     <button id="navPlay" class="active">Play</button>
     <button id="navQ">Questions</button>
@@ -385,7 +400,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
       <div class="row" style="margin-top:12px">
         <button class="btn gold big" id="startBtn">Start camera</button>
         <button class="btn sec big" id="presentBtn">🖥 Student view</button>
-        <div class="hint" style="margin:0;align-self:center">Opens into the lobby — boys hold up a card to join — then the first question.</div>
+        <div class="hint" style="margin:0;align-self:center" id="startHint">Opens into the lobby — boys hold up a card to join — then the first question.</div>
       </div>
       <p class="hint" id="presentHint" style="margin-top:10px">Student view is open — drag that window onto the projector and press <strong>F11</strong> for full screen. This screen stays yours: camera, aim pad and scores.</p>
       <div id="support"></div>
@@ -440,6 +455,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
           <div class="answered" id="answeredLine"></div>
           <button class="btn sec" id="boardPresentBtn" title="Open the class's own window for the projector">🖥</button>
           <button class="btn sec" id="boardLobbyBtn" title="Camera controls, aim pad and scores">⌂ Lobby</button>
+          <button class="btn sec" id="boardPauseBtn" title="Turns off the camera — Start camera picks back up right here, same question, scores kept">⏸ Pause</button>
           <div class="controls">
             <button class="btn gold" id="revealBtn">Reveal answer</button>
             <button class="btn sec" id="nextBtn" disabled>Next →</button>
@@ -477,7 +493,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
           </div>
           <div class="row" id="camRow" style="margin-top:10px;align-items:center">
             <button class="btn sec" id="calibToggleBtn">Back to the lobby</button>
-            <button class="btn sec" id="stopBtn">Stop camera</button>
+            <button class="btn sec" id="stopBtn" title="Turns off the camera — Start camera picks back up right where you left off">Pause camera</button>
             <label class="f" id="sweepGameWrap" hidden style="align-self:center;margin:0">
               <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.95rem;color:var(--ink)">
                 <input type="checkbox" id="sweepOnGame"> Sweep the room
@@ -660,6 +676,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
   var views={ Play:"viewPlay", Q:"viewQ", Class:"viewClass", Cards:"viewCards" };
   function show(which){
     Object.keys(views).forEach(function(k){ $(views[k]).hidden=(k!==which); $("nav"+k).classList.toggle("active",k===which); });
+    var cur=$(views[which]); cur.classList.remove("view-pane"); void cur.offsetWidth; cur.classList.add("view-pane");
     if(which==="Cards") buildCards();
     if(which==="Q") renderQList();
     if(which==="Class") renderRoster();
@@ -669,6 +686,15 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
   $("navQ").addEventListener("click",function(){ show("Q"); });
   $("navClass").addEventListener("click",function(){ show("Class"); });
   $("navCards").addEventListener("click",function(){ show("Cards"); });
+  /* A game in progress never blocks you from other tabs — the camera and the
+     question clock keep running underneath (see startBtn/resumeGame below).
+     This badge is just a shortcut back, not a guardrail. */
+  $("liveBadge").addEventListener("click",function(){ show("Play"); });
+  function updateLiveBadge(){
+    var active = !$("playArea").hidden;
+    $("liveBadge").classList.toggle("on",active);
+    if(active) $("liveBadgeTxt").textContent = mode==="game" ? ("Live — Q"+(qIndex+1)+" of "+questions.length) : "Live — Lobby";
+  }
 
   /* ================= QUESTIONS ================= */
   function renderQList(){
@@ -870,6 +896,9 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
       vid=$("vid"), ov=$("ov"), octx=ov.getContext("2d");
   var stream=null, detector=null, supported=false, running=false, loopT=null;
   var qIndex=0, revealed=false, perStudent=false, mode="calib", capturing=false, dismissed=false;
+  var everStarted=false;            /* false only before the first "Start camera" this session —
+                                        flips true there and stays true, so every later Start is a
+                                        resume (see resumeGame), never a reset back to the lobby */
   /* Within a game, each question walks Kahoot's beats:
      ready (question alone) -> answer (tiles + countdown) -> result (reveal)
      -> score (scoreboard screen, roster mode) ... and after the last question, podium. */
@@ -915,6 +944,9 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
   }
   function updateSetupHint(){
     var w=$("sweepAnonWarn"); if(w) w.hidden = hasRoster() || !ptzhttp.ok;   /* only matters when a sweep is possible AND nobody is identified */
+    $("startHint").textContent = everStarted
+      ? "Camera's paused — picks back up right where you left off, scores and question intact."
+      : "Opens into the lobby — boys hold up a card to join — then the first question.";
     var h=$("setupHint");
     if(!questions.length){ h.innerHTML="No questions yet — add some on the <strong>Questions</strong> tab first (or load the samples)."; return; }
     var m= hasRoster()? (roster.length+" boys — per-student cards, points kept.") : "anonymous A/B/C/D (set a class list for per-student points).";
@@ -995,17 +1027,33 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
       $("lbWrap").hidden=!perStudent; $("anonStats").hidden=perStudent;
       $("resetScoresPlayBtn").hidden=!perStudent;
       $("sweepOnGame").checked=$("sweepOn").checked;
-      game={asked:0,right:0}; seenLive={}; if(perStudent) renderLeaderboard();
       sizeOverlay(); startLoop();
-      setMode("calib");                 /* starts continuous sweep too, if enabled */
+      if(everStarted){ resumeGame(); }  /* camera was only paused — pick back up right here */
+      else{
+        everStarted=true;
+        game={asked:0,right:0}; seenLive={}; if(perStudent) renderLeaderboard();
+        setMode("calib");               /* first start of the session — starts continuous sweep too, if enabled */
+      }
     }).catch(function(e){ startBtn.disabled=false; $("support").appendChild(el("div","bad-box","Could not open the camera: "+e.name+" — "+e.message)); });
   });
-  stopBtn.addEventListener("click",function(){
+  /* Pausing, not stopping: releases the camera so you can freely switch to
+     Questions/Class/Answer cards — or change the camera/timer/sweep settings
+     back on this screen — without losing the game. Start camera resumes at the
+     same question with scores intact. "↺ Reset game" (in the score panel) is
+     the only thing that deliberately starts over. */
+  function pauseCamera(){
     stopLoop(); stopTimer(); sweepStopFn(true);
     if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream=null; }
     vid.srcObject=null; $("playArea").hidden=true; $("playSetup").hidden=false; startBtn.disabled=false;
     document.body.classList.remove("playing");
-  });
+    updateLiveBadge(); updateSetupHint();
+  }
+  stopBtn.addEventListener("click",pauseCamera);
+  /* Same pause, reachable straight from the question board — so pausing to tweak
+     a question or the roster never has to detour through the lobby (whose own
+     "Start the game" button deliberately restarts at Q1 for the join/visibility
+     check, which would undo progress if reused as a resume path here). */
+  $("boardPauseBtn").addEventListener("click",pauseCamera);
   function setMode(m){
     mode=m; $("calibPanel").hidden=(m!=="calib"); $("gameBoard").hidden=(m!=="game");
     /* lobby = the rebbi's screen (big camera, aim pad, standings);
@@ -1013,6 +1061,17 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
     document.body.classList.toggle("playing", m==="game");
     if(m==="calib"){ stopTimer(); calibSeen={}; renderCalib(); if($("sweepOn").checked && ptzhttp.ok && running) sweepStart(); }
     else { sweepStopFn(false); qIndex=0; loadQuestion(0); }
+    updateLiveBadge();
+  }
+  /* Resume, not restart: called when the camera comes back on after a pause —
+     picks up in whichever mode/question it was stopped in, instead of setMode's
+     unconditional jump back to the lobby/Q1. Progress and scores are untouched. */
+  function resumeGame(){
+    $("calibPanel").hidden=(mode!=="calib"); $("gameBoard").hidden=(mode!=="game");
+    document.body.classList.toggle("playing", mode==="game");
+    if(mode==="calib"){ renderCalib(); if($("sweepOnGame").checked && ptzhttp.ok) sweepStart(); }
+    else { sweepStopFn(false); loadQuestion(qIndex); }
+    updateLiveBadge();
   }
   $("calibDoneBtn").addEventListener("click",function(){ setMode("game"); });
   $("calibToggleBtn").addEventListener("click",function(){ setMode("calib"); });
@@ -1065,6 +1124,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
     qIndex=i; revealed=false; scannedThisQ=false; capturing=false; dismissed=false; hideLift(); qStartedAt=Date.now(); tallyNow={A:0,B:0,C:0,D:0}; tallyPeak={A:0,B:0,C:0,D:0}; sweptThisQ=false; studentAnswer={}; lastGain={};
     if(ptzhttp.ok && $("sweepOn").checked) ptzSet({pan:0,tilt:0});   /* centre for the countdown */
     var q=questions[i]||{q:"—",opts:{},correct:""};
+    updateLiveBadge();
     $("qNum").textContent="Question "+(i+1)+" of "+questions.length;
     $("qBig").textContent=q.q;
     $("boardScore").hidden=true; $("boardPodium").hidden=true;
