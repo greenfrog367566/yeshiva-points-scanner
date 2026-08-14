@@ -1371,31 +1371,39 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   .face-chip{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;color:#fff;font-weight:800;font-size:.82rem}
   .face-chip.A{background:var(--a)} .face-chip.B{background:var(--b)} .face-chip.C{background:var(--c)} .face-chip.D{background:var(--d)}
 
-  /* ---- label sheet (screen preview) ---- */
-  #labelSheet{display:flex;flex-direction:column;align-items:center;gap:24px}
-  .sheet-page{width:8.5in;max-width:100%;padding:.25in;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow)}
+  /* ---- label sheet (screen preview) ----
+     Sized entirely off CSS custom properties so both stock profiles (PLS289
+     2"x2"/20-up and PLS470 2.5"x2.5"/12-up) share one set of rules — JS sets
+     these on #labelSheet per the size dropdown, nothing else changes. */
+  #labelSheet{
+    display:flex;flex-direction:column;align-items:center;gap:24px;
+    --lbl-cell:2in; --lbl-cols:4; --lbl-rows:5; --lbl-pad:.25in;
+    --lbl-colgap:0in; --lbl-rowgap:.125in;
+    --lbl-marker:1.15in; --lbl-top-font:.11in; --lbl-name-font:.19in;
+  }
+  .sheet-page{width:8.5in;max-width:100%;padding:var(--lbl-pad);background:#fff;border:1px solid var(--line);box-shadow:var(--shadow)}
   .label-grid{
     display:grid;
-    grid-template-columns:repeat(4,2in);
-    grid-template-rows:repeat(5,2in);
-    column-gap:0in;
-    row-gap:.125in;
+    grid-template-columns:repeat(var(--lbl-cols),var(--lbl-cell));
+    grid-template-rows:repeat(var(--lbl-rows),var(--lbl-cell));
+    column-gap:var(--lbl-colgap);
+    row-gap:var(--lbl-rowgap);
     justify-content:center;
   }
   .label-cell{
-    width:2in;height:2in;
+    width:var(--lbl-cell);height:var(--lbl-cell);
     display:flex;flex-direction:column;align-items:center;justify-content:center;
     overflow:hidden;
     outline:1px dashed #c7cbd6;   /* screen-only alignment guide, stripped in print */
-    border-radius:.0625in;         /* cosmetic — matches PLS289's die-cut corner radius */
+    border-radius:.0625in;         /* cosmetic — matches the stock's die-cut corner radius */
     padding:.05in;
   }
   .label-cell.empty{outline-style:solid;outline-color:#eef0f5}
-  .lbl-top{font-size:.11in;font-weight:700;letter-spacing:.3px;color:var(--muted);display:flex;align-items:center;gap:2px;line-height:1}
-  .lbl-marker{width:1.15in;height:1.15in;margin:.03in 0}
+  .lbl-top{font-size:var(--lbl-top-font);font-weight:700;letter-spacing:.3px;color:var(--muted);display:flex;align-items:center;gap:2px;line-height:1}
+  .lbl-marker{width:var(--lbl-marker);height:var(--lbl-marker);margin:.03in 0}
   .lbl-marker svg{width:100%;height:100%;display:block}
   .lbl-marker .missing{width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:.09in;color:var(--bad);border:1px solid var(--bad)}
-  .lbl-name{font-weight:800;font-size:.19in;line-height:1;margin-top:.02in;display:flex;align-items:center;gap:.06in}
+  .lbl-name{font-weight:800;font-size:var(--lbl-name-font);line-height:1;margin-top:.02in;display:flex;align-items:center;gap:.06in}
   .lbl-face{display:inline-flex;align-items:center;justify-content:center;width:.24in;height:.24in;border-radius:.05in;color:#fff;font-size:.15in;font-weight:800}
   .lbl-face.A{background:var(--a)} .lbl-face.B{background:var(--b)} .lbl-face.C{background:var(--c)} .lbl-face.D{background:var(--d)}
 
@@ -1435,6 +1443,12 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     <div class="card noprint">
       <h2>1 &middot; Generate wand labels</h2>
       <div class="row">
+        <label class="f">Label size / stock
+          <select id="labelSize">
+            <option value="pls289">2" &times; 2" &mdash; PLS289, 20/sheet</option>
+            <option value="pls470">2.5" &times; 2.5" &mdash; PLS470, 12/sheet</option>
+          </select>
+        </label>
         <label class="f">Number of wands
           <input type="number" id="wandCount" value="30" min="1" max="200" step="1">
         </label>
@@ -1449,10 +1463,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       <p class="hint" id="labelInfo"></p>
       <div id="labelWarn"></div>
       <div class="note">
-        Layout targets <strong>Premium Label Supply's PLS289</strong> stock —
-        <strong>2"&times;2", 20 labels/sheet</strong>, US-Letter, <strong>4 columns &times; 5 rows</strong>
-        (confirmed against PLS289's own template PDF; this is <em>not</em> Avery's own 22806
-        template, which is actually 12-per-sheet round labels — that name doesn't apply here).
+        <span id="stockNote"></span>
         Print at <strong>100% / actual size</strong> ("Fit to page" will throw off the alignment) with
         <strong>margins set to "None"</strong> in the print dialog. The dashed cell outlines
         are a screen-only alignment guide and do not print. <strong>Each wand is a 4-sided foam
@@ -1638,9 +1649,52 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     return svg.replace("<svg ", '<svg shape-rendering="crispEdges" ');
   }
 
-  /* ================= VIEW 1: label generator ================= */
+  /* ================= VIEW 1: label generator =================
+     Two stock profiles, both Premium Label Supply — confirmed against each
+     product's own template PDF (visually: PLS289 is 4 cols x 5 rows near-zero
+     gaps; PLS470 is 3 cols x 4 rows near-zero gaps, both exact-fit US-Letter).
+     Everything sizing-related is a CSS custom property on #labelSheet (see
+     the stylesheet), so switching stock is just swapping this one object. */
+  var LABEL_PROFILES = {
+    pls289: {
+      sku:"PLS289", cell:"2in", cols:4, rows:5, perPage:20,
+      pad:".25in", colGap:"0in", rowGap:".125in",
+      marker:"1.15in", topFont:".11in", nameFont:".19in",
+      note:'Layout targets <strong>Premium Label Supply’s PLS289</strong> stock — '+
+        '<strong>2"&times;2", 20 labels/sheet</strong>, US-Letter, <strong>4 columns &times; 5 rows</strong> '+
+        '(confirmed against PLS289’s own template PDF; this is <em>not</em> Avery’s own 22806 template, '+
+        'which is actually 12-per-sheet round labels — that name doesn’t apply here).'
+    },
+    pls470: {
+      sku:"PLS470", cell:"2.5in", cols:3, rows:4, perPage:12,
+      pad:".5in", colGap:"0in", rowGap:"0in",
+      marker:"2.05in", topFont:".13in", nameFont:".22in",
+      note:'Layout targets <strong>Premium Label Supply’s PLS470</strong> stock — '+
+        '<strong>2.5"&times;2.5", 12 labels/sheet</strong>, US-Letter, <strong>3 columns &times; 4 rows</strong> '+
+        '(confirmed against PLS470’s own template PDF). The ArUco marker is scaled to '+
+        '<strong>2.05"</strong> — inside the 2.0&ndash;2.1" safe range — leaving a white quiet-zone margin '+
+        'so the scannable grid stays flat on the cube face and never wraps into the foam’s rounded edge.'
+    }
+  };
+
+  function applyLabelProfile(p){
+    var s=$("labelSheet").style;
+    s.setProperty("--lbl-cell",p.cell);
+    s.setProperty("--lbl-cols",p.cols);
+    s.setProperty("--lbl-rows",p.rows);
+    s.setProperty("--lbl-pad",p.pad);
+    s.setProperty("--lbl-colgap",p.colGap);
+    s.setProperty("--lbl-rowgap",p.rowGap);
+    s.setProperty("--lbl-marker",p.marker);
+    s.setProperty("--lbl-top-font",p.topFont);
+    s.setProperty("--lbl-name-font",p.nameFont);
+    $("stockNote").innerHTML=p.note;
+  }
 
   function buildLabels(){
+    var profile=LABEL_PROFILES[$("labelSize").value] || LABEL_PROFILES.pls289;
+    applyLabelProfile(profile);
+
     var sheet=$("labelSheet");
     sheet.innerHTML="";
 
@@ -1667,7 +1721,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     $("labelWarn").innerHTML = arucoReady ? warn : $("labelWarn").innerHTML;
 
     var totalLabels=count*4;
-    var perPage=20;
+    var perPage=profile.perPage;
     var pages=Math.max(1,Math.ceil(totalLabels/perPage));
 
     for(var p=0;p<pages;p++){
@@ -1697,12 +1751,14 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     }
 
     $("labelInfo").textContent = arucoReady ?
-      count+" wand(s), "+totalLabels+" label(s) (4 faces each) across "+pages+" sheet(s) of up to 20. Wands #"+
-      startWand+"–"+(startWand+Math.max(0,count-1))+", ArUco IDs "+
+      count+" wand(s), "+totalLabels+" label(s) (4 faces each) across "+pages+" "+profile.sku+" sheet(s) of up to "+
+      perPage+". Wands #"+startWand+"–"+(startWand+Math.max(0,count-1))+", ArUco IDs "+
       (count?faceIdOf(startWandIdx,0)+"–"+faceIdOf(startWandIdx+count-1,3):"–")+
       " (dictionary "+DICT_NAME+"; "+(WAND_FACE_CEILING+1)+"–"+maxMarkerId+" reserved for room calibration)." :
       "Library not loaded — cannot generate real markers yet.";
   }
+
+  $("labelSize").addEventListener("change",buildLabels);
 
   $("genBtn").addEventListener("click",buildLabels);
   $("printBtn").addEventListener("click",function(){ buildLabels(); window.print(); });
