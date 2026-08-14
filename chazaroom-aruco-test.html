@@ -1409,6 +1409,16 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   .lbl-face{display:inline-flex;align-items:center;justify-content:center;width:var(--lbl-face-size);height:var(--lbl-face-size);border-radius:.05in;color:#fff;font-size:var(--lbl-face-font);font-weight:800}
   .lbl-face.A{background:var(--a)} .lbl-face.B{background:var(--b)} .lbl-face.C{background:var(--c)} .lbl-face.D{background:var(--d)}
 
+  /* ---- room calibration corner markers: one big marker per printed page,
+     unrelated to the wand label grid above (these are mounted at fixed room
+     corners, not stuck to a wand, so there's no stock/pitch to match). ---- */
+  #cornerSheet{display:flex;flex-direction:column;align-items:center;gap:24px}
+  .corner-page{width:8.5in;max-width:100%;padding:.5in;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);text-align:center;box-sizing:border-box}
+  .corner-page .corner-name{font-weight:800;font-size:.4in;margin-bottom:.15in}
+  .corner-page .corner-marker{width:5in;height:5in;margin:0 auto}
+  .corner-page .corner-marker svg{width:100%;height:100%;display:block}
+  .corner-page .corner-hint{font-size:.16in;color:var(--muted);margin-top:.25in;max-width:6in;margin-left:auto;margin-right:auto}
+
   @page{ size:8.5in 11in; margin:0; }
   @media print{
     body{background:#fff}
@@ -1420,6 +1430,11 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     .sheet-page:last-child{page-break-after:auto}
     .label-cell{outline:none}
     .label-cell.empty{outline:none}
+    .corner-page{border:none;box-shadow:none;width:8.5in;page-break-after:always}
+    .corner-page:last-child{page-break-after:auto}
+    #cornerSheetCard{display:none}
+    body.print-corners #sheetCard{display:none}
+    body.print-corners #cornerSheetCard{display:block}
   }
 </style>
 </head>
@@ -1478,6 +1493,21 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
 
     <div class="card" id="sheetCard">
       <div id="labelSheet"></div>
+    </div>
+
+    <div class="card noprint">
+      <h2>2 &middot; Room Calibration corner markers <span class="hint" style="font-weight:400">(optional)</span></h2>
+      <p class="hint">
+        Four fixed markers, one per corner of the active seating/stage area — not on a wand, taped or
+        mounted where they stay put for the session. IDs are auto-reserved (<span id="cornerIdRange"></span>,
+        outside every wand's range no matter the roster size) so they can never collide with a real wand.
+        Print each one big — a full page per corner — so it reads reliably from across the room.
+      </p>
+      <button class="btn sec" id="printCornersBtn">Print corner markers</button>
+    </div>
+
+    <div class="card" id="cornerSheetCard">
+      <div id="cornerSheet"></div>
     </div>
 
   </section>
@@ -1549,8 +1579,31 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       </p>
     </div>
 
+    <div class="card noprint">
+      <h2>2 &middot; Room Calibration <span class="hint" style="font-weight:400">(optional)</span></h2>
+      <div class="row">
+        <label class="f" style="align-self:flex-end;padding-bottom:6px">
+          <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.9rem;color:var(--ink)">
+            <input type="checkbox" id="roomCalEnabled"> Enable bounds filter
+          </span>
+        </label>
+        <button class="btn sec" id="calibrateBtn">Calibrate room</button>
+        <button class="btn sec" id="clearCalBtn" disabled>Clear calibration</button>
+      </div>
+      <p class="hint" id="roomCalStatus">Boundary markers not detected.</p>
+      <p class="hint">
+        Print the four corner markers from the Label Generator tab and mount one at each corner of
+        the seating/stage area (near-left, near-right closer to the camera; far-left, far-right at
+        the back). Click <strong>Calibrate room</strong> and hold/hold up all four in view — once
+        all four are seen, the quad between them locks in and draws on the overlay. Turning on
+        <strong>Enable bounds filter</strong> then discards any wand detected outside that quad —
+        useful for ignoring spectators or peripheral clutter outside the active area. Calibration
+        is not saved between page loads; recalibrate each session.
+      </p>
+    </div>
+
     <div class="card">
-      <h2>2 &middot; Live feed</h2>
+      <h2>3 &middot; Live feed</h2>
       <div class="stage" id="stage">
         <video id="vid" playsinline muted autoplay></video>
         <canvas class="ov" id="ov" width="10" height="10"></canvas>
@@ -1564,7 +1617,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     </div>
 
     <div class="card noprint">
-      <h2>3 &middot; Detected wands <span class="hint" style="font-weight:400" id="modeLabel"></span></h2>
+      <h2>4 &middot; Detected wands <span class="hint" style="font-weight:400" id="modeLabel"></span></h2>
       <div class="row">
         <button class="btn" id="lockBtn">Capture / Lock</button>
         <button class="btn sec" id="resumeBtn" disabled>Resume live</button>
@@ -1630,16 +1683,28 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
      are a fixed block of 4 per wand (wandIndex*4 + faceIdx), not scattered —
      that keeps the label generator and the scanner's decoder trivially in
      sync with no lookup table to keep in agreement.
-     WAND_FACE_CEILING reserves the top two dictionary IDs (998, 999 at the
-     current 0-999 dictionary) so they can never be allocated to a wand face —
-     held for Part 1's future Room Calibration corner markers, which are not
-     implemented in this sandbox yet, but must never collide with a wand. */
+     WAND_FACE_CEILING reserves the top four dictionary IDs (996-999 at the
+     current 0-999 dictionary) so they can never be allocated to a wand face
+     — held for Room Calibration's four boundary corner markers. Costs zero
+     wand capacity: floor(996/4) === floor(998/4) === 249, since the old
+     2-ID reservation already wasted one ID to rounding. */
   var FACES = ["A","B","C","D"];
-  var WAND_FACE_CEILING = maxMarkerId - 2;
+  var WAND_FACE_CEILING = maxMarkerId - 4;
+  var ROOM_CORNER_IDS = {
+    nearLeft:  WAND_FACE_CEILING+1,
+    nearRight: WAND_FACE_CEILING+2,
+    farLeft:   WAND_FACE_CEILING+3,
+    farRight:  WAND_FACE_CEILING+4
+  };
+  var ROOM_CORNER_LABELS = { nearLeft:"NEAR-LEFT", nearRight:"NEAR-RIGHT", farLeft:"FAR-LEFT", farRight:"FAR-RIGHT" };
   function faceIdOf(wandIndex,faceIdx){ return wandIndex*4+faceIdx; }
   function wandIndexOf(id){ return Math.floor(id/4); }
   function faceLetterOf(id){ return FACES[id%4]; }
   function maxWandsAvailable(){ return Math.floor((WAND_FACE_CEILING+1)/4); }
+  function roomCornerKeyOf(id){
+    for(var k in ROOM_CORNER_IDS){ if(ROOM_CORNER_IDS[k]===id) return k; }
+    return null;
+  }
 
   function markerMarkup(id){
     if(!arucoReady) return '<div class="missing">library<br>not loaded</div>';
@@ -1788,6 +1853,36 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
 
   $("genBtn").addEventListener("click",buildLabels);
   $("printBtn").addEventListener("click",function(){ buildLabels(); window.print(); });
+
+  /* ================= Room Calibration: corner marker sheet ================= */
+
+  var CORNER_ORDER = ["nearLeft","nearRight","farLeft","farRight"];
+
+  function buildCornerSheet(){
+    var sheet=$("cornerSheet");
+    sheet.innerHTML="";
+    $("cornerIdRange").textContent = arucoReady ?
+      ("IDs "+ROOM_CORNER_IDS.nearLeft+"–"+ROOM_CORNER_IDS.farRight) : "library not loaded";
+    CORNER_ORDER.forEach(function(key){
+      var id=ROOM_CORNER_IDS[key];
+      var page=el("div","corner-page");
+      var name=el("div","corner-name",ROOM_CORNER_LABELS[key]+" — ID "+id);
+      var marker=el("div","corner-marker"); marker.innerHTML=markerMarkup(id);
+      var hint=el("div","corner-hint",
+        "Mount at the "+ROOM_CORNER_LABELS[key].toLowerCase().replace("-"," ")+
+        " corner of the active seating/stage area, facing the camera. “Near” = closer to "+
+        "the camera, “Far” = the back of the area to cover.");
+      page.appendChild(name); page.appendChild(marker); page.appendChild(hint);
+      sheet.appendChild(page);
+    });
+  }
+
+  $("printCornersBtn").addEventListener("click",function(){
+    buildCornerSheet();
+    document.body.classList.add("print-corners");
+    window.print();
+    document.body.classList.remove("print-corners");
+  });
 
   /* ================= VIEW 2: live scanner ================= */
 
@@ -1954,6 +2049,8 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     }
     var dt=performance.now()-t0;
 
+    processRoomCorners(raw);
+
     var roi=roiBoxFor(w,h);
     var candidates=raw.filter(function(m){ return passesStaticFilters(m,roi); });
     var confirmed=applyConfirmation(candidates);
@@ -1968,7 +2065,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     $("sMax").textContent=String(maxSeenOnce);
     $("sMs").textContent=Math.round(dt)+" ms";
 
-    drawOverlay(candidates,w,h,roi);
+    drawOverlay(candidates,w,h,roi,raw);
     feedResults(confirmed);
   }
 
@@ -1996,12 +2093,71 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     var rosterSize=clamp(parseInt($("rosterSize").value,10)||30, 1, 1000);
     if(m.id<0 || m.id>WAND_FACE_CEILING) return false;               /* never a valid wand face — reserved range */
     if(wandIndexOf(m.id)>=rosterSize) return false;                  /* 1. roster whitelist */
+    if(roomQuad && $("roomCalEnabled").checked){
+      if(!pointInPolygon(centroidOf(m),roomQuad)) return false;      /* 1.5. room-calibration bounds */
+    }
     if(roi){
       var c=centroidOf(m);
       if(c.x<roi.x0 || c.x>roi.x1 || c.y<roi.y0 || c.y>roi.y1) return false;   /* 3. center-zone ROI */
     }
     return true;
   }
+
+  /* ---------- Room Calibration ----------
+     Four fixed corner markers (never on a wand — see WAND_FACE_CEILING)
+     define the active seating/stage quad. Deliberately one-shot ("Setup
+     Mode"): calibration only reads corner IDs while a Calibrate is
+     actively in progress, not continuously — the physical cards get set
+     down once per session, not re-scanned every frame. Recalibrate if the
+     camera moves. Not persisted between page loads. */
+  var roomQuad=null;        /* [{x,y} nearLeft, nearRight, farRight, farLeft] in current-pass frame coords, or null */
+  var calibrating=false;
+  var calibSeen={};         /* corner key -> {x,y} centroid, accumulated while calibrating */
+
+  function startCalibration(){
+    calibrating=true;
+    calibSeen={};
+    $("roomCalStatus").textContent="Calibrating… 0/4 corners seen. Hold all four markers in view.";
+  }
+
+  function clearCalibration(){
+    roomQuad=null; calibrating=false; calibSeen={};
+    $("roomCalStatus").textContent="Boundary markers not detected.";
+    $("clearCalBtn").disabled=true;
+  }
+
+  function processRoomCorners(raw){
+    if(!calibrating) return;
+    raw.forEach(function(m){
+      var key=roomCornerKeyOf(m.id);
+      if(key) calibSeen[key]=centroidOf(m);
+    });
+    var seenCount=Object.keys(calibSeen).length;
+    if(seenCount<4){
+      $("roomCalStatus").textContent="Calibrating… "+seenCount+"/4 corners seen. Hold all four markers in view.";
+      return;
+    }
+    roomQuad=[calibSeen.nearLeft,calibSeen.nearRight,calibSeen.farRight,calibSeen.farLeft];
+    calibrating=false;
+    $("roomCalStatus").textContent="Room Calibrated: Bounds Locked.";
+    $("clearCalBtn").disabled=false;
+  }
+
+  /* Standard ray-casting point-in-polygon — works for the quad regardless
+     of exact convexity, which a straight cross-product test wouldn't
+     guarantee once four independently-placed physical markers are involved. */
+  function pointInPolygon(pt,poly){
+    var inside=false;
+    for(var i=0,j=poly.length-1;i<poly.length;j=i++){
+      var xi=poly[i].x, yi=poly[i].y, xj=poly[j].x, yj=poly[j].y;
+      var hit=((yi>pt.y)!==(yj>pt.y)) && (pt.x < (xj-xi)*(pt.y-yi)/(yj-yi)+xi);
+      if(hit) inside=!inside;
+    }
+    return inside;
+  }
+
+  $("calibrateBtn").addEventListener("click",startCalibration);
+  $("clearCalBtn").addEventListener("click",clearCalibration);
 
   var pendingStreak={};   /* id -> consecutive passes seen back-to-back, post roster+ROI filter */
   function applyConfirmation(candidates){                           /* 2. N-frame confirmation */
@@ -2017,7 +2173,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     return candidates.filter(function(m){ return pendingStreak[m.id]>=need; });
   }
 
-  function drawOverlay(candidates,w,h,roi){
+  function drawOverlay(candidates,w,h,roi,raw){
     sizeOverlay();
     octx.clearRect(0,0,ov.width,ov.height);
     if(!ov.width||!ov.height) return;
@@ -2030,6 +2186,40 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       octx.lineWidth=2;
       octx.strokeStyle="#6a7187";
       octx.strokeRect(roi.x0*sx, roi.y0*sy, (roi.x1-roi.x0)*sx, (roi.y1-roi.y0)*sy);
+      octx.restore();
+    }
+
+    if(roomQuad){
+      octx.save();
+      octx.lineWidth=3;
+      octx.strokeStyle="#e8b321";
+      octx.shadowColor="#e8b321";
+      octx.shadowBlur=12;
+      octx.beginPath();
+      roomQuad.forEach(function(p,i){
+        var x=p.x*sx, y=p.y*sy;
+        if(i===0) octx.moveTo(x,y); else octx.lineTo(x,y);
+      });
+      octx.closePath();
+      octx.stroke();
+      octx.restore();
+    }
+
+    if(calibrating && raw){
+      octx.save();
+      octx.font="bold 13px "+getComputedStyle(document.body).fontFamily;
+      octx.textAlign="center";
+      octx.textBaseline="middle";
+      raw.forEach(function(m){
+        var key=roomCornerKeyOf(m.id);
+        if(!key) return;
+        var c=centroidOf(m);
+        var x=c.x*sx, y=c.y*sy;
+        octx.fillStyle="#e8b321";
+        octx.beginPath(); octx.arc(x,y,8,0,Math.PI*2); octx.fill();
+        octx.fillStyle="#1b2440";
+        octx.fillText(ROOM_CORNER_LABELS[key],x,y-16);
+      });
       octx.restore();
     }
 
@@ -2155,6 +2345,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   /* ---------- boot ---------- */
   listCams();
   buildLabels();
+  buildCornerSheet();
   renderRolling();
 })();
 </script>
