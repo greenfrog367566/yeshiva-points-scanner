@@ -70,7 +70,9 @@ No rebbi confirmation gate before admin can see anything from a converted class.
 
 ## Admin's Class Book UI
 
-**Route:** `#/admin/classes/:classId/book`, reached from an admin-only "Schools" list → class row → "View Gradebook." Gated at render by `acct().role in ('admin','superadmin')`; the router checks role before mounting, same guard pattern as step 4's other admin-only routes. Not a tab in `TAB_GROUPS` — the rebbi's own nav never shows it; it's a standalone admin-tier screen.
+**Route:** `#/admin/classes/{classId}/book`, reached from an admin-only "Schools" list → class row → "View Gradebook." Gated at render by `acct().role in ('admin','superadmin')`. Not a tab in `TAB_GROUPS` — the rebbi's own nav never shows it; it's a standalone admin-tier screen.
+
+**Correction (2026-08-14, consistency pass):** step 4's approved router design only specifies the `#/c/{classId}/{group}/{tab}` scheme and its tier/ownership guard — it does not define an `#/admin/` route namespace or a role-based guard, so "same guard pattern as step 4's other admin-only routes" overstated what step 4 actually built. This route needs its own role-checked entry in the router (parse `#/admin/...`, check `role` before mounting, fail closed exactly like step 4's tier guard does for `#/c/...`) — flagged here as a small addition step 4's implementation owes, not a redesign of either doc.
 
 **What it shows:** One table, one class at a time — students down the side, tracked items across the top, exactly the existing Gradebook layout reused. The item set is server-filtered by the rules above (`itemVisible`), so nothing client-side decides inclusion — an item admin can't query simply isn't in the response. No "N items hidden" counter anywhere (per C's privacy lens).
 
