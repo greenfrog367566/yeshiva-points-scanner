@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft proposal from an ultraplan design-panel session, pending Ben's review — same status steps 1 through 5 had before approval.
+**✅ APPROVED 2026-08-14 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s build order as step 6's design. This doc is now the reference for the item-level `book` field, the sharing mechanism, the admin UI, and the updated security rules below.
 
 ## Recommended design
 
