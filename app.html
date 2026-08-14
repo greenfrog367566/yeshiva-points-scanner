@@ -901,6 +901,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .pasuk-btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 0;width:44px;text-align:center;font-weight:700;font-size:.85rem}
   .pasuk-btn:hover{border-color:var(--ink)}
   .pasuk-btn.selected{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .cb-coins{display:flex;flex-wrap:wrap;gap:12px;padding:8px 0 2px}
+  .cb-coin{position:relative;border:1px solid var(--line);background:#fff;border-radius:12px;width:88px;padding:12px 6px 8px;text-align:center;cursor:pointer;user-select:none}
+  .cb-coin:hover{border-color:var(--ink)}
+  .cb-coin:active{transform:scale(.95)}
+  .cb-coin .cbc-circle{width:42px;height:42px;border-radius:50%;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:.85rem;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18)}
+  .cb-coin .cbc-name{font-size:.72rem;font-weight:600;color:var(--muted)}
+  .cb-coin.has{border-color:var(--ink)}
+  .cb-coin .cbc-step{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:7px}
+  .cb-coin .cbc-step button{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;font-size:.85rem;line-height:1;padding:0}
+  .cb-coin .cbc-step button:hover{border-color:var(--ink)}
+  .cb-coin .cbc-step button:disabled{opacity:.35}
+  .cb-coin .cbc-n{min-width:20px;text-align:center;font-weight:700;font-size:.9rem}
   .pchart-wrap{overflow:auto;max-height:560px;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:14px}
   table.pchart{border-collapse:separate;border-spacing:0;font-size:.8rem;white-space:nowrap}
   table.pchart th,table.pchart td{border-bottom:1px solid var(--line);border-right:1px solid var(--line)}
@@ -2397,6 +2409,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
             <label class="lbl" style="margin-bottom:6px" id="autoChapterLabel">Chapters</label>
             <div id="autoChapterChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
           </div>
+          <div id="autoVerseRow" style="display:none;margin-bottom:8px">
+            <label class="lbl" style="margin-bottom:6px" id="autoVerseLabel">Only these pesukim (optional — leave blank for the whole perek)</label>
+            <div class="toolbar">
+              <input id="autoVerseFrom" class="field" type="number" min="1" placeholder="from" style="width:88px">
+              <span class="scan-hint">to</span>
+              <input id="autoVerseTo" class="field" type="number" min="1" placeholder="to" style="width:88px">
+            </div>
+          </div>
           <div class="toolbar" style="margin-top:8px">
             <button class="btn btn-sm btn-primary" id="autoFetchBtn">⚡ Fetch &amp; generate</button>
             <span id="autoFetchStatus" class="scan-hint"></span>
@@ -3702,6 +3722,43 @@ function setupRoster() {
         Auto-mark new purchases as received (prize handed over at time of purchase)
       </label>
       <div id="storeHistory" class="row-list" style="padding:10px 14px"></div>
+    </div>
+  </section>
+
+  <!-- ============ COIN DEPOSIT (Shulchani Mode only) ============ -->
+  <section id="view-coinbank" class="view">
+    <h2 class="view-title">Coin Deposit</h2>
+    <p class="view-note">Turn a student's physical Shulchani coins into a safe digital balance, or hand physical coins back. This is loss protection, not a separate savings account — deposited coins go straight onto the student's normal spendable balance, the same balance Standings and the Store already use. Scan a student's code to jump straight to his balance.</p>
+
+    <div class="seg" id="cbMode">
+      <button data-cbmode="deposit">Deposit</button>
+      <button data-cbmode="withdraw">Withdraw</button>
+    </div>
+
+    <div class="toolbar" style="margin:12px 0">
+      <span style="font-weight:600">Student:</span>
+      <button id="cbStudPrev" class="btn btn-sm">‹ Prev</button>
+      <select id="cbStudSel" class="field" style="width:auto;max-width:240px"></select>
+      <button id="cbStudNext" class="btn btn-sm">Next ›</button>
+    </div>
+    <div id="cbBalance" class="pill-note" style="margin-bottom:10px"></div>
+    <div class="flash" id="cbFlash"></div>
+
+    <div class="card pad" style="margin-bottom:16px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px" id="cbAmountTitle">Coins to deposit</h3>
+      <div id="cbCoinRows" class="cb-coins"></div>
+      <div id="cbAmountTotal" style="margin-top:10px;font-weight:700"></div>
+      <p id="cbNote" class="view-note" style="margin:10px 0 0"></p>
+      <div class="toolbar" style="margin-top:10px">
+        <button id="cbAll" class="btn btn-sm" title="Their entire balance, in coins">All</button>
+        <button id="cbClear" class="btn btn-sm" title="Clear the amount">None</button>
+        <button id="cbConfirm" class="btn btn-sm btn-primary">Confirm</button>
+      </div>
+    </div>
+
+    <div class="card" id="cbHistoryCard">
+      <div class="board-head"><h3>Recent coin deposits &amp; withdrawals</h3></div>
+      <div id="cbHistory" class="row-list" style="padding:10px 14px"></div>
     </div>
   </section>
 
@@ -5036,6 +5093,13 @@ function setupRoster() {
     return str;
   }
 
+  /** Full coin names when they fit, acronyms when the breakdown is too long
+   *  for the surface. maxChars is the surface's budget for the FULL-NAME
+   *  string — returns the abbr flag to pass to formatCoins/formatCoinsHtml. */
+  function coinAbbr(total, maxChars){
+    return formatCoins(total,{abbr:false}).length > (maxChars||24);
+  }
+
   /* Mode-aware display helpers — drop-in replacements for
      the old  score(id)+" pts"  and  fmt(delta)+" pts"  patterns. */
   function isShulchani(){ return !!data.shulchaniMode; }
@@ -5068,7 +5132,7 @@ function setupRoster() {
       return el("span", cls, v+" pts");
     }
     var span=el("span", cls);
-    span.innerHTML=formatCoinsHtml(v,{abbr:true})
+    span.innerHTML=formatCoinsHtml(v,{abbr:coinAbbr(v,20)})
       +(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+v+' pr)</span>':"");
     span.title=formatCoins(v,{abbr:false})+(data.showPrutot?"  ("+v+" prutot)":"");
     return span;
@@ -5080,7 +5144,7 @@ function setupRoster() {
   function fmtScoreShort(id){
     var v=score(id);
     if(!isShulchani()) return v+" pts";
-    var short=formatCoins(v,{abbr:true});
+    var short=formatCoins(v,{abbr:coinAbbr(v,20)});
     return data.showPrutot ? short+" ("+v+" pr)" : short;
   }
   /** Full breakdown for tooltips — never truncated */
@@ -5388,7 +5452,7 @@ function setupRoster() {
     // shown only in the group-tab nav (renderGroupTabs wraps it in the shared <svg> tag).
     scan:        { label:"Record",       icon:'<path d="M2 5V3.5A1.5 1.5 0 0 1 3.5 2H5"/><path d="M11 2h1.5A1.5 1.5 0 0 1 14 3.5V5"/><path d="M14 11v1.5a1.5 1.5 0 0 1-1.5 1.5H11"/><path d="M5 14H3.5A1.5 1.5 0 0 1 2 12.5V11"/><path d="M5 8h6"/>', tabs:["scan","history"] },
     standings:   { label:"Recognize",    icon:'<path d="M5 2.5h6V7a3 3 0 0 1-6 0V2.5z"/><path d="M5 4H2.5v.6A2.4 2.4 0 0 0 5 7"/><path d="M11 4h2.5v.6A2.4 2.4 0 0 1 11 7"/><path d="M8 10v3.5"/><path d="M5.5 13.5h5"/>', tabs:["standings","trends","contest"] },
-    rewards:     { label:"Reward",       icon:'<path d="M2 4.5h12V8H2z"/><path d="M3 8v5.5h10V8"/><path d="M8 4.5v9"/><path d="M8 4.5C8 3 7.2 1.7 6 1.7a1.4 1.4 0 0 0 0 2.8"/><path d="M8 4.5C8 3 8.8 1.7 10 1.7a1.4 1.4 0 0 1 0 2.8"/>', tabs:["raffle","auction","store"] },
+    rewards:     { label:"Reward",       icon:'<path d="M2 4.5h12V8H2z"/><path d="M3 8v5.5h10V8"/><path d="M8 4.5v9"/><path d="M8 4.5C8 3 7.2 1.7 6 1.7a1.4 1.4 0 0 0 0 2.8"/><path d="M8 4.5C8 3 8.8 1.7 10 1.7a1.4 1.4 0 0 1 0 2.8"/>', tabs:["raffle","auction","store","coinbank"] },
     // printSeats is IN the nav, unlike the other three print views, which stay
     // reachable only from the 🖨 buttons on their data-owner tabs. It is the one
     // sheet that has to be found: student codes in seat positions plus every
@@ -5405,7 +5469,7 @@ function setupRoster() {
   var TAB_LABELS = {
     scan:"Dashboard", history:"History",
     standings:"Leader Board", trends:"Trends", contest:"Contest",
-    raffle:"Raffle", auction:"Auction", store:"Store",
+    raffle:"Raffle", auction:"Auction", store:"Store", coinbank:"Coin Deposit",
     students:"Students", activities:"Activities", brachos:"Brachos", spinner:"Spinner",
     passes:"Passes", attendance:"Attendance", tracker:"Tracker", homework:"Homework", gradebook:"Gradebook",
     backup:"Backup & Restore", settings:"Settings",
@@ -5443,7 +5507,14 @@ function setupRoster() {
     if(!data.navHidden.tabs) data.navHidden.tabs={};
     return data.navHidden;
   }
-  function isTabVisible(t){ return t==="settings" || t==="scan" || !navHidden().tabs[t]; }
+  function isTabVisible(t){
+    if(t==="settings" || t==="scan") return true;
+    // Coin Deposit only makes sense in Shulchani Mode (physical-coin loss
+    // protection) — live-checked, same as syncCoinGuideButtons(), not a
+    // stored navHidden flag, so switching modes shows/hides it immediately.
+    if(t==="coinbank" && !isShulchani()) return false;
+    return !navHidden().tabs[t];
+  }
   // Contest is hidden pending the lifecycle rework (#133). It is HIDDEN, not
   // removed: every line of contest code is still here and still runs, because
   // it is woven through the scan log, the raffle's ticket sources and the merge
@@ -5573,6 +5644,7 @@ function setupRoster() {
     if(tab==="raffle") renderRaffle();
     if(tab==="auction") renderAuction();
     if(tab==="store") renderStore();
+    if(tab==="coinbank") renderCoinBank();
     if(tab==="trends") renderTrends();
     if(tab==="contest") renderContestTab();
     if(tab==="attendance") safeRenderTool(applyAttViewMode, "attList", "Attendance");
@@ -7993,7 +8065,7 @@ function setupRoster() {
     var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
     if(!studs.length){ wrap.appendChild(el("div","scan-hint","No students in this class. Pick a different class in the top corner, or add students.")); return; }
     studs.forEach(function(s){
-      var b=el("button","fs-name"); b.appendChild(document.createTextNode(data.fpCompact?firstName(s.name):s.name)); var fpPtsSpan=el("span","pts"); if(isShulchani()){ fpPtsSpan.innerHTML=formatCoinsHtml(score(s.id),{abbr:true})+(data.showPrutot?' <span style="color:var(--muted)">('+score(s.id)+' pr)</span>':""); } else { fpPtsSpan.textContent=String(score(s.id)); } b.appendChild(fpPtsSpan);
+      var b=el("button","fs-name"); b.appendChild(document.createTextNode(data.fpCompact?firstName(s.name):s.name)); var fpPtsSpan=el("span","pts"); if(isShulchani()){ fpPtsSpan.innerHTML=formatCoinsHtml(score(s.id),{abbr:coinAbbr(score(s.id),20)})+(data.showPrutot?' <span style="color:var(--muted)">('+score(s.id)+' pr)</span>':""); } else { fpPtsSpan.textContent=String(score(s.id)); } b.appendChild(fpPtsSpan);
       b.title=isShulchani()?s.name+"  —  "+formatCoins(score(s.id),{abbr:false})+(data.showPrutot?"  ("+score(s.id)+" prutot)":""):s.name;
       b.addEventListener("click", function(){ fpAward(s); });
       wrap.appendChild(b);
@@ -10248,7 +10320,7 @@ function setupRoster() {
       var t=tb.querySelector(".ts");
       if(t){
         if(isShulchani()){
-          t.innerHTML=formatCoinsHtml(score(sid),{abbr:true})+(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+score(sid)+' pr)</span>':"");
+          t.innerHTML=formatCoinsHtml(score(sid),{abbr:coinAbbr(score(sid),20)})+(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+score(sid)+' pr)</span>':"");
           t.title=fmtScoreFull(sid);
         } else { t.textContent=score(sid)+" pts"; }
       }
@@ -11575,9 +11647,10 @@ function setupRoster() {
       shown++;
       var isCorrection = entry.kind==="correction";
       var isTracked = isTrackedEntry(entry);
+      var isCoinBank = entry.kind==="coinBank";
       var row=el("div","recent-item history-item"+(entry.undone?" undone":"")+(isCorrection?" correction":"")+(isTracked?" tracked-item":""));
       var nameEl=el("span","rn", name+"  ");
-      var sub=el("span",null, entry.label); sub.style.color="var(--muted)"; sub.style.fontSize=".8rem";
+      var sub=el("span",null, (isCoinBank?"🪙 ":"")+entry.label); sub.style.color="var(--muted)"; sub.style.fontSize=".8rem";
       nameEl.appendChild(sub);
       row.appendChild(nameEl);
       var when=new Date(entry.ts);
@@ -11792,7 +11865,7 @@ function setupRoster() {
       row.appendChild(name);
       var sc=el("span","mini-score");
       if(isShulchani()){
-        sc.innerHTML=formatCoinsHtml(it.sc,{abbr:true})
+        sc.innerHTML=formatCoinsHtml(it.sc,{abbr:coinAbbr(it.sc,32)})
           +(data.showPrutot?' <span style="color:var(--muted);font-weight:400">('+it.sc+' pr)</span>':"");
         sc.title=formatCoins(it.sc,{abbr:false})+(data.showPrutot?"  ("+it.sc+" prutot)":"");
       } else {
@@ -12066,6 +12139,9 @@ function setupRoster() {
    * Everything else stays shared, deliberately: one rebbi, one classroom, one
    * set of settings, and the same consistency the two existing copies have.
    */
+  // Whether the ⚙ Display options row is expanded. Transient by design — see
+  // the comment at its button below.
+  var seatDisplayOpen=false;
   function renderTapPanelInto(bodyId, toggleId, opts){
     opts=opts||{};
     var bodyEl=$(bodyId); if(!bodyEl) return;
@@ -12079,6 +12155,23 @@ function setupRoster() {
     // carries the same class — refreshAttFillBtn() has to be able to find the
     // one the attendance button belongs on without matching both.
     var toolbar=el("div","seat-toolbar seat-toolbar-main");
+    // The six display options (Avatar, Points, activities footer + its three
+    // layout controls) are set-and-forget — touched when the room changes, not
+    // while running it — yet they sat permanently between the rebbi and the
+    // seats, up to nine controls at rest. They now live in a wrapper that one
+    // ⚙ Display button opens. Deliberately NOT a data field: transient JS
+    // state (seatDisplayOpen, module scope so it survives the re-render every
+    // option-toggle triggers), collapsed again on the next load. The
+    // attendance-fill button stays OUTSIDE the wrapper — it is a scanning-flow
+    // control, present only while Attendance is armed, and must not hide with
+    // the options.
+    var dispBtn=el("button","seat-modebtn"+(seatDisplayOpen?" active":""),"⚙ Display");
+    dispBtn.title="Avatar, points and activity-code options for this chart";
+    dispBtn.addEventListener("click", function(){ seatDisplayOpen=!seatDisplayOpen; renderTapPanel(); });
+    toolbar.appendChild(dispBtn);
+    var dispWrap=el("span","seat-display-opts");
+    dispWrap.style.cssText="display:"+(seatDisplayOpen?"contents":"none");
+    toolbar.appendChild(dispWrap);
     // Seating chart not shown in Teach / Shorashim context
     var allowSeating=true; // teachTapPanelBody/shorTapPanelBody no longer exist; all remaining tap panels allow seating view
     var effViewMode=opts.forceSeating ? "seating" : (allowSeating ? data.tapViewMode : "list");
@@ -12136,10 +12229,12 @@ function setupRoster() {
       }
       modeRow.appendChild(seg);
     }
-    // Scannable mode lives in the ALWAYS-VISIBLE toolbar, beside List / Seating
-    // chart — not in the ⚙ Setup panel, where it started. Setup is collapsed by
-    // default, so putting it there meant opening a panel every time to use the
-    // feature the chart exists for. Available in both List and Seating chart —
+    // Scannable mode (the Avatar select) sits one click away, behind ⚙ Display —
+    // a deliberate softening of the earlier "always visible, never in ⚙ Setup"
+    // rule. Setup was the wrong hiding place because opening it MEANS arranging;
+    // ⚙ Display is a plain options drawer with no side effects, and the select
+    // is a set-and-forget choice (the chart REMEMBERS it — scanning day to day
+    // never reopens the drawer). Available in both List and Seating chart —
     // List mode has no seats to put codes in, so it shows each student's QR as
     // a card in the grid instead (see the list-mode branch below).
     //
@@ -12174,7 +12269,7 @@ function setupRoster() {
       save(); renderTapPanel();
     });
     modeWrap.appendChild(modeSel);
-    toolbar.appendChild(modeWrap);
+    dispWrap.appendChild(modeWrap);
 
     // Points, matching the sheet's own checkbox and independent of the card mode
     // for the same reason it is there: showing codes used to take every boy's
@@ -12185,7 +12280,7 @@ function setupRoster() {
       data.seatShowPoints=!data.seatShowPoints;
       save(); renderTapPanel();
     });
-    toolbar.appendChild(ptsBtn);
+    dispWrap.appendChild(ptsBtn);
 
     // Independent of Show codes — a rebbi may want the activity codes footer
     // (to arm an activity by tapping or scanning it) without also switching
@@ -12197,7 +12292,7 @@ function setupRoster() {
       data.seatActivitiesMode=!data.seatActivitiesMode;
       save(); renderTapPanel();
     });
-    toolbar.appendChild(actBtn);
+    dispWrap.appendChild(actBtn);
 
     // How that footer is laid out. Only offered while it is actually showing —
     // a layout control for something not on screen is noise, and this toolbar
@@ -12212,7 +12307,7 @@ function setupRoster() {
         data.actFooterGrouped=!data.actFooterGrouped;
         save(); renderTapPanel();
       });
-      toolbar.appendChild(groupBtn);
+      dispWrap.appendChild(groupBtn);
 
       // Width, only while grouped — it sets the columns INSIDE a section, so
       // it means nothing to a single flat row.
@@ -12223,7 +12318,7 @@ function setupRoster() {
           data.actFooterCols = actFooterCols()>=3 ? 1 : actFooterCols()+1;
           save(); renderTapPanel();
         });
-        toolbar.appendChild(colBtn);
+        dispWrap.appendChild(colBtn);
       }
 
       // Which codes are here, and in what order. Arranging mode on this chart
@@ -12236,7 +12331,7 @@ function setupRoster() {
       var pickBtn=el("button","seat-modebtn","⚙ Choose codes");
       pickBtn.title="Add, remove or re-order the codes shown here — the same ones that print on the class sheet";
       pickBtn.addEventListener("click", openCodePickerModal);
-      toolbar.appendChild(pickBtn);
+      dispWrap.appendChild(pickBtn);
     }
 
     // Built here so it is present on the first paint if Attendance is already
@@ -13257,6 +13352,7 @@ function setupRoster() {
     }
     if($("view-auction").classList.contains("active")){ return; }
     if($("view-store").classList.contains("active")){ storeScan(c); return; }
+    if($("view-coinbank").classList.contains("active")){ cbScan(c); return; }
     if($("view-passes").classList.contains("active")){ passScan(c); return; }
     if($("view-shorashim").classList.contains("active") && pendingSave){ recordScannedSave(c); return; }
     if(gameScanArmed && $("view-shorashim").classList.contains("active")){ gameAward(c); return; }
@@ -13276,6 +13372,7 @@ function setupRoster() {
     if(fpOpen) return "↗ Floating panel";
     if($("view-auction").classList.contains("active")) return "Auction (scan not used here)";
     if($("view-store").classList.contains("active")) return "Store";
+    if($("view-coinbank").classList.contains("active")) return "Coin Deposit";
     if($("view-passes").classList.contains("active")) return "Hall passes";
     if($("view-shorashim").classList.contains("active") && pendingSave) return "Save board";
     if($("view-shorashim").classList.contains("active") && gameScanArmed) return "Game Show";
@@ -13790,7 +13887,7 @@ function setupRoster() {
 
     var hero=el("div","lb-hero-compact");
     hero.appendChild(el("span","lb-kicker","Live"));
-    var leaderTxt = top ? ("👑 "+top.s.name+" — "+(isShulchani()?formatCoins(topScore,{abbr:true}):topScore+" pts")) : "No students yet";
+    var leaderTxt = top ? ("👑 "+top.s.name+" — "+(isShulchani()?formatCoins(topScore,{abbr:coinAbbr(topScore,32)}):topScore+" pts")) : "No students yet";
     hero.appendChild(el("div","lb-hc-leader", leaderTxt));
     var hcStats=el("div","lb-hc-stats");
     [
@@ -13825,7 +13922,7 @@ function setupRoster() {
         var pct = topScore>0 ? Math.max(0, Math.min(100,(item.score/positiveMax)*100)) : 0;
         bar.style.width=pct+"%"; barWrap.appendChild(bar); main.appendChild(barWrap);
         row.appendChild(main);
-        row.appendChild(el("div","lb-score-c", isShulchani()?formatCoins(item.score,{abbr:true}):String(item.score)));
+        row.appendChild(el("div","lb-score-c", isShulchani()?formatCoins(item.score,{abbr:coinAbbr(item.score,32)}):String(item.score)));
         compactList.appendChild(row);
       });
       stage.appendChild(compactList);
@@ -13838,7 +13935,7 @@ function setupRoster() {
     card.appendChild(el("div","lb-medal", medalForRank(rankIndex)));
     card.appendChild(avatarEl(item.s, rankIndex===0?64:52));
     card.appendChild(el("div","lb-podium-name", item.s.name));
-    card.appendChild(el("div","lb-podium-score", isShulchani()?formatCoins(item.score,{abbr:true}):item.score+" pts"));
+    card.appendChild(el("div","lb-podium-score", isShulchani()?formatCoins(item.score,{abbr:coinAbbr(item.score,24)}):item.score+" pts"));
     card.appendChild(el("div","lb-podium-group", item.s.group ? item.s.group : rankTitle(rankIndex)));
     return card;
   }
@@ -14836,7 +14933,7 @@ function setupRoster() {
     var card=el("div","point-card");
     card.appendChild(el("div","pc-name", s.name));
     if(s.group) card.appendChild(el("div","pc-group", s.group));
-    card.appendChild(el("div","pc-num", isShulchani()?formatCoins(standScoreFor(s),{abbr:true}):String(standScoreFor(s))));
+    card.appendChild(el("div","pc-num", isShulchani()?formatCoins(standScoreFor(s),{abbr:coinAbbr(standScoreFor(s),16)}):String(standScoreFor(s))));
     card.appendChild(el("div","pc-sub", data.standingsActivity ? (data.standingsActivity+(standRange==="week"?" · this week":"")) : (standRange==="week"?(isShulchani()?"coins this week":"points this week"):(isShulchani()?"total coins":"total points"))));
     return card;
   }
@@ -14860,7 +14957,7 @@ function setupRoster() {
     if(avery){
       var subLine = data.standingsActivity ? (data.standingsActivity+(standRange==="week"?" · this week":"")) : (standRange==="week"?(isShulchani()?"coins this week":"points this week"):(isShulchani()?"total coins":"total points"));
       var items=list.map(function(s){
-        return {line1:s.name, line2:(isShulchani()?formatCoins(standScoreFor(s),{abbr:true}):standScoreFor(s))+" "+subLine, line3:s.group};
+        return {line1:s.name, line2:(isShulchani()?formatCoins(standScoreFor(s),{abbr:coinAbbr(standScoreFor(s),24)}):standScoreFor(s))+" "+subLine, line3:s.group};
       });
       renderAverySheetGeneric(items, sheet, data.pointsPrint.format, false, true);
       return;
@@ -15753,7 +15850,7 @@ function setupRoster() {
     var balEl=$("storeBalance"); balEl.textContent="";
     balEl.appendChild(el("b",null,(s?s.name:"")));
     balEl.appendChild(document.createTextNode(" has "));
-    balEl.appendChild(el("b",null,isShulchani()?formatCoins(score(sid),{abbr:true}):String(score(sid))));
+    balEl.appendChild(el("b",null,isShulchani()?formatCoins(score(sid),{abbr:coinAbbr(score(sid),48)}):String(score(sid))));
     balEl.appendChild(document.createTextNode(isShulchani()?" to spend":" point"+(score(sid)===1?"":"s")+" to spend"));
     var buy=$("storeBuy"); buy.innerHTML="";
     if(!data.store.items.length){ buy.appendChild(el("div","recent-empty","Add prizes above to start selling.")); }
@@ -15761,7 +15858,7 @@ function setupRoster() {
       var canAfford=score(sid)>=it.cost;
       var b=el("button","fs-name"+(canAfford?"":" store-cant"));
       b.appendChild(document.createTextNode((it.emoji||"🎁")+" "+it.name+"  "));
-      b.appendChild(el("span","pts", isShulchani()?formatCoins(it.cost,{abbr:true}):it.cost+"pt"));
+      b.appendChild(el("span","pts", isShulchani()?formatCoins(it.cost,{abbr:coinAbbr(it.cost,20)}):it.cost+"pt"));
       b.addEventListener("click", function(){ storeBuy(sid, it); });
       buy.appendChild(b);
     });
@@ -15822,6 +15919,120 @@ function setupRoster() {
   $("storeClearHist").addEventListener("click", function(){ if(!confirm("Clear the purchase history? (This does NOT refund points.)")) return; data.store.log=[]; save(); renderStoreHistory(); });
   $("storeAutoReceived").addEventListener("change", function(){ data.store.autoReceived=this.checked; save(); });
   function storeScan(code){ code=(code||"").trim(); if(!code) return; var s=studentById(code); if(!s){ storeFlash(false,"Unknown code","\u201C"+code+"\u201D isn't a student"); beep(false); return; } if(!studentInCurrentClass(s)){ storeFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D", "switch class to spend for this student"); beep(false); return; } storeStudentId=s.id; renderStore(); storeFlash(true, s.name+" selected", fmtScore(s.id)+" to spend"); beep(true); }
+
+  /* ---------- COIN DEPOSIT / WITHDRAW (Shulchani Mode only) ----------
+   * Loss protection, not a savings account: there is no separate "banked"
+   * pool. Deposit/withdraw write straight to data.scores[sid] — the exact
+   * field Standings, the Store and every other spend/award already use —
+   * the same way storeBuy()/refundPurchase() do, and for the same reason:
+   * that path never calls recordEarn(), so Trends/lifetime-earned is
+   * untouched by a deposit or withdrawal, matching "spending never erases
+   * earning" for Store/Auction. Logged as one lump-sum entry (kind:"coinBank")
+   * rather than per-activity detail — a deliberate, accepted tradeoff. */
+  var cbStudentId=null, cbMode="deposit", cbAmount={};
+  COINS.forEach(function(c){ cbAmount[c.abbr]=0; });
+  function cbTotalPrutot(){ return COINS.reduce(function(sum,c){ return sum+(cbAmount[c.abbr]||0)*c.prutot; },0); }
+  function cbFlash(ok,l1,l2){ var f=$("cbFlash"); f.className="flash show "+(ok?"good":"bad"); f.innerHTML=""; if(l1) f.appendChild(el("div","who",l1)); if(l2) f.appendChild(el("div","total",l2)); clearTimeout(f._t); f._t=setTimeout(function(){ f.classList.remove("show"); },1600); }
+  function renderCoinBank(){
+    document.querySelectorAll("#cbMode button").forEach(function(b){ b.classList.toggle("active", b.dataset.cbmode===cbMode); });
+    $("cbAmountTitle").textContent = cbMode==="deposit" ? "Coins to deposit" : "Coins to withdraw";
+    $("cbConfirm").textContent = cbMode==="deposit" ? "Confirm deposit" : "Confirm withdrawal";
+    $("cbAll").style.display = cbMode==="withdraw" ? "" : "none";
+    var sel=$("cbStudSel"); sel.innerHTML="";
+    var studs=activeStudents().sort(function(a,b){return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name));});
+    if(!studs.length){ $("cbBalance").textContent="Add students on the Students tab first."; $("cbCoinRows").innerHTML=""; $("cbAmountTotal").textContent=""; $("cbNote").textContent=""; $("cbConfirm").disabled=true; renderCoinBankHistory(); return; }
+    studs.forEach(function(s){ var o=el("option",null,s.name+(s.group?" ("+s.group+")":"")); o.value=s.id; sel.appendChild(o); });
+    if(!cbStudentId || !studs.some(function(s){return s.id===cbStudentId;})) cbStudentId=studs[0].id;
+    sel.value=cbStudentId;
+    var sid=cbStudentId, s=studentById(sid);
+    var balEl=$("cbBalance"); balEl.textContent="";
+    balEl.appendChild(el("b",null,(s?s.name:"")));
+    balEl.appendChild(document.createTextNode(" has "));
+    balEl.appendChild(el("b",null,fmtScore(sid)));
+    balEl.appendChild(document.createTextNode(" on their digital balance"));
+    renderCoinBankCoins();
+    renderCoinBankHistory();
+  }
+  function renderCoinBankCoins(){
+    var rows=$("cbCoinRows"); rows.innerHTML="";
+    // Smallest coin on the left, biggest on the right — the reverse of COINS,
+    // whose largest-first order the greedy breakdown depends on.
+    COINS.slice().reverse().forEach(function(c){
+      var n=cbAmount[c.abbr]||0;
+      var tile=el("div","cb-coin"+(n>0?" has":""));
+      tile.title="Tap to add 1 "+c.name;
+      var circ=el("div","cbc-circle",c.abbr); circ.style.background=c.color;
+      tile.appendChild(circ);
+      tile.appendChild(el("div","cbc-name",c.name));
+      var step=el("div","cbc-step");
+      var minus=el("button",null,"−");
+      minus.type="button"; minus.title="Remove 1 "+c.name; minus.disabled=!n;
+      minus.addEventListener("click", function(ev){ ev.stopPropagation(); if(cbAmount[c.abbr]>0){ cbAmount[c.abbr]--; renderCoinBankCoins(); } });
+      var plus=el("button",null,"+");
+      plus.type="button"; plus.title="Add 1 "+c.name;
+      plus.addEventListener("click", function(ev){ ev.stopPropagation(); cbAmount[c.abbr]=(cbAmount[c.abbr]||0)+1; renderCoinBankCoins(); });
+      step.appendChild(minus); step.appendChild(el("span","cbc-n",String(n))); step.appendChild(plus);
+      tile.appendChild(step);
+      tile.addEventListener("click", function(){ cbAmount[c.abbr]=(cbAmount[c.abbr]||0)+1; renderCoinBankCoins(); });
+      rows.appendChild(tile);
+    });
+    renderCoinBankAmount();
+  }
+  function renderCoinBankAmount(){
+    var total=cbTotalPrutot(), sid=cbStudentId, s=studentById(sid);
+    $("cbAmountTotal").textContent = total>0 ? "= "+formatCoins(total) : "Tap coins above to build the amount.";
+    var noteEl=$("cbNote"), enough = total<=score(sid);
+    noteEl.style.color=""; noteEl.style.fontWeight="";
+    if(!total){ noteEl.textContent=""; }
+    else if(cbMode==="deposit"){
+      noteEl.textContent="Recorded as one lump-sum entry — this doesn't preserve which activities the coins came from.";
+    } else if(!enough){
+      noteEl.textContent="Not enough to withdraw — "+(s?s.name:"this student")+" only has "+fmtScore(sid)+".";
+      noteEl.style.color="var(--bad)"; noteEl.style.fontWeight="600";
+    } else {
+      noteEl.textContent="Hands "+(s?s.name:"the student")+" physical coins back — they're at risk of being lost again until deposited.";
+    }
+    $("cbConfirm").disabled = !(total>0 && (cbMode==="deposit" || enough));
+  }
+  function renderCoinBankHistory(){
+    var h=$("cbHistory"); h.innerHTML="";
+    var entries=data.log.filter(function(e){ return e.kind==="coinBank"; }).slice(0,20);
+    if(!entries.length){ h.appendChild(el("div","recent-empty","No coin deposits or withdrawals yet.")); return; }
+    entries.forEach(function(e){
+      var row=el("div","erow");
+      var s=studentById(e.sid);
+      var nm=el("span","grow","🪙 "+(s?s.name:"(removed student)")+" — "+e.label);
+      row.appendChild(nm);
+      row.appendChild(el("span","grp-tag", formatCoins(e.delta,{signed:true})));
+      h.appendChild(row);
+    });
+  }
+  function cbConfirmAction(){
+    var sid=cbStudentId, s=studentById(sid); if(!s) return;
+    var total=cbTotalPrutot(); if(total<=0) return;
+    var delta = cbMode==="deposit" ? total : -total;
+    if(cbMode==="withdraw" && total>score(sid)){
+      cbFlash(false, "Not enough to withdraw", s.name+" has "+fmtScore(sid)); beep(false); return;
+    }
+    var label = cbMode==="deposit" ? "Physical coin deposit" : "Physical coin withdrawal";
+    data.scores[sid]=score(sid)+delta;
+    addLogEntry({ts:Date.now(), sid:sid, label:label, delta:delta, kind:"coinBank"});
+    save(); beep(true);
+    cbFlash(true, s.name+" — "+label, formatCoins(delta,{signed:true})+" → "+fmtScore(sid));
+    COINS.forEach(function(c){ cbAmount[c.abbr]=0; });
+    renderCoinBank(); renderScanBoard(); refreshLiveViews();
+  }
+  function cbStudGo(delta){ var studs=activeStudents().sort(function(a,b){return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name));}); if(!studs.length) return; var ids=studs.map(function(s){return s.id;}); var idx=ids.indexOf(cbStudentId); if(idx<0) idx=0; idx=(idx+delta+ids.length)%ids.length; cbStudentId=ids[idx]; renderCoinBank(); }
+  // Scanning a student while this view is open jumps to his balance — same
+  // behavior as the Store, routed from handleScannedCode.
+  function cbScan(code){ code=(code||"").trim(); if(!code) return; var s=studentById(code); if(!s){ cbFlash(false,"Unknown code","“"+code+"” isn't a student"); beep(false); return; } if(!studentInCurrentClass(s)){ cbFlash(false, s.name+" — not in “"+data.currentClass+"”", "switch class to use Coin Deposit for this student"); beep(false); return; } cbStudentId=s.id; renderCoinBank(); cbFlash(true, s.name+" selected", fmtScore(s.id)+" on their balance"); beep(true); }
+  $("cbMode").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; cbMode=b.dataset.cbmode; renderCoinBank(); });
+  $("cbStudSel").addEventListener("change", function(){ cbStudentId=this.value; renderCoinBank(); });
+  $("cbStudPrev").addEventListener("click", function(){ cbStudGo(-1); });
+  $("cbStudNext").addEventListener("click", function(){ cbStudGo(1); });
+  $("cbClear").addEventListener("click", function(){ COINS.forEach(function(c){ cbAmount[c.abbr]=0; }); renderCoinBankCoins(); });
+  $("cbAll").addEventListener("click", function(){ var bd=convertPrutotToCoins(Math.max(0,score(cbStudentId))); COINS.forEach(function(c){ cbAmount[c.abbr]=bd[c.abbr]||0; }); renderCoinBankCoins(); });
+  $("cbConfirm").addEventListener("click", cbConfirmAction);
 
   /* ---------- PESUKIM ---------- */
   var selectedPasuk = 1;
@@ -16599,7 +16810,7 @@ function setupRoster() {
 "Source text: "+(kind==="mishna"?"Mishnayos":"Pesukim")+" — "+ref+".",
 "Use the accurate Hebrew WITH nikud (vowels) from a reliable open source such as Sefaria, he.wikisource.org, or Mechon-Mamre. Do not paraphrase or alter the Hebrew.",
 "",
-"Break each "+unit+" into VERY SHORT phrases — usually a single Hebrew word or a tight group of 2–3 words. Follow the Hebrew word groupings closely and make lots of small pieces; do NOT lump a whole clause onto one line.",
+"Break each "+unit+" into short, NATURAL phrases — small meaningful chunks of roughly 2–4 Hebrew words each, like a verb with its subject, a verb with its object, or a short prepositional phrase. Group words that belong together in meaning; only give a word its own line when it truly stands alone as its own clause (a lone opening verb like \"וַיֹּאמֶר\", or a name). Do NOT lump a whole "+unit+" onto one line, but do NOT chop it into a long string of single words either — when in doubt, keep a pair or small group together rather than splitting further.",
 "For each phrase, give a LITERAL, word-for-word translation that follows the Hebrew word order and matches that exact little piece — not a smoothed-out translation of the whole sentence. Use simple words a child knows (for example \"just like\" rather than \"as\").",
 "Transliterate names of people and places in their Hebrew form (Moshe, Yehoshua, Sichon, Og, Emori, Yarden) — do not anglicize them (write \"Yarden\", not \"Jordan\").",
 "Capitalize a phrase's translation only when it starts a genuinely new clause or sentence (e.g. a new \"and he …\" verb clause) or is a proper noun. Do NOT capitalize a phrase that's just continuing the same clause, like a direct object or a prepositional phrase (e.g. \"these words\", \"to Yisrael\") — those stay lowercase.",
@@ -16616,7 +16827,7 @@ nameLine
 "  • english = the literal translation of that phrase — capitalized only at a new clause/sentence or a proper noun, lowercase otherwise.",
 "Wrap any field that contains a comma in double quotes.",
 "",
-"Example of the exact format and style (note the small pieces, literal wording, and that each NEW clause is capitalized while phrases continuing the same clause stay lowercase):",
+"Example of the exact format and style (note the natural, meaningful-sized pieces — not single words except where a word is its own clause — the literal wording, and that each NEW clause is capitalized while phrases continuing the same clause stay lowercase):",
 "num,full,hebrew,english",
 '1,"וַיֵּלֶךְ מֹשֶׁה וַיְדַבֵּר אֶת־הַדְּבָרִים הָאֵלֶּה אֶל־כׇּל־יִשְׂרָאֵל","וַיֵּלֶךְ מֹשֶׁה","And Moshe went"',
 '1,,"וַיְדַבֵּר","And he spoke"',
@@ -16764,29 +16975,53 @@ nameLine
     var lbl=$("autoChapterLabel");
     if(!chips||!row) return;
     chips.innerHTML=""; row.style.display="none";
+    // Reset the optional verse range whenever the chapter list is rebuilt
+    var vRow=$("autoVerseRow");
+    if(vRow){ vRow.style.display="none"; if($("autoVerseFrom"))$("autoVerseFrom").value=""; if($("autoVerseTo"))$("autoVerseTo").value=""; }
+    var vLbl=$("autoVerseLabel");
     var items=[], seferRef="";
     if(kind==="pasuk"){
       var pSel=$("autoParshaSel"); if(!pSel||!pSel.value) return;
       var p=PARSHA_DATA[parseInt(pSel.value,10)]; if(!p) return;
       items=p.chapters; seferRef=p.ref;
       lbl.textContent="Chapters";
+      if(vLbl) vLbl.textContent="Only these pesukim (optional — leave blank for the whole perek)";
     } else {
       var mSel=$("autoMesechtaSel"); if(!mSel||!mSel.value) return;
       var count=MISHNA_PERAKIM[mSel.value]||1;
       for(var i=1;i<=count;i++) items.push(i);
       seferRef=mSel.value;
       lbl.textContent="Perakim";
+      if(vLbl) vLbl.textContent="Only these mishnayos (optional — leave blank for the whole perek)";
     }
     $("autoSefer").value=seferRef;
     row.style.display="";
     // Track selected chapters/perakim in a closure array
     var selected=[];
     function syncHidden(){
-      if(!selected.length){ $("autoPerek").value=""; $("autoFrom").value=""; $("autoTo").value=""; return; }
+      var vr=$("autoVerseRow");
+      if(!selected.length){
+        $("autoPerek").value=""; $("autoFrom").value=""; $("autoTo").value="";
+        if(vr) vr.style.display="none";
+        return;
+      }
       var sorted=selected.slice().sort(function(a,b){return a-b;});
-      $("autoPerek").value=sorted[0];
+      // autoPerek holds the full comma-separated list of selected chapters/perakim
+      // (e.g. "6,7"). Each selected chapter is fetched in FULL — the chip numbers
+      // are chapters, never verse numbers. from/to kept only for the low/high hint.
+      $("autoPerek").value=sorted.join(",");
       $("autoFrom").value=sorted[0];
       $("autoTo").value=sorted[sorted.length-1];
+      // The "only these pesukim" range only makes sense for a single chapter —
+      // across several chapters we fetch each in full (one set per chapter).
+      if(vr){
+        if(sorted.length===1){ vr.style.display=""; }
+        else {
+          vr.style.display="none";
+          if($("autoVerseFrom")) $("autoVerseFrom").value="";
+          if($("autoVerseTo")) $("autoVerseTo").value="";
+        }
+      }
     }
     items.forEach(function(val){
       var chip=el("button","btn btn-sm");
@@ -16812,6 +17047,8 @@ nameLine
     // Clear chips when switching kinds
     var chips=$("autoChapterChips"); if(chips) chips.innerHTML="";
     var row=$("autoChapterRow"); if(row) row.style.display="none";
+    var vRow=$("autoVerseRow");
+    if(vRow){ vRow.style.display="none"; if($("autoVerseFrom"))$("autoVerseFrom").value=""; if($("autoVerseTo"))$("autoVerseTo").value=""; }
   }
   $("autoKind").addEventListener("change", onAutoKindChange);
   $("autoParshaSel").addEventListener("change", renderAutoChapterChips);
@@ -16856,7 +17093,7 @@ nameLine
     verses.forEach(function(v){ lines.push(v.num+". "+v.he); });
     lines=lines.concat([
 "",
-"Break each "+unit+" into VERY SHORT phrases — usually a single Hebrew word or a tight group of 2–3 words. Follow the Hebrew word groupings closely and make lots of small pieces; do NOT lump a whole clause onto one line.",
+"Break each "+unit+" into short, NATURAL phrases — small meaningful chunks of roughly 2–4 Hebrew words each, like a verb with its subject, a verb with its object, or a short prepositional phrase. Group words that belong together in meaning; only give a word its own line when it truly stands alone as its own clause (a lone opening verb like \"וַיֹּאמֶר\", or a name). Do NOT lump a whole "+unit+" onto one line, but do NOT chop it into a long string of single words either — when in doubt, keep a pair or small group together rather than splitting further.",
 "For each phrase, give a LITERAL, word-for-word translation that follows the Hebrew word order and matches that exact little piece — not a smoothed-out translation of the whole sentence. Use simple words a child knows (for example \"just like\" rather than \"as\").",
 "Transliterate names of people and places in their Hebrew form (Moshe, Yehoshua, Sichon, Og, Emori, Yarden) — do not anglicize them (write \"Yarden\", not \"Jordan\").",
 "Capitalize a phrase's translation only when it starts a genuinely new clause or sentence (e.g. a new \"and he …\" verb clause) or is a proper noun. Do NOT capitalize a phrase that's just continuing the same clause, like a direct object or a prepositional phrase (e.g. \"these words\", \"to Yisrael\") — those stay lowercase.",
@@ -16911,29 +17148,77 @@ nameLine
     return json.text;
   }
 
+  // Run an already-fetched list of verses through the AI proxy in batches so a
+  // long stretch can't blow the proxy's timeout. Returns the combined CSV, header
+  // kept once. Throws if the proxy can't be reached so the caller can fall back.
+  // `onStatus(part,total)` fires before each batch for progress messages.
+  //
+  // The batch is 20 pesukim, not a handful: Gemini's context easily holds a whole
+  // chapter, so the old small batches only multiplied the number of proxy calls —
+  // which is exactly what trips the free tier's per-minute rate limit. Fewer,
+  // fuller calls means most chapters go in one or two requests. (The worker also
+  // caches by passage, so a passage anyone has generated before costs zero calls.)
+  async function generateFromVerses(verses, kind, hebrewOnly, refLabel, onStatus){
+    var BATCH=20, batches=[], parts=[];
+    for(var i=0;i<verses.length;i+=BATCH) batches.push(verses.slice(i,i+BATCH));
+    // A whole chapter (× several chapters) fires many proxy calls in a row, and the
+    // Gemini free tier can rate-limit a later one. Give each batch a single retry
+    // after a short pause so one transient hiccup doesn't drop the lot, and space
+    // successful calls slightly to stay under the limit.
+    function pause(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+    async function askOnce(prompt){
+      try{ return await callAiProxy(prompt); }
+      catch(e){ await pause(2500); return await callAiProxy(prompt); }
+    }
+    for(var b=0;b<batches.length;b++){
+      if(onStatus) onStatus(b+1, batches.length);
+      if(b>0) await pause(600);
+      var bl=refLabel+(batches.length>1?" ("+(b+1)+"/"+batches.length+")":"");
+      var bp=hebrewOnly ? buildHebrewOnlyPrompt(kind, bl, batches[b]) : buildAutoImportPrompt(kind, bl, batches[b]);
+      var bcsv=stripCodeFence(await askOnce(bp));
+      if(b>0){
+        // Drop the repeated header row from every batch after the first
+        var lines=bcsv.split("\n");
+        var hi=lines.findIndex(function(l){return /^num[,\t]/i.test(l.trim());});
+        if(hi>=0) lines.splice(hi,1);
+        bcsv=lines.join("\n");
+      }
+      parts.push(bcsv.trim());
+    }
+    return parts.join("\n");
+  }
+  // Thin wrapper: fetch one WHOLE chapter/perek, then generate. Used for the
+  // multi-chapter path where every selected chapter is taken in full.
+  async function generateChapterCSV(seferRef, chapter, kind, hebrewOnly, refLabel, onStatus){
+    var verses=await fetchSefariaVerses(seferRef, chapter, 1, 999);
+    return generateFromVerses(verses, kind, hebrewOnly, refLabel, onStatus);
+  }
+
   $("autoFetchBtn").addEventListener("click", async function(){
     var statusEl=$("autoFetchStatus"), btn=this;
     var kind=$("autoKind").value;
     // autoSefer is now a hidden input set by the chip picker
     var seferRef=$("autoSefer").value;
-    var perek=parseInt($("autoPerek").value,10);
-    var from=parseInt($("autoFrom").value,10);
-    var to=parseInt($("autoTo").value,10); if(isNaN(to)) to=from;
+    // autoPerek holds the comma-separated list of selected chapters/perakim.
+    // Each is a CHAPTER number (never a verse) and is fetched in FULL.
+    var chapters=($("autoPerek").value||"").split(",")
+      .map(function(s){return parseInt(s,10);})
+      .filter(function(n){return !isNaN(n);})
+      .sort(function(a,b){return a-b;});
 
     // Give a clear message if no selection has been made yet
     if(!seferRef){
       var pickEl=kind==="pasuk" ? $("autoParshaSel") : $("autoMesechtaSel");
-      statusEl.textContent="Please select a "+(kind==="mishna"?"mesechta":"parsha")+" and then tap at least one "+(kind==="mishna"?"perek":"chapter")+"."; 
+      statusEl.textContent="Please select a "+(kind==="mishna"?"mesechta":"parsha")+" and then tap at least one "+(kind==="mishna"?"perek":"chapter")+".";
       if(pickEl) pickEl.focus();
       return;
     }
-    if(isNaN(perek) || isNaN(from)){
+    if(!chapters.length){
       statusEl.textContent="Tap at least one "+(kind==="mishna"?"perek":"chapter")+" to continue.";
       return;
     }
-    if(to<from) to=from;
 
-    // Build a readable label from the selected Parsha/Mesechta + chapter
+    // Build a readable label from the selected Parsha/Mesechta
     var seferLabel="";
     if(kind==="pasuk"){
       var pSel=$("autoParshaSel");
@@ -16942,12 +17227,11 @@ nameLine
       var mSel=$("autoMesechtaSel");
       seferLabel=mSel && mSel.selectedOptions[0] ? mSel.selectedOptions[0].textContent : seferRef;
     }
-    var refLabel=seferLabel+" "+perek+":"+(from===to?from:from+"-"+to);
+    var unitWord=kind==="mishna"?"Perek":"Ch.";
+    var hebrewOnly=$("autoHebrewOnly") && $("autoHebrewOnly").checked;
+    function chapterRefLabel(ch){ return seferLabel+" "+unitWord+" "+ch; }
 
     btn.disabled=true;
-    $("setKind").value=kind;
-    $("setRef").value=refLabel;
-    if(!$("setLabel").value.trim()) $("setLabel").value=refLabel;
 
     function fallBackToManual(promptText, reason){
       $("promptBox").value=promptText;
@@ -16956,31 +17240,77 @@ nameLine
       $("promptBox").scrollIntoView({behavior:"smooth", block:"center"});
     }
 
-    var verses;
-    try{
-      statusEl.textContent="Fetching "+refLabel+" from Sefaria…";
-      verses=await fetchSefariaVerses(seferRef, perek, from, to);
-    }catch(err){
-      // Can't reach Sefaria (offline, typo'd range, etc.) — fall all the way
-      // back to the plain manual prompt, same as clicking "Build AI prompt".
-      fallBackToManual(buildImportPrompt(refLabel, kind), "Couldn't reach Sefaria");
+    // ── ONE chapter selected → keep the review-first flow: fill the CSV box so
+    //    the rebbi can eyeball the AI output before clicking "Import as new text set."
+    //    An optional verse range ("only these pesukim X to Y") narrows the fetch —
+    //    blank means the whole perek. A range keeps the real pasuk numbers, so
+    //    the label and the set's num keys stay honest.
+    if(chapters.length===1){
+      var ch=chapters[0];
+      var vf=parseInt(($("autoVerseFrom")||{}).value,10);
+      var vt=parseInt(($("autoVerseTo")||{}).value,10);
+      var hasRange=!isNaN(vf)||!isNaN(vt);
+      var fromV=isNaN(vf)?1:Math.max(1,vf);
+      var toV=isNaN(vt)?999:Math.max(fromV,vt);   // blank "to" ⇒ rest of the perek
+      var wholeLabel=chapterRefLabel(ch);
+      var verses;
+      try{
+        statusEl.textContent="Fetching "+wholeLabel+(hasRange?" ("+fromV+(toV>=999?"+":("–"+toV))+")":"")+" from Sefaria…";
+        verses=await fetchSefariaVerses(seferRef, ch, fromV, toV);
+      }catch(err){
+        fallBackToManual(buildImportPrompt(wholeLabel, kind), "Couldn't reach Sefaria");
+        btn.disabled=false;
+        return;
+      }
+      // Label from the ACTUAL verses fetched (so an open-ended "to" reads right)
+      var aFrom=verses[0].num, aTo=verses[verses.length-1].num;
+      var refLabel=hasRange
+        ? seferLabel+" "+ch+":"+(aFrom===aTo?aFrom:aFrom+"-"+aTo)
+        : wholeLabel;
+      $("setKind").value=kind;
+      $("setRef").value=refLabel;
+      if(!$("setLabel").value.trim()) $("setLabel").value=refLabel;
+      try{
+        var csvText=await generateFromVerses(verses, kind, hebrewOnly, refLabel, function(n,tot){
+          statusEl.textContent=(hebrewOnly?"Splitting ":"Building flashcards for ")+refLabel+(tot>1?" (part "+n+" of "+tot+")":"")+"…";
+        });
+        $("csvBox").value=csvText;
+        statusEl.textContent="Done — review the CSV below, then click \"Import as new text set.\"";
+        $("csvBox").scrollIntoView({behavior:"smooth", block:"center"});
+      }catch(err){
+        // Got the Hebrew but not the AI — hand back a prompt seeded with the real text.
+        var pr=hebrewOnly ? buildHebrewOnlyPrompt(kind, refLabel, verses) : buildAutoImportPrompt(kind, refLabel, verses);
+        fallBackToManual(pr, "Couldn't reach the AI automatically");
+      }
       btn.disabled=false;
       return;
     }
 
-    var hebrewOnly=$("autoHebrewOnly") && $("autoHebrewOnly").checked;
-    var prompt=hebrewOnly ? buildHebrewOnlyPrompt(kind, refLabel, verses) : buildAutoImportPrompt(kind, refLabel, verses);
-    try{
-      statusEl.textContent=hebrewOnly ? "Asking AI to split into Hebrew phrases…" : "Asking AI to build the flashcard CSV…";
-      var csvText=stripCodeFence(await callAiProxy(prompt));
-      $("csvBox").value=csvText;
-      statusEl.textContent="Done — review the CSV below, then click \"Import as new text set.\"";
-      $("csvBox").scrollIntoView({behavior:"smooth", block:"center"});
-    }catch(err){
-      // Got the real Hebrew from Sefaria but couldn't reach the AI proxy —
-      // still hand back a prompt seeded with that accurate text so the
-      // teacher can finish the old-fashioned way instead of being stuck.
-      fallBackToManual(prompt, "Couldn't reach the AI automatically");
+    // ── SEVERAL chapters selected → one text set per chapter, auto-imported
+    //    (two chapters can't share one set — both have a "pasuk 1", which would
+    //    collide on the num key). Generate each in turn and import it on its own.
+    var made=[], failed=[];
+    for(var ci=0; ci<chapters.length; ci++){
+      var refLabel2=chapterRefLabel(chapters[ci]);
+      var stepPrefix="Generating "+refLabel2+" ("+(ci+1)+" of "+chapters.length+")";
+      statusEl.textContent=stepPrefix+"…";
+      try{
+        var csv2=await generateChapterCSV(seferRef, chapters[ci], kind, hebrewOnly, refLabel2, (function(prefix){
+          return function(n,tot){ statusEl.textContent=prefix+(tot>1?" — part "+n+"/"+tot:"")+"…"; };
+        })(stepPrefix));
+        var parsed2=parseTextSetCSV(stripCodeFence(csv2));
+        if(!parsed2) throw new Error("empty result");
+        addImportedSet(parsed2, refLabel2, refLabel2, kind);
+        made.push(refLabel2);
+      }catch(err){
+        failed.push(refLabel2);
+      }
+    }
+    if(made.length){
+      statusEl.textContent="Created "+made.length+" text set"+(made.length>1?"s":"")+": "+made.join(", ")+
+        (failed.length?("  ·  couldn't do: "+failed.join(", ")):"")+". The last one is loaded now — switch sets with the picker above.";
+    } else {
+      statusEl.textContent="Couldn't generate "+failed.join(", ")+" — check your connection and try again.";
     }
     btn.disabled=false;
   });
