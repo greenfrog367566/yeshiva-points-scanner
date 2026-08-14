@@ -2382,7 +2382,9 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
     <div id="pesukTextMode" style="display:none">
     <div id="pesukSetsPanel" class="card pad" style="margin-bottom:16px">
-      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">Add pesukim or mishnayos</h3>
+      <details>
+      <summary style="cursor:pointer;font-family:var(--serif);font-size:1.05rem;font-weight:700">Add pesukim or mishnayos</summary>
+      <div style="margin-top:8px">
       <p class="view-note" style="margin:0 0 10px">Type what you want (e.g. <b>Bereishis 1:1-10</b> or <b>Mishna Berachos 1:1-4</b>), build a prompt, paste it to any AI, then bring back the CSV it makes. The translations come out in the same child-friendly style — and you can still edit any line afterward in Teach.</p>
       <details id="autoFetchPanel" style="margin-bottom:14px">
         <summary style="cursor:pointer;font-weight:600;color:var(--muted)">⚡ Or auto-fetch from Sefaria + generate with AI (optional)</summary>
@@ -2458,6 +2460,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           </select>
         </div>
       </details>
+      </div>
+      </details>
       <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
       <label class="lbl">Your text sets</label>
       <div id="pesukSetsList" class="row-list"></div>
@@ -2519,6 +2523,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     </div><!-- /chart mode -->
 
     <div id="pesukTeachMode" style="display:none">
+      <div id="teachEmptyState" class="card pad" style="display:none"></div>
       <!-- Teach sub-panel -->
       <div id="pesukSubTeach">
         <p class="view-note" id="teachNote">Tap any line to reveal its translation. Tap ✎ to edit a translation — your change also updates the Matching game.</p>
@@ -2580,7 +2585,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button data-m="quiz">Quiz</button>
       <button data-m="game">Game Show</button>
     </div>
-    <label class="shor-emoji-tog"><input type="checkbox" id="shorEmojiTog" checked> Show emoji instead of English (in the games)</label>
+    <label class="shor-emoji-tog"><input type="checkbox" id="shorEmojiTog"> Show emoji instead of English (in the games)</label>
     <label class="shor-emoji-tog" style="margin-left:18px"><input type="checkbox" id="shorBigTog" checked> Bigger emojis</label>
     <label class="shor-emoji-tog" style="margin-left:18px"><input type="checkbox" id="shorBoardsTog"> Leaderboards (scan a name to save)</label>
 
@@ -3560,8 +3565,6 @@ function setupRoster() {
         <button data-tr="student">One student</button>
       </div>
       <select id="trStud" class="field" style="width:auto;max-width:240px;display:none"></select>
-      <span class="grow"></span>
-      <button id="trSendSheet" class="btn btn-sm">Send totals to Sheet</button>
     </div>
     <div id="trSummary" class="pill-note" style="margin-bottom:10px"></div>
     <div class="card pad" style="overflow:auto"><table class="trend-tbl" id="trTable"></table></div>
@@ -15558,7 +15561,21 @@ function setupRoster() {
     var res=$("auDrawResult"); res.className="spin-result show"; res.innerHTML="";
     res.appendChild(el("div","rr-label","\uD83C\uDFC6 Winner"));
     res.appendChild(el("div","rr-name",win.name));
-    if(auDrawPid){ curAu().winners[auDrawPid]={sid:win.sid,name:win.name,ts:Date.now()}; save(); }
+    if(auDrawPid){
+      curAu().winners[auDrawPid]={sid:win.sid,name:win.name,ts:Date.now()};
+      // Ticket purchases only ever lived in mutable auction state — invisible
+      // in History, never reaching the Sheet. Drawing a prize locks every
+      // ticket placed on it (win or lose), so this is the one moment that
+      // spend becomes final — write the permanent record now. The points
+      // themselves were already deducted at placement time (auSetTk); this
+      // only makes that already-real spend visible, it never deducts twice.
+      var prizeLabel=auPrizeLabel(auPrize(auDrawPid)), cost=auCost(auDrawPid), pointsMode=auPointsMode(), ts=Date.now();
+      data.students.forEach(function(s){
+        var n=auTk(s.id,auDrawPid); if(!n) return;
+        addLogEntry({ts:ts, sid:s.id, label:"Auction: "+prizeLabel, delta:pointsMode?-(n*cost):0, kind:"spend"});
+      });
+      save();
+    }
     beep(true); $("auSpinBtn").disabled=false; renderAuPrizeList();
   }
   function deleteAuPrize(pid){
@@ -15801,23 +15818,6 @@ function setupRoster() {
   }
   $("trMode").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; trModeVal=b.dataset.tr; renderTrends(); });
   $("trStud").addEventListener("change", function(){ trStudId=this.value; renderTrends(); });
-  $("trSendSheet").addEventListener("click", function(){
-    if(!(data.sheetUrl||"").trim()){ notice("Connect your Google Sheet first (Google Sheet tab)."); return; }
-    var labels={};
-    data.students.forEach(function(s){ var rec=(data.earned||{})[s.id]||{}; Object.keys(rec).forEach(function(L){ labels[L]=1; }); });
-    var cols=Object.keys(labels).sort();
-    var rows=data.students.slice().sort(function(a,b){return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name));}).map(function(s){
-      var rec=(data.earned||{})[s.id]||{}, row=[s.name, s.group||"", score(s.id)];
-      var tot=0; cols.forEach(function(L){ tot+=(rec[L]?rec[L].p:0); });
-      row.push(tot);
-      cols.forEach(function(L){ row.push(rec[L]?rec[L].n:0); row.push(rec[L]?rec[L].p:0); });
-      return row;
-    });
-    var header=["Name","Group","Current balance","Total earned"];
-    cols.forEach(function(L){ header.push(L+" (times)"); header.push(L+" (pts)"); });
-    pushToSheet({type:"totals", header:header, rows:rows});
-    notice("Totals sent — check the “Student Totals” tab in your sheet.");
-  });
 
   /* ---------- PRIZE STORE ---------- */
   var storeStudentId=null;
@@ -15883,10 +15883,10 @@ function setupRoster() {
   }
   function renderStoreHistory(){
     var h=$("storeHistory"); h.innerHTML="";
-    if(!data.store.log.length){ h.appendChild(el("div","recent-empty","No purchases yet.")); return; }
     var pending=data.store.log.filter(function(p){ return !p.received; }).length;
     var pendEl=$("storePendingCount");
     if(pendEl) pendEl.textContent = pending ? (pending+" prize"+(pending===1?"":"s")+" not yet picked up") : "";
+    if(!data.store.log.length){ h.appendChild(el("div","recent-empty","No purchases yet.")); return; }
     data.store.log.slice(0,40).forEach(function(p,idx){
       var row=el("div","erow");
       var recLabel=el("label","store-received-toggle");
@@ -16257,6 +16257,22 @@ function setupRoster() {
       var curOk=filtered.some(function(s){ return s.id===data.activeSetId; });
       if(!curOk && filtered.length) loadTextSet(filtered[0].id);
       else if(filtered.length) sel.value=data.activeSetId;
+      // No set of this kind exists at all — the active set's phrases (of a
+      // different kind, e.g. Pesukim) must never be shown under an empty
+      // dropdown, so blank the panel instead of falling through to Teach.
+      if(isTeachMode && !filtered.length){
+        $("pesukSubTeach").style.display="none";
+        $("pesukGameMode").style.display="none";
+        $("pesukSubMode").style.display="none"; // Teach/Match toggle would re-trigger the empty set via applyPesukSubMode()
+        var kindLabel = kindFilter==="mishna" ? "Mishnayos" : "Pesukim";
+        var tesEl=$("teachEmptyState");
+        tesEl.style.display="block";
+        tesEl.textContent="No "+kindLabel+" sets yet — add one on the Text tab.";
+      } else if(isTeachMode){
+        $("teachEmptyState").style.display="none";
+        $("pesukSubTeach").style.display = pesukSubMode==="teach" ? "" : "none";
+        $("pesukGameMode").style.display = pesukSubMode==="teach" ? "none" : "";
+      }
     }
 
     // Text selector bar: hidden entirely in Text mode (the Text tab has its
@@ -16273,7 +16289,7 @@ function setupRoster() {
     else if(isTeachMode && prevPesukMode==="chart") teachN=selectedPasuk;
     prevPesukMode=pesukMode;
     if(pesukMode==="chart") renderPesukim();
-    else if(isTeachMode){ applyPesukSubMode(); }
+    else if(isTeachMode && filtered.length){ applyPesukSubMode(); }
     else if(pesukMode==="text") { renderPesukSets(); prefillWizardLearning(); }
   }
   $("pesukMode").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; pesukMode=b.dataset.pm; applyPesukMode(); });
@@ -17557,7 +17573,7 @@ nameLine
   }
 
   /* ---------- SHORASHIM ---------- */
-  var shorMode="words", shorEmoji=true, shorBig=true, shorBoards=false, gameScanArmed=false, pendingSave=null;
+  var shorMode="words", shorEmoji=false, shorBig=true, shorBoards=false, gameScanArmed=false, pendingSave=null;
   function applyShorBig(){ $("view-shorashim").classList.toggle("big-emoji", shorBig && shorEmoji); }
 
   function getBoard(key){ if(!data.gameBoards) data.gameBoards={}; if(!data.gameBoards[key]) data.gameBoards[key]=[]; return data.gameBoards[key]; }
