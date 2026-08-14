@@ -113,6 +113,10 @@ before the product is proven); **don't prioritize** — 🔥-style class badges
 
 ## 4. Open items worth a decision (PROPOSE-FIRST, not commitments)
 
+*A tab-by-tab audit of the shipped app against this theory ran 2026-08-14 —
+see `UI_Theory_Tab_Audit.md` for the ranked findings, which add concrete code
+locations to items 1–4 below plus two bugs and several settled-spec gaps.*
+
 1. **Double-scan detection** — the review's one "do now." A soft inline
    "Dovid was just scanned — again?" within ~2 seconds; no modal. Small,
    real, unbuilt.
