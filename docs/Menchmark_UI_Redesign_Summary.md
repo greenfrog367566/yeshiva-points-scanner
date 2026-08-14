@@ -261,6 +261,8 @@ One unified quiz engine across **Chumash, Mishna, and Shorashim**, pulling from 
 
 ## 10. Check against the original philosophy docs
 
+*See also `UI_Design_Theory.md` (Aug 2026) — the external design theory and its review of this spec, with a reality-check of what shipped and the open PROPOSE-FIRST items.*
+
 Revisited the imported philosophy/ideology docs against everything above. Most core complaints are directly addressed:
 
 **Addressed:**
