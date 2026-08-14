@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft proposal from an ultraplan design-panel session, pending Ben's review — same status steps 1 through 6 had before approval.
+**✅ APPROVED 2026-08-14 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s build order as step 7's design — the last of the 8 build-order steps to be designed. This doc is now the reference for the trigger sequence, tier-branched copy, action buttons, and managed-Chromebook verification plan below.
 
 ## Recommended design
 
