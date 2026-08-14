@@ -751,12 +751,14 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
     if(which==="Cards") buildCards();
     if(which==="Q") renderQList();
     if(which==="Class") renderRoster();
+    pauseTimer();          /* any running countdown holds while the drawer is open */
   }
   function closeDrawer(){
     document.body.classList.remove("drawer-open");
     ["Q","Class","Cards"].forEach(function(k){ $("nav"+k).classList.remove("active"); });
     $("navPlay").classList.add("active");
     updateSetupHint();
+    resumeTimer();
   }
   $("navPlay").addEventListener("click",function(){ show("Play"); });
   $("navQ").addEventListener("click",function(){ show("Q"); });
@@ -1224,6 +1226,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
     var secs=Math.min(8,Math.max(4,Math.round(String(q.q||"").length/15))), tEl=$("timer");
     tLeft=secs; tEl.className="timer ready"; tEl.textContent=tLeft;
     tHandle=setInterval(function(){
+      if(timerPaused) return;                        /* drawer open — clock holds */
       tLeft--;
       if(tLeft<=0){ stopTimer(); beginAnswerPhase(); return; }
       tEl.textContent=tLeft;
@@ -1293,12 +1296,20 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
 
   /* ---- timer + auto-reveal ---- */
   var tHandle=null, tLeft=0, qStartedAt=0;
+  /* While the setup drawer is over the live screen, both countdowns (get-ready
+     and answer) hold where they are — the interval keeps firing but skips the
+     decrement — so ducking out to fix a question never costs the class time.
+     The timer face shows ⏸ while held; closing the drawer picks up mid-count. */
+  var timerPaused=false;
+  function pauseTimer(){ timerPaused=true; if(tHandle) $("timer").textContent="⏸"; }
+  function resumeTimer(){ timerPaused=false; if(tHandle) $("timer").textContent=tLeft; }
   function startTimer(){
     stopTimer();
     var secs=clampInt($("timerSecs").value,0,300,0), tEl=$("timer");
     if(secs<=0){ tEl.className="timer off"; tEl.textContent="–"; return; }
     tLeft=secs; tEl.className="timer"; tEl.textContent=tLeft;
     tHandle=setInterval(function(){
+      if(timerPaused) return;                        /* drawer open — clock holds */
       tLeft--;
       if(tLeft<=0){ tEl.textContent="0"; stopTimer(); onCountdownEnd(); return; }
       tEl.textContent=tLeft; tEl.className = (tLeft<=5? "timer low" : "timer");
