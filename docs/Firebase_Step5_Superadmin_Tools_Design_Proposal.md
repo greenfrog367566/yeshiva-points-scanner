@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft proposal from an ultraplan design-panel session, pending Ben's review — same status steps 1, 2, 3, 3b, and 4 had before approval.
+**✅ APPROVED 2026-08-14 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s build order as step 5's design. This doc is now the reference for `admin.html`'s shape, the activitySummary triggers, the view-as UI transition, the email export, and the access boundary below.
 
 ## Recommended design
 
