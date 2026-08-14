@@ -4195,6 +4195,14 @@ function setupRoster() {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Scan Confirmation Banner</h3>
+      <p class="view-note" style="margin:0 0 10px">The floating banner that briefly confirms a scan or tap — "+1 Davening for Dovid", a demerit, a freeze, an attendance mark. All three are on by default; the beep still sounds either way, so turning a kind off only hides the banner, not the confirmation sound.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setBannerPositive"> Points earned</label>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-top:8px"><input type="checkbox" id="setBannerNegative"> Points lost, including freeze</label>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-top:8px"><input type="checkbox" id="setBannerTracked"> Tracked items (attendance, homework, pass, tracker)</label>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Header Shortcuts</h3>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHeaderShortcuts"> Show the Points / Timer / Picker floating buttons</label>
       <p class="view-note" style="margin:8px 0 0">On by default. These three float on top of the screen wherever you scroll, and can be dragged anywhere — drop one wherever it's out of your way. Turn this off to hide all three if you don't use the floating points scanner, timer, or picker wheel — the class dropdown and sound button stay either way, and you can always turn this back on here.</p>
@@ -6165,7 +6173,8 @@ function setupRoster() {
   function attCycleFlash(s, next){
     flash(next!=="absent", s.name, ATT_LABEL[next]||next,
       next==="present" ? "Back to present — scan again for absent"
-        : "Scan again for "+(ATT_LABEL[attNextStatus(next)]||"").toLowerCase());
+        : "Scan again for "+(ATT_LABEL[attNextStatus(next)]||"").toLowerCase(),
+      "tracked");
     beep(next!=="absent");
   }
   function attendanceScan(code){
@@ -7133,7 +7142,7 @@ function setupRoster() {
     var a=actById(actId);
     if(!a){ flash(false,"No tracked activity","","Add one first"); beep(false); return; }
     trackerLogAdd(s, a);
-    flash(true, s.name, a.name, "Logged");
+    flash(true, s.name, a.name, "Logged", "tracked");
     beep(true);
     renderTracker();
   }
@@ -7508,7 +7517,7 @@ function setupRoster() {
     if(!s){ flash(false,"Unknown code","","\u201C"+code+"\u201D isn't a student"); beep(false); return; }
     if(!studentInCurrentClass(s)){ flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student"); beep(false); return; }
     setHw(s.id, true);
-    flash(true, s.name, "HW Checked", "Homework marked checked");
+    flash(true, s.name, "HW Checked", "Homework marked checked", "tracked");
     beep(true);
     if(hwViewMode==="student") renderHwStudentView(); else renderHomework();
   }
@@ -8447,6 +8456,9 @@ function setupRoster() {
     renderShulchaniStatus();
     $("setTapBreakdown").checked = !!data.tapShowsBreakdown;
     $("setSeatListFallback").checked = data.seatListFallback!==false;
+    $("setBannerPositive").checked = data.bannerPositive!==false;
+    $("setBannerNegative").checked = data.bannerNegative!==false;
+    $("setBannerTracked").checked = data.bannerTracked!==false;
     $("setHeaderShortcuts").checked = data.showHeaderShortcuts!==false;
     $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setFullWidth").checked = !!data.fullWidth;
@@ -8501,6 +8513,9 @@ function setupRoster() {
     var mb=$("muteBtn"); if(mb) mb.textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   });
   $("setTapBreakdown").addEventListener("change", function(){ data.tapShowsBreakdown=this.checked; save(); });
+  $("setBannerPositive").addEventListener("change", function(){ data.bannerPositive=this.checked; save(); });
+  $("setBannerNegative").addEventListener("change", function(){ data.bannerNegative=this.checked; save(); });
+  $("setBannerTracked").addEventListener("change", function(){ data.bannerTracked=this.checked; save(); });
   // Switching it off mid-recording stops the microphone there and then, rather
   // than leaving one open that the setting claims can no longer be opened.
   $("setVoiceNotes").addEventListener("change", function(){
@@ -9483,7 +9498,22 @@ function setupRoster() {
     });
   }
 
-  function flash(ok, line1, line2, line3){
+  // band is optional and only ever passed at a real scan/tap OUTCOME (points
+  // scored, freeze applied, a tracked mark written) — never at an error or
+  // status message ("Unknown code", "Not in selected class", "No email
+  // address saved", …), which must always show or a silenced banner would
+  // read as a scan that quietly worked. 'positive'/'negative'/'tracked' map
+  // to the three Settings → Scan Confirmation Banner toggles; skipping here
+  // is a true no-op — beep() is always a separate call at the call site, so
+  // muting a band never mutes the confirmation sound.
+  function bannerBandOn(band){
+    if(band==="positive") return data.bannerPositive!==false;
+    if(band==="negative") return data.bannerNegative!==false;
+    if(band==="tracked") return data.bannerTracked!==false;
+    return true;
+  }
+  function flash(ok, line1, line2, line3, band){
+    if(!bannerBandOn(band)) return;
     var f=$("flash");
     // flash-toast must survive this wholesale className write — it is what
     // keeps the element a fixed toast rather than a block in the page flow.
@@ -9749,7 +9779,7 @@ function setupRoster() {
       // markHwCheckedToday (not setHw) for the same reason: setHw writes to
       // hwDate, the date the Homework tab is showing.
       markHwCheckedToday(s.id);
-      flash(true, s.name, "HW Checked", "Homework marked checked (today)");
+      flash(true, s.name, "HW Checked", "Homework marked checked (today)", "tracked");
       beep(true);
       // "checked" in the old boolean store IS "full credit" in the four-state
       // preset. Mirroring the preset's own vocabulary rather than `true` keeps
@@ -9766,7 +9796,7 @@ function setupRoster() {
         beep(false);
         return {ok:false};
       }
-      flash(true, s.name, "Pass used", "that's their one for this week");
+      flash(true, s.name, "Pass used", "that's their one for this week", "tracked");
       beep(true);
       // setPass() writes a real data.log entry, unlike the two above, so the
       // Recent scans panel and the scan strip have something new to show.
@@ -9782,7 +9812,7 @@ function setupRoster() {
     if(TRACKED_LEGACY[item.id]) return TRACKED_LEGACY[item.id];
     if(item.method==="count") return function(s){
       trackerLogAdd(s, a);
-      flash(true, s.name, a.name, "Logged");
+      flash(true, s.name, a.name, "Logged", "tracked");
       beep(true);
       if($("view-tracker") && $("view-tracker").classList.contains("active")) renderTracker();
       return {ok:true};
@@ -9988,7 +10018,7 @@ function setupRoster() {
       // Nothing left to fill is a real answer, not a failure: the roll is
       // already complete. Saying so beats a button that looks dead.
       if(!n){ flash(false, "Attendance", "Nobody left to mark", "Everyone is already marked for today"); beep(false); return; }
-      flash(true, "Attendance", attFillLabel(), n+(n===1?" student":" students"));
+      flash(true, "Attendance", attFillLabel(), n+(n===1?" student":" students"), "tracked");
       beep(true);
       // The badges change under the rebbi's finger rather than on the next full
       // repaint — the same reason recordTrackedScan() calls this instead of
@@ -10162,7 +10192,7 @@ function setupRoster() {
       // writes its own mirror entry, so logging again would double the row for
       // one scan.
       addTrackedLogEntry(s.id, item.name, {ts:entry.ts, value:entry.value, about:gbDateKeyForTs(entry.ts)});
-      flash(true, s.name, item.name, String(entry.value));
+      flash(true, s.name, item.name, String(entry.value), "tracked");
       beep(true);
     }
     save();
@@ -10255,7 +10285,7 @@ function setupRoster() {
     var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly, mcId:mcId||undefined});
     save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
-    flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
+    flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""), delta>=0?"positive":"negative");
     beep(delta>=0);
     renderRecent();
     renderScanBoard();
@@ -10415,7 +10445,7 @@ function setupRoster() {
     // "why" against.
     addTrackedLogEntry(s.id, (act && act.name) || "❄️ Freeze", {value:fmtFreezeDuration(seconds), about:todayKey()});
     save();
-    flash("ice", s.name, "❄️ "+fmtFreezeDuration(seconds), "now "+fmtFreezeTime(freezeRemainingMs(s.id))+" frozen");
+    flash("ice", s.name, "❄️ "+fmtFreezeDuration(seconds), "now "+fmtFreezeTime(freezeRemainingMs(s.id))+" frozen", "negative");
     beep(true);
     refreshFreezeTile(s.id, true);
     renderFreezeAllBtn();
@@ -10515,7 +10545,7 @@ function setupRoster() {
     ids.forEach(function(sid){ refreshFreezeTile(sid, false); });
     renderFreezeAllBtn();
     flash("ice", running?"❄️ All freezes paused":"▶ All freezes resumed", String(n),
-          n+" student"+(n===1?"":"s")+(running?" — nobody's time is ticking down":" — counting down again"));
+          n+" student"+(n===1?"":"s")+(running?" — nobody's time is ticking down":" — counting down again"), "negative");
     beep(true);
   }
   // Walks every active freeze once a second, updating badges live and — on
@@ -10641,7 +10671,7 @@ function setupRoster() {
     if(!opts.deferSave) save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
     if(!quiet){
-      flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
+      flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""), delta>=0?"positive":"negative");
       beep(delta>=0);
       renderRecent(); renderScanBoard(); refreshLiveViews();
     }
@@ -10720,7 +10750,7 @@ function setupRoster() {
     flash(delta>=0, "Whole class", fmtDeltaBare(delta),
           armed.label+" · "+done+" student"+(done===1?"":"s")
           +(absent.length && targets.length!==list.length ? "  ("+absent.length+" absent skipped)" : "")
-          +(frozen ? "  ("+frozen+" ❄️ frozen skipped)" : ""));
+          +(frozen ? "  ("+frozen+" ❄️ frozen skipped)" : ""), delta>=0?"positive":"negative");
     beep(delta>=0);
   }
   // 6-7 celebration (optional — data.sixSeven, Settings tab). Checked after any
@@ -10787,7 +10817,7 @@ function setupRoster() {
           beep(false); return;
         }
         markHwCheckedToday(ps.id);
-        flash(true, ps.name, "HW Checked", "Homework marked checked (today)");
+        flash(true, ps.name, "HW Checked", "Homework marked checked (today)", "tracked");
         beep(true);
         return;
       }
@@ -10803,7 +10833,7 @@ function setupRoster() {
           flash(false, ps.name, "Already used their pass", "this week — give it back on Run → Passes if that's wrong");
           beep(false);
         } else {
-          flash(true, ps.name, "Pass used", "that's their one for this week");
+          flash(true, ps.name, "Pass used", "that's their one for this week", "tracked");
           beep(true);
         }
         if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
@@ -18801,7 +18831,7 @@ nameLine
         // Returns false when nothing changed, in which case there is nothing to
         // re-render and nothing to say.
         if(setAttendance(sid, st, dateKey)){
-          flash(st!=="absent", s.name, ATT_LABEL[st]||st, gbDateLabel(dateKey)+" — corrected from the Gradebook");
+          flash(st!=="absent", s.name, ATT_LABEL[st]||st, gbDateLabel(dateKey)+" — corrected from the Gradebook", "tracked");
           if($("view-attendance") && $("view-attendance").classList.contains("active")){
             if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
           }
@@ -22619,6 +22649,13 @@ nameLine
     // end, never something a rebbi chose, so there is nothing to preserve.
     // Reads data.seating and writes nothing to it.
     if(typeof data.seatListFallback!=="boolean") data.seatListFallback=true;
+    // Which kinds of scan/tap outcome the floating confirmation banner shows.
+    // Three independent additive booleans, all default ON — the banner shows
+    // exactly what it always has until a rebbi turns one off. The beep is a
+    // separate call at every flash() site, so muting a band never mutes sound.
+    if(typeof data.bannerPositive!=="boolean") data.bannerPositive=true;
+    if(typeof data.bannerNegative!=="boolean") data.bannerNegative=true;
+    if(typeof data.bannerTracked!=="boolean") data.bannerTracked=true;
     // Whether the full-screen seating chart was open when the rebbi left —
     // reopened at boot so his scanning surface survives a reload. Additive
     // boolean, defaults OFF: existing saves keep starting at the Dashboard
