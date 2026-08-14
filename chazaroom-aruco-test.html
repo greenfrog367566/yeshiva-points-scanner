@@ -1306,6 +1306,9 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     --ink:#1b2440; --paper:#eceef3; --card:#ffffff; --line:#d8dbe4; --muted:#6a7187;
     --brass:#a8772a; --gold:#e8b321;
     --good:#1f8a5b; --good-soft:#e3f3ea; --bad:#b04432; --bad-soft:#f6e6e2;
+    /* same A/B/C/D hues as chazaroom.html's board, so a printed wand face
+       matches its answer color on the projector */
+    --a:#2b6ca3; --b:#1f8a5b; --c:#a8772a; --d:#8a3fb0;
     --shadow:0 1px 2px rgba(27,36,64,.06),0 8px 24px rgba(27,36,64,.07);
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
@@ -1365,6 +1368,8 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   table.results tr:last-child td{border-bottom:none}
   table.results td.id{font-weight:800;color:var(--ink)}
   table.results .empty td{color:var(--muted);font-style:italic;font-family:var(--sans);text-align:center}
+  .face-chip{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;color:#fff;font-weight:800;font-size:.82rem}
+  .face-chip.A{background:var(--a)} .face-chip.B{background:var(--b)} .face-chip.C{background:var(--c)} .face-chip.D{background:var(--d)}
 
   /* ---- label sheet (screen preview) ---- */
   #labelSheet{display:flex;flex-direction:column;align-items:center;gap:24px}
@@ -1390,7 +1395,9 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   .lbl-marker{width:1.15in;height:1.15in;margin:.03in 0}
   .lbl-marker svg{width:100%;height:100%;display:block}
   .lbl-marker .missing{width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:.09in;color:var(--bad);border:1px solid var(--bad)}
-  .lbl-name{font-weight:800;font-size:.19in;line-height:1;margin-top:.02in}
+  .lbl-name{font-weight:800;font-size:.19in;line-height:1;margin-top:.02in;display:flex;align-items:center;gap:.06in}
+  .lbl-face{display:inline-flex;align-items:center;justify-content:center;width:.24in;height:.24in;border-radius:.05in;color:#fff;font-size:.15in;font-weight:800}
+  .lbl-face.A{background:var(--a)} .lbl-face.B{background:var(--b)} .lbl-face.C{background:var(--c)} .lbl-face.D{background:var(--d)}
 
   @page{ size:8.5in 11in; margin:0; }
   @media print{
@@ -1431,8 +1438,8 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         <label class="f">Number of wands
           <input type="number" id="wandCount" value="30" min="1" max="200" step="1">
         </label>
-        <label class="f">Starting ArUco ID
-          <input type="number" id="startId" value="0" min="0" max="999" step="1">
+        <label class="f">Starting wand #
+          <input type="number" id="startWand" value="1" min="1" max="200" step="1">
         </label>
         <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:1px">
           <button class="btn" id="genBtn">Generate</button>
@@ -1448,8 +1455,11 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         template, which is actually 12-per-sheet round labels — that name doesn't apply here).
         Print at <strong>100% / actual size</strong> ("Fit to page" will throw off the alignment) with
         <strong>margins set to "None"</strong> in the print dialog. The dashed cell outlines
-        are a screen-only alignment guide and do not print. Each marker's ID is the wand's
-        identifier — the same number the Live Scanner tab reports back.
+        are a screen-only alignment guide and do not print. <strong>Each wand is a 4-sided foam
+        cube on a wooden dowel</strong> — one label per face, glued so the printed TOP arrow points
+        the same physical direction on all four faces. Twisting the cube to show a different face
+        to the camera is how a student changes their answer; the Live Scanner tab decodes which
+        wand and which lettered face is currently visible.
       </div>
     </div>
 
@@ -1496,8 +1506,8 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         your marker density, at the cost of range on small/distant markers.
       </p>
       <div class="row" style="margin-top:10px">
-        <label class="f">Active roster size
-          <input type="number" id="rosterSize" value="30" min="1" max="1000" step="1">
+        <label class="f">Active roster size (wands)
+          <input type="number" id="rosterSize" value="30" min="1" max="249" step="1">
         </label>
         <label class="f">Confirm after N frames
           <input type="number" id="confirmFrames" value="3" min="1" max="10" step="1">
@@ -1513,11 +1523,13 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       </div>
       <p class="hint">
         Three false-positive filters, applied in this order before a marker can reach the results
-        panel: <strong>roster whitelist</strong> (IDs at or above the roster size are dropped
-        outright — a stray read off a random barcode or book cover almost never lands inside a
-        small roster range), <strong>N-frame confirmation</strong> (a new ID must appear in N
-        consecutive detection passes, with no gap, before it counts — filters one-off transient
-        misreads from motion blur or partial views), and an optional <strong>center-zone ROI</strong>
+        panel: <strong>roster whitelist</strong> (a detected ID's wand number — <code>floor(id/4)</code>
+        — must be below the roster size, and any ID at or above the reserved room-calibration range
+        is dropped outright regardless of roster size — a stray read off a random barcode or book
+        cover almost never lands inside that combined range), <strong>N-frame confirmation</strong>
+        (a new ID must appear in N consecutive detection passes, with no gap, before it counts —
+        filters one-off transient misreads from motion blur or partial views, and from the moment a
+        cube is mid-twist between two faces), and an optional <strong>center-zone ROI</strong>
         (ignore anything whose marker center falls outside the dashed box, for setups where only a
         defined "voting zone" should count). On the overlay, markers still building their streak are
         drawn amber/dashed; confirmed ones are green.
@@ -1551,7 +1563,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         <button class="btn sec" id="clearResults" style="margin-left:auto">Clear</button>
       </div>
       <table class="results" style="margin-top:10px">
-        <thead><tr><th>Wand ID</th><th>Times seen</th><th>Last seen</th></tr></thead>
+        <thead><tr><th>Wand #</th><th>Answer</th><th>Since</th></tr></thead>
         <tbody id="resultsBody"><tr class="empty"><td colspan="3">Nothing detected yet.</td></tr></tbody>
       </table>
     </div>
@@ -1599,6 +1611,23 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     $("labelWarn").innerHTML = msg;
   }
 
+  /* ================= wand <-> face ID mapping =================
+     Each physical wand is a 4-sided foam cube: one ArUco ID per face, so
+     rotating the cube to face the camera IS the answer selection. Face IDs
+     are a fixed block of 4 per wand (wandIndex*4 + faceIdx), not scattered —
+     that keeps the label generator and the scanner's decoder trivially in
+     sync with no lookup table to keep in agreement.
+     WAND_FACE_CEILING reserves the top two dictionary IDs (998, 999 at the
+     current 0-999 dictionary) so they can never be allocated to a wand face —
+     held for Part 1's future Room Calibration corner markers, which are not
+     implemented in this sandbox yet, but must never collide with a wand. */
+  var FACES = ["A","B","C","D"];
+  var WAND_FACE_CEILING = maxMarkerId - 2;
+  function faceIdOf(wandIndex,faceIdx){ return wandIndex*4+faceIdx; }
+  function wandIndexOf(id){ return Math.floor(id/4); }
+  function faceLetterOf(id){ return FACES[id%4]; }
+  function maxWandsAvailable(){ return Math.floor((WAND_FACE_CEILING+1)/4); }
+
   function markerMarkup(id){
     if(!arucoReady) return '<div class="missing">library<br>not loaded</div>';
     if(id<0 || id>maxMarkerId) return '<div class="missing">ID '+id+'<br>out of range<br>(0&ndash;'+maxMarkerId+')</div>';
@@ -1615,38 +1644,48 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     var sheet=$("labelSheet");
     sheet.innerHTML="";
 
+    var maxWands = arucoReady ? maxWandsAvailable() : 200;
+
     var count=parseInt($("wandCount").value,10);
     if(!isFinite(count)||count<1) count=1;
-    count=clamp(count,1,200);
+    count=clamp(count,1,maxWands);
 
-    var startId=parseInt($("startId").value,10);
-    if(!isFinite(startId)||startId<0) startId=0;
-    startId=clamp(startId,0,maxMarkerId);
+    var startWand=parseInt($("startWand").value,10);
+    if(!isFinite(startWand)||startWand<1) startWand=1;
+    startWand=clamp(startWand,1,maxWands);
+    var startWandIdx=startWand-1;
 
     var warn="";
-    if(startId+count-1 > maxMarkerId){
-      var allowed = maxMarkerId-startId+1;
-      warn='<div class="bad-box">Starting ID '+startId+' + '+count+' wands would need IDs up to '+
-        (startId+count-1)+', but the '+DICT_NAME+' dictionary only defines 0&ndash;'+maxMarkerId+
-        '. Generating only '+allowed+' label(s); lower the starting ID or the count to get all '+count+'.</div>';
-      count = Math.max(0, allowed);
+    if(startWandIdx+count > maxWands){
+      var allowed=maxWands-startWandIdx;
+      warn='<div class="bad-box">Starting wand #'+startWand+' + '+count+' wands would need wand slots up to #'+
+        (startWandIdx+count)+', but only '+maxWands+' wands fit in the '+DICT_NAME+' dictionary once IDs '+
+        (WAND_FACE_CEILING+1)+'&ndash;'+maxMarkerId+' are held back for room-calibration corner markers. '+
+        'Generating only '+allowed+' wand(s); lower the starting wand # or the count to get all '+count+'.</div>';
+      count=Math.max(0,allowed);
     }
     $("labelWarn").innerHTML = arucoReady ? warn : $("labelWarn").innerHTML;
 
+    var totalLabels=count*4;
     var perPage=20;
-    var pages=Math.max(1,Math.ceil(count/perPage));
+    var pages=Math.max(1,Math.ceil(totalLabels/perPage));
 
     for(var p=0;p<pages;p++){
       var page=el("div","sheet-page");
       var grid=el("div","label-grid");
       for(var i=0;i<perPage;i++){
         var idx=p*perPage+i;
-        var cell=el("div","label-cell"+(idx>=count?" empty":""));
-        if(idx<count){
-          var arucoId=startId+idx;
+        var cell=el("div","label-cell"+(idx>=totalLabels?" empty":""));
+        if(idx<totalLabels){
+          var wandIdx=startWandIdx+Math.floor(idx/4);
+          var faceIdx=idx%4;
+          var letter=FACES[faceIdx];
+          var arucoId=faceIdOf(wandIdx,faceIdx);
           var top=el("div","lbl-top"); top.innerHTML="&#9650; TOP";
           var marker=el("div","lbl-marker"); marker.innerHTML=markerMarkup(arucoId);
-          var name=el("div","lbl-name","WAND #"+arucoId);
+          var name=el("div","lbl-name");
+          name.appendChild(document.createTextNode("WAND #"+(wandIdx+1)+" "));
+          name.appendChild(el("span","lbl-face "+letter,letter));
           cell.appendChild(top);
           cell.appendChild(marker);
           cell.appendChild(name);
@@ -1658,8 +1697,10 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     }
 
     $("labelInfo").textContent = arucoReady ?
-      count+" label(s) across "+pages+" sheet(s) of up to 20. ArUco IDs "+startId+"–"+(startId+Math.max(0,count-1))+
-      " (dictionary "+DICT_NAME+", valid range 0–"+maxMarkerId+")." :
+      count+" wand(s), "+totalLabels+" label(s) (4 faces each) across "+pages+" sheet(s) of up to 20. Wands #"+
+      startWand+"–"+(startWand+Math.max(0,count-1))+", ArUco IDs "+
+      (count?faceIdOf(startWandIdx,0)+"–"+faceIdOf(startWandIdx+count-1,3):"–")+
+      " (dictionary "+DICT_NAME+"; "+(WAND_FACE_CEILING+1)+"–"+maxMarkerId+" reserved for room calibration)." :
       "Library not loaded — cannot generate real markers yet.";
   }
 
@@ -1871,7 +1912,8 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
 
   function passesStaticFilters(m,roi){
     var rosterSize=clamp(parseInt($("rosterSize").value,10)||30, 1, 1000);
-    if(m.id<0 || m.id>=rosterSize) return false;                    /* 1. roster whitelist */
+    if(m.id<0 || m.id>WAND_FACE_CEILING) return false;               /* never a valid wand face — reserved range */
+    if(wandIndexOf(m.id)>=rosterSize) return false;                  /* 1. roster whitelist */
     if(roi){
       var c=centroidOf(m);
       if(c.x<roi.x0 || c.x>roi.x1 || c.y<roi.y0 || c.y>roi.y1) return false;   /* 3. center-zone ROI */
@@ -1926,7 +1968,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       octx.restore();
       var cx=pts.reduce(function(s,p){return s+p.x;},0)/pts.length;
       var cy=pts.reduce(function(s,p){return s+p.y;},0)/pts.length;
-      var label=String(m.id);
+      var label="#"+(wandIndexOf(m.id)+1)+" "+faceLetterOf(m.id);
       var tw=octx.measureText(label).width;
       octx.fillStyle="rgba(27,36,64,.78)";
       octx.fillRect(cx-tw/2-5, cy-11, tw+10, 22);
@@ -1935,23 +1977,29 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     });
   }
 
-  /* ---------- results panel: rolling / manual-lock / auto-lock ---------- */
-  var seenMap={};        /* id -> {count, last} */
+  /* ---------- results panel: rolling / manual-lock / auto-lock ----------
+     One row per WAND, not per raw marker ID — a cube shows exactly one face
+     at a time, so seeing 12A then 12B means the student changed their answer
+     from A to B, not two separate wands to track. wandState always keeps
+     updating in the background (even while auto-lock or a manual lock has
+     the visible panel frozen), so whichever view you switch back to reflects
+     the true current state rather than whatever was true when you left it. */
+  var wandState={};      /* wandIndex -> {letter, since} */
   var locked=false;      /* manual "Capture / Lock" freeze */
-  var lastMarkers=[];
+  var lastConfirmed=[];
 
   function feedResults(markers){
-    lastMarkers=markers;
+    lastConfirmed=markers;
+    var now=Date.now();
+    markers.forEach(function(m){
+      var wi=wandIndexOf(m.id), letter=faceLetterOf(m.id);
+      var prev=wandState[wi];
+      if(!prev || prev.letter!==letter) wandState[wi]={letter:letter,since:now};
+    });
     var autoLock=$("autoLock").checked;
     if(autoLock){
       renderSnapshot(markers);
     } else if(!locked){
-      var now=Date.now();
-      markers.forEach(function(m){
-        if(!seenMap[m.id]) seenMap[m.id]={count:0,last:0};
-        seenMap[m.id].count++;
-        seenMap[m.id].last=now;
-      });
       renderRolling();
     }
     /* manual-locked and auto-lock off: panel stays frozen, nothing to do */
@@ -1965,15 +2013,16 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   }
 
   function renderRolling(){
-    $("modeLabel").textContent="— live, accumulating (last-seen resets per ID, not per pass)";
-    var ids=Object.keys(seenMap).map(Number).sort(function(a,b){return a-b;});
-    renderRows(ids.map(function(id){ return {id:id,count:seenMap[id].count,last:agoText(seenMap[id].last)}; }));
+    $("modeLabel").textContent="— live, each wand shows its most recently confirmed face";
+    var wis=Object.keys(wandState).map(Number).sort(function(a,b){return a-b;});
+    renderRows(wis.map(function(wi){ return {wand:wi+1,letter:wandState[wi].letter,last:agoText(wandState[wi].since)}; }));
   }
 
   function renderSnapshot(markers){
     $("modeLabel").textContent="— auto-locked to the current frame only";
-    var ids=markers.map(function(m){return m.id;}).sort(function(a,b){return a-b;});
-    renderRows(ids.map(function(id){ return {id:id,count:1,last:"this frame"}; }));
+    var rows=markers.map(function(m){ return {wand:wandIndexOf(m.id)+1,letter:faceLetterOf(m.id)}; })
+      .sort(function(a,b){return a.wand-b.wand;});
+    renderRows(rows.map(function(r){ return {wand:r.wand,letter:r.letter,last:"this frame"}; }));
   }
 
   function renderRows(rows){
@@ -1985,10 +2034,11 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     }
     rows.forEach(function(r){
       var tr=el("tr");
-      var idTd=el("td","id","#"+r.id);
-      var cntTd=el("td",null,String(r.count));
+      var idTd=el("td","id","#"+r.wand);
+      var ansTd=el("td");
+      ansTd.appendChild(el("span","face-chip "+r.letter,r.letter));
       var lastTd=el("td",null,r.last);
-      tr.appendChild(idTd); tr.appendChild(cntTd); tr.appendChild(lastTd);
+      tr.appendChild(idTd); tr.appendChild(ansTd); tr.appendChild(lastTd);
       body.appendChild(tr);
     });
   }
@@ -1997,9 +2047,13 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     locked=true;
     $("autoLock").checked=false;
     $("resumeBtn").disabled=false;
-    $("modeLabel").textContent="— locked to the frame at capture time";
-    var ids=lastMarkers.map(function(m){return m.id;}).sort(function(a,b){return a-b;});
-    renderRows(ids.map(function(id){ return {id:id,count:1,last:"captured"}; }));
+    $("modeLabel").textContent="— locked: each wand's most recently confirmed answer at capture time";
+    /* Snapshots wandState (accumulated so far), not just this instant's raw
+       pass — a wand held slightly off-angle in the exact locked frame still
+       keeps the answer it last confirmed, matching "lock in current answers"
+       rather than "only count what's visible this millisecond". */
+    var wis=Object.keys(wandState).map(Number).sort(function(a,b){return a-b;});
+    renderRows(wis.map(function(wi){ return {wand:wi+1,letter:wandState[wi].letter,last:"captured"}; }));
   });
   $("resumeBtn").addEventListener("click",function(){
     locked=false;
@@ -2011,7 +2065,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     else renderRolling();
   });
   $("clearResults").addEventListener("click",function(){
-    seenMap={}; maxSeenOnce=0; pendingStreak={};
+    wandState={}; maxSeenOnce=0; pendingStreak={};
     $("sMax").textContent="–";
     renderRolling();
   });
