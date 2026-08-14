@@ -1495,6 +1495,33 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         the detector (never upsamples); lower it if the passes/sec stat below is too low for
         your marker density, at the cost of range on small/distant markers.
       </p>
+      <div class="row" style="margin-top:10px">
+        <label class="f">Active roster size
+          <input type="number" id="rosterSize" value="30" min="1" max="1000" step="1">
+        </label>
+        <label class="f">Confirm after N frames
+          <input type="number" id="confirmFrames" value="3" min="1" max="10" step="1">
+        </label>
+        <label class="f" style="align-self:flex-end;padding-bottom:6px">
+          <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.9rem;color:var(--ink)">
+            <input type="checkbox" id="roiEnabled"> Restrict to center zone
+          </span>
+        </label>
+        <label class="f">Center zone size (%)
+          <input type="number" id="roiPct" value="70" min="10" max="100" step="5">
+        </label>
+      </div>
+      <p class="hint">
+        Three false-positive filters, applied in this order before a marker can reach the results
+        panel: <strong>roster whitelist</strong> (IDs at or above the roster size are dropped
+        outright — a stray read off a random barcode or book cover almost never lands inside a
+        small roster range), <strong>N-frame confirmation</strong> (a new ID must appear in N
+        consecutive detection passes, with no gap, before it counts — filters one-off transient
+        misreads from motion blur or partial views), and an optional <strong>center-zone ROI</strong>
+        (ignore anything whose marker center falls outside the dashed box, for setups where only a
+        defined "voting zone" should count). On the overlay, markers still building their streak are
+        drawn amber/dashed; confirmed ones are green.
+      </p>
     </div>
 
     <div class="card">
@@ -1755,6 +1782,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         }
         running=true;
         passTimes=[];
+        pendingStreak={};
         rafHandle=requestAnimationFrame(loop);
       }).catch(function(e){
         startBtn.disabled=false;
@@ -1764,6 +1792,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
 
   stopBtn.addEventListener("click",function(){
     running=false;
+    pendingStreak={};
     if(rafHandle) cancelAnimationFrame(rafHandle);
     stopStream();
     startBtn.disabled=false;
@@ -1796,42 +1825,105 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     var imageData;
     try{ imageData=wctx.getImageData(0,0,w,h); }catch(e){ return; }
 
-    var markers=[];
+    var raw=[];
     if(detector){
-      try{ markers=detector.detect(imageData); }catch(e){ /* keep the loop alive */ }
+      try{ raw=detector.detect(imageData); }catch(e){ /* keep the loop alive */ }
     }
     var dt=performance.now()-t0;
+
+    var roi=roiBoxFor(w,h);
+    var candidates=raw.filter(function(m){ return passesStaticFilters(m,roi); });
+    var confirmed=applyConfirmation(candidates);
 
     passTimes.push(performance.now());
     var cutoff=performance.now()-1000;
     while(passTimes.length && passTimes[0]<cutoff) passTimes.shift();
 
-    maxSeenOnce=Math.max(maxSeenOnce, markers.length);
+    maxSeenOnce=Math.max(maxSeenOnce, confirmed.length);
     $("sFps").textContent=String(passTimes.length);
-    $("sNow").textContent=String(markers.length);
+    $("sNow").textContent=String(confirmed.length);
     $("sMax").textContent=String(maxSeenOnce);
     $("sMs").textContent=Math.round(dt)+" ms";
 
-    drawOverlay(markers,w,h);
-    feedResults(markers);
+    drawOverlay(candidates,w,h,roi);
+    feedResults(confirmed);
   }
 
-  function drawOverlay(markers,w,h){
+  /* ---------- false-positive filters ----------
+     Order matters: roster + ROI are cheap structural rejects (wrong ID range,
+     wrong part of frame) applied before the per-ID confirmation streak ever
+     sees the marker, so a background object outside the roster/zone never
+     occupies a confirmation slot in the first place. */
+  function roiBoxFor(w,h){
+    if(!$("roiEnabled").checked) return null;
+    var pct=clamp(parseInt($("roiPct").value,10)||70, 10, 100)/100;
+    var bw=w*pct, bh=h*pct;
+    return {x0:(w-bw)/2, y0:(h-bh)/2, x1:(w+bw)/2, y1:(h+bh)/2};
+  }
+
+  function centroidOf(m){
+    var pts=m.corners;
+    return {
+      x: pts.reduce(function(s,p){return s+p.x;},0)/pts.length,
+      y: pts.reduce(function(s,p){return s+p.y;},0)/pts.length
+    };
+  }
+
+  function passesStaticFilters(m,roi){
+    var rosterSize=clamp(parseInt($("rosterSize").value,10)||30, 1, 1000);
+    if(m.id<0 || m.id>=rosterSize) return false;                    /* 1. roster whitelist */
+    if(roi){
+      var c=centroidOf(m);
+      if(c.x<roi.x0 || c.x>roi.x1 || c.y<roi.y0 || c.y>roi.y1) return false;   /* 3. center-zone ROI */
+    }
+    return true;
+  }
+
+  var pendingStreak={};   /* id -> consecutive passes seen back-to-back, post roster+ROI filter */
+  function applyConfirmation(candidates){                           /* 2. N-frame confirmation */
+    var need=clamp(parseInt($("confirmFrames").value,10)||3, 1, 10);
+    var seenThisPass={};
+    candidates.forEach(function(m){
+      seenThisPass[m.id]=true;
+      pendingStreak[m.id]=(pendingStreak[m.id]||0)+1;
+    });
+    Object.keys(pendingStreak).forEach(function(id){
+      if(!seenThisPass[id]) delete pendingStreak[id];   /* any gap resets the streak to zero */
+    });
+    return candidates.filter(function(m){ return pendingStreak[m.id]>=need; });
+  }
+
+  function drawOverlay(candidates,w,h,roi){
     sizeOverlay();
     octx.clearRect(0,0,ov.width,ov.height);
     if(!ov.width||!ov.height) return;
     var sx=ov.width/w, sy=ov.height/h;
-    octx.lineWidth=2;
-    octx.strokeStyle="#1f8a5b";
+    var need=clamp(parseInt($("confirmFrames").value,10)||3, 1, 10);
+
+    if(roi){
+      octx.save();
+      octx.setLineDash([6,5]);
+      octx.lineWidth=2;
+      octx.strokeStyle="#6a7187";
+      octx.strokeRect(roi.x0*sx, roi.y0*sy, (roi.x1-roi.x0)*sx, (roi.y1-roi.y0)*sy);
+      octx.restore();
+    }
+
     octx.font="bold 15px "+getComputedStyle(document.body).fontFamily;
     octx.textAlign="center";
     octx.textBaseline="middle";
-    markers.forEach(function(m){
+    candidates.forEach(function(m){
+      var confirmed=(pendingStreak[m.id]||0)>=need;
       var pts=m.corners.map(function(c){ return {x:c.x*sx, y:c.y*sy}; });
+      octx.save();
+      octx.lineWidth=2;
+      octx.strokeStyle=confirmed? "#1f8a5b" : "#e8b321";
+      if(!confirmed) octx.setLineDash([4,4]);
       octx.beginPath();
       pts.forEach(function(p,i){ if(i===0) octx.moveTo(p.x,p.y); else octx.lineTo(p.x,p.y); });
       octx.closePath();
       octx.stroke();
+      octx.restore();
       var cx=pts.reduce(function(s,p){return s+p.x;},0)/pts.length;
       var cy=pts.reduce(function(s,p){return s+p.y;},0)/pts.length;
       var label=String(m.id);
@@ -1919,7 +2011,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     else renderRolling();
   });
   $("clearResults").addEventListener("click",function(){
-    seenMap={}; maxSeenOnce=0;
+    seenMap={}; maxSeenOnce=0; pendingStreak={};
     $("sMax").textContent="–";
     renderRolling();
   });
