@@ -24,16 +24,46 @@
  * All usage draws from your own Gemini free-tier quota. If the free tier's
  * rate limit is hit, requests just fail gracefully — the app already falls
  * back to the manual copy/paste flow when this proxy can't be reached.
+ *
+ * CACHING: the Hebrew of a given pasuk never changes, so neither does the AI's
+ * phrase-split of it. This worker caches every successful result by an exact
+ * hash of the prompt (Cloudflare's edge Cache API — no setup, no bindings). The
+ * FIRST teacher to generate a passage pays one Gemini call; everyone after gets
+ * it back instantly and for free, so the free-tier rate limit almost never bites
+ * in normal use. Responses carry an X-Proxy-Cache: HIT/MISS header if you want to
+ * watch it work. (Edge cache is per-location, so the very first hit in each region
+ * still costs one call. If you ever want a single global cache, swap this for a KV
+ * namespace — but that needs a binding; the Cache API deliberately needs none.)
  */
 
 // Pinned to a specific stable version rather than a "-latest" alias, which
 // can silently change out from under you. Update this if/when Google
 // deprecates it — check https://ai.google.dev/gemini-api/docs/models for
 // the current stable Flash model before picking a replacement.
-const GEMINI_MODEL = "gemini-3.5-flash";
+//
+// ⚠️ FREE-TIER QUOTA depends heavily on WHICH model this is. The premium
+// "gemini-3.5-flash" (the "most-intelligent" flash model) has a tiny free tier —
+// measured 2026-08-10 at ~20 requests PER DAY, shared across every teacher on this
+// key, which made the feature nearly unusable.
+//
+// We use "gemini-3.5-flash-lite" instead: the cheaper/bigger-free-tier sibling of
+// the same generation, so it's more than enough to split Hebrew into phrases.
+// NOTE: "gemini-2.5-flash" was tried first (it predates 3.5-flash and was in fact
+// this proxy's original model) but the live API rejected it — "no longer
+// available to new users" (404) — despite the docs page still listing it, so its
+// free tier can't be tested; don't reuse it without confirming live first. If
+// teachers still hit "quota exceeded" on -lite, a PAID key removes the cap on
+// any model. Switching model is a translation-quality call — judge output
+// against your review gate. Your exact per-model limits are shown at
+// https://aistudio.google.com/rate-limit
+const GEMINI_MODEL = "gemini-3.5-flash-lite";
+
+// Bump this if the prompt format or model changes in a way that should
+// invalidate everything cached under the old scheme.
+const CACHE_VERSION = "v1";
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders() });
     }
@@ -55,6 +85,29 @@ export default {
       return json({ error: "Worker is missing the GEMINI_API_KEY secret" }, 500);
     }
 
+    // ── Cache lookup ────────────────────────────────────────────────────────
+    // The whole prompt (Hebrew + the teacher's style settings) is the key, so a
+    // different style produces a different entry — but the same request served
+    // twice never calls Gemini twice.
+    const cache = caches.default;
+    let cacheKey = null;
+    try {
+      const hash = await sha256(prompt);
+      cacheKey = new Request(
+        "https://ai-proxy-cache.internal/" + CACHE_VERSION + "/" + hash,
+        { method: "GET" }
+      );
+      const hit = await cache.match(cacheKey);
+      if (hit) {
+        const h = new Headers(hit.headers);
+        h.set("X-Proxy-Cache", "HIT");
+        return new Response(hit.body, { status: 200, headers: h });
+      }
+    } catch (e) {
+      // Cache is best-effort; on any hiccup just fall through to a live call
+      // (cacheKey stays whatever we managed to build, possibly null).
+    }
+
     const url = "https://generativelanguage.googleapis.com/v1beta/models/" +
       GEMINI_MODEL + ":generateContent?key=" + encodeURIComponent(env.GEMINI_API_KEY);
 
@@ -63,7 +116,12 @@ export default {
       geminiRes = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          // Raise the output ceiling so a fuller batch (a whole chapter of
+          // phrase-split flashcards) can't get truncated mid-CSV.
+          generationConfig: { maxOutputTokens: 8192 }
+        })
       });
     } catch (e) {
       return json({ error: "Couldn't reach Gemini: " + e.message }, 502);
@@ -82,9 +140,33 @@ export default {
       return json({ error: "Gemini returned an empty response" }, 502);
     }
 
-    return json({ text: text });
+    // ── Store in cache and return ───────────────────────────────────────────
+    // Cache-Control is required for the Cache API to keep the entry. 30 days is
+    // arbitrary-but-long; the text is fixed, so it could be far longer.
+    const resp = new Response(JSON.stringify({ text: text }), {
+      status: 200,
+      headers: Object.assign({}, corsHeaders(), {
+        "Cache-Control": "public, max-age=2592000",
+        "X-Proxy-Cache": "MISS"
+      })
+    });
+    if (cacheKey) {
+      try {
+        if (ctx && typeof ctx.waitUntil === "function") {
+          ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+        } else {
+          await cache.put(cacheKey, resp.clone());
+        }
+      } catch (e) { /* caching is best-effort; never fail the request over it */ }
+    }
+    return resp;
   }
 };
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
 
 function json(obj, status) {
   return new Response(JSON.stringify(obj), { status: status || 200, headers: corsHeaders() });
