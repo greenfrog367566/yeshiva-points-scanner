@@ -261,6 +261,8 @@ One unified quiz engine across **Chumash, Mishna, and Shorashim**, pulling from 
 
 ## 10. Check against the original philosophy docs
 
+*See also `UI_Design_Theory.md` (Aug 2026) — the external design theory and its review of this spec, with a reality-check of what shipped and the open PROPOSE-FIRST items.*
+
 Revisited the imported philosophy/ideology docs against everything above. Most core complaints are directly addressed:
 
 **Addressed:**
@@ -289,3 +291,50 @@ Worth a decision on whether any of these still matter before treating the map as
   - Review-before-commit screen planned (preview list, flag unparseable lines, confirm before touching real data).
 
 - **Full Chavrusa Mode build** — spec is complete (§6), implementation not started.
+
+---
+
+## 12. External review — adopted points (2026-08-14)
+
+An outside review of this spec (run against it blind, without the build-status
+record) approved the architecture and independently confirmed most settled
+decisions — keep exactly 5 groups, Print not a destination, "Coin Deposit"
+never "Bank", Command Bar deferred, no badge-style gamification, phased build.
+That convergence needed no action. **Five points were new, and Ben adopted
+them on 2026-08-14.** Adopted means *recorded as decisions* — each builds
+whenever its area is next touched, none is scheduled by this section:
+
+1. **Guiding sentence for all remaining UI work:** *"The redesign must reduce
+   what the teacher has to think about, not merely reorganize where existing
+   features live."* The reorg shipped; this is the yardstick for what's left
+   (first-run experience, Run density, and every future tab decision).
+
+2. **Visually group the Run tab list.** Sub-grouping within the subtab row —
+   roughly CLASS (Students, Activities, Gradebook) · CLASSROOM (Brachos,
+   Spinner, and the legacy tabs while they last) · SYSTEM (Backup & Restore,
+   Settings, Seating chart & print near CLASS) — so Backup & Restore stops
+   sitting visually beside Students. Presentation only: no data change, no
+   navHidden interaction, exact grouping to be settled at build time against
+   whatever #227 has removed by then. Composes with (does not replace) the
+   first-run starter set in `Onboarding_Starter_Tabs_Proposal.md`.
+
+3. **"Tracked Items" stays internal; the UI speaks in the rebbi's nouns.**
+   The teacher-facing surfaces say Attendance / Homework / Quiz Grade etc.,
+   and the add-flow asks "What do you want to track?" with concrete presets —
+   the abstraction shows only where configuration genuinely requires it.
+   First step when this area is next touched: audit what the Gradebook /
+   Tracked-Items config UI literally says today before renaming anything.
+
+4. **Double-scan detection is promoted** from §10's "not addressed" list into
+   the small-standalone-features bucket (NOW.md item 4). Shape as originally
+   sketched: a soft inline "scanned a moment ago — again?" nudge within ~2
+   seconds, never a blocking modal, records nothing, changes no data path.
+   Student View stays deferred, Command Bar stays parked, Class Goal / status
+   badges stay rejected — the review's ranking matched the record's.
+
+5. **The user-facing label is "Prizes", never "Ledger".** Recorded here for
+   whoever builds §5's Prizes tab: summary copy reads like "7 prizes pending",
+   not ledger/balance language. "Ledger" remains fine as the internal term.
+
+(The review's other build-now item — first-run simplicity — is the starter-tab
+seed proposal, tracked separately in `Onboarding_Starter_Tabs_Proposal.md`.)
