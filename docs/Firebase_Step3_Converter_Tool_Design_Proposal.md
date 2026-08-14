@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft proposal from an ultraplan design-panel session, pending Ben's review — same status steps 1 and 2 had before approval.
+**✅ APPROVED 2026-08-13 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s build order as step 3's design. This doc is now the reference for the converter architecture, verification harness, throwaway-account proof plan, Cloud Function wiring, and staged rollout below.
 
 ## Recommended converter-tool design
 
