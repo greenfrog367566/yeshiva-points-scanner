@@ -2409,6 +2409,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
             <label class="lbl" style="margin-bottom:6px" id="autoChapterLabel">Chapters</label>
             <div id="autoChapterChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
           </div>
+          <div id="autoVerseRow" style="display:none;margin-bottom:8px">
+            <label class="lbl" style="margin-bottom:6px" id="autoVerseLabel">Only these pesukim (optional — leave blank for the whole perek)</label>
+            <div class="toolbar">
+              <input id="autoVerseFrom" class="field" type="number" min="1" placeholder="from" style="width:88px">
+              <span class="scan-hint">to</span>
+              <input id="autoVerseTo" class="field" type="number" min="1" placeholder="to" style="width:88px">
+            </div>
+          </div>
           <div class="toolbar" style="margin-top:8px">
             <button class="btn btn-sm btn-primary" id="autoFetchBtn">⚡ Fetch &amp; generate</button>
             <span id="autoFetchStatus" class="scan-hint"></span>
@@ -16723,7 +16731,7 @@ function setupRoster() {
 "Source text: "+(kind==="mishna"?"Mishnayos":"Pesukim")+" — "+ref+".",
 "Use the accurate Hebrew WITH nikud (vowels) from a reliable open source such as Sefaria, he.wikisource.org, or Mechon-Mamre. Do not paraphrase or alter the Hebrew.",
 "",
-"Break each "+unit+" into VERY SHORT phrases — usually a single Hebrew word or a tight group of 2–3 words. Follow the Hebrew word groupings closely and make lots of small pieces; do NOT lump a whole clause onto one line.",
+"Break each "+unit+" into short, NATURAL phrases — small meaningful chunks of roughly 2–4 Hebrew words each, like a verb with its subject, a verb with its object, or a short prepositional phrase. Group words that belong together in meaning; only give a word its own line when it truly stands alone as its own clause (a lone opening verb like \"וַיֹּאמֶר\", or a name). Do NOT lump a whole "+unit+" onto one line, but do NOT chop it into a long string of single words either — when in doubt, keep a pair or small group together rather than splitting further.",
 "For each phrase, give a LITERAL, word-for-word translation that follows the Hebrew word order and matches that exact little piece — not a smoothed-out translation of the whole sentence. Use simple words a child knows (for example \"just like\" rather than \"as\").",
 "Transliterate names of people and places in their Hebrew form (Moshe, Yehoshua, Sichon, Og, Emori, Yarden) — do not anglicize them (write \"Yarden\", not \"Jordan\").",
 "Capitalize a phrase's translation only when it starts a genuinely new clause or sentence (e.g. a new \"and he …\" verb clause) or is a proper noun. Do NOT capitalize a phrase that's just continuing the same clause, like a direct object or a prepositional phrase (e.g. \"these words\", \"to Yisrael\") — those stay lowercase.",
@@ -16740,7 +16748,7 @@ nameLine
 "  • english = the literal translation of that phrase — capitalized only at a new clause/sentence or a proper noun, lowercase otherwise.",
 "Wrap any field that contains a comma in double quotes.",
 "",
-"Example of the exact format and style (note the small pieces, literal wording, and that each NEW clause is capitalized while phrases continuing the same clause stay lowercase):",
+"Example of the exact format and style (note the natural, meaningful-sized pieces — not single words except where a word is its own clause — the literal wording, and that each NEW clause is capitalized while phrases continuing the same clause stay lowercase):",
 "num,full,hebrew,english",
 '1,"וַיֵּלֶךְ מֹשֶׁה וַיְדַבֵּר אֶת־הַדְּבָרִים הָאֵלֶּה אֶל־כׇּל־יִשְׂרָאֵל","וַיֵּלֶךְ מֹשֶׁה","And Moshe went"',
 '1,,"וַיְדַבֵּר","And he spoke"',
@@ -16888,29 +16896,53 @@ nameLine
     var lbl=$("autoChapterLabel");
     if(!chips||!row) return;
     chips.innerHTML=""; row.style.display="none";
+    // Reset the optional verse range whenever the chapter list is rebuilt
+    var vRow=$("autoVerseRow");
+    if(vRow){ vRow.style.display="none"; if($("autoVerseFrom"))$("autoVerseFrom").value=""; if($("autoVerseTo"))$("autoVerseTo").value=""; }
+    var vLbl=$("autoVerseLabel");
     var items=[], seferRef="";
     if(kind==="pasuk"){
       var pSel=$("autoParshaSel"); if(!pSel||!pSel.value) return;
       var p=PARSHA_DATA[parseInt(pSel.value,10)]; if(!p) return;
       items=p.chapters; seferRef=p.ref;
       lbl.textContent="Chapters";
+      if(vLbl) vLbl.textContent="Only these pesukim (optional — leave blank for the whole perek)";
     } else {
       var mSel=$("autoMesechtaSel"); if(!mSel||!mSel.value) return;
       var count=MISHNA_PERAKIM[mSel.value]||1;
       for(var i=1;i<=count;i++) items.push(i);
       seferRef=mSel.value;
       lbl.textContent="Perakim";
+      if(vLbl) vLbl.textContent="Only these mishnayos (optional — leave blank for the whole perek)";
     }
     $("autoSefer").value=seferRef;
     row.style.display="";
     // Track selected chapters/perakim in a closure array
     var selected=[];
     function syncHidden(){
-      if(!selected.length){ $("autoPerek").value=""; $("autoFrom").value=""; $("autoTo").value=""; return; }
+      var vr=$("autoVerseRow");
+      if(!selected.length){
+        $("autoPerek").value=""; $("autoFrom").value=""; $("autoTo").value="";
+        if(vr) vr.style.display="none";
+        return;
+      }
       var sorted=selected.slice().sort(function(a,b){return a-b;});
-      $("autoPerek").value=sorted[0];
+      // autoPerek holds the full comma-separated list of selected chapters/perakim
+      // (e.g. "6,7"). Each selected chapter is fetched in FULL — the chip numbers
+      // are chapters, never verse numbers. from/to kept only for the low/high hint.
+      $("autoPerek").value=sorted.join(",");
       $("autoFrom").value=sorted[0];
       $("autoTo").value=sorted[sorted.length-1];
+      // The "only these pesukim" range only makes sense for a single chapter —
+      // across several chapters we fetch each in full (one set per chapter).
+      if(vr){
+        if(sorted.length===1){ vr.style.display=""; }
+        else {
+          vr.style.display="none";
+          if($("autoVerseFrom")) $("autoVerseFrom").value="";
+          if($("autoVerseTo")) $("autoVerseTo").value="";
+        }
+      }
     }
     items.forEach(function(val){
       var chip=el("button","btn btn-sm");
@@ -16936,6 +16968,8 @@ nameLine
     // Clear chips when switching kinds
     var chips=$("autoChapterChips"); if(chips) chips.innerHTML="";
     var row=$("autoChapterRow"); if(row) row.style.display="none";
+    var vRow=$("autoVerseRow");
+    if(vRow){ vRow.style.display="none"; if($("autoVerseFrom"))$("autoVerseFrom").value=""; if($("autoVerseTo"))$("autoVerseTo").value=""; }
   }
   $("autoKind").addEventListener("change", onAutoKindChange);
   $("autoParshaSel").addEventListener("change", renderAutoChapterChips);
@@ -16980,7 +17014,7 @@ nameLine
     verses.forEach(function(v){ lines.push(v.num+". "+v.he); });
     lines=lines.concat([
 "",
-"Break each "+unit+" into VERY SHORT phrases — usually a single Hebrew word or a tight group of 2–3 words. Follow the Hebrew word groupings closely and make lots of small pieces; do NOT lump a whole clause onto one line.",
+"Break each "+unit+" into short, NATURAL phrases — small meaningful chunks of roughly 2–4 Hebrew words each, like a verb with its subject, a verb with its object, or a short prepositional phrase. Group words that belong together in meaning; only give a word its own line when it truly stands alone as its own clause (a lone opening verb like \"וַיֹּאמֶר\", or a name). Do NOT lump a whole "+unit+" onto one line, but do NOT chop it into a long string of single words either — when in doubt, keep a pair or small group together rather than splitting further.",
 "For each phrase, give a LITERAL, word-for-word translation that follows the Hebrew word order and matches that exact little piece — not a smoothed-out translation of the whole sentence. Use simple words a child knows (for example \"just like\" rather than \"as\").",
 "Transliterate names of people and places in their Hebrew form (Moshe, Yehoshua, Sichon, Og, Emori, Yarden) — do not anglicize them (write \"Yarden\", not \"Jordan\").",
 "Capitalize a phrase's translation only when it starts a genuinely new clause or sentence (e.g. a new \"and he …\" verb clause) or is a proper noun. Do NOT capitalize a phrase that's just continuing the same clause, like a direct object or a prepositional phrase (e.g. \"these words\", \"to Yisrael\") — those stay lowercase.",
@@ -17035,29 +17069,77 @@ nameLine
     return json.text;
   }
 
+  // Run an already-fetched list of verses through the AI proxy in batches so a
+  // long stretch can't blow the proxy's timeout. Returns the combined CSV, header
+  // kept once. Throws if the proxy can't be reached so the caller can fall back.
+  // `onStatus(part,total)` fires before each batch for progress messages.
+  //
+  // The batch is 20 pesukim, not a handful: Gemini's context easily holds a whole
+  // chapter, so the old small batches only multiplied the number of proxy calls —
+  // which is exactly what trips the free tier's per-minute rate limit. Fewer,
+  // fuller calls means most chapters go in one or two requests. (The worker also
+  // caches by passage, so a passage anyone has generated before costs zero calls.)
+  async function generateFromVerses(verses, kind, hebrewOnly, refLabel, onStatus){
+    var BATCH=20, batches=[], parts=[];
+    for(var i=0;i<verses.length;i+=BATCH) batches.push(verses.slice(i,i+BATCH));
+    // A whole chapter (× several chapters) fires many proxy calls in a row, and the
+    // Gemini free tier can rate-limit a later one. Give each batch a single retry
+    // after a short pause so one transient hiccup doesn't drop the lot, and space
+    // successful calls slightly to stay under the limit.
+    function pause(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+    async function askOnce(prompt){
+      try{ return await callAiProxy(prompt); }
+      catch(e){ await pause(2500); return await callAiProxy(prompt); }
+    }
+    for(var b=0;b<batches.length;b++){
+      if(onStatus) onStatus(b+1, batches.length);
+      if(b>0) await pause(600);
+      var bl=refLabel+(batches.length>1?" ("+(b+1)+"/"+batches.length+")":"");
+      var bp=hebrewOnly ? buildHebrewOnlyPrompt(kind, bl, batches[b]) : buildAutoImportPrompt(kind, bl, batches[b]);
+      var bcsv=stripCodeFence(await askOnce(bp));
+      if(b>0){
+        // Drop the repeated header row from every batch after the first
+        var lines=bcsv.split("\n");
+        var hi=lines.findIndex(function(l){return /^num[,\t]/i.test(l.trim());});
+        if(hi>=0) lines.splice(hi,1);
+        bcsv=lines.join("\n");
+      }
+      parts.push(bcsv.trim());
+    }
+    return parts.join("\n");
+  }
+  // Thin wrapper: fetch one WHOLE chapter/perek, then generate. Used for the
+  // multi-chapter path where every selected chapter is taken in full.
+  async function generateChapterCSV(seferRef, chapter, kind, hebrewOnly, refLabel, onStatus){
+    var verses=await fetchSefariaVerses(seferRef, chapter, 1, 999);
+    return generateFromVerses(verses, kind, hebrewOnly, refLabel, onStatus);
+  }
+
   $("autoFetchBtn").addEventListener("click", async function(){
     var statusEl=$("autoFetchStatus"), btn=this;
     var kind=$("autoKind").value;
     // autoSefer is now a hidden input set by the chip picker
     var seferRef=$("autoSefer").value;
-    var perek=parseInt($("autoPerek").value,10);
-    var from=parseInt($("autoFrom").value,10);
-    var to=parseInt($("autoTo").value,10); if(isNaN(to)) to=from;
+    // autoPerek holds the comma-separated list of selected chapters/perakim.
+    // Each is a CHAPTER number (never a verse) and is fetched in FULL.
+    var chapters=($("autoPerek").value||"").split(",")
+      .map(function(s){return parseInt(s,10);})
+      .filter(function(n){return !isNaN(n);})
+      .sort(function(a,b){return a-b;});
 
     // Give a clear message if no selection has been made yet
     if(!seferRef){
       var pickEl=kind==="pasuk" ? $("autoParshaSel") : $("autoMesechtaSel");
-      statusEl.textContent="Please select a "+(kind==="mishna"?"mesechta":"parsha")+" and then tap at least one "+(kind==="mishna"?"perek":"chapter")+"."; 
+      statusEl.textContent="Please select a "+(kind==="mishna"?"mesechta":"parsha")+" and then tap at least one "+(kind==="mishna"?"perek":"chapter")+".";
       if(pickEl) pickEl.focus();
       return;
     }
-    if(isNaN(perek) || isNaN(from)){
+    if(!chapters.length){
       statusEl.textContent="Tap at least one "+(kind==="mishna"?"perek":"chapter")+" to continue.";
       return;
     }
-    if(to<from) to=from;
 
-    // Build a readable label from the selected Parsha/Mesechta + chapter
+    // Build a readable label from the selected Parsha/Mesechta
     var seferLabel="";
     if(kind==="pasuk"){
       var pSel=$("autoParshaSel");
@@ -17066,12 +17148,11 @@ nameLine
       var mSel=$("autoMesechtaSel");
       seferLabel=mSel && mSel.selectedOptions[0] ? mSel.selectedOptions[0].textContent : seferRef;
     }
-    var refLabel=seferLabel+" "+perek+":"+(from===to?from:from+"-"+to);
+    var unitWord=kind==="mishna"?"Perek":"Ch.";
+    var hebrewOnly=$("autoHebrewOnly") && $("autoHebrewOnly").checked;
+    function chapterRefLabel(ch){ return seferLabel+" "+unitWord+" "+ch; }
 
     btn.disabled=true;
-    $("setKind").value=kind;
-    $("setRef").value=refLabel;
-    if(!$("setLabel").value.trim()) $("setLabel").value=refLabel;
 
     function fallBackToManual(promptText, reason){
       $("promptBox").value=promptText;
@@ -17080,31 +17161,77 @@ nameLine
       $("promptBox").scrollIntoView({behavior:"smooth", block:"center"});
     }
 
-    var verses;
-    try{
-      statusEl.textContent="Fetching "+refLabel+" from Sefaria…";
-      verses=await fetchSefariaVerses(seferRef, perek, from, to);
-    }catch(err){
-      // Can't reach Sefaria (offline, typo'd range, etc.) — fall all the way
-      // back to the plain manual prompt, same as clicking "Build AI prompt".
-      fallBackToManual(buildImportPrompt(refLabel, kind), "Couldn't reach Sefaria");
+    // ── ONE chapter selected → keep the review-first flow: fill the CSV box so
+    //    the rebbi can eyeball the AI output before clicking "Import as new text set."
+    //    An optional verse range ("only these pesukim X to Y") narrows the fetch —
+    //    blank means the whole perek. A range keeps the real pasuk numbers, so
+    //    the label and the set's num keys stay honest.
+    if(chapters.length===1){
+      var ch=chapters[0];
+      var vf=parseInt(($("autoVerseFrom")||{}).value,10);
+      var vt=parseInt(($("autoVerseTo")||{}).value,10);
+      var hasRange=!isNaN(vf)||!isNaN(vt);
+      var fromV=isNaN(vf)?1:Math.max(1,vf);
+      var toV=isNaN(vt)?999:Math.max(fromV,vt);   // blank "to" ⇒ rest of the perek
+      var wholeLabel=chapterRefLabel(ch);
+      var verses;
+      try{
+        statusEl.textContent="Fetching "+wholeLabel+(hasRange?" ("+fromV+(toV>=999?"+":("–"+toV))+")":"")+" from Sefaria…";
+        verses=await fetchSefariaVerses(seferRef, ch, fromV, toV);
+      }catch(err){
+        fallBackToManual(buildImportPrompt(wholeLabel, kind), "Couldn't reach Sefaria");
+        btn.disabled=false;
+        return;
+      }
+      // Label from the ACTUAL verses fetched (so an open-ended "to" reads right)
+      var aFrom=verses[0].num, aTo=verses[verses.length-1].num;
+      var refLabel=hasRange
+        ? seferLabel+" "+ch+":"+(aFrom===aTo?aFrom:aFrom+"-"+aTo)
+        : wholeLabel;
+      $("setKind").value=kind;
+      $("setRef").value=refLabel;
+      if(!$("setLabel").value.trim()) $("setLabel").value=refLabel;
+      try{
+        var csvText=await generateFromVerses(verses, kind, hebrewOnly, refLabel, function(n,tot){
+          statusEl.textContent=(hebrewOnly?"Splitting ":"Building flashcards for ")+refLabel+(tot>1?" (part "+n+" of "+tot+")":"")+"…";
+        });
+        $("csvBox").value=csvText;
+        statusEl.textContent="Done — review the CSV below, then click \"Import as new text set.\"";
+        $("csvBox").scrollIntoView({behavior:"smooth", block:"center"});
+      }catch(err){
+        // Got the Hebrew but not the AI — hand back a prompt seeded with the real text.
+        var pr=hebrewOnly ? buildHebrewOnlyPrompt(kind, refLabel, verses) : buildAutoImportPrompt(kind, refLabel, verses);
+        fallBackToManual(pr, "Couldn't reach the AI automatically");
+      }
       btn.disabled=false;
       return;
     }
 
-    var hebrewOnly=$("autoHebrewOnly") && $("autoHebrewOnly").checked;
-    var prompt=hebrewOnly ? buildHebrewOnlyPrompt(kind, refLabel, verses) : buildAutoImportPrompt(kind, refLabel, verses);
-    try{
-      statusEl.textContent=hebrewOnly ? "Asking AI to split into Hebrew phrases…" : "Asking AI to build the flashcard CSV…";
-      var csvText=stripCodeFence(await callAiProxy(prompt));
-      $("csvBox").value=csvText;
-      statusEl.textContent="Done — review the CSV below, then click \"Import as new text set.\"";
-      $("csvBox").scrollIntoView({behavior:"smooth", block:"center"});
-    }catch(err){
-      // Got the real Hebrew from Sefaria but couldn't reach the AI proxy —
-      // still hand back a prompt seeded with that accurate text so the
-      // teacher can finish the old-fashioned way instead of being stuck.
-      fallBackToManual(prompt, "Couldn't reach the AI automatically");
+    // ── SEVERAL chapters selected → one text set per chapter, auto-imported
+    //    (two chapters can't share one set — both have a "pasuk 1", which would
+    //    collide on the num key). Generate each in turn and import it on its own.
+    var made=[], failed=[];
+    for(var ci=0; ci<chapters.length; ci++){
+      var refLabel2=chapterRefLabel(chapters[ci]);
+      var stepPrefix="Generating "+refLabel2+" ("+(ci+1)+" of "+chapters.length+")";
+      statusEl.textContent=stepPrefix+"…";
+      try{
+        var csv2=await generateChapterCSV(seferRef, chapters[ci], kind, hebrewOnly, refLabel2, (function(prefix){
+          return function(n,tot){ statusEl.textContent=prefix+(tot>1?" — part "+n+"/"+tot:"")+"…"; };
+        })(stepPrefix));
+        var parsed2=parseTextSetCSV(stripCodeFence(csv2));
+        if(!parsed2) throw new Error("empty result");
+        addImportedSet(parsed2, refLabel2, refLabel2, kind);
+        made.push(refLabel2);
+      }catch(err){
+        failed.push(refLabel2);
+      }
+    }
+    if(made.length){
+      statusEl.textContent="Created "+made.length+" text set"+(made.length>1?"s":"")+": "+made.join(", ")+
+        (failed.length?("  ·  couldn't do: "+failed.join(", ")):"")+". The last one is loaded now — switch sets with the picker above.";
+    } else {
+      statusEl.textContent="Couldn't generate "+failed.join(", ")+" — check your connection and try again.";
     }
     btn.disabled=false;
   });
