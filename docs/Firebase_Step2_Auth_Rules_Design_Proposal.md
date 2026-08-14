@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft proposal from an ultraplan design-panel session, pending Ben's review — not yet a committed decision, same status step 1's proposal had before approval.
+**✅ APPROVED 2026-08-13 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s build order as step 2's design. This doc is now the reference for the identity mapping, rules coverage, sign-in flows, gating-proof harness, "view as," and admin-provisioning decisions below.
 
 ## Recommended auth + security rules design
 
