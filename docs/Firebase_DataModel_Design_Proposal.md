@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft proposal from an ultraplan design-panel session, pending Ben's review — not yet a locked decision like the rule-3/SDK items in `Firebase_Rebuild_Scope.md`.
+**✅ APPROVED 2026-08-13 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s "Open questions for step 1" (questions 2, 5, 6, 7, 9, 11) alongside the rule-3/SDK items — step 1 of the Firebase rebuild is done. This doc is now the reference for the reasoning behind those decisions.
 
 ## Recommended class entity design
 
