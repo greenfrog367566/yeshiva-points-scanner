@@ -1,0 +1,524 @@
+# Menchmark Promo — "Seder in the Classroom"
+## A Pixar-style narrative video, produced in Google Flow (Veo 3.1)
+
+**What this is:** the full production document for a ~90-second stylized 3D-animated
+promo: an overwhelmed rebbi tries system after system to control a wild classroom,
+they all fail, then Menchmark brings calm — no stress, happy kids. Written to be
+executed shot-by-shot inside Google Flow on a Gemini AI Pro plan.
+
+**Relationship to past attempts:** `docs/Onboarding_Video_Scripts.md` rejected AI
+video *for tutorial content* because it can't reproduce the real UI — that decision
+stands. This video is the carve-out that doc allowed: brand/packaging storytelling.
+So one hard rule inherited from it: **never show a mocked-up "real" Menchmark UI.**
+The app appears only as stylized abstractions — a glowing printed sheet, a friendly
+scanner, a soft leaderboard glow. Copy rules come from `docs/Positioning.md`: the
+audience is **rebbeim**, the end card uses the canonical self-description, and
+nothing frames the app as a "classroom economy."
+
+---
+
+## 0. Live in Flow already — read this before starting fresh
+
+**There is an existing Flow project with real prior work.** Signed in as
+`bsteinerman@gmail.com`, Flow's project list (labs.google/fx/tools/flow) shows
+two projects; the first one open contains:
+
+- **A built character** ("Untitled Character," internally described as "Rabbi
+  Meir") with a full personality note already close to this doc's Rebbi Katz:
+  mid-30s, short dark beard, black kippah, dark suit and tie, gets visibly
+  tired and rubs his forehead under pressure, speaks calmly, lights up with a
+  quick smile and a nod when things go well. **Use this character rather than
+  building a new one from scratch** — either rename it to match this doc or
+  fold its personality note into section 3's bible.
+- **Four rendered clips**, all Act I material: classroom chaos with kids at
+  the chalkboard, a frustrated close-up, a wide chalkboard shot, and an empty-
+  room scanner-on-desk shot. **No Act III (calm/resolution) shots exist yet** —
+  that gap is exactly what this doc's Act III fills.
+
+**Two native Flow tools change the workflow described below — use them
+instead of manual ingredient-reattachment where they're available:**
+
+1. **Characters (left sidebar → Characters).** Flow has a proper character
+   system: a name, a personality/behavior note ("Character Info," which the
+   Flow Agent reads when crafting scenes), a portrait, and a "Create Body"
+   full-body reference. Reference a character in any prompt with **`@`** —
+   typing `@` opens an asset picker (Images / Videos / Characters / Uploads)
+   and inserts a chip, which is more reliable than manually re-attaching
+   ingredient images every clip. Build the character once in this panel, not
+   as loose reference images.
+2. **The Agent (the "Agent" toggle on the prompt bar).** This is Flow's
+   built-in Gemini coworker — literally the "use Gemini to help" workflow.
+   Paste a full director's prompt (style block + shot description + `@`
+   character) and the Agent visibly reasons in stages ("Analyzing the
+   Request" → "Examining Model Capabilities" → "Analyzing Video Generation")
+   before rendering. **Verified live in this project (2026-08-13):** given the
+   existing photoreal "Rabbi Meir" reference plus this doc's global style
+   block, the Agent's first move was to *restyle the character into the
+   Pixar-style 3D look on its own* — producing a genuinely on-model stylized
+   portrait — before it would render any video from it. That restyle-then-
+   render sequence is worth deliberately reproducing for every character
+   before shooting: get the Agent to convert your photoreal or rough
+   reference into the stylized target look first, save *that* image as the
+   character's portrait, then shoot from it.
+
+**One live lesson that confirms a rule already in this doc:** a prompt
+describing two beats (boy drops books → rebbi notices and scans him) came
+back as a video of only the first beat — the Agent quietly dropped the
+rebbi/scanner payoff rather than cramming both into 8 seconds. This is
+section 1's "one action per clip" rule, now confirmed empirically rather than
+theoretically: **when a shot has two beats, the second one silently
+disappears instead of erroring.** Always check the rendered take against the
+one action you asked for, not just against quality/likeness.
+
+**Three more things that first live take got wrong, now fixed in this doc —
+check for all of them on every take, not just these three:**
+
+1. **A girl appeared in the classroom.** This is a boys' yeshiva — Veo will
+   default to a mixed classroom unless every crowd prompt says "boys"
+   explicitly. Section 3 and every Act I/III crowd shot below now say it.
+2. **The scanner prop was generic** ("rounded white-and-green") instead of
+   the real device rebbeim actually hold — a Tera 1300 pocket scanner.
+   Section 3's hero-prop entry now describes its real form factor.
+3. **The boy was looking up, already reacting, at the moment of the scan**
+   instead of being caught mid-learning. Shot 9 below now has him looking
+   down into his open sefer when the scan lands, and only looks up after.
+
+---
+
+## 1. Why this workflow (read once before opening Flow)
+
+Flow gives four continuity mechanisms. Most people use only Extend and get
+melting faces by clip 5. This doc chains all four deliberately:
+
+| Mechanism | What it locks | How we use it |
+|---|---|---|
+| **Ingredients to Video** | *Who/what* — character identity | The same 3 reference images of each character attached to **every** clip |
+| **Frames to Video** | *Framing* — camera, light, set | Last frame of clip N saved → **start frame** of clip N+1 when the scene continues |
+| **Extend** | More seconds of the *same* shot | At most once per shot; quality degrades after repeated chains |
+| **Scenebuilder** | Assembly | Order, trim, preview, download |
+
+Three disciplines that make or break it:
+
+1. **Identity always comes from the original ingredient images**, never from a
+   previous clip. If clip 7 inherits its face from clip 6, drift compounds.
+2. **Restate the invariants in every prompt** (style block below). Anything not
+   restated is free to drift.
+3. **One action per clip.** 8 seconds holds one beat. Two beats = identity drift.
+
+**Plan reality (AI Pro):** generations are credit-limited and route to Veo 3.1
+Fast. Budget roughly 2–3 takes per shot × 13 shots — do the ingredient kit and
+Act III first (the shots that must be right), Act I chaos is forgiving of flaws.
+Upscale to 1080p only on final selects, not on takes.
+
+---
+
+## 2. Global style block — paste at the top of EVERY prompt
+
+> Stylized 3D animated film in the style of a premium family animation studio:
+> soft rounded character shapes, oversized expressive eyes, gentle subsurface-scattered
+> skin, warm painterly global illumination, shallow depth of field, subtle film
+> grain. Cinematic 16:9. No captions, no subtitles, no on-screen text, no watermark.
+
+(The "no subtitles" line matters — Veo tends to burn captions into the frame
+whenever a prompt contains quoted dialogue.)
+
+Do **not** write the word "Pixar" in prompts — trademark terms are prompt-filter
+bait and the style description above gets the same look reliably.
+
+---
+
+## 3. Character & set bible (the ingredient kit)
+
+Build this **before generating any video.** Generate each image inside Flow
+(Imagen) or with Gemini image generation, then save all of them as project
+assets. Each character gets **three images — front, 3/4, profile — same
+wardrobe, same neutral warm lighting.** Veo accepts up to 3 reference images
+per subject; use all three every time.
+
+### Rebbi Katz (protagonist)
+> A warm 40-something rebbi: short dark beard flecked with grey, kind tired brown
+> eyes behind round wire-rim glasses, black velvet yarmulke, white dress shirt with
+> sleeves rolled to the forearm, charcoal vest, dark trousers. Slightly stocky,
+> rounded friendly silhouette. Stylized 3D animation character, soft shapes,
+> expressive oversized eyes, warm neutral studio lighting, full body, plain
+> light-grey background.
+
+Generate front / three-quarter / profile. **His whole arc lives in his shoulders
+and eyebrows** — every prompt below directs those two things explicitly.
+
+### The three kids (recurring, named so prompts can direct them)
+**This is a boys' yeshiva classroom — every student in every shot is a boy.**
+No girls anywhere in frame, including background/crowd shots; Yeshiva and day
+school classrooms of this type are single-gender, and a mixed classroom would
+misrepresent the audience this video is for. State "boys" explicitly in every
+crowd-shot prompt below, not just "kids" or "students" — Veo defaults to mixed
+classrooms otherwise, and this got past the first live test (section 0).
+
+Same 3-angle treatment each, boys' day-school uniform: white shirt, dark pants,
+yarmulke, tzitzis strings visible at the waist.
+
+- **"Sruli"** — small, springy, gap-toothed grin, freckles, yarmulke always
+  slightly crooked. The class's chaos engine, later its most enthusiastic scanner
+  customer.
+- **"Dovid"** — tall for his age, glasses, neat, arms-crossed skeptic. His smile
+  in Act III is the emotional proof the system works.
+- **"Meir"** — round-faced, shy, sits in front, flinches at the noise in Act I.
+  Tends to sit hunched over his open sefer, quietly absorbed. He gets the
+  chesed beat (shot 9) — the heart of the video.
+
+### The set (one location plate)
+> A sunlit yeshiva day-school classroom, stylized 3D animation, traditional
+> front-facing layout: individual wooden student desks arranged in straight
+> rows and columns like a grid, every desk facing the front of the room, all
+> chairs on the same side of their desks so every student faces the
+> whiteboard. At the front: a large whiteboard and the rebbi's desk. Along
+> the side wall: a bookshelf of oversized seforim with Hebrew lettering
+> suggested but unreadable, aleph-beis chart. Big windows with warm morning
+> light, soft dust motes. Empty of people. Painterly warm palette: honey
+> wood, cream walls, forest-green accents.
+
+**The seating geometry is a hard rule, not set dressing.** A real yeshiva
+classroom is the traditional layout: straight rows, everyone facing front
+toward the board and the rebbi. Veo's default is the modern collaborative
+classroom — desks scattered at angles, clusters, kids facing each other or
+the camera — and it produced exactly that in the live takes. Every prompt
+with the room in frame must restate: **"desks in straight rows, all students
+facing the front of the classroom."**
+
+**Anchor the geometry to the CAMERA, not just the room — this is what
+finally makes Veo obey.** Saying "everyone faces front" still let takes
+through where the whiteboard sat *behind* boys who faced the camera — which
+means they were facing the back of the room. The board and the boys' faces
+must never be on the same side of frame. Write one of these three blocks
+into every room prompt, verbatim:
+
+- **Camera at the front (rebbi's position):** "The camera stands where the
+  whiteboard is, facing the class. Every boy faces TOWARD the camera because
+  every desk faces the front board. The whiteboard is behind the camera and
+  is NOT visible in frame."
+- **Camera at the back:** "The camera is at the back of the room. We see
+  rows of the backs of boys' heads, every one of them facing away from
+  camera toward the whiteboard visible at the far end."
+- **Camera in the side aisle:** "Profile view down a side aisle: every desk
+  points the same direction, toward the whiteboard at the frame's edge; we
+  see every boy from the side."
+
+**Reject any take where the whiteboard appears in frame together with boys'
+faces looking at camera** — that geometry is impossible in a real classroom,
+and it is the single most common way a take fails.
+
+**Ground truth: real classroom frames exist.** Ben has actual video stills of
+Menchmark in use in his classroom (2026-08-10 screenshots: the rebbi scanning
+a QR card on a boy's desk while the boy learns from his sefer; scanning the
+printed class sheet at the front; a boy watching the raffle wheel on the wall
+display). What they settle:
+
+- **The scan points at a QR code card lying on the desk beside the open
+  sefer — never at the boy himself.** The boy keeps learning; the code gets
+  scanned. Shot 9 is written this way now; keep it that way in every retake.
+- The real room: whiteboard at the front (not a chalkboard), a large
+  wall-mounted display beside/behind the rebbi (the leaderboard surface for
+  shot 11 — keep its content an abstract glow in the promo), bright
+  teal-accent walls, light tan desks with black metal legs. The stylized set
+  may warm this up, but those are the honest furnishings — prefer whiteboard
+  + wall display over chalkboard when a prompt names the front of the room.
+- The rebbi's real look matches the character: dark suit, black yarmulke,
+  tzitzis strings visible.
+
+Generate one wide plate + one reverse angle (facing the windows/back of room).
+Attach the matching plate as an ingredient whenever a shot introduces a **new**
+camera setup in the room; when a shot continues a setup, the start frame carries
+the set instead.
+
+### The two hero props (each: one clean 3/4 product-style image)
+- **The printed sheet:** a single warm-white printed page, grid of soft-cornered
+  QR-code squares with a friendly rounded look, small seating chart, gentle green
+  header bar. *Stylized suggestion of the real class sheet — not a legible
+  reproduction, no readable names.*
+- **The scanner:** matches the real device rebbeim actually use — a **Tera
+  1300** pocket 2D barcode scanner, not an invented prop. Compact "soap bar"
+  form factor sized to close inside one fist (not a pistol-grip gun), dark
+  blue or black body, a single large trigger button on the top face under the
+  thumb, a small dark scan window/lens at the front tip, one small LED status
+  light beside it, a short wrist-lanyard loop at the base. Stylized 3D
+  rendering of that same shape — soft edges, warm highlight — not a literal
+  photoreal reproduction, and never showing any printed configuration barcode
+  on or near it (CLAUDE.md rule 7 — the device's physical shape is fine to
+  depict, its config barcodes are not).
+
+---
+
+## 4. The film — 13 shots, ~95 seconds
+
+Notation per shot: **MECHANISM** → what to attach; then the prompt (always
+prefixed by the global style block); then composition/continuity notes.
+
+**Continuity legend:** `⛓ CHAIN` = save the last frame of the previous shot
+("Save frame" on hover) and set it as this shot's **start frame**. `🆕 NEW SETUP`
+= no start frame; attach the set plate + character ingredients fresh.
+
+---
+
+### ACT I — THE CHAOS (shots 1–3, ~24s)
+*Visual grammar: handheld energy, tilted angles, cool harsh late-morning light,
+cluttered frames. The camera is as overwhelmed as he is.*
+
+**SHOT 1 — Bedlam.** 🆕 NEW SETUP — ingredients: set plate (wide), Rebbi Katz,
+Sruli, Dovid, Meir.
+
+> Wide establishing shot, slightly high angle, 24mm, subtle handheld shake. A
+> yeshiva classroom of BOYS ONLY in joyful anarchy: paper airplanes crossing
+> the frame, Sruli standing on his chair conducting the noise like an
+> orchestra, Dovid flicking a paper football, crumpled papers everywhere. At
+> the whiteboard, Rebbi Katz —
+> shoulders up around his ears, eyebrows lifted in overwhelmed disbelief — taps
+> a dry-erase marker for attention that never comes. Cool, slightly harsh
+> late-morning light. Audio: dense happy classroom roar, chair scrapes, one
+> paper airplane whoosh past the lens.
+
+*Composition: Rebbi small in frame, lower-left third, dwarfed by the room —
+the framing itself says "outnumbered." Leave headroom cluttered with a passing
+airplane.*
+
+**SHOT 2 — His face.** ⛓ CHAIN from shot 1 + Rebbi ingredients.
+
+> Cut into a medium close-up, 50mm, eye level, shallow focus melting the chaos
+> into soft moving bokeh behind him. Rebbi Katz exhales slowly, removes his
+> glasses, and pinches the bridge of his nose — a long, weary, comic-timing
+> beat. One paper airplane bounces gently off his shoulder; his eyes open and
+> track it to the floor without moving his head. Audio: the roar now muffled
+> and distant, one soft comedic *boop* as the airplane lands.
+
+*Composition: dead-center symmetry on his face — stillness against motion.
+This is the character poster shot; retake until the face matches the
+ingredient exactly.*
+
+**SHOT 3 — Meir flinches, title beat.** 🆕 NEW SETUP — set plate (reverse
+angle), Meir, Sruli.
+
+> Low angle from Meir's front-row desk, 35mm. Shy round-faced Meir hunches
+> over an open sefer, hands over his ears, as Sruli slides past behind him on a
+> rolling chair, arms spread like wings. Slow push-in on Meir's wince. Audio:
+> the roar peaks, then everything dips low and quiet on the push-in — leaving
+> one small sad piano note.
+
+*This is the stakes shot: the chaos has a cost, and it's the quiet kid. The
+audio dip earns the cut to Act II.*
+
+---
+
+### ACT II — THE SYSTEMS THAT FAIL (shots 4–7, ~32s)
+*Visual grammar: montage rhythm. Each attempt: hopeful setup → deadpan failure
+inside one 8-second clip. Light warms slightly each time — he keeps trying.*
+
+**SHOT 4 — The sticker chart.** 🆕 NEW SETUP — set plate, Rebbi Katz.
+
+> Medium shot, 35mm, static locked-off tripod frame for deadpan comedy. Rebbi
+> Katz, tongue slightly out in concentration, proudly presses a huge rainbow
+> sticker chart onto the wall and smooths it flat with both hands. He steps
+> back, hands on hips, one satisfied nod — and the chart peels off the wall
+> behind him with a slow papery ripple and slumps to the floor. His shoulders
+> drop. Audio: hopeful little melody that ends in a sad slide-whistle; the
+> gentle flutter of falling paper.
+
+*Composition: keep him and the chart in the same static frame the whole time —
+the comedy is that the camera refuses to help him.*
+
+**SHOT 5 — The candy bribe.** 🆕 NEW SETUP — set plate, Rebbi Katz, Sruli,
+Dovid.
+
+> Medium-wide, 28mm, slight low angle. Rebbi Katz holds up a glass jar of
+> wrapped candies with a hopeful salesman smile — and is instantly engulfed by
+> a wave of leaping boys, Sruli cresting the top of the pile. The jar wobbles
+> above the scrum in his outstretched hand like a lighthouse in a storm. Whip
+> of handheld shake on impact. Audio: one second of silence, then an eruption
+> of delighted shrieking; the musical sting stumbles over itself.
+
+*One action: hold jar → engulfed. Do not ask for the jar to fall too — that's
+a second beat and Veo will smear it.*
+
+**SHOT 6 — The name on the board.** 🆕 NEW SETUP — set plate, Rebbi Katz,
+Dovid.
+
+> Over-the-shoulder from behind Rebbi Katz, 40mm, focus racking from the
+> whiteboard to the class beyond. He writes an emphatic warning line on the
+> board — the marker squeaks dry halfway through the underline. He shakes it,
+> tries again: nothing. Beyond the dead marker, soft-focus Dovid watches with
+> polite unimpressed pity, chin on fist. Rebbi Katz's underline trails off.
+> Audio: squeak, squeak, the hollow shake-rattle of a dead marker, one boy's
+> stifled giggle.
+
+*Any board writing must be an unreadable scribble — prompt it as "an emphatic
+warning line," never as specific words; Veo's text rendering will betray you.*
+
+**SHOT 7 — Rock bottom (the hinge).** 🆕 NEW SETUP — Rebbi Katz only, no set
+plate.
+
+> Slow push-in, 50mm, from medium to close. End of day: Rebbi Katz alone at
+> his desk in the empty classroom, golden-hour light through the windows, the
+> fallen sticker chart draped over a chair behind him. He sits amid the
+> wreckage, chin in both hands — then his eyes drift to his laptop, and
+> narrow with one last ember of resolve. Audio: distant hallway sounds fading,
+> a single warm piano chord beginning underneath.
+
+*The lighting turn happens HERE — cool film to warm film. His eyebrow is the
+whole shot: defeat → resolve in one move. Retake until that read is clean.*
+
+---
+
+### ACT III — MENCHMARK (shots 8–12, ~40s)
+*Visual grammar: everything Act I wasn't. Locked or gliding camera, warm honey
+light, clean uncluttered frames, gentle symmetry. Calm is shot as calm.*
+
+**SHOT 8 — The sheet.** 🆕 NEW SETUP — Rebbi Katz, printed-sheet prop,
+scanner prop.
+
+> Next morning. Top-down overhead shot, 50mm, gliding slowly across his desk in
+> warm window light: hands lift a single freshly printed page — a friendly grid
+> of soft QR codes with a gentle green header — and set a Tera 1300 pocket
+> scanner beside it, dark blue-black soap-bar shape, single trigger button on
+> top. The scanner's light blinks on, soft green. Camera tilts up to Rebbi
+> Katz's face: calm, curious, one eyebrow up.
+> Audio: paper's crisp whisper, one soft optimistic chime, the warm piano
+> theme finding its melody.
+
+*Hero-prop shot: this framing is the thumbnail. The page must read as ONE
+page — the whole system in his hand is the promise. No legible text on it.*
+
+**SHOT 9 — The first scan (the heart).** 🆕 NEW SETUP — set plate, Rebbi
+Katz, Meir, scanner prop.
+
+> Medium two-shot, 40mm, waist height, slow 20-degree arc around the moment.
+> The camera stands at the front of the room where the whiteboard is, facing
+> the class — every boy faces toward the camera because every desk faces the
+> front board, and the whiteboard is behind the camera, not visible in frame.
+> Shy Meir is bent over his front-row desk, eyes down and fully absorbed
+> inside his open sefer (large Hebrew holy book), lips moving slightly as he
+> learns quietly to himself — he does not notice anything happening around
+> him. A small QR code card lies flat on the desk beside his open sefer. Rebbi Katz, mid-lesson, walks up the aisle,
+> smiles, and — without breaking stride — points the Tera 1300 scanner DOWN
+> at the QR card on the desk, not at the boy: one soft green confirmation
+> pulse on the card and one cheerful two-note chime. Only THEN does Meir look
+> up from his sefer, startled, and break into a huge slow smile. Audio: calm
+> classroom murmur, the chime, the piano swelling one step.
+
+*The Video B trust beat, animated: he never stops teaching, and the boy never
+stops learning until the chime pulls him out of it. **The scanner aims at the
+code card on the desk, never at the child** — that's how the product actually
+works (confirmed by Ben's real classroom footage), and pointing a device at a
+boy reads wrong besides. The scan happens TO a boy who is looking inside his
+sefer, not to a boy already looking up waiting for it — that order is the
+whole point of the shot. Meir's smile is the single most important frame of
+the film — spend takes here.*
+
+**SHOT 10 — Sruli converted.** ⛓ CHAIN from shot 9's last frame + Sruli,
+Rebbi Katz, scanner ingredients.
+
+> Continuing in the same warm light and camera height, the arc drifts to
+> Sruli's desk: the former chaos-conductor sits bolt upright, hand raised so
+> eagerly his whole body stretches, yarmulke still crooked, grin enormous. Rebbi
+> Katz nods to him; another gentle green pulse and chime. Sruli pumps a quiet
+> fist. Audio: the murmur stays CALM — the chime lands inside the quiet, and
+> two boys softly chuckle.
+
+*The redemption gag: same kid, same energy, new direction. Keep the sound
+small — the joke of Act III is that excitement no longer means noise.*
+
+**SHOT 11 — The glow.** 🆕 NEW SETUP — set plate (reverse), Rebbi Katz, Sruli,
+Dovid, Meir.
+
+> Wide from the back of the room, 24mm, slow rising crane. The class of boys
+> faces a soft-glowing wall screen showing an abstract, cheerful leaderboard —
+> warm bars of green and gold gently rising, no readable names or numbers.
+> The boys lean toward it; skeptical Dovid finally uncrosses his arms and smiles.
+> Rebbi Katz stands at the side, arms folded softly, shoulders fully down
+> for the first time. Audio: a warm collective "ooooh," the theme opening up.
+
+*Mirror of shot 1: same wide room, opposite grammar — rising crane instead of
+handheld shake, order instead of clutter. Dovid uncrossing his arms is the
+skeptic's verdict. The leaderboard is pure light and color — the moment it
+looks like software, cut it.*
+
+**SHOT 12 — Peace.** ⛓ CHAIN from shot 11 + Rebbi Katz ingredients. Extend
+once if the settle needs more air.
+
+> The crane completes its rise and settles into a perfectly symmetrical wide:
+> rows of boys learning in golden light, quiet and content, dust motes
+> drifting. Rebbi Katz walks the center aisle unhurried, hands clasped behind
+> his back, and pauses — a small private smile, the smile of a man whose
+> classroom finally matches the picture he always had of it. Audio: the room
+> at a gentle hum, the theme resolving to warmth.
+
+*Hold the symmetry. Nobody looks at camera. Let it breathe — this is the
+"no stress" of the brief, shot as stillness.*
+
+**SHOT 13 — End card. NOT generated in Flow.**
+Veo renders text unreliably — build this card in an editor over shot 12's
+final frame (or the brand mark from `branding/`):
+
+> **Menchmark**
+> A classroom assistant for Yeshiva and Jewish Day School rebbeim.
+> **menchmark.app** — free
+>
+> Audio: final soft two-note scanner chime as the logo lands.
+
+Copy is verbatim from `docs/Positioning.md` (canonical self-description; the
+plain word "free" is fine — "free forever" licensing language is not).
+
+---
+
+## 5. Execution order in Flow
+
+1. **Build the ingredient kit** (section 3) — all images into project assets
+   first. Character sheets before any video; regenerate until Rebbi Katz's
+   3 angles are unmistakably the same person.
+2. **Generate Act III first** (shots 8–12): the emotional payoff must be right,
+   and it's cheapest while your credit balance is full. Then Act II, then Act I
+   (chaos hides flaws; save it for last).
+3. **Per shot:** paste style block → attach listed ingredients → set start
+   frame if ⛓ CHAIN → prompt → generate. Judge a take on: (a) face matches
+   ingredients, (b) the ONE action landed, (c) composition note satisfied.
+   Two failures on the same prompt → simplify the action, don't add words.
+4. **Chaining:** pause the selected take on its final frame → hover → **Save
+   frame** → use as the next shot's start frame. Always alongside the original
+   ingredients — the frame carries set and light, the ingredients carry
+   identity.
+5. **Extend** only where marked (shot 12), only once.
+6. **Scenebuilder:** order 1→12, trim each clip's dead air at head and tail
+   (Veo front-loads a beat of nothing), preview the Act II montage rhythm —
+   shots 4–6 should feel metronomic.
+7. **Upscale final selects to 1080p/4K**, download, add shot 13's end card and
+   any music sweetening in an editor.
+
+## 6. Guardrails
+
+- **No real UI, no real names, no legible Hebrew text** anywhere in generated
+  frames — stylized suggestion only. (Inherited from
+  `docs/Onboarding_Video_Scripts.md` and CLAUDE.md rule 6.)
+- **"Rebbi/rebbeim," never "teacher,"** in any on-screen or accompanying copy
+  (`docs/Positioning.md`).
+- **Use the yeshivish transliterations, consistently** — the spellings that
+  sound right to the audience, in the doc, in prompts, and in any copy:
+  **rebbi** (never "rebbe" or "rabbi"), **rebbeim**, **yarmulke** (not
+  "kippah"), **sefer/seforim**, **tzitzis**, **chesed**, **seder**,
+  **mentchlichkeit**. In Veo prompts, gloss an uncommon word once so the
+  model understands it — "his open sefer (large Hebrew holy book)" — and
+  keep the authentic word as the primary term. (The Flow character is still
+  internally named "Rabbi Meir" — rename it to "Rebbi Katz" in the
+  Characters panel when next in the project.)
+- **Boys only, every shot, no exceptions.** This is a boys' yeshiva classroom.
+  Say "boys" explicitly in crowd prompts, not "kids" or "students" — confirmed
+  necessary after the first live take (section 0) generated a girl.
+- **The scanner is a Tera 1300**, described accurately per section 3 — not an
+  invented prop — while never depicting its printed configuration barcodes
+  (CLAUDE.md rule 7).
+- **The scan lands on a boy who is looking down, inside his sefer** — mid-learning,
+  not mid-reaction. He notices only after the chime. See shot 9.
+- **Traditional seating, every shot with the room in frame:** desks in
+  straight rows, all students facing the front board. Never the scattered
+  "collaborative" layout Veo defaults to. See the set bible.
+- The video sells **calm and mentchlichkeit**, not prizes — the failed-candy
+  beat exists precisely to distinguish Menchmark from bribery. Don't add a
+  prize/reward shot.
+- Before publishing anywhere, this is Ben's call — the doc's PR ships the
+  plan, not the video.
