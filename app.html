@@ -2027,7 +2027,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
               <span class="an">Custom (subtract)</span>
               <span class="av neg" id="customSubVal">−1 pts</span>
             </button>
-            <button class="act-btn" id="warnBtn" type="button" data-label="⚠️ Warning" data-delta="0" title="Flashes a warning on the boy's tile. Not recorded anywhere — no count, no history.">
+            <button class="act-btn" id="warnBtn" type="button" data-label="⚠️ Warning" data-delta="0" style="display:none" title="Flashes a warning on the boy's tile. Not recorded anywhere — no count, no history.">
               <span class="an">⚠️ Warning</span>
               <span class="av neg">not recorded</span>
             </button>
@@ -4201,6 +4201,12 @@ function setupRoster() {
       <p class="view-note" style="margin:8px 0 0">Off by default. When on, tapping a name in the list or seating chart on the Scan tab pops up that student's points breakdown (same as the "▾ Breakdown" panel on the Students tab) instead of scoring them — handy if you want to use the Tap Panel to check on a student mid-class without accidentally giving or taking points. Scanning a QR code still always scores normally, even while this is on.</p>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-top:12px"><input type="checkbox" id="setSeatListFallback"> Show the class list when a class has no seating chart yet</label>
       <p class="view-note" style="margin:8px 0 0">On by default. List / Seating chart is one setting shared by all your classes, but each class has its own chart. So if you arrange one class and leave the panel on Seating chart, switching to a class you haven't arranged yet would otherwise show a grid of empty seats with none of your students in it. With this on, that class shows your class list — alphabetically by last name — with a button to set its chart up when you're ready. The class you did arrange still opens straight to its chart, and nothing about any chart is changed or deleted either way.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Warning Flash</h3>
+      <p class="view-note" style="margin:0 0 10px">Off by default. When on, a ⚠️ Warning button sits next to Custom (add)/(subtract) on the Record tab — arm it, then tap or scan a student to flash a heads-up on their tile, same look as a demerit. Nothing is recorded: no points, no history, no count anywhere.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setWarningFlash"> Show the ⚠️ Warning button</label>
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
@@ -8541,6 +8547,7 @@ function setupRoster() {
     renderShulchaniStatus();
     $("setTapBreakdown").checked = !!data.tapShowsBreakdown;
     $("setSeatListFallback").checked = data.seatListFallback!==false;
+    $("setWarningFlash").checked = !!data.warningFlashEnabled;
     $("setBannerPositive").checked = data.bannerPositive!==false;
     $("setBannerNegative").checked = data.bannerNegative!==false;
     $("setBannerTracked").checked = data.bannerTracked!==false;
@@ -8612,6 +8619,9 @@ function setupRoster() {
   // Redraws the panel: turning this off has to put the empty grid back straight
   // away, or the setting reads as doing nothing until the next render.
   $("setSeatListFallback").addEventListener("change", function(){ data.seatListFallback=this.checked; save(); renderTapPanel(); });
+  // Redraws the Record tab's activity row so the button appears/disappears
+  // immediately, same reason as setSeatListFallback above.
+  $("setWarningFlash").addEventListener("change", function(){ data.warningFlashEnabled=this.checked; save(); renderActButtons(); });
   $("setHeaderShortcuts").addEventListener("change", function(){ data.showHeaderShortcuts=this.checked; save(); applyHeaderShortcutsVisibility(); });
   $("setHebrewDate").addEventListener("change", function(){ data.showHebrewDate=this.checked; save(); showDate(); });
   $("setFullWidth").addEventListener("change", function(){ data.fullWidth=this.checked; save(); applyFullWidth(); });
@@ -9555,6 +9565,13 @@ function setupRoster() {
   // code from print only and leaves the screen alone.
   function actVisibleOnScreen(a){ return !a.hidden && actInCurrentMode(a); }
   function renderActButtons(){
+    // Settings → Warning Flash. Off by default (see load2fix()); the button
+    // lives in the static HTML rather than being built here, so this is just
+    // a show/hide, not a render. Placed at the top so it runs on every path
+    // that already calls renderActButtons() — app init included — rather
+    // than needing its own separate call site.
+    var warnBtn=$("warnBtn");
+    if(warnBtn) warnBtn.style.display = data.warningFlashEnabled ? "" : "none";
     var wrap=$("actButtons"); wrap.innerHTML="";
     /* EVERY tracked activity gets a button here, Tracker ones included. That
      * changed in 2d and this comment did not: it used to say Tracker activities
@@ -22975,6 +22992,11 @@ nameLine
     // end, never something a rebbi chose, so there is nothing to preserve.
     // Reads data.seating and writes nothing to it.
     if(typeof data.seatListFallback!=="boolean") data.seatListFallback=true;
+    // The ⚠️ Warning button on the Record tab (NOW.md item 4). Additive,
+    // defaults OFF — a rebbi who has never seen this feature shouldn't find
+    // a new button on his scan panel unasked; Settings → Warning Flash is
+    // the opt-in. Purely additive, no DATA_VERSION bump: nothing converts.
+    if(typeof data.warningFlashEnabled!=="boolean") data.warningFlashEnabled=false;
     // Which kinds of scan/tap outcome the floating confirmation banner shows.
     // Three independent additive booleans, all default ON — the banner shows
     // exactly what it always has until a rebbi turns one off. The beep is a
