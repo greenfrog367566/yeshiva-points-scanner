@@ -1657,6 +1657,19 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   .wl-name .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .wl-face{display:inline-flex;align-items:center;justify-content:center;width:var(--wl-face-size);height:var(--wl-face-size);border-radius:.05in;color:#fff;font-size:var(--wl-face-font);font-weight:800;flex:none}
   .wl-face.A{background:var(--a)} .wl-face.B{background:var(--b)} .wl-face.C{background:var(--c)} .wl-face.D{background:var(--d)}
+  /* the wand's TOP-face label: no marker (the camera never sees the top) — the
+     big number + name identify whose wand it is from above, and the four edge
+     letters point at the matching side faces, so the sticker is self-orienting:
+     rotate until the letters line up, then stick. */
+  .wl-topcell{position:relative}
+  .wl-topcell .wl-edge{position:absolute}
+  .wl-edge.eA{top:var(--wl-cell-pad);left:50%;transform:translateX(-50%)}
+  .wl-edge.eB{right:var(--wl-cell-pad);top:50%;transform:translateY(-50%)}
+  .wl-edge.eC{bottom:var(--wl-cell-pad);left:50%;transform:translateX(-50%)}
+  .wl-edge.eD{left:var(--wl-cell-pad);top:50%;transform:translateY(-50%)}
+  .wl-bignum{font-weight:800;font-size:.55in;line-height:1;color:var(--ink)}
+  .wl-topname{font-weight:800;font-size:var(--wl-name-font);line-height:1.15;margin-top:.06in;max-width:80%;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wl-tophint{font-size:var(--wl-top-font);font-weight:700;letter-spacing:.3px;color:var(--muted);line-height:1;margin-top:.08in}
 
   @page{size:8.5in 11in;margin:.4in}
   /* Label sheets must register against the physical die-cuts, so their pages
@@ -2017,7 +2030,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
           <button class="btn sec" id="printWandsBtn">Print</button>
         </div>
       </div>
-      <div class="note" id="wandStockNote">Sized for <strong>Premium Label Supply</strong> square label sheets (gap and margin geometry taken from PLS's own templates). <strong>Field-tested: the 2.5" marker reads reliably at ~25 ft.</strong> Print at <strong>100% / actual size</strong>, not "fit to page" — the labels must land on the die-cuts. Each wand takes 4 labels (A/B/C/D), stuck on four faces of a foam cube with ▲ TOP pointing up.</div>
+      <div class="note" id="wandStockNote">Sized for <strong>Premium Label Supply</strong> square label sheets (gap and margin geometry taken from PLS's own templates). <strong>Field-tested: the 2.5" marker reads reliably at ~25 ft.</strong> Print at <strong>100% / actual size</strong>, not "fit to page" — the labels must land on the die-cuts. Each wand takes <strong>5 labels</strong>: A/B/C/D around the four sides (▲ TOP pointing up), plus a <strong>top label</strong> with the wand number and name — its edge letters point at the matching sides, so rotate it until they line up, then stick.</div>
     </div>
     <div class="card"><div id="cardsheet"></div></div>
   </section>
@@ -2358,8 +2371,11 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     s.setProperty("--wl-face-size",p.faceSize); s.setProperty("--wl-face-font",p.faceFont);
     s.setProperty("--wl-cell-pad",p.cellPad); s.setProperty("--wl-marker-margin",p.markerMargin);
 
+    /* 5 labels per wand: the TOP-face label first (who the wand belongs to,
+       readable from above), then the four marker faces A..D. */
     var labels=[];
     for(var w=start-1; w<start-1+count; w++){
+      labels.push({w:w, top:true});
       for(var f=0; f<4; f++) labels.push({w:w, f:f});
     }
     for(var off=0; off<labels.length; off+=p.perPage){
@@ -2367,13 +2383,22 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       for(var i=0; i<p.perPage; i++){
         var it=labels[off+i];
         if(!it){ grid.appendChild(el("div","wand-cell empty")); continue; }
-        var cell=el("div","wand-cell");
-        cell.appendChild(el("div","wl-top","▲ TOP"));
-        var mk=el("div","wl-marker"); mk.innerHTML=wandMarkerSVG(wandFaceIdOf(it.w,it.f)); cell.appendChild(mk);
-        var nm=el("div","wl-name");
-        nm.appendChild(el("span","nm", hasRoster()? (it.w+1)+" · "+nameOf(String(it.w+1)) : "WAND #"+(it.w+1)));
-        nm.appendChild(el("span","wl-face "+LETTERS[it.f],LETTERS[it.f]));
-        cell.appendChild(nm);
+        var cell;
+        if(it.top){
+          cell=el("div","wand-cell wl-topcell");
+          LETTERS.forEach(function(L){ cell.appendChild(el("span","wl-face "+L+" wl-edge e"+L,L)); });
+          cell.appendChild(el("div","wl-bignum","#"+(it.w+1)));
+          if(hasRoster()) cell.appendChild(el("div","wl-topname",nameOf(String(it.w+1))));
+          cell.appendChild(el("div","wl-tophint","TOP — letters point to the sides"));
+        }else{
+          cell=el("div","wand-cell");
+          cell.appendChild(el("div","wl-top","▲ TOP"));
+          var mk=el("div","wl-marker"); mk.innerHTML=wandMarkerSVG(wandFaceIdOf(it.w,it.f)); cell.appendChild(mk);
+          var nm=el("div","wl-name");
+          nm.appendChild(el("span","nm", hasRoster()? (it.w+1)+" · "+nameOf(String(it.w+1)) : "WAND #"+(it.w+1)));
+          nm.appendChild(el("span","wl-face "+LETTERS[it.f],LETTERS[it.f]));
+          cell.appendChild(nm);
+        }
         grid.appendChild(cell);
       }
       page.appendChild(grid);
