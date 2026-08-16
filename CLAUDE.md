@@ -421,9 +421,21 @@ Entries here are unusually long by design: they explain *why* to a rebbi, not ju
 
 No real student names, scores, raffle history, or Google Sheet URLs. Use `sample-backup.json` for testing.
 
-### 7. Do not reproduce Tera scanner config barcodes
+### 7. Tera scanner config barcodes — permission received, reproduction now allowed
 
-Until explicit written permission is received from Tera, reference the Tera manual instead of reproducing their configuration barcodes. (A permission email is drafted — see NEVER list below about sending it.)
+**Settled 2026-08-15 by Ben: Tera gave written permission to reproduce their
+scanner configuration barcodes.** They are now embedded directly in the app's
+Help (?) modal → Scanner Setup tab, as cropped images taken from Tera's own
+manual (`docs/Tera_UM1300_Manual.pdf`, also now in this repo) — not
+re-encoded, so the pixels shipped are bit-for-bit the same graphic Tera
+printed. Assets live in `docs/tera-scanner-codes/`. Covered so far: Vibration
+On/Off, Real-Time Mode/Storage Mode, USB-COM/2.4G Mode, Clear Timestamp,
+Wireless Factory Default, and (general) Factory Default.
+
+If this is ever extended, keep the same rule: use an actual cropped image
+from the manual PDF, never a barcode/QR hand-regenerated from a guessed
+payload — the encoded data is proprietary and unknown, and a wrong guess
+could misconfigure or brick a scanner.
 
 ### 8. Never shift the Apps Script Log columns
 
@@ -449,8 +461,7 @@ Draft it, show it, wait for a yes.
 
 ### 🔴 NEVER without an explicit human action
 - Merging to `main` (the maintainer merges the PR — that's the trigger).
-- Sending any email (e.g. the Tera permission request) — prepare drafts, never send.
-- Reproducing Tera's config barcodes (see rule 7).
+- Sending any email on the maintainer's behalf — prepare drafts, never send.
 - Publishing, force-pushing, or anything irreversible and outbound.
 
 **Rule of thumb:** standing authority over decisions already made; propose on decisions not yet made. When unsure which bucket, it's PROPOSE.
