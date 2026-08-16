@@ -41,6 +41,9 @@ function assert(cond, msg) {
 async function seed() {
   await db.collection("accounts").doc("admin1").set({ role: "admin", schoolId: "school1" });
   await db.collection("accounts").doc("rebbiSelf").set({ role: "rebbi", schoolId: null });
+  // Separate account from rebbiSelf so the roster-mode test below isn't
+  // fighting over rebbiSelf_1's content with the backup-mode tests above it.
+  await db.collection("accounts").doc("rebbiSelfRoster").set({ role: "rebbi", schoolId: null });
 }
 
 const SMALL_NORMALIZED = {
@@ -151,6 +154,39 @@ async function main() {
     assert(typeof res.signInLink === "string" && res.signInLink.length > 0, "expected a sign-in link");
     const accountSnap = await db.collection("accounts").doc(res.uid).get();
     assert(accountSnap.exists && accountSnap.data().schoolId === "school1", "expected new account scoped to admin's schoolId");
+  });
+
+  await check("Self-serve roster mode builds a first-run class from scratch (sign-in's own account)", async () => {
+    const res = await provisionRebbi.run({
+      data: {
+        mode: "roster",
+        self: true,
+        className: "My First Class",
+        students: [
+          { name: "Eli Fried", group: "A" },
+          { name: "Shua", group: "A" }, // single word -> should flag
+        ],
+        deviceId: "signin-first-run",
+      },
+      auth: { uid: "rebbiSelfRoster", token: {} },
+    });
+    assert(res.receipt.status === "verified", "expected verified");
+    assert(res.receipt.counts.actual.students === 2, "expected 2 students");
+    assert(res.receipt.nameSplitFlags === 1, "expected 1 name-split flag (Shua, single word)");
+    assert(res.classId === "rebbiSelfRoster_1", `expected rebbiSelfRoster_1, got ${res.classId}`);
+  });
+
+  await check("Self-serve roster mode by a non-rebbi (no account) fails closed", async () => {
+    let threw = null;
+    try {
+      await provisionRebbi.run({
+        data: { mode: "roster", self: true, className: "X", students: [] },
+        auth: { uid: "nobodyYet", token: {} },
+      });
+    } catch (e) {
+      threw = e;
+    }
+    assert(threw, "expected a failed-precondition error, got none");
   });
 
   await check("Admin backup mode for someone else writes the full normalized blob", async () => {

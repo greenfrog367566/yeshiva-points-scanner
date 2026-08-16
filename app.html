@@ -194,6 +194,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #backupNudge.show{display:flex}
   #backupNudge b{color:#4d3706}
   #backupNudge .bn-spacer{flex:1 1 auto}
+  /* Entry point C (docs/Firebase_SignIn_UI_Design_Proposal.md §1) — same
+     shape as #backupNudge, deliberately a calmer blue rather than amber:
+     this is an invitation, not a warning — nothing is stale or at risk. */
+  #signinNudge{display:none;background:#eef4fb;color:#1b3a5c;border:1px solid #c9dcf0;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem;align-items:center;gap:12px;flex-wrap:wrap}
+  #signinNudge.show{display:flex}
+  #signinNudge .sn-spacer{flex:1 1 auto}
   /* Shown inside a downloaded offline copy when its built-in snapshot was held
      back because this browser already had saved work. Amber, not red, like
      #backupNudge: nothing is broken and nothing was lost — the rebbi is being
@@ -1394,7 +1400,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* print */
   @media print{
     @page{size:letter;margin:0}
-    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.fab-btn,.view-note,.toolbar,.no-print,#saveWarn,#storageWarn,#backupNudge,.pill-note,#globalScanBar,#noticeStack{display:none!important}
+    header,nav.tabs,nav.subtabs,.subtabs-row,.subtabs-icons,.fab-btn,.view-note,.toolbar,.no-print,#saveWarn,#storageWarn,#backupNudge,#signinNudge,.pill-note,#globalScanBar,#noticeStack{display:none!important}
     body{background:#fff}
     main{max-width:none;padding:0}
     .view{display:none!important}
@@ -1970,6 +1976,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <span class="bn-spacer"></span>
     <button class="btn btn-sm btn-primary" id="backupNudgeGo">Back up now</button>
     <button class="btn btn-sm" id="backupNudgeLater">Not now</button>
+  </div>
+
+  <!-- Entry point C (docs/Firebase_SignIn_UI_Design_Proposal.md §1) — one-time,
+       dismissible, never reappears once dismissed or once signed in. -->
+  <div id="signinNudge">
+    <span>Want your class backed up automatically? Sign in with Google — it takes a second.</span>
+    <span class="sn-spacer"></span>
+    <button class="btn btn-sm btn-primary" id="signinNudgeGo">Sign in</button>
+    <button class="btn btn-sm" id="signinNudgeLater">Not now</button>
   </div>
 
   <!-- Only ever appears inside a downloaded offline copy, and only when that
@@ -4141,6 +4156,11 @@ function setupRoster() {
     <h2 class="view-title">Settings</h2>
     <p class="view-note">Set-and-forget options that apply across the app. They save automatically on this computer.</p>
 
+    <div class="card pad" style="margin-bottom:14px" id="accountCard">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">Account</h3>
+      <div id="accountBox"></div>
+    </div>
+
     <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">Barcode/QR Scanner — connect directly (Serial/COM)</h3>
       <p class="view-note" style="margin:0 0 10px">Most cheap USB scanners need <b>no setup</b> — they act like a keyboard, and just work on the Scan tab already. Use this only if your scanner connects as an actual <b>serial/COM port</b> device instead (common with some industrial, handheld, or Bluetooth-SPP scanners) — connecting it here reads scans straight from the port, everywhere in the app, instead of through the keyboard.</p>
@@ -4353,22 +4373,30 @@ function setupRoster() {
    * only said "token comes back in the URL fragment" without working through
    * what else already lives there.
    */
-  var pendingOAuthResult = (function(){
-    if (!location.hash || location.hash.length < 2) return null;
-    var raw = location.hash.slice(1);
+  /* OAUTH_FRAGMENT_PARSE_START — deliberately dependency-free (no `location`,
+   * no `history`, no DOM), same reasoning as routeParse()/routeBuild() above:
+   * .github/scripts/check-oauth-fragment.js extracts and runs this exact
+   * function under Node, so there is no second copy to drift out of sync. */
+  function parseOAuthFragment(hash){
+    if (!hash || hash.length < 2) return null;
+    var raw = hash.charAt(0) === "#" ? hash.slice(1) : hash;
     if (raw.indexOf("id_token=") < 0 && raw.indexOf("error=") < 0) return null;
     var p;
     try { p = new URLSearchParams(raw); } catch (e) { return null; }
     if (!p.get("id_token") && !p.get("error")) return null;
-    var result = {
+    return {
       idToken: p.get("id_token"),
       state: p.get("state") || "",
       error: p.get("error"),
       errorDescription: p.get("error_description")
     };
+  }
+  /* OAUTH_FRAGMENT_PARSE_END */
+
+  var pendingOAuthResult = parseOAuthFragment(location.hash);
+  if (pendingOAuthResult) {
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
-    return result;
-  })();
+  }
 
   var KEY = "qrPointsData_v1";
   // The seeded Bathroom Pass activity's name. It is matched BY NAME in several
@@ -5702,6 +5730,295 @@ function setupRoster() {
   // immediately for a click; this is what makes the browser's own Back/
   // Forward buttons do the same thing without a second render path.
   window.addEventListener("popstate", function(){ routerApplyRoute(); });
+
+  /* ---------- Sign-in engine (docs/Firebase_SignIn_UI_Design_Proposal.md) ---
+   * SDK-free until a tier-1 account is confirmed (§2). pendingOAuthResult was
+   * already captured at the very top of this IIFE, before anything else
+   * could touch location.hash — everything below is the rest of the flow:
+   * build the redirect URL, exchange the Google credential for a Firebase
+   * identity via plain REST, read/create the account record, and only load
+   * the vendored SDK once a real tier-1 schoolId comes back.
+   */
+  var GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+  function firebaseProjectId(){ return window.MENCHMARK_FIREBASE_CONFIG && window.MENCHMARK_FIREBASE_CONFIG.projectId; }
+  function cloudFunctionsBase(){ return "https://us-central1-" + firebaseProjectId() + ".cloudfunctions.net"; }
+  function signInRedirectUri(){ return location.origin + location.pathname; }
+
+  // login_hint (an email) makes a later silent re-auth attempt reliable when
+  // a browser holds more than one Google account — the exact failure mode
+  // the Drive spike (#243) lost an hour to before finding it. Reused here
+  // any time we already know who this device belongs to.
+  function buildGoogleSignInUrl(opts){
+    opts = opts || {};
+    var nonce = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    try { sessionStorage.setItem("menchmarkSignInNonce", nonce); } catch (e) {}
+    var params = {
+      client_id: window.MENCHMARK_GOOGLE_CLIENT_ID,
+      redirect_uri: signInRedirectUri(),
+      response_type: "id_token",
+      scope: "openid email profile",
+      nonce: nonce,
+      state: nonce
+    };
+    var hint = opts.loginHint || (data.account && data.account.email) || null;
+    if (hint) params.login_hint = hint;
+    if (opts.silent) params.prompt = "none";
+    return GOOGLE_AUTH_URL + "?" + new URLSearchParams(params).toString();
+  }
+
+  function beginGoogleSignIn(){
+    location.href = buildGoogleSignInUrl();
+  }
+
+  // Exchanges a Google ID token for a Firebase identity via plain REST — no
+  // SDK needed for this step (docs/Universal_SignIn_Proposal.md §5). Returns
+  // {idToken, localId (Firebase uid), email, displayName, ...}.
+  function exchangeGoogleIdTokenForFirebase(googleIdToken){
+    var apiKey = window.MENCHMARK_FIREBASE_CONFIG.apiKey;
+    var url = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=" + encodeURIComponent(apiKey);
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        postBody: "id_token=" + encodeURIComponent(googleIdToken) + "&providerId=google.com",
+        requestUri: signInRedirectUri(),
+        returnSecureToken: true
+      })
+    }).then(function(r){
+      return r.json().then(function(j){
+        if (!r.ok) throw new Error((j.error && j.error.message) || "Sign-in failed.");
+        return j;
+      });
+    });
+  }
+
+  // Plain-fetch caller for a 2nd-gen onCall Cloud Function — the documented
+  // HTTP envelope ({data:...} in, {result:...}/{error:...} out), no SDK.
+  function callCloudFunction(name, payload, firebaseIdToken){
+    var url = cloudFunctionsBase() + "/" + name;
+    return fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + firebaseIdToken
+      },
+      body: JSON.stringify({ data: payload || {} })
+    }).then(function(r){
+      return r.json().then(function(j){
+        if (j.error) throw new Error(j.error.message || "Request failed.");
+        return j.result;
+      });
+    });
+  }
+
+  // Unwraps Firestore's typed REST document format ({fields:{k:{stringValue:
+  // "x"}}}) into a plain object — just enough of the type map for the
+  // account-record shape (accounts/{uid}), not a general-purpose client.
+  function firestoreValueToPlain(v){
+    if (!v || typeof v !== "object") return v;
+    if ("stringValue" in v) return v.stringValue;
+    if ("integerValue" in v) return parseInt(v.integerValue, 10);
+    if ("doubleValue" in v) return v.doubleValue;
+    if ("booleanValue" in v) return v.booleanValue;
+    if ("nullValue" in v) return null;
+    if ("mapValue" in v) return firestoreFieldsToObject((v.mapValue && v.mapValue.fields) || {});
+    if ("arrayValue" in v) return ((v.arrayValue && v.arrayValue.values) || []).map(firestoreValueToPlain);
+    if ("timestampValue" in v) return v.timestampValue;
+    return v;
+  }
+  function firestoreFieldsToObject(fields){
+    var out = {};
+    Object.keys(fields || {}).forEach(function(k){ out[k] = firestoreValueToPlain(fields[k]); });
+    return out;
+  }
+  function firestoreGetAccount(uid, firebaseIdToken){
+    var url = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId() +
+      "/databases/(default)/documents/accounts/" + encodeURIComponent(uid);
+    return fetch(url, { headers: { "Authorization": "Bearer " + firebaseIdToken } }).then(function(r){
+      if (r.status === 404) return null;
+      if (!r.ok) return r.json().then(function(j){ throw new Error((j.error && j.error.message) || "Could not read account."); });
+      return r.json().then(function(doc){ return firestoreFieldsToObject(doc.fields || {}); });
+    });
+  }
+
+  // Dynamically injected, once, only for a confirmed tier-1 account — see
+  // the design doc's §2. Never referenced by anything tier-2 touches.
+  var SIGNIN_SDK_SCRIPTS = [
+    "vendor/firebase/firebase-app-compat.js",
+    "vendor/firebase/firebase-auth-compat.js",
+    "vendor/firebase/firebase-firestore-compat.js",
+    "vendor/firebase/firebase-functions-compat.js"
+  ];
+  var signinSdkLoadPromise = null;
+  function loadFirebaseSdk(){
+    if (signinSdkLoadPromise) return signinSdkLoadPromise;
+    signinSdkLoadPromise = SIGNIN_SDK_SCRIPTS.reduce(function(p, src){
+      return p.then(function(){
+        return new Promise(function(resolve, reject){
+          var s = document.createElement("script");
+          s.src = src;
+          s.onload = function(){ resolve(); };
+          s.onerror = function(){ reject(new Error("Could not load " + src)); };
+          document.head.appendChild(s);
+        });
+      });
+    }, Promise.resolve()).then(function(){
+      if (!window.firebase.apps || !window.firebase.apps.length) {
+        window.firebase.initializeApp(window.MENCHMARK_FIREBASE_CONFIG);
+      }
+    });
+    return signinSdkLoadPromise;
+  }
+
+  // Adopts the already-obtained Google credential into the SDK's own Auth
+  // instance — no second consent screen, the rebbi already said yes once
+  // (design doc §2, step 4).
+  function adoptCredentialIntoSdk(googleIdToken){
+    return loadFirebaseSdk().then(function(){
+      var cred = window.firebase.auth.GoogleAuthProvider.credential(googleIdToken);
+      return window.firebase.auth().signInWithCredential(cred);
+    });
+  }
+
+  // In-memory only — holds state across the code-entry screen's Continue
+  // click, never persisted. Cleared on sign-out or a fresh sign-in attempt.
+  var signinState = {
+    step: "idle", // idle | needsCode | needsAdoptionChoice | needsRoster | error
+    firebaseIdToken: null,
+    firebaseUid: null,
+    googleIdToken: null,
+    email: null,
+    displayName: null,
+    error: null
+  };
+
+  function signinDetectLocalClass(){
+    // Step 3b's three-signal detection (present, non-trivial, recent) — see
+    // docs/Firebase_Step3b_Existing_Cohort_Upload_Design_Proposal.md. Kept
+    // deliberately simple here: this file already trusts `data` fully by
+    // this point in boot (load() has run).
+    if (data.firebaseClaimedBy) return null; // already claimed, never re-offer
+    var students = Array.isArray(data.students) ? data.students : [];
+    if (students.length < 1) return null;
+    var hasHistory = (Array.isArray(data.log) && data.log.length > 0);
+    if (!hasHistory) return null;
+    var lastTs = 0;
+    data.log.forEach(function(e){ if (e && typeof e.ts === "number" && e.ts > lastTs) lastTs = e.ts; });
+    var THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+    if (!lastTs || (Date.now() - lastTs) > THIRTY_DAYS) return null;
+    return { className: data.className || "Your class", studentCount: students.length, lastScanTs: lastTs };
+  }
+
+  function signinContinueAfterAccount(account){
+    signinState.step = "idle";
+    signinState.error = null;
+    data.account = {
+      uid: signinState.firebaseUid,
+      email: account.email || signinState.email,
+      displayName: account.displayName || signinState.displayName,
+      role: account.role || "rebbi",
+      schoolId: (typeof account.schoolId !== "undefined") ? account.schoolId : null
+    };
+    save();
+    var afterTierReady = (data.account.schoolId != null)
+      ? adoptCredentialIntoSdk(signinState.googleIdToken)
+      : Promise.resolve();
+    return afterTierReady.then(function(){
+      var offer = signinDetectLocalClass();
+      if (offer) { signinState.step = "needsAdoptionChoice"; signinState.adoptionOffer = offer; }
+      else { signinState.step = "idle"; }
+      if (typeof renderAccountSection === "function") renderAccountSection();
+    });
+  }
+
+  // Called once at boot, after load() — see the init block below. This is
+  // the ONLY place pendingOAuthResult is consumed.
+  function signinCompleteFromRedirect(){
+    if (!pendingOAuthResult) return;
+    if (pendingOAuthResult.error) {
+      signinState.step = "error";
+      signinState.error = pendingOAuthResult.errorDescription || pendingOAuthResult.error;
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      return;
+    }
+    signinState.googleIdToken = pendingOAuthResult.idToken;
+    exchangeGoogleIdTokenForFirebase(pendingOAuthResult.idToken).then(function(fb){
+      signinState.firebaseIdToken = fb.idToken;
+      signinState.firebaseUid = fb.localId;
+      signinState.email = fb.email;
+      signinState.displayName = fb.displayName || (fb.email || "").split("@")[0];
+      return firestoreGetAccount(fb.localId, fb.idToken);
+    }).then(function(account){
+      if (account) return signinContinueAfterAccount(account);
+      signinState.step = "needsCode";
+      if (typeof renderAccountSection === "function") renderAccountSection();
+    }).catch(function(err){
+      signinState.step = "error";
+      signinState.error = err.message || String(err);
+      if (typeof renderAccountSection === "function") renderAccountSection();
+    });
+  }
+
+  // Called from the code-entry screen's Continue button.
+  function signinSubmitCode(code){
+    signinState.step = "idle";
+    return callCloudFunction("redeemCode", { code: code || "" }, signinState.firebaseIdToken)
+      .then(signinContinueAfterAccount)
+      .catch(function(err){
+        signinState.step = "needsCode";
+        signinState.error = err.message || String(err);
+        if (typeof renderAccountSection === "function") renderAccountSection();
+      });
+  }
+
+  function signinClaimLocalClass(){
+    var normalized = window.__exportNormalized(data); // never trust a stale/pre-migration snapshot
+    signinState.step = "idle";
+    return callCloudFunction("provisionRebbi", {
+      mode: "backup", self: true, normalized: normalized, deviceId: "signin-adoption"
+    }, signinState.firebaseIdToken).then(function(res){
+      data.firebaseClaimedBy = signinState.firebaseUid;
+      save();
+      signinState.step = "idle";
+      signinState.adoptionOffer = null;
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      return res;
+    }).catch(function(err){
+      signinState.error = err.message || String(err);
+      if (typeof renderAccountSection === "function") renderAccountSection();
+    });
+  }
+
+  function signinStartFresh(){
+    signinState.step = "needsRoster";
+    if (typeof renderAccountSection === "function") renderAccountSection();
+  }
+
+  function signinSubmitRoster(className, students){
+    signinState.step = "idle";
+    return callCloudFunction("provisionRebbi", {
+      mode: "roster", self: true, className: className, students: students, deviceId: "signin-first-run"
+    }, signinState.firebaseIdToken).then(function(){
+      data.firebaseClaimedBy = signinState.firebaseUid;
+      save();
+      signinState.step = "idle";
+      if (typeof renderAccountSection === "function") renderAccountSection();
+    }).catch(function(err){
+      signinState.step = "needsRoster";
+      signinState.error = err.message || String(err);
+      if (typeof renderAccountSection === "function") renderAccountSection();
+    });
+  }
+
+  function signinSignOut(){
+    data.account = null;
+    save();
+    signinState = { step: "idle", firebaseIdToken: null, firebaseUid: null, googleIdToken: null, email: null, displayName: null, error: null };
+    if (window.firebase && window.firebase.auth) {
+      try { window.firebase.auth().signOut(); } catch (e) {}
+    }
+    if (typeof renderAccountSection === "function") renderAccountSection();
+  }
 
   // "manage" (holds Settings) and the "settings" tab itself can never be hidden,
   // so there's always a way back into this screen to turn tabs back on.
@@ -8711,6 +9028,7 @@ function setupRoster() {
     });
   });
   function renderSettings(){
+    renderAccountSection();
     $("setSound").checked = !data.muted;
     $("setVoiceNotes").checked = data.voiceNotes!==false;
     $("setShulchani").checked = !!data.shulchaniMode;
@@ -8731,6 +9049,116 @@ function setupRoster() {
     // renderQuiz, renderGame — those controls now live on their feature panels.
     renderSerialUI();
     renderNavVisibilitySettings();
+  }
+  // Entry point B (docs/Firebase_SignIn_UI_Design_Proposal.md §1) — the one
+  // door that always exists. Renders whichever step signinState is on;
+  // called both from renderSettings() and from every signin*() function
+  // above as their step transitions, so this is always in sync without a
+  // separate "did anything change" check.
+  function renderAccountSection(){
+    var box = $("accountBox"); if(!box) return;
+    box.innerHTML = "";
+
+    if (signinState.step === "needsCode") { renderAccountCodeStep(box); return; }
+    if (signinState.step === "needsAdoptionChoice") { renderAccountAdoptionStep(box); return; }
+    if (signinState.step === "needsRoster") { renderAccountRosterStep(box); return; }
+
+    if (data.account) {
+      var line = el("p", null);
+      var label = data.account.schoolId != null
+        ? (data.account.email + (data.account.schoolId ? " · a school account" : ""))
+        : data.account.email;
+      line.appendChild(document.createTextNode("Signed in as " + label));
+      box.appendChild(line);
+      if (signinState.error) {
+        var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
+      }
+      var signOutBtn = el("button", "btn btn-sm", "Sign out");
+      signOutBtn.addEventListener("click", signinSignOut);
+      box.appendChild(signOutBtn);
+      return;
+    }
+
+    // Not signed in — entry screen. The privacy summary sits ABOVE the
+    // button on purpose (design doc §3, step 1) — docs/Account_Privacy_Note.md
+    // isn't published as a page yet, so this is the honest inline stand-in
+    // until it has a real URL to link to (flagged in the design doc's own
+    // "what this doc does not decide").
+    var privacy = el("p", "view-note");
+    privacy.style.marginBottom = "10px";
+    privacy.textContent = "Signing in keeps only your name, email, and (if your school uses Menchmark together with us) which school — never your class's data unless your school does. privacy@menchmark.app for questions.";
+    box.appendChild(privacy);
+    if (signinState.error) {
+      var errp2 = el("p", "pill-note"); errp2.textContent = signinState.error; box.appendChild(errp2);
+    }
+    var signInBtn = el("button", "btn btn-primary", "Sign in with Google");
+    signInBtn.addEventListener("click", beginGoogleSignIn);
+    box.appendChild(signInBtn);
+  }
+  function renderAccountCodeStep(box){
+    var p = el("p", "view-note");
+    p.textContent = "Signed in as " + signinState.email + ". Have a code from your school?";
+    box.appendChild(p);
+    if (signinState.error) {
+      var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
+    }
+    var input = el("input"); input.type = "text"; input.className = "field";
+    input.placeholder = "Code (leave blank if you don't have one)";
+    box.appendChild(input);
+    var btn = el("button", "btn btn-primary", "Continue");
+    btn.style.marginTop = "8px";
+    btn.addEventListener("click", function(){ signinSubmitCode(input.value.trim()); });
+    box.appendChild(btn);
+  }
+  // "today" / "yesterday" / "N days ago" — a sentence fragment, unlike
+  // trackedAgoText()'s badge-shaped "last: 3d" (wrong shape for this copy).
+  function signinRelativeDayText(ts){
+    var days = Math.round((new Date().setHours(0,0,0,0) - new Date(ts).setHours(0,0,0,0)) / 86400000);
+    if (days <= 0) return "today";
+    if (days === 1) return "yesterday";
+    return days + " days ago";
+  }
+  function renderAccountAdoptionStep(box){
+    var offer = signinState.adoptionOffer;
+    var p = el("p", "view-note");
+    p.textContent = "This device has a class — " + offer.className + ", " + offer.studentCount +
+      " " + (offer.studentCount === 1 ? "boy" : "boys") + ", last scan " + signinRelativeDayText(offer.lastScanTs) + ". Add it to your account?";
+    box.appendChild(p);
+    if (signinState.error) {
+      var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
+    }
+    var addBtn = el("button", "btn btn-primary", "Add it");
+    addBtn.addEventListener("click", signinClaimLocalClass);
+    box.appendChild(addBtn);
+    var freshBtn = el("button", "btn btn-sm", "Start fresh instead");
+    freshBtn.style.marginLeft = "8px";
+    freshBtn.addEventListener("click", signinStartFresh);
+    box.appendChild(freshBtn);
+  }
+  function renderAccountRosterStep(box){
+    var p = el("p", "view-note");
+    p.textContent = "Name your class and add students — paste \"Name, Group\" one per line, or just names.";
+    box.appendChild(p);
+    if (signinState.error) {
+      var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
+    }
+    var nameInput = el("input"); nameInput.type = "text"; nameInput.className = "field";
+    nameInput.placeholder = "Class name"; nameInput.style.marginBottom = "8px";
+    box.appendChild(nameInput);
+    var ta = document.createElement("textarea"); ta.className = "field";
+    ta.style.height = "100px"; ta.placeholder = "Chaim Berkowitz, A\nDovid Klein, A";
+    box.appendChild(ta);
+    var btn = el("button", "btn btn-primary", "Save");
+    btn.style.marginTop = "8px";
+    btn.addEventListener("click", function(){
+      var rows = ta.value.split("\n").map(function(line){
+        var parts = line.split(",").map(function(s){ return s.trim(); });
+        if (!parts[0]) return null;
+        return { name: parts[0], group: parts[1] || null };
+      }).filter(Boolean);
+      signinSubmitRoster(nameInput.value.trim(), rows);
+    });
+    box.appendChild(btn);
   }
   // Lets a teacher hide whole sections (groups) or individual subtabs they
   // don't use. Setup and Settings are locked on, so there's always a way back.
@@ -22521,6 +22949,27 @@ nameLine
     try{ sessionStorage.setItem(NUDGE_DISMISS_KEY, "1"); }catch(e){}
     hideBackupNudge();
   });
+
+  // Entry point C (docs/Firebase_SignIn_UI_Design_Proposal.md §1) — same
+  // shape as the backup nudge above, one-shot rather than session-dismiss:
+  // data.signinNudgeSeen is permanent (load2fix()-backfilled), so this never
+  // reappears once dismissed OR once signed in, on this device, ever again.
+  function maybeShowSigninNudge(){
+    var bar = $("signinNudge"); if(!bar) return;
+    if(!canSave) return; // preview mode — see maybeShowBackupNudge()'s own note
+    if(data.account) return; // already signed in
+    if(data.signinNudgeSeen) return;
+    if(!data.students || !data.students.length) return; // nothing to nudge about yet
+    bar.classList.add("show");
+  }
+  $("signinNudgeGo").addEventListener("click", function(){
+    data.signinNudgeSeen = true; save();
+    beginGoogleSignIn();
+  });
+  $("signinNudgeLater").addEventListener("click", function(){
+    data.signinNudgeSeen = true; save();
+    $("signinNudge").classList.remove("show");
+  });
   // Builds a fully self-contained offline copy of the app:
   //  1. Gets this page's own current HTML — preferably by re-fetching it
   //     fresh over the network (avoids baking in transient runtime-only DOM
@@ -22986,6 +23435,16 @@ nameLine
     if(!data.scores) data.scores = {};
     if(!data.school) data.school = "Sample School";
     if(!data.className) data.className = "Sample Class 1";
+    // Sign-in (docs/Firebase_SignIn_UI_Design_Proposal.md). data.account is
+    // display info only — {uid,email,displayName,role,schoolId} — never a
+    // live token, which stays in memory (signinState) for the session only.
+    // data.firebaseClaimedBy gates step 3b's same-device-adoption offer so
+    // it never re-fires once this device's class has been claimed.
+    if(typeof data.account!=="undefined" && data.account!==null && typeof data.account!=="object") data.account=null;
+    if(typeof data.account==="undefined") data.account=null;
+    if(typeof data.firebaseClaimedBy!=="undefined" && data.firebaseClaimedBy!==null && typeof data.firebaseClaimedBy!=="string") data.firebaseClaimedBy=null;
+    if(typeof data.firebaseClaimedBy==="undefined") data.firebaseClaimedBy=null;
+    if(typeof data.signinNudgeSeen!=="boolean") data.signinNudgeSeen=false;
     if(typeof data.sheetUrl!=="string") data.sheetUrl="";
     if(typeof data.autoSheet!=="boolean") data.autoSheet=true;
     // Voice notes are ON as of 2026-08-06. They shipped OFF (#222) so the
@@ -24233,6 +24692,29 @@ nameLine
 
   /* ---------- init ---------- */
   load();
+  // Sign-in (docs/Firebase_SignIn_UI_Design_Proposal.md): must run after
+  // load() (needs `data`/`save()`) but as early as possible in boot, since
+  // it's the one thing on this page a rebbi is mid-flow through when the
+  // redirect lands. Does nothing at all if pendingOAuthResult is null —
+  // the overwhelming majority of boots, tier-2 or never-signed-in included.
+  signinCompleteFromRedirect();
+  // Tier-1 devices: the SDK loads eagerly on every boot (not just right
+  // after signing in), so Firebase Auth's own persisted session can resume
+  // silently — no redirect, no click, the SDK's own IndexedDB-backed
+  // refresh handles it. Tier-2/never-signed-in boots never reach this line
+  // doing anything, since data.account.schoolId stays null for them.
+  if (data.account && data.account.schoolId != null) {
+    loadFirebaseSdk().catch(function(){ /* offline boot — try again next load */ });
+  }
+  // Entry point A's landing hook (docs/Firebase_SignIn_UI_Design_Proposal.md
+  // §1): setup.html links here with ?signin=1 rather than duplicating any
+  // sign-in code itself. beginGoogleSignIn() immediately navigates away, so
+  // nothing else in this boot ever finishes running for this particular
+  // load — that's fine, the redirect back lands on a fresh boot with no
+  // ?signin=1 (signInRedirectUri() never includes location.search).
+  if (!data.account && location.search.indexOf("signin=1") >= 0) {
+    beginGoogleSignIn();
+  }
   // Leader Board's remembered range — load2fix() has already backfilled
   // data.standRange/data.standRangeCustomSub by this point, so re-seed the
   // page-level var here rather than at its declaration above, which runs
@@ -24379,6 +24861,7 @@ nameLine
   // two buttons and by markBackedUp().
   setTimeout(function(){
     try{ maybeShowBackupNudge(); }catch(e){}
+    try{ maybeShowSigninNudge(); }catch(e){}
     // Re-attaches a previously chosen backup folder and writes today's file.
     // AFTER the nudge on purpose: if the folder is still connected, fbWrite()
     // stamps lastBackupAt and hides the bar a moment later, so a rebbi who is

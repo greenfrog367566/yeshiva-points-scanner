@@ -99,6 +99,16 @@ exports.redeemCode = onCall(async (request) => {
   });
 });
 
+// Shared by the admin-driven roster branch and self-serve's roster mode —
+// one row->normalized-blob mapping, not two to keep in sync.
+function rosterRowsToNormalized(className, rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  return {
+    className: className || "",
+    students: list.map((r, i) => ({ id: (r && r.id) || `roster_${i}`, name: (r && r.name) || "", group: (r && r.group) || null })),
+  };
+}
+
 async function mintOrFindUid(email) {
   try {
     const userRecord = await auth.getUserByEmail(email);
@@ -188,12 +198,24 @@ exports.provisionRebbi = onCall(async (request) => {
 
   // ---- self-serve restore: caller acts on his own account only ----
   if (payload.self === true) {
-    if (mode !== "backup") {
-      throw new HttpsError("invalid-argument", "Self-serve is only supported for mode: 'backup'.");
+    if (mode !== "backup" && mode !== "roster") {
+      throw new HttpsError("invalid-argument", "Self-serve is only supported for mode: 'backup' or 'roster'.");
     }
-    if (!payload.normalized || typeof payload.normalized !== "object") {
-      throw new HttpsError("invalid-argument", "A normalized backup payload is required.");
+    let normalized;
+    if (mode === "backup") {
+      if (!payload.normalized || typeof payload.normalized !== "object") {
+        throw new HttpsError("invalid-argument", "A normalized backup payload is required.");
+      }
+      normalized = payload.normalized;
+    } else {
+      // mode:"roster", self:true — the sign-in flow's first-run screen
+      // (docs/Firebase_SignIn_UI_Design_Proposal.md §3.5), flagged there as
+      // a small necessary extension to this function rather than assumed.
+      // Same roster-entry component, same row->normalized mapping the
+      // admin-driven roster branch below uses.
+      normalized = rosterRowsToNormalized(payload.className, payload.students);
     }
+
     const uid = request.auth.uid;
     const caller = await getAccount(uid);
     if (!caller) throw new HttpsError("failed-precondition", "Sign in and complete account setup first.");
@@ -210,7 +232,7 @@ exports.provisionRebbi = onCall(async (request) => {
       }
     }
 
-    return writeClassAndVerify(classId, uid, caller.schoolId, payload.normalized, "self:" + uid.slice(0, 8) + ":" + deviceId);
+    return writeClassAndVerify(classId, uid, caller.schoolId, normalized, "self:" + uid.slice(0, 8) + ":" + deviceId);
   }
 
   // ---- admin-driven: admin-invite | roster | backup-for-someone-else ----
@@ -248,10 +270,7 @@ exports.provisionRebbi = onCall(async (request) => {
     if (!payload.force && (await classHasContent(db, classId))) {
       throw new HttpsError("already-exists", "That rebbi already has a class with data. Pass force:true to overwrite.");
     }
-    const normalized = {
-      className: payload.className || "",
-      students: rows.map((r, i) => ({ id: r.id || `roster_${i}`, name: r.name || "", group: r.group || null })),
-    };
+    const normalized = rosterRowsToNormalized(payload.className, rows);
     const { runId, receipt } = await writeClassAndVerify(classId, newUid, schoolId, normalized, deviceTag);
     const signInLink = await issueSignInLink(email);
     return { uid: newUid, classId, runId, receipt, signInLink };
