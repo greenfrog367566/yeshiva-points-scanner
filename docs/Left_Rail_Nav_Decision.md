@@ -210,3 +210,62 @@ review ranked as a specific win):
 - Sequencing: before or after #227? Before or after Firebase step 4/6? (§5)
 - Is a full sidebar worth building now, given `NOW.md`'s actual queue is the
   Firebase rebuild + #227 + several small items — or does this wait?
+
+---
+
+## 8. Second review (ChatGPT, 2026-08-15) — converges, sharpens the default state
+
+Ben ran this doc back through ChatGPT. The verdict: **yes to the rail, no to
+the Tools/Setup split, not immediately** — independently landing on the same
+split this doc argued for in §3 and §6-step-1 (evaluate `manage` unsplit
+before touching group count), which is worth recording as real convergence
+rather than one source echoing the other. Three things from that pass are
+worth folding in:
+
+**Default state should be icon-only, not the mockup's 212px expanded rail.**
+This doc's §4 already flagged the expanded-by-default state as a
+three-second-rule regression risk against the Dashboard/seating-chart
+horizontal space the July redesign fought to protect — the second review
+independently reached the same conclusion and is more specific about the
+fix: **default to the icon rail (54px), expand only the active group's items
+on click, and use hover for a label tooltip in icon state.** That resolves
+§7's open "does the sidebar force rail-collapsed" question with a concrete
+answer rather than leaving it open — collapsed-with-active-group-open is the
+proposed default, not merely "collapsed" or "whatever was last set."
+
+**Sequencing: after #227, not after the whole `NOW.md` queue.** §5 asked
+"before or after #227 / before or after Firebase step 4/6" without picking a
+side. The second review's argument for a specific answer: Firebase (auth,
+Firestore, routing) doesn't change what the *nav* looks like or how many Run
+tabs there are, so waiting on it buys nothing for evaluating a sidebar —
+whereas #227 directly changes the Run group's tab count (12 → 8), and
+evaluating a sidebar's "12 tabs in one flat row vs. one vertical accordion"
+premise against a Run group that's about to shrink means either re-evaluating
+after or building against a stale count. **Proposed order: finish #227 →
+build a CSS-only sidebar prototype → use it for a real week of class →
+revisit the Tools/Setup question with real usage data instead of a mockup
+guess.** This still leaves the sidebar *behind* #227 in the queue, not ahead
+of Firebase generally — Firebase's own step 6 (admin cross-class picker) can
+still land its `router.switchClass`-wired class switcher into the sidebar
+whenever that step is actually built, per §5's second bullet.
+
+**The falsifiable prediction worth testing, not assuming.** Both reviews now
+agree on a specific hypothesis rather than a vibe: *the Run group's problem
+was never really "12 tabs," it was "12 tabs in one horizontal strip with no
+overflow behavior."* A vertical accordion may make that problem disappear
+without a group split at all. That's exactly the kind of claim a week of real
+classroom use answers and a mockup can't — which is the concrete reason to
+build step 1 (unsplit sidebar) before spending any more design time on step 3
+(the split).
+
+**Updated §7 answers, pending Ben's final confirmation:**
+- Tools/Setup split → **not now**; revisit only after a real week with the
+  unsplit sidebar, per the prediction above.
+- Default rail state → **icon-only (54px), active group expands on click,
+  hover shows a label tooltip in collapsed state** — not the mockup's
+  always-212px default.
+- Sequencing → **after #227, independent of the Firebase timeline** — #227
+  changes what's being evaluated; Firebase doesn't.
+- Still genuinely open: is this worth scheduling into `NOW.md` at all right
+  now, or does it wait behind #227 as a "next, in order" item rather than
+  jumping the queue? That's the one question neither review answers for Ben.
