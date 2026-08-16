@@ -5523,6 +5523,82 @@ function setupRoster() {
     if(printOwner[tab]) return printOwner[tab];
     return "scan";
   }
+
+  /* ---------- Step 4 routing — PR1 of 5, INERT (docs/Firebase_Step4_Routing_Design_Proposal.md) ----------
+   * Route shape: #/c/{classId}/{group}/{tab}[/{subtab}] — group/tab are the
+   * PERSISTED INTERNAL KEYS verbatim (never the R-labels in TAB_LABELS).
+   *
+   * Nothing below is called from anywhere yet: no click handler points at
+   * router.go, no popstate listener exists, boot doesn't read the hash.
+   * That wiring is PR2 (back-button) and PR3 (deep-link cold start) — this
+   * PR is pure, unit-tested code with zero behavior-change risk, per the
+   * design doc's 5-PR incremental migration path. PR4 (tier guard + async
+   * hydrate for real multi-class) extends routerApplyRoute() later; today's
+   * app has exactly one implicit, already-loaded class, so there is nothing
+   * to guard or fetch yet.
+   */
+  /* ROUTE_HASH_FUNCTIONS_START — deliberately dependency-free (no `data`, no
+   * DOM, no other app.html function) so .github/scripts/check-router-hash.js
+   * can extract and run this exact block directly under Node. That means
+   * there is no second copy of this logic to keep in sync, unlike
+   * test-migration.html's migrateData()/load2fix() duplicates — those need a
+   * copy because they depend on the full app context; these two don't. */
+  function routeParse(hash){
+    var h = String(hash==null ? "" : hash);
+    if(h.charAt(0)==="#") h = h.slice(1);
+    if(h.charAt(0)==="/") h = h.slice(1);
+    // Strip exactly one trailing slash (a trailing-slash hash) — everything
+    // else is split positionally, INCLUDING interior empty segments, so a
+    // genuinely missing classId ("#/c//scan/scan") is rejected below rather
+    // than silently shifting every later segment left by one.
+    if(h.length && h.charAt(h.length-1)==="/") h = h.slice(0, -1);
+    var parts = h.split("/");
+    if(parts.length < 3 || parts[0]!=="c") return null;
+    var classId = decodeURIComponent(parts[1]);
+    var group = decodeURIComponent(parts[2]);
+    if(!classId || !group) return null;
+    return {
+      classId: classId,
+      group: group,
+      tab: parts[3] ? decodeURIComponent(parts[3]) : null,
+      subtab: parts[4] ? decodeURIComponent(parts[4]) : null
+    };
+  }
+  function routeBuild(route){
+    route = route || {};
+    if(!route.classId || !route.group || !route.tab) return null;
+    var parts = ["#","c", encodeURIComponent(route.classId), encodeURIComponent(route.group), encodeURIComponent(route.tab)];
+    if(route.subtab) parts.push(encodeURIComponent(route.subtab));
+    return parts.join("/");
+  }
+  /* ROUTE_HASH_FUNCTIONS_END */
+
+  var LAST_ACTIVE_CLASS_KEY = "menchmark_lastActiveClassId";
+  // The sole thing allowed to call history.pushState for a nav-shaped action
+  // (class switch, group switch, tab switch) — one call, one history entry,
+  // no coalescing, so back always undoes exactly the last action. Not yet
+  // called by anything (PR1) — see the header comment above.
+  function routerGo(opts){
+    opts = opts || {};
+    var tab = opts.tab || "scan";
+    var group = opts.group || groupOfTab(tab);
+    var hash = routeBuild({ classId: opts.classId, group: group, tab: tab, subtab: opts.subtab });
+    if(!hash) return false;
+    history.pushState({menchmarkRoute:true}, "", hash);
+    try{ localStorage.setItem(LAST_ACTIVE_CLASS_KEY, opts.classId); }catch(e){}
+    return true;
+  }
+  // PR1/PR3 scope only: parse the hash and render. No tier guard, no async
+  // hydrate phase — see the header comment above for why that's fine today
+  // and where it lands later. Falls back to the Dashboard for a missing or
+  // unrecognized tab rather than a blank screen.
+  function routerApplyRoute(){
+    var parsed = routeParse(location.hash);
+    var tab = (parsed && parsed.tab && TAB_LABELS.hasOwnProperty(parsed.tab)) ? parsed.tab : "scan";
+    activateTab(tab);
+  }
+  var router = { go: routerGo, applyRoute: routerApplyRoute, parse: routeParse, build: routeBuild };
+
   // "manage" (holds Settings) and the "settings" tab itself can never be hidden,
   // so there's always a way back into this screen to turn tabs back on.
   function navHidden(){
