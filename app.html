@@ -5615,6 +5615,94 @@ function setupRoster() {
     if(printOwner[tab]) return printOwner[tab];
     return "scan";
   }
+
+  /* ---------- Step 4 routing — PR1 of 5, INERT (docs/Firebase_Step4_Routing_Design_Proposal.md) ----------
+   * Route shape: #/c/{classId}/{group}/{tab}[/{subtab}] — group/tab are the
+   * PERSISTED INTERNAL KEYS verbatim (never the R-labels in TAB_LABELS).
+   *
+   * Nothing below is called from anywhere yet: no click handler points at
+   * router.go, no popstate listener exists, boot doesn't read the hash.
+   * That wiring is PR2 (back-button) and PR3 (deep-link cold start) — this
+   * PR is pure, unit-tested code with zero behavior-change risk, per the
+   * design doc's 5-PR incremental migration path. PR4 (tier guard + async
+   * hydrate for real multi-class) extends routerApplyRoute() later; today's
+   * app has exactly one implicit, already-loaded class, so there is nothing
+   * to guard or fetch yet.
+   */
+  /* ROUTE_HASH_FUNCTIONS_START — deliberately dependency-free (no `data`, no
+   * DOM, no other app.html function) so .github/scripts/check-router-hash.js
+   * can extract and run this exact block directly under Node. That means
+   * there is no second copy of this logic to keep in sync, unlike
+   * test-migration.html's migrateData()/load2fix() duplicates — those need a
+   * copy because they depend on the full app context; these two don't. */
+  function routeParse(hash){
+    var h = String(hash==null ? "" : hash);
+    if(h.charAt(0)==="#") h = h.slice(1);
+    if(h.charAt(0)==="/") h = h.slice(1);
+    // Strip exactly one trailing slash (a trailing-slash hash) — everything
+    // else is split positionally, INCLUDING interior empty segments, so a
+    // genuinely missing classId ("#/c//scan/scan") is rejected below rather
+    // than silently shifting every later segment left by one.
+    if(h.length && h.charAt(h.length-1)==="/") h = h.slice(0, -1);
+    var parts = h.split("/");
+    if(parts.length < 3 || parts[0]!=="c") return null;
+    var classId = decodeURIComponent(parts[1]);
+    var group = decodeURIComponent(parts[2]);
+    if(!classId || !group) return null;
+    return {
+      classId: classId,
+      group: group,
+      tab: parts[3] ? decodeURIComponent(parts[3]) : null,
+      subtab: parts[4] ? decodeURIComponent(parts[4]) : null
+    };
+  }
+  function routeBuild(route){
+    route = route || {};
+    if(!route.classId || !route.group || !route.tab) return null;
+    var parts = ["#","c", encodeURIComponent(route.classId), encodeURIComponent(route.group), encodeURIComponent(route.tab)];
+    if(route.subtab) parts.push(encodeURIComponent(route.subtab));
+    return parts.join("/");
+  }
+  /* ROUTE_HASH_FUNCTIONS_END */
+
+  var LAST_ACTIVE_CLASS_KEY = "menchmark_lastActiveClassId";
+  // PR2 (docs/Firebase_Step4_Routing_Design_Proposal.md): today's app has
+  // exactly one implicit class, so classId is hardcoded here rather than
+  // resolved from Firestore/tier-1 — that resolution is PR4's job, gated on
+  // real multi-class existing. Every router.go() call below uses this.
+  var LOCAL_CLASS_ID = "local";
+  // The sole thing allowed to call history.pushState for a nav-shaped action
+  // (class switch, group switch, tab switch) — one call, one history entry,
+  // no coalescing, so back always undoes exactly the last action. Renders
+  // immediately after pushing, since pushState itself fires no event —
+  // popstate (browser back/forward) is the only thing that arrives for
+  // free, which is why applyRoute() is also wired to that below.
+  function routerGo(opts){
+    opts = opts || {};
+    var tab = opts.tab || "scan";
+    var group = opts.group || groupOfTab(tab);
+    var hash = routeBuild({ classId: opts.classId, group: group, tab: tab, subtab: opts.subtab });
+    if(!hash) return false;
+    history.pushState({menchmarkRoute:true}, "", hash);
+    try{ localStorage.setItem(LAST_ACTIVE_CLASS_KEY, opts.classId); }catch(e){}
+    routerApplyRoute();
+    return true;
+  }
+  // PR1/PR3 scope only: parse the hash and render. No tier guard, no async
+  // hydrate phase — see the header comment above for why that's fine today
+  // and where it lands later. Falls back to the Dashboard for a missing or
+  // unrecognized tab rather than a blank screen.
+  function routerApplyRoute(){
+    var parsed = routeParse(location.hash);
+    var tab = (parsed && parsed.tab && TAB_LABELS.hasOwnProperty(parsed.tab)) ? parsed.tab : "scan";
+    activateTab(tab);
+  }
+  var router = { go: routerGo, applyRoute: routerApplyRoute, parse: routeParse, build: routeBuild };
+  // PR2: the back/forward half of the loop. router.go() above renders
+  // immediately for a click; this is what makes the browser's own Back/
+  // Forward buttons do the same thing without a second render path.
+  window.addEventListener("popstate", function(){ routerApplyRoute(); });
+
   // "manage" (holds Settings) and the "settings" tab itself can never be hidden,
   // so there's always a way back into this screen to turn tabs back on.
   function navHidden(){
@@ -5844,9 +5932,20 @@ function setupRoster() {
   // and if the tab currently on screen was just hidden, moves to a visible one
   // in the same group instead of leaving the person on a tab with no way back.
   function syncNavAfterVisibilityChange(){
+    // PR5 audit (docs/Firebase_Step4_Routing_Design_Proposal.md): deliberately
+    // still a direct activateTab(), not router.go(). This fires because a tab
+    // just disappeared out from under the rebbi — corrective, not something he
+    // clicked — so it shouldn't create a history entry back can "undo" into a
+    // hidden tab. Matches the design's "non-nav-shaped internal state" carve-out.
     if(!isTabVisible(activeTabName)){ activateTab(firstVisibleTab(activeGroupName)); }
     else { renderGroupTabs(activeGroupName); renderSubTabs(activeGroupName, activeTabName); }
   }
+  // PR2 (docs/Firebase_Step4_Routing_Design_Proposal.md): the design's own
+  // "one extra line per call site" minimal-disruption choice — these two
+  // handlers switched to router.go() here; the rest of the app's indirect
+  // activateTab() callers (print buttons, the contest badge, etc.) got the
+  // same treatment in PR5's opportunistic audit, search this file for
+  // "PR5 audit" for the couple deliberately left as plain activateTab().
   $("groupTabs").addEventListener("click", function(e){
     var b=e.target.closest("button"); if(!b) return;
     // Remap legacy tab ids that no longer exist
@@ -5854,11 +5953,11 @@ function setupRoster() {
     var group=b.dataset.group;
     var tab = b.dataset.tab || lastTabInGroup[group] || firstVisibleTab(group);
     if(!isTabVisible(tab)) tab=firstVisibleTab(group);
-    activateTab(tab);
+    router.go({ classId: LOCAL_CLASS_ID, tab: tab });
   });
   $("subTabs").addEventListener("click", function(e){
     var b=e.target.closest("button"); if(!b) return;
-    activateTab(b.dataset.tab);
+    router.go({ classId: LOCAL_CLASS_ID, tab: b.dataset.tab });
   });
 
   /* ---------- BRACHOS ---------- */
@@ -11263,7 +11362,7 @@ function setupRoster() {
     // For a mini contest the badge is an indicator, not a switch — there is no
     // pause to toggle, and a tap on the scan bar is not a safe place to change
     // where points go. Open the tab that explains it instead.
-    if(miniContestLive()){ activateTab("contest"); return; }
+    if(miniContestLive()){ router.go({ classId: LOCAL_CLASS_ID, tab: "contest" }); return; }
     if(!data.contest || data.contest.ended) return;
     data.contest.counting = !data.contest.counting;
     save();
@@ -11355,6 +11454,11 @@ function setupRoster() {
       vs.style.transition=""; vs.style.transform=""; vs.style.opacity="";
       document.body.style.overflow="";
       document.body.classList.remove("seats-fs-open");
+      // PR5 audit (docs/Firebase_Step4_Routing_Design_Proposal.md): deliberately
+      // still activateTab(), not router.go(). activeTabName never left "scan"
+      // while the pop-out was open, so this is UI chrome collapsing back, not a
+      // tab switch — routing it would push a same-hash history entry that Back
+      // could "undo" into nothing visibly different.
       activateTab("scan"); // returns to the Dashboard we popped out from
     };
     var t = seatsPopReduced ? null : seatsFlipTransform(vs);
@@ -11386,13 +11490,15 @@ function setupRoster() {
     }
   });
   // Phase 1: Print buttons on data-owner tabs (Print group dissolved).
-  // These jump to the relevant print view via activateTab(). Wired with
-  // real listeners inside the IIFE (inline onclick can't see activateTab —
-  // it's scoped to this closure).
-  $("printSeatsBtn").addEventListener("click", function(){ activateTab("printSeats"); });
-  $("goPrintPointsBtn").addEventListener("click", function(){ activateTab("printPoints"); });
-  $("printStudentsBtn").addEventListener("click", function(){ activateTab("printStudents"); });
-  $("printActivitiesBtn").addEventListener("click", function(){ activateTab("printActivities"); });
+  // These jump to the relevant print view via router.go() (PR5,
+  // docs/Firebase_Step4_Routing_Design_Proposal.md's opportunistic audit) —
+  // a real nav-shaped action, so it belongs in history like any tab switch.
+  // Wired with real listeners inside the IIFE (inline onclick can't see
+  // router/activateTab — they're scoped to this closure).
+  $("printSeatsBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "printSeats" }); });
+  $("goPrintPointsBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "printPoints" }); });
+  $("printStudentsBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "printStudents" }); });
+  $("printActivitiesBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "printActivities" }); });
 
   // Reverses a real scan/spend entry by writing a correction entry rather than deleting
   // history — keeps on-screen totals right and keeps the Google Sheet Log honest.
@@ -14322,9 +14428,9 @@ function setupRoster() {
   // or ending anything from the Leader Board. Starting a contest changes where
   // every scanned point goes, so it belongs on the page that explains that, not
   // behind a button on the most-projected screen in the app.
-  $("startContestBtn").addEventListener("click", function(){ activateTab("contest"); });
+  $("startContestBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "contest" }); });
   $("viewContestBtn").addEventListener("click", function(){
-    if(miniContestLive()){ activateTab("contest"); return; }
+    if(miniContestLive()){ router.go({ classId: LOCAL_CLASS_ID, tab: "contest" }); return; }
     standRange="contest"; renderStandings();
   });
   // Shared by the Standings banner's End button and the Contest tab's own —
@@ -14370,7 +14476,7 @@ function setupRoster() {
   // so it is never a single banner button — it sends the rebbi to the tab where
   // both choices sit side by side with what each one does spelled out.
   $("endContestBtn").addEventListener("click", function(){
-    if(miniContestLive()){ activateTab("contest"); return; }
+    if(miniContestLive()){ router.go({ classId: LOCAL_CLASS_ID, tab: "contest" }); return; }
     endContestFlow();
   });
   setInterval(function(){
@@ -24208,15 +24314,41 @@ nameLine
   renderClassSel();
   renderGroupTabs("scan"); renderSubTabs("scan","scan"); activeGroupName="scan"; activeTabName="scan";
   applyGlobalScanBarVisibility("scan");
+  // PR3 (docs/Firebase_Step4_Routing_Design_Proposal.md): boot reads the
+  // hash instead of always cold-booting scan/scan. Still single implicit
+  // class (LOCAL_CLASS_ID) — no guard/hydrate phase needed yet, since
+  // there's nothing to fetch: `data` is already loaded by this point. A
+  // deep link to a real tab switches to it; this only ever narrows the
+  // scan/scan default set two lines up, never widens past it.
+  var routeDeepLinked = false;
+  try {
+    var bootRoute = routeParse(location.hash);
+    if (bootRoute && bootRoute.tab && TAB_LABELS.hasOwnProperty(bootRoute.tab)) {
+      activateTab(bootRoute.tab);
+      routeDeepLinked = true;
+    }
+  } catch(e) {}
   // The setup wizard finishes by sending the rebbi here, so his first sight of
   // the app is the sheet he is about to print rather than a dashboard he has
   // no data in yet. Deliberately opens the page and stops — it does NOT call
   // print(), because a print dialog appearing by itself on first launch reads
   // as the app doing something to you. `printSeats` lives in the Run group,
   // which can never be hidden, so this always has somewhere to land.
+  // Skipped when a hash already deep-linked above — that's the more
+  // specific instruction, and running both would fight over which wins.
   try {
-    if (location.search.indexOf("tab=printSeats") >= 0) activateTab("printSeats");
+    if (!routeDeepLinked && location.search.indexOf("tab=printSeats") >= 0) activateTab("printSeats");
   } catch(e) {}
+  // Write the canonical URL for wherever boot actually landed — a missing
+  // hash "redirects to default" (replaceState, not pushState: a fresh boot
+  // shouldn't leave a bogus "no hash" entry for back to return to). A real
+  // deep link is left exactly as the rebbi typed/bookmarked it.
+  if (!routeDeepLinked) {
+    try {
+      var bootHash = routeBuild({ classId: LOCAL_CLASS_ID, group: groupOfTab(activeTabName), tab: activeTabName });
+      if (bootHash) history.replaceState({menchmarkRoute:true}, "", bootHash);
+    } catch(e) {}
+  }
   if(typeof serialTryAutoReconnect==="function") serialTryAutoReconnect();
   // Runs after load(), which is when data.timerDefaultSeconds and
   // data.snackSeconds actually exist — the timer IIFE itself is evaluated
