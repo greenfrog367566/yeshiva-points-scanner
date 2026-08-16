@@ -52,10 +52,7 @@ A `version.json` served next to the app plus an `APP_VERSION` constant in it, an
 
 **Removing a tab is much bigger than adding its column**, and that is the trap in this item. The Attendance tab especially: the Sheet push, the seating-chart badges and "Mark the rest Present" all read that store directly, and every one of them has to move first or it fails silently. When a tab finally does go, delete its `TRACKED_LEGACY` row, its badge-table row **and** that store's `mirrorTracked()` call together.
 
-**3. Offline resync** — read-only investigation first, then PROPOSE FIRST
-The snapshot recovers after being offline; logged scans do not unless "resync all scans" is pressed. Want it automatic on reconnect and periodically.
-**Retry safety differs per tab.** The Log dedups by ID so re-pushing is safe. The Attendance Log has no dedup, so a retry duplicates rows. Confirm per tab before proposing.
-**In the Firestore era this asymmetry dissolves** — see the rebuild doc's open question 3 (deterministic client-generated write ids make every retry idempotent). That does not answer the question here; the localStorage/Apps Script investigation is still owed as written.
+**3. Offline resync — investigation DONE, proposal written, waiting on Ben.** `docs/Offline_Resync_Proposal.md`. The asymmetry is wider than "Log vs. Attendance Log": Pesukim Log, Tracker Log and Homework Log have **no recovery path at all** today — a failed push there is permanently lost, no error ever shown. Attendance Log has a second bug stacked on "no dedup": `_sentAt` gets stamped even when the push failed, so the normal resend path never retries it (only the manual, duplicate-warned `resendAttendanceDay()` escape hatch does). **Recommendation: ship the dedup fix (extend Log's id-based dedup to the three unprotected tabs, fix the five id-less Log call sites, fix Attendance's premature `_sentAt` stamp) as a normal EXECUTE-FREELY PR — additive, no migration.** Hold the actual automatic-retry-on-reconnect piece for a separate call: it's real scope, and it's also the exact thing the Firestore rebuild's deterministic write ids make unnecessary, so there's a legitimate case for folding it into step 1 instead of building it twice.
 
 **4. Warning flash, and the sticky raffle removal**
 What is left of the old "small standalone features" item once Freeze and the raffle note shipped. **Not the behavior ladder** — no marks store, no rung counting, no reset periods. Those stay in `docs/Behavior_Ladder_Spec.md`.
@@ -72,6 +69,7 @@ Roughly in the order of what they unblock. Nothing below is a task Claude can ta
 1. **Tell rebbeim holding an old offline copy to re-download** (#244). The only item on this page with real data at risk, and **nothing in code can ever substitute for it** — the update check in #252 cannot reach a file that was downloaded before the check existed. This one is a message from a person or it does not happen.
 2. **The privacy note for the account record** (item 0 above) — **drafted, `docs/Account_Privacy_Note.md`, six answers DECIDED 2026-08-13 and filled in.** Still on Ben: a read-through of the prose and the three flagged judgment calls — nothing else; `privacy@menchmark.app` is already live and delivery-tested. The earliest gate in the whole sign-in plan: it blocks any self-serve signup in *either* tier, including Ben's own school. **With the six decisions below taken, this is now the only thing gating the sign-in work.**
 3. **Q3: what a school signs** (detail below). Gates onboarding school #2; blocks no code.
+4. **A yes on the offline resync proposal** (item 3 above, `docs/Offline_Resync_Proposal.md`) before the dedup-fix PR gets built.
 
 ✅ **Cleared 2026-08-12 — six decisions taken, don't re-ask.** All recorded in
 `Firebase_Rebuild_Scope.md` and `CLAUDE.md`:
