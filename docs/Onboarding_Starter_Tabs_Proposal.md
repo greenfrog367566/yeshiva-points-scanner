@@ -70,11 +70,11 @@ first open shows:
 |---|---|---|
 | Record | Dashboard, History | — |
 | Recognize | Leader Board | Trends, Contest |
-| Reward | Raffle | Auction, Store |
+| Reward | Raffle, Store | Auction |
 | Review | *(group hidden — unchanged, existing seed)* | — |
 | Run | Seating chart & print, Students, Activities, Attendance, Backup & Restore, Settings | Brachos, Spinner, Passes, Tracker, Homework, Gradebook |
 
-**~11 tabs instead of ~19, and Run drops from 12 to 6.**
+**~12 tabs instead of ~19, and Run drops from 12 to 6.**
 
 Reasoning per line, so each can be overruled individually:
 
@@ -84,10 +84,12 @@ Reasoning per line, so each can be overruled individually:
   daily motivator. Trends is a review tool for later weeks; Contest is an
   event a rebbi runs deliberately, and it went an entire hide/un-hide cycle
   (#133 → #210) without anyone losing it.
-- **Raffle stays; Auction and Store hide.** One reward mechanic on day one is
-  the pitch ("scan, points, raffle"); three is a menu. Raffle is the one every
-  demo leads with. Coin Deposit already live-gates on Shulchani Mode and is
-  untouched.
+- **Raffle and Store stay; Auction hides.** *(Decided by Ben, 2026-08-14 —
+  overrules the original draft, which hid Store.)* Points need somewhere to
+  spend/redeem from day one beyond the raffle draw, and Store is the direct
+  "points → reward" surface a new rebbi is likely to set up alongside the
+  roster. Auction is the one-off/occasional mechanic and stays hidden. Coin
+  Deposit already live-gates on Shulchani Mode and is untouched.
 - **Seating chart & print stays** — non-negotiable: it prints the codes;
   without it there is nothing to scan. Same for **Students** and
   **Activities** (roster and point values are day-one setup), and
@@ -165,7 +167,7 @@ Settings re-enable → sticks.
 One PR, small:
 
 1. `app.html` wizard-apply block (~23745): extend the existing `!restoring`
-   seed with the §4 tab list (a `["trends","contest","auction","store",
+   seed with the §4 tab list (a `["trends","contest","auction",
    "brachos","spinner","passes","tracker","homework","gradebook"]` loop next
    to the `learn` line, same comment discipline).
 2. `app.html` `renderGroupTabs()`: the "＋ More" pseudo-tab (§5.2) — renders
@@ -184,3 +186,7 @@ One PR, small:
    rewards are the motivator half of the pitch.
 3. **The "＋ More" affordance: always-on (as recommended) or seed-only?**
 4. Any tab you'd move between columns in §4 — the list is the proposal.
+
+✅ **Decided 2026-08-14 (Ben): Store joins the day-one set, moved out of
+seeded-hidden.** §4's table and reasoning updated above; Auction stays hidden
+alone in Reward. Everything else in this section is still open.
