@@ -7473,15 +7473,22 @@ function setupRoster() {
    * cannot, and writing the stronger one would put words in his mouth.
    */
   function hwMirrorValue(checked){ return checked ? "full credit" : "unchecked"; }
-  function setHw(sid, checked){
-    var day=hwDayRecord(hwDate);
+  function setHw(sid, checked, dateKey){
+    // dateKey (#227 slice 2): optional, so every existing caller — the tab's own
+    // toggle button, the scan path — keeps writing hwDate exactly as before.
+    // Only a caller that names a day, like the Gradebook's write side, sees any
+    // change. Same shape as setAttendance()'s own dateKey parameter.
+    var dk=dateKey||hwDate;
+    var day=hwDayRecord(dk);
     // Captured before the overwrite, purely so the History gate below can see a
     // correction away from an exception. Nothing else reads it.
     var hwPrev=day[sid];
+    // Unchanged: leave the record — and its timestamp — completely alone.
+    if(hwPrev && hwPrev.checked===checked && typeof hwPrev.ts==="number") return false;
     day[sid]={checked:checked, ts:Date.now()};
-    // hwDate, not today: this is the tab's own date picker, and unchecking a
-    // boy on last Tuesday's homework is about last Tuesday.
-    mirrorTracked("ti-homework", sid, {value:hwMirrorValue(checked), ts:day[sid].ts, date:hwDate});
+    // dk, not always "today" or "whatever the tab shows": this is the day the
+    // correction is ABOUT.
+    mirrorTracked("ti-homework", sid, {value:hwMirrorValue(checked), ts:day[sid].ts, date:dk});
     /* Same exception rule as attendance, and today it matches nothing: this
      * store is still the old boolean, so hwMirrorValue() can only say "full
      * credit" or "unchecked" and neither is an exception. That is deliberate —
@@ -7490,11 +7497,12 @@ function setupRoster() {
      * real cycle starts producing rows here without touching this line.
      */
     if(trackedValueIsNotable(hwMirrorValue(checked)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
-      addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(checked), about:hwDate});
+      addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(checked), about:dk});
     }
     save();
     var s=studentById(sid);
-    if(data.autoSheet && s){ pushToSheet({type:"hw", ts:Date.now(), date:hwDate, name:s.name, group:s.group||"", checked:checked}); }
+    if(data.autoSheet && s){ pushToSheet({type:"hw", ts:day[sid].ts, date:dk, name:s.name, group:s.group||"", checked:checked}); }
+    return true;
   }
   // Used by the "Homework Checked" personal QR code (PA:sid:actid), which can
   // be scanned from any tab, not just the Homework page — so it always marks
@@ -18988,30 +18996,38 @@ nameLine
   // itemId -> studentId -> dateKey -> [entries], clipped to the visible range.
   /* ---------- 2c: the Gradebook's WRITE side (#227) ----------------------
    *
-   * WHY ONLY ATTENDANCE, TODAY. A Gradebook cell is one boy on one DAY, so
-   * editing one means calling that store's setter FOR THAT DAY — and only
-   * attendance can be told which day. setAttendance(sid, status, dateKey)
-   * takes a dateKey; setHw() writes to the hwDate the Homework tab happens to
-   * be showing, setPass() is today-only and keeps no per-use history to
-   * correct, and trackerLogAdd() stamps Date.now(). So "the Gradebook can
-   * write" is four features, not one, and this is the first — see #227.
+   * WHY ONLY TWO ITEMS SO FAR. A Gradebook cell is one boy on one DAY, so
+   * editing one means calling that store's setter FOR THAT DAY — and only a
+   * setter that takes a dateKey can be driven from here. setAttendance(sid,
+   * status, dateKey) and setHw(sid, checked, dateKey) both do (slice 2, #227).
+   * setPass() is today-only and keeps no per-use history to correct, and
+   * trackerLogAdd() stamps Date.now(). So "the Gradebook can write" is four
+   * features, not one, and these are the first two.
    *
    * ROUTED THROUGH THE LEGACY SETTER, NEVER STRAIGHT AT data.trackedData.
    * That is the whole mirror rule: the legacy store owns the value and the
    * mirror transcribes it. Writing the mirror here would make the grid and the
-   * Attendance tab disagree — the exact gap that kept the Gradebook hidden
-   * (#185) until it was closed. setAttendance() is already "the one place
-   * attendance reaches the Gradebook", so one call buys the legacy write, the
-   * mirror row, the History row, the Sheet correction re-sync, and save().
+   * owning tab disagree — the exact gap that kept the Gradebook hidden (#185)
+   * until it was closed. setAttendance()/setHw() are already "the one place
+   * [attendance/homework] reaches the Gradebook", so one call buys the legacy
+   * write, the mirror row, the History row, the Sheet correction re-sync, and
+   * save().
+   *
+   * HOMEWORK IS STILL THE BOOLEAN STORE. The picker offers Checked / Not
+   * checked, not the four-state preset (unchecked / full credit / partial
+   * credit / no credit) — "partial credit" and "no credit" have no writer
+   * anywhere yet (see hwMirrorValue()). Widening the Homework TAB itself to
+   * the real cycle is #122, not this slice.
    *
    * WHAT IS DELIBERATELY NOT OFFERED: clearing a cell back to "no record".
-   * setAttendance() writes a status; there is no unset, and inventing one
-   * would mean deleting from data.attendance AND unmirroring, which is the
-   * deletion half of #227 and wants its own decision. A rebbi can always move
-   * the mark to the right status; he cannot un-take the roll from here.
+   * Neither setter writes an unset value, and inventing one would mean
+   * deleting from the legacy store AND unmirroring, which is the deletion
+   * half of #227 and wants its own decision. A rebbi can always move the mark
+   * to the right status; he cannot un-take the roll or un-check the folder
+   * from here.
    */
-  var GB_EDIT_ITEM="ti-attendance";
-  function gbCanEdit(item){ return !!item && item.id===GB_EDIT_ITEM; }
+  var GB_EDIT_ITEMS = {"ti-attendance":1, "ti-homework":1};
+  function gbCanEdit(item){ return !!item && Object.prototype.hasOwnProperty.call(GB_EDIT_ITEMS, item.id); }
   // Only ever ONE picker on screen, and it is torn down before another opens.
   var gbPickEl=null;
   function gbClosePicker(){
@@ -19023,43 +19039,72 @@ nameLine
   function gbPickAway(e){ if(gbPickEl && !gbPickEl.contains(e.target)) gbClosePicker(); }
   function gbPickKey(e){ if(e.key==="Escape"){ e.preventDefault(); gbClosePicker(); } }
   /* Opens the status picker for one boy on one day and writes the choice.
-   * `td` is only used to position the menu and to take focus back afterwards. */
-  function gbOpenPicker(td, sid, dateKey){
+   * `td` is only used to position the menu and to take focus back afterwards.
+   * `item` decides which legacy store this writes through — see the WRITE-SIDE
+   * doc block above for why only these two items are wired up yet. */
+  function gbOpenPicker(td, item, sid, dateKey){
     gbClosePicker();
     var s=studentById(sid);
     if(!s) return;
-    var cur=attStatusOn(dateKey, sid);
-    var marked=attMarkedRec(dateKey, sid);
     var box=el("div","gb-pick");
     box.setAttribute("role","menu");
     var head=el("div","gb-pick-head",(s.name||"")+" · "+gbDateLabel(dateKey)+" "+gbDowLabel(dateKey));
     box.appendChild(head);
-    attCycleOrder().forEach(function(st){
-      var b=document.createElement("button");
-      b.type="button";
-      b.setAttribute("role","menuitemradio");
+    var options, isChosen, onPick;
+    if(item.id==="ti-homework"){
+      // Raw read, like TRACKED_BADGE — never hwDayRecord(), which would create
+      // an empty day record for a boy nobody has checked yet.
+      var hwDay=data.hw[dateKey], hwRec=hwDay && hwDay[sid];
+      var hwCur = (hwRec && typeof hwRec.checked==="boolean") ? hwRec.checked : null;
+      options=[
+        {value:true, label:"Checked"},
+        {value:false, label:"Not checked"}
+      ];
+      isChosen=function(opt){ return hwCur===opt.value; };
+      onPick=function(opt){
+        // Returns false when nothing changed, in which case there is nothing
+        // to re-render and nothing to say.
+        if(setHw(sid, opt.value, dateKey)){
+          flash(opt.value, s.name, opt.label, gbDateLabel(dateKey)+" — corrected from the Gradebook", "tracked");
+          if($("view-homework") && $("view-homework").classList.contains("active")){
+            if(hwViewMode==="student") renderHwStudentView(); else renderHomework();
+          }
+          refreshLiveViews();
+          renderGbTable();
+        }
+      };
+    }else{
+      var cur=attStatusOn(dateKey, sid);
+      var marked=attMarkedRec(dateKey, sid);
+      options=attCycleOrder().map(function(st){ return {value:st, label:ATT_LABEL[st]||st}; });
       // Only a REAL record counts as the current value. An unmarked boy reads
       // as "present" under absence-first, and showing that as already-chosen
       // would tell the rebbi a roll had been taken when none had.
-      b.setAttribute("aria-checked", (marked && cur===st) ? "true" : "false");
-      var dot=el("span","gb-pick-dot");
-      var tone=gbToneClass(st);
-      if(tone) dot.classList.add(tone);
-      b.appendChild(dot);
-      b.appendChild(document.createTextNode(ATT_LABEL[st]||st));
-      b.addEventListener("click", function(){
-        gbClosePicker();
+      isChosen=function(opt){ return marked && cur===opt.value; };
+      onPick=function(opt){
         // Returns false when nothing changed, in which case there is nothing to
         // re-render and nothing to say.
-        if(setAttendance(sid, st, dateKey)){
-          flash(st!=="absent", s.name, ATT_LABEL[st]||st, gbDateLabel(dateKey)+" — corrected from the Gradebook", "tracked");
+        if(setAttendance(sid, opt.value, dateKey)){
+          flash(opt.value!=="absent", s.name, opt.label, gbDateLabel(dateKey)+" — corrected from the Gradebook", "tracked");
           if($("view-attendance") && $("view-attendance").classList.contains("active")){
             if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
           }
           refreshLiveViews();
           renderGbTable();
         }
-      });
+      };
+    }
+    options.forEach(function(opt){
+      var b=document.createElement("button");
+      b.type="button";
+      b.setAttribute("role","menuitemradio");
+      b.setAttribute("aria-checked", isChosen(opt) ? "true" : "false");
+      var dot=el("span","gb-pick-dot");
+      var tone=gbToneClass(item.id==="ti-homework" ? hwMirrorValue(opt.value) : opt.value);
+      if(tone) dot.classList.add(tone);
+      b.appendChild(dot);
+      b.appendChild(document.createTextNode(opt.label));
+      b.addEventListener("click", function(){ gbClosePicker(); onPick(opt); });
       box.appendChild(b);
     });
     document.body.appendChild(box);
@@ -19250,8 +19295,8 @@ nameLine
           // has to be carried explicitly.
           td.setAttribute("aria-label", spoken);
           if(has) td.title=spoken;
-          // The write side (#227). Screen only, attendance only — see
-          // gbOpenPicker for why those are the limits today. A cell with NO
+          // The write side (#227). Screen only, attendance and homework only —
+          // see gbOpenPicker for why those are the limits today. A cell with NO
           // record is editable too: "he was missed on Monday" is the correction
           // a rebbi most often comes to the Gradebook to make.
           if(editable && gbCanEdit(it)){
@@ -19259,12 +19304,12 @@ nameLine
             td.tabIndex=0;
             td.setAttribute("role","button");
             td.setAttribute("aria-label", spoken+" — press to change");
-            (function(sid,key){
-              td.addEventListener("click", function(){ gbOpenPicker(this, sid, key); });
+            (function(item,sid,key){
+              td.addEventListener("click", function(){ gbOpenPicker(this, item, sid, key); });
               td.addEventListener("keydown", function(e){
-                if(e.key==="Enter"||e.key===" "){ e.preventDefault(); gbOpenPicker(this, sid, key); }
+                if(e.key==="Enter"||e.key===" "){ e.preventDefault(); gbOpenPicker(this, item, sid, key); }
               });
-            })(s.id,k);
+            })(it,s.id,k);
           }
           tr.appendChild(td);
         });
