@@ -1514,8 +1514,6 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   .lift-x{position:absolute;top:8px;right:8px;width:38px;height:38px;border-radius:10px;background:#33406b;border:2px solid #5a6aa0;color:#fff;font-size:1.1rem;line-height:1;z-index:2}
   .lift-x:hover{background:var(--bad);border-color:var(--bad)}
   .lift-title{font-family:var(--serif);font-size:1.5rem;font-weight:700;color:var(--gold)}
-  .lift-title .arrow{display:inline-block;animation:bob 1s ease-in-out infinite}
-  @keyframes bob{50%{transform:translateY(-8px)}}
   .lift-sub{color:#c2c9e4;font-size:.9rem;margin-top:2px}
   .lift-count{font-size:1.15rem;font-weight:800;margin:8px 0 2px}
   /* the who's-in chips are redundant here — the response panel already says it —
@@ -1550,6 +1548,11 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   #respPanel{margin-bottom:12px}
   .resp-line{font-size:1.05rem;margin-bottom:10px}
   .resp-line b{font-size:1.5rem;font-variant-numeric:tabular-nums}
+  /* who's answered, always visible during the question — not just in the
+     lift-modal popup at the end. Light-background chips (this panel is a
+     regular white card), unlike the lift-list's dark-modal version. */
+  #respRoster{margin:0 0 12px;max-height:170px;overflow:auto}
+  #respRoster .chip.in{background:var(--good-soft);border-color:var(--good);font-weight:700}
   .rbar{display:flex;align-items:center;gap:8px;margin-bottom:7px}
   .rbar .rlt{width:26px;height:26px;border-radius:6px;color:#fff;font-weight:800;font-size:.85rem;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
   .rbar .rtrack{flex:1;height:14px;border-radius:7px;background:#e7e9f0;overflow:hidden}
@@ -1742,7 +1745,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         <label class="f">Answer countdown (sec)<input id="timerSecs" type="number" value="10" min="0" max="300"></label>
         <label class="f" style="align-self:flex-end;padding-bottom:6px">
           <span style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:.9rem;color:var(--ink)">
-            <input type="checkbox" id="autoReveal"> Auto-reveal at 0
+            <input type="checkbox" id="autoReveal" checked> Auto-reveal at 0
           </span>
         </label>
         <label class="f" style="align-self:flex-end;padding-bottom:6px" title="Open the board in its own window for the projector, and keep this screen for yourself">
@@ -1786,7 +1789,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       <div id="liftModal" class="lift-modal" hidden>
         <div class="lift-box">
           <button class="lift-x" id="liftCloseBtn" title="Close (Esc)">✕</button>
-          <div class="lift-title"><span class="arrow">⬆</span> Lift up your cards!</div>
+          <div class="lift-title">⏱ Time's up — lift your cards!</div>
           <div class="lift-sub" id="liftSub">Hold your answer up to the camera.</div>
           <div class="lift-count" id="liftCount"></div>
           <div class="lift-list" id="liftList"></div>
@@ -1880,6 +1883,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         <div class="card" id="scoreCard" style="margin:0">
           <div id="respPanel" hidden>
             <div class="resp-line" id="respAnswered">—</div>
+            <div id="respRoster" class="students" hidden></div>
             <div class="rbar A"><span class="rlt">A</span><span class="rtrack"><span class="rfill" id="rfill-A"></span></span><span class="rcnt" id="rcnt-A">–</span></div>
             <div class="rbar B"><span class="rlt">B</span><span class="rtrack"><span class="rfill" id="rfill-B"></span></span><span class="rcnt" id="rcnt-B">–</span></div>
             <div class="rbar C"><span class="rlt">C</span><span class="rtrack"><span class="rfill" id="rfill-C"></span></span><span class="rcnt" id="rcnt-C">–</span></div>
@@ -2107,6 +2111,15 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   }
   function hasRoster(){ return roster.length>0; }
   function nameOf(id){ for(var i=0;i<roster.length;i++){ if(roster[i].id===id) return roster[i].name; } return "#"+id; }
+  /* The roster is the whole class list; "joined" is whoever actually held up a
+     card during THIS session's lobby scan (calibSeen, set only while
+     mode==="calib" — see handleCodes). A boy absent today is still on the
+     roster but never joins, so anything that shows "who's playing this game"
+     — the answer count's denominator, the live scanned-list — must read off
+     this, not the raw roster, or an absent boy silently counts as expected
+     to answer. Scoring/leaderboards stay on the full roster on purpose: a
+     final scoreboard listing everyone (even at 0 points) is normal. */
+  function joinedRoster(){ return roster.filter(function(s){ return calibSeen[s.id]; }); }
 
   /* ---------------- views ----------------
      The classroom (Play) is the ONLY full screen. Questions / Class / Answer
@@ -2480,8 +2493,27 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
                                         resume (see resumeGame), never a reset back to the lobby */
   /* Within a game, each question walks Kahoot's beats:
      ready (question alone) -> answer (tiles + countdown) -> result (reveal)
-     -> score (scoreboard screen, roster mode) ... and after the last question, podium. */
+     -> score (scoreboard screen, roster mode) ... and after the last question, podium.
+     The whole walk is self-driving by default — lock is already timer-driven
+     (the answer countdown), reveal-at-lock and result->next are timers too
+     (autoAdvT below) — so a rebbi who presses nothing still gets a complete,
+     paced game. Every manual button (Lock/Reveal/Next) still works and simply
+     preempts whatever timer would have done the same thing. */
   var qphase="ready", lastGain={};
+  var AUTO_ADVANCE_MS=5000;   /* pause after a reveal/scoreboard before auto-advancing */
+  var autoAdvT=null;
+  function clearAutoAdvance(){ if(autoAdvT){ clearTimeout(autoAdvT); autoAdvT=null; } }
+  /* Scoped to THIS question/scoreboard instance via qphase+qIndex: if the
+     rebbi manually advances before the timer fires, the stale timer's own
+     check fails silently instead of calling goNext() a second time and
+     skipping a question. */
+  function scheduleAutoAdvance(fromPhase,fromQIndex){
+    clearAutoAdvance();
+    autoAdvT=setTimeout(function(){
+      autoAdvT=null;
+      if(mode==="game" && qphase===fromPhase && qIndex===fromQIndex) goNext();
+    }, AUTO_ADVANCE_MS);
+  }
   var passTimes=[];
   var tallyNow={A:0,B:0,C:0,D:0};   /* anonymous current-frame letter counts    */
   var tallyPeak={A:0,B:0,C:0,D:0};  /* anonymous: highest simultaneous count per letter
@@ -2711,6 +2743,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
                    back through the visibility check.
      Reset scores = zero every boy's points (roster mode only). */
   function resetGame(){
+    clearAutoAdvance();
     game={asked:0,right:0}; $("gAsked").textContent="0"; $("gRight").textContent="0";
     revealed=false; scannedThisQ=false; capturing=false; dismissed=false;
     hideLift(); stopTimer(); $("revealResult").hidden=true;
@@ -2751,6 +2784,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
 
   /* ---- question board + tiles ---- */
   function loadQuestion(i){
+    clearAutoAdvance();   /* a fresh question always cancels any pending timer from the last one */
     qIndex=i; revealed=false; scannedThisQ=false; capturing=false; dismissed=false; hideLift(); qStartedAt=Date.now(); tallyNow={A:0,B:0,C:0,D:0}; tallyPeak={A:0,B:0,C:0,D:0}; sweptThisQ=false; studentAnswer={}; lastGain={}; wandStreak={};
     if(ptzhttp.ok && $("sweepOn").checked) ptzSet({pan:0,tilt:0});   /* centre for the countdown */
     var q=questions[i]||{q:"—",opts:{},correct:""};
@@ -2816,8 +2850,9 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       var cn=$("tcnt-"+L); cn.style.display = revealed ? "" : "none"; cn.textContent=counts[L];
       if(!revealed){ var t=$("tile-"+L); t.classList.remove("correct","wrong"); }
     });
+    var joinedN=joinedRoster().length;
     $("answeredLine").textContent = perStudent
-      ? (snap.answered+" of "+roster.length+" talmidim have answered")
+      ? (snap.answered+" of "+joinedN+" talmidim have answered")
       : ((sweptThisQ? "at least ":"")+snap.answered+" answered");
     updateRespPanel(snap);
   }
@@ -2825,16 +2860,31 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
      numbers: who's in, who's missing, and the A–D spread. The spread mirrors the
      tiles' privacy rule — hidden until the reveal — EXCEPT when the class has its
      own projector window, because then this screen is the rebbi's alone and
-     seeing the spread live is the whole point of it. */
+     seeing the spread live is the whole point of it. The named roster chips
+     below the count are the same idea the lift-modal's own (rebbi-hidden)
+     list already had — surfaced here instead, continuously, so who's
+     answered is visible throughout the question rather than only in a
+     popup at the very end. Both read off joinedRoster(), never the raw
+     class list: a boy absent today never joined the lobby, so he was never
+     expected to answer and shouldn't show as "missing". */
   function updateRespPanel(snap){
     var rp=$("respPanel"); if(!rp) return;
     var on = mode==="game" && document.body.classList.contains("playing") && qphase!=="score" && qphase!=="podium";
     rp.hidden=!on; if(!on) return;
     snap = snap || snapshot();
+    var joined=joinedRoster(), joinedN=joined.length;
     $("respAnswered").innerHTML = perStudent
-      ? "<b>"+snap.answered+" of "+roster.length+"</b> talmidim have answered"+
-        (snap.answered<roster.length ? " — "+(roster.length-snap.answered)+" to go" : " — everyone's in!")
+      ? "<b>"+snap.answered+" of "+joinedN+"</b> talmidim have answered"+
+        (snap.answered<joinedN ? " — "+(joinedN-snap.answered)+" to go" : " — everyone's in!")
       : "<b>"+(sweptThisQ?"at least ":"")+snap.answered+"</b> answered";
+    var rr=$("respRoster");
+    if(rr){
+      rr.hidden = !perStudent;
+      if(perStudent){
+        rr.innerHTML="";
+        joined.forEach(function(s){ rr.appendChild(el("div","chip"+(studentAnswer[s.id]?" in":""),s.name)); });
+      }
+    }
     var live = revealed || document.body.classList.contains("presenting");
     var total=snap.counts.A+snap.counts.B+snap.counts.C+snap.counts.D;
     LETTERS.forEach(function(L){
@@ -2924,10 +2974,10 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   function hideLift(){ var m=$("liftModal"); m.hidden=true; m.style.display="none"; }
   function renderLiftList(){
     if(perStudent){
-      var answered=Object.keys(studentAnswer), set={}; answered.forEach(function(id){ set[id]=true; });
+      var joined=joinedRoster(), answered=Object.keys(studentAnswer), set={}; answered.forEach(function(id){ set[id]=true; });
       var list=$("liftList"); list.innerHTML="";
-      roster.forEach(function(s){ var c=el("div","chip"+(set[s.id]?" in":"")); c.appendChild(el("span",null,s.name)); list.appendChild(c); });
-      $("liftCount").textContent=answered.length+" of "+roster.length+" answered";
+      joined.forEach(function(s){ var c=el("div","chip"+(set[s.id]?" in":"")); c.appendChild(el("span",null,s.name)); list.appendChild(c); });
+      $("liftCount").textContent=answered.length+" of "+joined.length+" answered";
     } else {
       $("liftList").innerHTML="";
       var n=tallyPeak.A+tallyPeak.B+tallyPeak.C+tallyPeak.D;
@@ -2938,6 +2988,11 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     if(mode!=="game" || revealed || capturing || dismissed) return;
     if(Date.now()-qStartedAt < 500) return;    /* never fire the instant a question loads */
     capturing=true; showLift();
+    /* The answer window just closed — Lock has nothing further to do until
+       dismissLift() reopens one (see there). Without this, a second click
+       just restarted this same capture wait with no visible change, which
+       is exactly what read as "the button doesn't work". */
+    $("lockBtn").disabled=true; $("lockBtn").className="btn sec";
     var afterCapture=function(){ if(revealed || $("liftModal").hidden) return; capturing=false; renderLiftList(); if($("liftAuto").checked) finishReveal(); else $("liftSub").textContent="Everyone who answered is shown — reveal when ready, or ✕ to go back."; };
     if($("sweepOn").checked && ptzhttp.ok && !scannedThisQ){ scannedThisQ=true; scanPass(afterCapture); }
     else { setTimeout(afterCapture, 4000); }   /* fixed-camera lift window */
@@ -2957,8 +3012,11 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     else { renderLiftList(); setTimeout(done, 4000); }
   }
   /* Close the popup WITHOUT revealing — back to the board (its Reveal / Next
-     stay available). Escape or clicking the dark backdrop does the same. */
-  function dismissLift(){ dismissed=true; capturing=false; hideLift(); sweep.on=false; }
+     stay available). Escape or clicking the dark backdrop does the same.
+     Lock re-enables too: the answer window is effectively reopened, so
+     locking it again (whether by hand or the countdown, if restarted) is a
+     valid action again. */
+  function dismissLift(){ dismissed=true; capturing=false; hideLift(); sweep.on=false; $("lockBtn").disabled=false; $("lockBtn").className="btn gold"; }
   $("liftRevealBtn").addEventListener("click",function(){ capturing=false; finishReveal(); });
   $("liftCloseBtn").addEventListener("click",dismissLift);
   $("liftPanBtn").addEventListener("click",rescanRoom);
@@ -2976,10 +3034,10 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     game.asked++;
     var rr=$("revealResult"); rr.hidden=false;
     if(perStudent){
-      var right=0, answered=snap.answered;
+      var right=0, answered=snap.answered, joinedN=joinedRoster().length;
       (snap.byLetter[q.correct]||[]).forEach(function(id){ scores[id]=(scores[id]||0)+PTS_PER_CORRECT; right++; lastGain[id]=true; });
       save(); renderLeaderboard();
-      rr.innerHTML="<strong>Correct: "+q.correct+"</strong> — "+right+" of "+answered+" who answered got it"+(answered<roster.length? (", "+(roster.length-answered)+" didn't answer.") : ".");
+      rr.innerHTML="<strong>Correct: "+q.correct+"</strong> — "+right+" of "+answered+" who answered got it"+(answered<joinedN? (", "+(joinedN-answered)+" didn't answer.") : ".");
     } else {
       var majority=LETTERS.reduce(function(a,L){ return counts[L]>counts[a]?L:a; },"A");
       if(majority===q.correct && total>0) game.right++;
@@ -2992,10 +3050,15 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     $("nextBtn").disabled=false; $("nextBtn").className="btn gold";
     var last=qIndex+1>=questions.length;
     $("nextBtn").textContent = perStudent ? "Scoreboard →" : (last ? "Finish →" : "Next question →");
+    scheduleAutoAdvance("result",qIndex);   /* game flows on its own by default — Next still works, and preempts this */
   }
   /* Next walks the Kahoot beats: result -> scoreboard (roster mode) -> next
-     question, and after the last question -> podium. The rebbi paces every step. */
+     question, and after the last question -> podium. This now happens on its
+     own (scheduleAutoAdvance, called from here and from showScoreboard) —
+     the rebbi is free to pace it by hand instead by pressing Next early,
+     which is exactly what a manual call here already does. */
   function goNext(){
+    clearAutoAdvance();
     var last = qIndex+1>=questions.length;
     if(qphase==="result" && perStudent){ showScoreboard(last); return; }
     if(last){ showPodium(); return; }
@@ -3023,6 +3086,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     $("revealBtn").disabled=true; $("revealBtn").className="btn sec";
     $("nextBtn").disabled=false; $("nextBtn").className="btn gold";
     $("nextBtn").textContent= final ? "Podium →" : "Next question →";
+    scheduleAutoAdvance("score",qIndex);   /* -> podium or the next question, on its own */
   }
   function showPodium(){
     qphase="podium"; hideLift(); stopTimer();
