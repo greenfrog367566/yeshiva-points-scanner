@@ -277,17 +277,34 @@ build step 1 (unsplit sidebar) before spending any more design time on step 3
 Two concrete process improvements worth adopting into the plan, plus one idea
 explicitly marked "not now" that shouldn't quietly become scope creep.
 
-**Ship it behind a settings toggle, not as a replacement.** §6's step 1
-("layout swap only") didn't say how the old and new nav coexist during
-evaluation. The concrete answer: a `navHidden()`-adjacent Settings checkbox
-("Use experimental left navigation") that renders the same `TAB_GROUPS` data
-into whichever layout is selected, defaulting off. Ben is the only daily user
-of this app in a real classroom during the evaluation week — a one-setting
-rollback beats "revert the branch" if the sidebar has one bad day mid-lesson.
-This also sidesteps a version of the Lean-mode lesson from §2: ship the new
-chrome as a switchable mode from day one rather than a flag day, since the
-Lean-mode revert (#121) cost a same-day rebuild specifically because there
-was no in-between state to fall back to.
+**Ship it behind a settings toggle, not as a replacement — and this matters
+more than the second review assumed.** §6's step 1 ("layout swap only")
+didn't say how the old and new nav coexist during evaluation. **Correction to
+the second review's framing: Ben is not the only daily user.** The beta
+cohort (`docs/NOW.md`, onboarded on v0.9.0, 2026-07-18) has real rebbeim
+running real classrooms on this app today, and Ben's existing practice is to
+**email them when a major update ships.** That raises the stakes on the
+toggle question beyond personal rollback safety: a sidebar shipped as the new
+default would hit every beta rebbi's classroom at once, mid-lesson, with no
+warning — the exact "silent surprise" shape CLAUDE.md's data-safety section
+warns against for destructive changes, now applied to a *navigational* one
+instead. The concrete answer stands, for a stronger reason than before: a
+`navHidden()`-adjacent Settings checkbox ("Use experimental left navigation"),
+**defaulting OFF for everyone, existing users and fresh installs alike** — not
+just Ben's own build. Nobody's classroom nav changes without them opting in,
+and if a beta rebbi does opt in and it goes badly, the same checkbox is the
+rollback, no email or re-download required. This also sidesteps a version of
+the Lean-mode lesson from §2: ship the new chrome as a switchable mode from
+day one rather than a flag day, since the Lean-mode revert (#121) cost a
+same-day rebuild specifically because there was no in-between state to fall
+back to.
+
+**When it's ready to leave opt-in, that's an announcement, not a silent
+default flip.** `NOW.md`'s "Not code, still owed" list already tracks
+unsent announcements to existing rebbeim (the print fix, the Apps Script
+redeploy) via this same email channel — promoting the sidebar from opt-in to
+default-on later belongs in that same channel, on the same "tell them before
+it lands in their classroom" footing, not folded into a routine release.
 
 **Reframe what "evaluate for a week" is actually testing.** Not "does the CSS
 render correctly" (that's a five-minute browser check) but a specific list of
