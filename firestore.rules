@@ -1,0 +1,140 @@
+// Menchmark Firebase rebuild — Step 2 security rules.
+// Design record: docs/Firebase_Step2_Auth_Rules_Design_Proposal.md
+// Data model:     docs/Firebase_DataModel_Design_Proposal.md
+// Verified by:    firestore.rules.test.js (run via `npm run test:rules`)
+//
+// Tier-2 (standalone) rebbeim never touch this project at all — their data
+// stays in localStorage + their own Drive. Everything below is tier-1 only.
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    // ---- identity helpers ----
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function acct() {
+      return get(/databases/$(db)/documents/accounts/$(request.auth.uid)).data;
+    }
+
+    function isSuperadmin() {
+      return isSignedIn() && acct().role == 'superadmin';
+    }
+
+    function isAdminOf(sid) {
+      return isSignedIn() && acct().role == 'admin' && acct().schoolId == sid;
+    }
+
+    // "View as" (docs/Firebase_Step2_Auth_Rules_Design_Proposal.md, "View as
+    // this rebbi"): a superadmin-minted custom token carries `viewAs` +
+    // `viewAsExp` claims. Read-only by construction — no write rule below
+    // ever consults this. The expiry check here is the enforcement the
+    // design doc's "short-lived by construction" line assumes exists;
+    // see functions/index.js's viewAs() comment for the open question about
+    // whether a refreshed ID token still carries these claims.
+    function viewAsUid() {
+      return isSignedIn()
+        && request.auth.token.viewAs != null
+        && request.time.toMillis() < request.auth.token.viewAsExp
+        ? request.auth.token.viewAs
+        : null;
+    }
+
+    function isOwner(c) {
+      return isSignedIn() && c.ownerId == request.auth.uid;
+    }
+
+    function isViewingAs(c) {
+      return viewAsUid() != null && c.ownerId == viewAsUid();
+    }
+
+    // Read gate shared by a class doc and every one of its subcollections.
+    function canReadClass(c) {
+      return isOwner(c) || isSuperadmin() || isViewingAs(c)
+        || (isAdminOf(c.schoolId) && c.sharedWithAdmin == true);
+    }
+
+    // Full read/write access to roster + gradebook content. Admin is
+    // deliberately absent here — admin's only write path is the
+    // field-restricted one on the class doc itself. View-as is deliberately
+    // absent here too — it is a read-only claim by design.
+    function canWriteClassContent(c) {
+      return isOwner(c) || isSuperadmin();
+    }
+
+    function parentClass(classId) {
+      return get(/databases/$(db)/documents/classes/$(classId)).data;
+    }
+
+    // ---- accounts ----
+    // Identity docs. Never client-writable — provisioning, code redemption,
+    // and adoption all go through Cloud Functions (functions/index.js) so
+    // schoolId/role can never be self-assigned.
+    match /accounts/{uid} {
+      allow read: if isSignedIn()
+        && (request.auth.uid == uid || isSuperadmin() || isAdminOf(resource.data.schoolId));
+      allow write: if false;
+    }
+
+    // ---- codes ----
+    // Readable by any signed-in user (needed pre-account-doc, at signup).
+    // `usedBy` redemption goes through redeemCode() as a transaction, never
+    // a raw client write — closes the over-redemption race a plain rule
+    // can't. Superadmin/admin retain direct write for authoring/revoking
+    // codes (not for redeeming them).
+    match /codes/{code} {
+      allow read: if isSignedIn();
+      allow write: if isSuperadmin() || isAdminOf(resource.data.schoolId);
+    }
+
+    // ---- classes + subcollections ----
+    match /classes/{classId} {
+      allow read: if canReadClass(resource.data);
+      allow create: if isOwner(request.resource.data) || isSuperadmin();
+      allow update: if isOwner(resource.data) || isSuperadmin()
+        || (isAdminOf(resource.data.schoolId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sharedWithAdmin', 'archived']));
+      // Archive, not delete (docs/Firebase_DataModel_Design_Proposal.md).
+      allow delete: if false;
+
+      match /students/{sid} {
+        allow read: if canReadClass(parentClass(classId));
+        allow write: if canWriteClassContent(parentClass(classId));
+      }
+
+      match /trackedItems/{iid} {
+        allow read: if canReadClass(parentClass(classId));
+        allow write: if canWriteClassContent(parentClass(classId));
+      }
+
+      match /trackedEntries/{eid} {
+        allow read: if canReadClass(parentClass(classId));
+        allow write: if canWriteClassContent(parentClass(classId));
+      }
+
+      // Private ledger — no admin default-read even with sharedWithAdmin,
+      // and no view-as either (docs/Firebase_DataModel_Design_Proposal.md:
+      // "no admin default-read — private ledger").
+      match /prizeLedger/{eid} {
+        allow read, write: if isOwner(parentClass(classId)) || isSuperadmin();
+      }
+    }
+
+    // ---- superadmin-only telemetry ----
+    // Both written exclusively by Cloud Function triggers (step 5's
+    // activity overview, and every viewAs() mint) — never client-writable.
+    match /activitySummary/{docId} {
+      allow read: if isSuperadmin();
+      allow write: if false;
+    }
+
+    match /viewAsLog/{docId} {
+      allow read: if isSuperadmin();
+      allow write: if false;
+    }
+  }
+}
