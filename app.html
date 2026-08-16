@@ -24209,15 +24209,41 @@ nameLine
   renderClassSel();
   renderGroupTabs("scan"); renderSubTabs("scan","scan"); activeGroupName="scan"; activeTabName="scan";
   applyGlobalScanBarVisibility("scan");
+  // PR3 (docs/Firebase_Step4_Routing_Design_Proposal.md): boot reads the
+  // hash instead of always cold-booting scan/scan. Still single implicit
+  // class (LOCAL_CLASS_ID) — no guard/hydrate phase needed yet, since
+  // there's nothing to fetch: `data` is already loaded by this point. A
+  // deep link to a real tab switches to it; this only ever narrows the
+  // scan/scan default set two lines up, never widens past it.
+  var routeDeepLinked = false;
+  try {
+    var bootRoute = routeParse(location.hash);
+    if (bootRoute && bootRoute.tab && TAB_LABELS.hasOwnProperty(bootRoute.tab)) {
+      activateTab(bootRoute.tab);
+      routeDeepLinked = true;
+    }
+  } catch(e) {}
   // The setup wizard finishes by sending the rebbi here, so his first sight of
   // the app is the sheet he is about to print rather than a dashboard he has
   // no data in yet. Deliberately opens the page and stops — it does NOT call
   // print(), because a print dialog appearing by itself on first launch reads
   // as the app doing something to you. `printSeats` lives in the Run group,
   // which can never be hidden, so this always has somewhere to land.
+  // Skipped when a hash already deep-linked above — that's the more
+  // specific instruction, and running both would fight over which wins.
   try {
-    if (location.search.indexOf("tab=printSeats") >= 0) activateTab("printSeats");
+    if (!routeDeepLinked && location.search.indexOf("tab=printSeats") >= 0) activateTab("printSeats");
   } catch(e) {}
+  // Write the canonical URL for wherever boot actually landed — a missing
+  // hash "redirects to default" (replaceState, not pushState: a fresh boot
+  // shouldn't leave a bogus "no hash" entry for back to return to). A real
+  // deep link is left exactly as the rebbi typed/bookmarked it.
+  if (!routeDeepLinked) {
+    try {
+      var bootHash = routeBuild({ classId: LOCAL_CLASS_ID, group: groupOfTab(activeTabName), tab: activeTabName });
+      if (bootHash) history.replaceState({menchmarkRoute:true}, "", bootHash);
+    } catch(e) {}
+  }
   if(typeof serialTryAutoReconnect==="function") serialTryAutoReconnect();
   // Runs after load(), which is when data.timerDefaultSeconds and
   // data.snackSeconds actually exist — the timer IIFE itself is evaluated
