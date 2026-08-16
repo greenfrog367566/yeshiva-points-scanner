@@ -269,3 +269,45 @@ build step 1 (unsplit sidebar) before spending any more design time on step 3
 - Still genuinely open: is this worth scheduling into `NOW.md` at all right
   now, or does it wait behind #227 as a "next, in order" item rather than
   jumping the queue? That's the one question neither review answers for Ben.
+
+---
+
+## 9. Third review (ChatGPT, 2026-08-15) — rollback safety, reframing the test, one parked idea
+
+Two concrete process improvements worth adopting into the plan, plus one idea
+explicitly marked "not now" that shouldn't quietly become scope creep.
+
+**Ship it behind a settings toggle, not as a replacement.** §6's step 1
+("layout swap only") didn't say how the old and new nav coexist during
+evaluation. The concrete answer: a `navHidden()`-adjacent Settings checkbox
+("Use experimental left navigation") that renders the same `TAB_GROUPS` data
+into whichever layout is selected, defaulting off. Ben is the only daily user
+of this app in a real classroom during the evaluation week — a one-setting
+rollback beats "revert the branch" if the sidebar has one bad day mid-lesson.
+This also sidesteps a version of the Lean-mode lesson from §2: ship the new
+chrome as a switchable mode from day one rather than a flag day, since the
+Lean-mode revert (#121) cost a same-day rebuild specifically because there
+was no in-between state to fall back to.
+
+**Reframe what "evaluate for a week" is actually testing.** Not "does the CSS
+render correctly" (that's a five-minute browser check) but a specific list of
+classroom questions: *Can Attendance be reached faster? Can Store? Does the
+seating chart feel less crowded with the strips gone? Can navigation happen
+one-handed while teaching, per the theory's own one-handed rule?* Framing the
+evaluation as a Yes/No against these specific questions — not a vague
+"how does it feel" — is what makes the week produce an actual answer to the
+falsifiable prediction in §8, rather than an impression.
+
+**Parked, explicitly not adopted here:** the review also floated a much
+bigger idea — that Menchmark, Chazaroom, and a future quiz/assessment system
+share one underlying pattern (physical code → scan → immediate feedback →
+automatic recording), and that the top-level nav could eventually reflect
+that as something like `SCAN / REVIEW / ASSESS / REWARDS / MANAGE` across
+products rather than five groups inside one app. **This is out of scope for
+this doc and this PR on purpose** — it's a cross-product architecture
+question (this repo's `manage`/`learn`/etc. groups are Menchmark-internal;
+Chazaroom is a separate codebase per this repo's recent branch history), it
+has no bearing on whether the sidebar ships, and treating it as live scope
+here would be exactly the kind of "reorganize the world because a mockup
+suggested it" mistake §3 already flagged once. Recorded here only so it isn't
+lost, and only so a future session doesn't rediscover it as if new.
