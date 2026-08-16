@@ -74,7 +74,7 @@ first open shows:
 | Review | *(group hidden — unchanged, existing seed)* | — |
 | Run | Seating chart & print, Students, Activities, Attendance, Backup & Restore, Settings | Brachos, Spinner, Passes, Tracker, Homework, Gradebook |
 
-**~12 tabs instead of ~19, and Run drops from 12 to 6.**
+**~11 tabs instead of ~19, and Run drops from 12 to 6.**
 
 Reasoning per line, so each can be overruled individually:
 
@@ -114,7 +114,7 @@ subtab row for single-tab groups (the guard at ~5560 — the empty-row half of
 what killed Lean mode is already fixed), and `isGroupVisible()` already drops
 a fully-hidden group from the nav.
 
-## 5. Discoverability — how the hidden 8 get found
+## 5. Discoverability — how the hidden 9 get found
 
 Two pieces, one required, one recommended:
 
