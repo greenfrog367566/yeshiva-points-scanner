@@ -1399,6 +1399,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     body.print-students #personalPagesBlock{display:none!important}
     body.print-personal #studentLabelsBlock{display:none!important}
     body.print-personal #personalPagesBlock{margin-top:0!important}
+    /* #view-seats.seats-fullscreen carries an unconditional (non-print-scoped)
+       display:block!important with id+class specificity, which otherwise beats
+       the .view{display:none!important} rule above and leaves the live
+       full-screen chart's fixed overlay covering the page — so printing from
+       the pop-out shortcut printed a screenshot of the overlay instead of
+       #view-printSeats underneath it. This selector adds the body.print-seating
+       class (present for the whole print action, see triggerSeatChartPrint())
+       to out-specificity that rule for the duration of the print only. */
+    body.print-seating #view-seats.seats-fullscreen,
+    body.print-seating #view-seats.seats-shrinking{display:none!important}
     /* The on-screen wrapper scrolls; on paper there is nothing to scroll and a
        clipped edge would silently crop the sheet. */
     body.print-seating .seat-print-scroll{overflow:visible!important}
@@ -10378,6 +10388,26 @@ function setupRoster() {
   //   skipEarn  — do not call recordEarn(). For corrections, which belong in
   //               the number history but not the behaviour history.
   //   noContest — score to main regardless of a running contest.
+  // Double-scan detection (NOW.md item 4 / Menchmark_UI_Redesign_Summary.md
+  // §12): a soft "was he just scanned — again?" nudge folded into the flash
+  // that's already firing — never a new UI surface, never a modal. Records
+  // nothing and blocks nothing: the second scan lands exactly as it would
+  // have anyway, this only changes what the toast says. Checked against the
+  // entry immediately before the one just added (data.log[1], since
+  // addLogEntry() already unshifted the new one to data.log[0]) rather than a
+  // fresh timer or a persisted field, because data.log already carries
+  // sid+ts for free. Deliberately does not care whether the two scans share
+  // an activity — a same-second duplicate is ambiguous by nature (see
+  // Offline_NoComputer_Secretary_Spec.md), and the nudge's whole point is to
+  // surface that for the rebbi to judge, never to guess on his behalf.
+  var DOUBLE_SCAN_MS = 2000;
+  function isDoubleScan(sid, ts){
+    var prev=data.log[1];
+    // Undone or a correction: the rebbi already acted on the first one, so
+    // there's nothing left to nudge about.
+    if(!prev || prev.sid!==sid || prev.undone || prev.kind==="correction") return false;
+    return (ts-(prev.ts||0)) < DOUBLE_SCAN_MS;
+  }
   function applyScore(s, label, delta, opts){
     opts = opts || {};
     var tag = opts.noContest ? {scoreToMain:true, contestId:null, contestOnly:false} : contestTagForScan();
@@ -10393,9 +10423,11 @@ function setupRoster() {
     if(delta>0 && tag.scoreToMain && !opts.skipEarn) recordEarn(s.id, label, delta);
     if(tag.scoreToMain) maybeSixSeven(s);
     var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly, mcId:mcId||undefined});
+    var doubleScan=isDoubleScan(s.id, logEntry.ts);
     save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
-    flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""), delta>=0?"positive":"negative");
+    var scoreLine=mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":"");
+    flash(delta>=0, s.name, fmtDeltaBare(delta), doubleScan ? "Scanned a moment ago — again? · "+scoreLine : scoreLine, delta>=0?"positive":"negative");
     beep(delta>=0);
     renderRecent();
     renderScanBoard();
