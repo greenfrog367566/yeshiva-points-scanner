@@ -2058,6 +2058,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
               <span class="an">Custom (subtract)</span>
               <span class="av neg" id="customSubVal">−1 pts</span>
             </button>
+            <button class="act-btn" id="warnBtn" type="button" data-label="⚠️ Warning" data-delta="0" style="display:none" title="Flashes a warning on the boy's tile. Not recorded anywhere — no count, no history.">
+              <span class="an">⚠️ Warning</span>
+              <span class="av neg">not recorded</span>
+            </button>
           </div>
         </div>
       </div>
@@ -4236,6 +4240,12 @@ function setupRoster() {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Warning Flash</h3>
+      <p class="view-note" style="margin:0 0 10px">Off by default. When on, a ⚠️ Warning button sits next to Custom (add)/(subtract) on the Record tab — arm it, then tap or scan a student to flash a heads-up on their tile, same look as a demerit. Nothing is recorded: no points, no history, no count anywhere.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setWarningFlash"> Show the ⚠️ Warning button</label>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Scan Confirmation Banner</h3>
       <p class="view-note" style="margin:0 0 10px">The floating banner that briefly confirms a scan or tap — "+1 Davening for Dovid", a demerit, a freeze, an attendance mark. All three are on by default; the beep still sounds either way, so turning a kind off only hides the banner, not the confirmation sound.</p>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setBannerPositive"> Points earned</label>
@@ -5556,22 +5566,28 @@ function setupRoster() {
     }
     return data.activities.filter(function(a){ return a.name===armed.label && a.pts===armed.delta; })[0] || null;
   }
-  function setArmed(label, delta, act){
+  function setArmed(label, delta, act, opts){
+    // warning (NOW.md item 4): not an activity, not a delta -- award() reads
+    // this flag and short-circuits before any of its recording branches. See
+    // applyWarning(). Computed up front so both the strip-log entry below and
+    // the armed record itself agree on it.
+    var isWarning = !!(opts && opts.warn);
     // Record activity changes so the scan strip can display them inline.
     // Skip the very first silent init arm (armed is still null then).
     if(armed !== null && (armed.label !== label || armed.delta !== delta)){
-      stripActLog.unshift({kind:'activity', label:label, delta:delta,
+      stripActLog.unshift({kind:'activity', label:label, delta:delta, warning:isWarning,
         id:'act-'+(stripActLogNextId++), ts:Date.now()});
       if(stripActLog.length > 20) stripActLog.length = 20;
     }
-    armed = {label:label, delta:delta, actId:(act && act.id) || null};
+    armed = {label:label, delta:delta, actId:(act && act.id) || null, warning:isWarning};
     var pill=$("armedPill");
     // Homework Checked earns no points, so the "Now scoring" pill shows the name
     // alone — appending its 0 would read as "this scan is worth nothing". True
-    // of every rerouted activity, which since 2d is every tracked one.
-    var armedIsHw = reroutedActivity(armedActivity());
+    // of every rerouted activity, which since 2d is every tracked one, and of
+    // the warning flash, which was never a point value to begin with.
+    var armedIsHw = isWarning || reroutedActivity(armedActivity());
     pill.textContent = armedIsHw ? label : (label + "  " + fmtDeltaBare(delta));
-    pill.classList.toggle("neg", delta<0);
+    pill.classList.toggle("neg", delta<0 || isWarning);
     // highlight matching activity button
     document.querySelectorAll(".act-btn").forEach(function(b){
       b.classList.toggle("selected", b.dataset.label===label && Number(b.dataset.delta)===delta);
@@ -5588,6 +5604,11 @@ function setupRoster() {
     // Attendance is armed — and disarming must take it away with the fill.
     if(typeof refreshAttEmailBtn==="function") refreshAttEmailBtn();
   }
+  // Arms the warning flash exactly like Custom arms an amount — pick it,
+  // then scan/tap the boy it's for. Delta is 0 purely as a placeholder;
+  // opts.warn is what actually routes it (see award()), so it can never be
+  // mistaken for a real 0-point activity.
+  function armWarning(){ setArmed("⚠️ Warning", 0, null, {warn:true}); }
 
   /* ---------- TABS (grouped, with a subtab row) ---------- */
   var TAB_GROUPS = {
@@ -9035,6 +9056,7 @@ function setupRoster() {
     renderShulchaniStatus();
     $("setTapBreakdown").checked = !!data.tapShowsBreakdown;
     $("setSeatListFallback").checked = data.seatListFallback!==false;
+    $("setWarningFlash").checked = !!data.warningFlashEnabled;
     $("setBannerPositive").checked = data.bannerPositive!==false;
     $("setBannerNegative").checked = data.bannerNegative!==false;
     $("setBannerTracked").checked = data.bannerTracked!==false;
@@ -9216,6 +9238,9 @@ function setupRoster() {
   // Redraws the panel: turning this off has to put the empty grid back straight
   // away, or the setting reads as doing nothing until the next render.
   $("setSeatListFallback").addEventListener("change", function(){ data.seatListFallback=this.checked; save(); renderTapPanel(); });
+  // Redraws the Record tab's activity row so the button appears/disappears
+  // immediately, same reason as setSeatListFallback above.
+  $("setWarningFlash").addEventListener("change", function(){ data.warningFlashEnabled=this.checked; save(); renderActButtons(); });
   $("setHeaderShortcuts").addEventListener("change", function(){ data.showHeaderShortcuts=this.checked; save(); applyHeaderShortcutsVisibility(); });
   $("setHebrewDate").addEventListener("change", function(){ data.showHebrewDate=this.checked; save(); showDate(); });
   $("setFullWidth").addEventListener("change", function(){ data.fullWidth=this.checked; save(); applyFullWidth(); });
@@ -10159,6 +10184,13 @@ function setupRoster() {
   // code from print only and leaves the screen alone.
   function actVisibleOnScreen(a){ return !a.hidden && actInCurrentMode(a); }
   function renderActButtons(){
+    // Settings → Warning Flash. Off by default (see load2fix()); the button
+    // lives in the static HTML rather than being built here, so this is just
+    // a show/hide, not a render. Placed at the top so it runs on every path
+    // that already calls renderActButtons() — app init included — rather
+    // than needing its own separate call site.
+    var warnBtn=$("warnBtn");
+    if(warnBtn) warnBtn.style.display = data.warningFlashEnabled ? "" : "none";
     var wrap=$("actButtons"); wrap.innerHTML="";
     /* EVERY tracked activity gets a button here, Tracker ones included. That
      * changed in 2d and this comment did not: it used to say Tracker activities
@@ -10904,6 +10936,13 @@ function setupRoster() {
       flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student");
       beep(false); return false;
     }
+    // The warning flash (NOW.md item 4) is not an activity at all \u2014 no
+    // data.activities entry, nothing for armedActivity() to find \u2014 so it has
+    // to short-circuit here, before any of the recording branches below.
+    // Left to fall through, armed.delta (always 0) would reach applyScore()
+    // and become exactly the kind of accidental 0-point log entry a stray
+    // Custom-0 arm already has to guard against elsewhere.
+    if(armed.warning) return applyWarning(s);
     // If the armed activity has group restrictions, check this student belongs.
     var armedAct=armedActivity();
     if(armedAct && Array.isArray(armedAct.groups) && armedAct.groups.length>0){
@@ -10944,6 +10983,31 @@ function setupRoster() {
     }
     return applyScore(s, armed.label, armed.delta);
   }
+  // The warning flash (NOW.md item 4). Reuses the minus flash and beep — same
+  // red toast, same red tile pulse — but writes NOTHING: no data.log entry,
+  // no save(), no Sheet push, no score change. "A recorded warning implies a
+  // count, a count implies rungs, and rungs are the [behavior ladder]" —
+  // which this deliberately is not. See NOW.md item 4.
+  function applyWarning(s){
+    flash(false, s.name, "⚠️ Warning", "Not recorded — just a heads-up", "negative");
+    beep(false);
+    flashWarningTile(s.id);
+    return true;
+  }
+  // The tile half of the minus flash, on its own rather than borrowed from
+  // refreshStudentTiles(): that function's flashTapTile() shows the delta
+  // flying off the tile as text (e.g. "-1"), which here would be a lie —
+  // nothing was actually subtracted. This reuses just the pulse (same
+  // .awarded-bad tone a real demerit gets) with no fabricated number, and no
+  // score/held-line refresh, since neither one changed.
+  function flashWarningTile(sid){
+    document.querySelectorAll('.tap-btn[data-sid="'+sid+'"], .seat[data-sid="'+sid+'"]').forEach(function(tb){
+      tb.classList.remove("awarded-bad");
+      void tb.offsetWidth;
+      tb.classList.add("awarded-bad");
+      setTimeout(function(){ tb.classList.remove("awarded-bad"); }, 700);
+    });
+  }
   // THE ONE PATH EVERY POINT IN THE APP TRAVELS THROUGH. Extracted verbatim
   // from award() so a second caller can score a student without setting and
   // restoring the global `armed` — the scanner reads that same variable, so
@@ -10957,6 +11021,26 @@ function setupRoster() {
   //   skipEarn  — do not call recordEarn(). For corrections, which belong in
   //               the number history but not the behaviour history.
   //   noContest — score to main regardless of a running contest.
+  // Double-scan detection (NOW.md item 4 / Menchmark_UI_Redesign_Summary.md
+  // §12): a soft "was he just scanned — again?" nudge folded into the flash
+  // that's already firing — never a new UI surface, never a modal. Records
+  // nothing and blocks nothing: the second scan lands exactly as it would
+  // have anyway, this only changes what the toast says. Checked against the
+  // entry immediately before the one just added (data.log[1], since
+  // addLogEntry() already unshifted the new one to data.log[0]) rather than a
+  // fresh timer or a persisted field, because data.log already carries
+  // sid+ts for free. Deliberately does not care whether the two scans share
+  // an activity — a same-second duplicate is ambiguous by nature (see
+  // Offline_NoComputer_Secretary_Spec.md), and the nudge's whole point is to
+  // surface that for the rebbi to judge, never to guess on his behalf.
+  var DOUBLE_SCAN_MS = 2000;
+  function isDoubleScan(sid, ts){
+    var prev=data.log[1];
+    // Undone or a correction: the rebbi already acted on the first one, so
+    // there's nothing left to nudge about.
+    if(!prev || prev.sid!==sid || prev.undone || prev.kind==="correction") return false;
+    return (ts-(prev.ts||0)) < DOUBLE_SCAN_MS;
+  }
   function applyScore(s, label, delta, opts){
     opts = opts || {};
     var tag = opts.noContest ? {scoreToMain:true, contestId:null, contestOnly:false} : contestTagForScan();
@@ -10972,9 +11056,11 @@ function setupRoster() {
     if(delta>0 && tag.scoreToMain && !opts.skipEarn) recordEarn(s.id, label, delta);
     if(tag.scoreToMain) maybeSixSeven(s);
     var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly, mcId:mcId||undefined});
+    var doubleScan=isDoubleScan(s.id, logEntry.ts);
     save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
-    flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""), delta>=0?"positive":"negative");
+    var scoreLine=mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":"");
+    flash(delta>=0, s.name, fmtDeltaBare(delta), doubleScan ? "Scanned a moment ago — again? · "+scoreLine : scoreLine, delta>=0?"positive":"negative");
     beep(delta>=0);
     renderRecent();
     renderScanBoard();
@@ -11614,7 +11700,15 @@ function setupRoster() {
       var isPoints=(ctx==="Points");
       pill.classList.toggle("clickable", isPoints);
       if(isPoints){
-        if(armed){ pill.textContent = armed.label+"  "+fmt(armed.delta)+"  ▾"; pill.classList.toggle("neg", armed.delta<0); }
+        if(armed){
+          // Same suppression setArmed() already applies to the Dashboard's own
+          // pill: an activity that earns no points (a rerouted/tracked item,
+          // or the warning flash) shouldn't show a "+0" that isn't true of
+          // anything real.
+          var noPts = armed.warning || reroutedActivity(armedActivity());
+          pill.textContent = noPts ? (armed.label+"  ▾") : (armed.label+"  "+fmt(armed.delta)+"  ▾");
+          pill.classList.toggle("neg", armed.delta<0 || armed.warning);
+        }
         else { pill.textContent="Pick an activity  ▾"; pill.classList.remove("neg"); }
         pill.title="Click to arm a different activity";
       } else {
@@ -11675,9 +11769,11 @@ function setupRoster() {
         var entry=item.entry;
         var entryEl=el("div","scan-strip-entry"+(isPrimary&&isNewEntry?" ss-new":""));
         if(item.kind==="activity"){
-          // Activity-change chip
-          var chip=el("span","ss-act-chip"+(entry.delta<0?" neg":""),
-            "⬤ "+entry.label+" "+fmt(entry.delta));
+          // Activity-change chip. The warning flash isn't worth any points, so
+          // showing its delta (always 0) would read as "a zero-point demerit"
+          // rather than what it actually is — nothing recorded at all.
+          var chip=el("span","ss-act-chip"+(entry.delta<0||entry.warning?" neg":""),
+            entry.warning ? ("⬤ "+entry.label) : ("⬤ "+entry.label+" "+fmt(entry.delta)));
           entryEl.appendChild(chip);
         } else {
           // Scan entry
@@ -14393,6 +14489,7 @@ function setupRoster() {
   }
   $("customAdd").addEventListener("click", function(){ armCustom(1); });
   $("customSub").addEventListener("click", function(){ armCustom(-1); });
+  $("warnBtn").addEventListener("click", armWarning);
 
   // global scanner capture (works even if focus is lost / on other tabs)
   var buf="", lastT=0;
@@ -23574,6 +23671,11 @@ nameLine
     // end, never something a rebbi chose, so there is nothing to preserve.
     // Reads data.seating and writes nothing to it.
     if(typeof data.seatListFallback!=="boolean") data.seatListFallback=true;
+    // The ⚠️ Warning button on the Record tab (NOW.md item 4). Additive,
+    // defaults OFF — a rebbi who has never seen this feature shouldn't find
+    // a new button on his scan panel unasked; Settings → Warning Flash is
+    // the opt-in. Purely additive, no DATA_VERSION bump: nothing converts.
+    if(typeof data.warningFlashEnabled!=="boolean") data.warningFlashEnabled=false;
     // Which kinds of scan/tap outcome the floating confirmation banner shows.
     // Three independent additive booleans, all default ON — the banner shows
     // exactly what it always has until a rebbi turns one off. The beep is a
@@ -24881,19 +24983,21 @@ nameLine
       },
       scanner: {
         btn: "helpTabScanner",
-        content: function(){ return mdToHtml(SCANNER_MD); }
+        content: function(){ return '<div style="flex:1;overflow-y:auto;padding:24px 28px">'+mdToHtml(SCANNER_MD)+'</div>'; }
       },
       about: {
         btn: "helpTabAbout",
         content: function(){
-          return '<h2 style="font-family:Georgia,serif;margin:0 0 12px">About Menchmark</h2>' +
+          return '<div style="flex:1;overflow-y:auto;padding:24px 28px">' +
+            '<h2 style="font-family:Georgia,serif;margin:0 0 12px">About Menchmark</h2>' +
             '<p><strong>Menchmark</strong> is a classroom assistant for Yeshiva and Jewish Day School rebbeim &mdash; middos and derech eretz, attendance, homework, and learning, all from one scan.</p>' +
             '<p style="color:#64748b;font-size:.9rem">Version <strong>' + (window.MENCHMARK_APP_VERSION || '—') + '</strong>' +
               (location.protocol === 'file:' ? ' &mdash; downloaded copy' : '') + '</p>' +
             '<p>Built with ❤️ by Rabbi B. Steinerman.</p>' +
             '<p><a href="https://github.com/greenfrog367566/yeshiva-points-scanner" target="_blank" style="color:#2563eb">View on GitHub</a></p>' +
             '<hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb">' +
-            '<p style="color:#64748b;font-size:.85rem">For setup help, questions, or to contribute, visit the repo. To report a bug, open a GitHub issue.</p>';
+            '<p style="color:#64748b;font-size:.85rem">For setup help, questions, or to contribute, visit the repo. To report a bug, open a GitHub issue.</p>' +
+            '</div>';
         }
       }
     };
@@ -25799,6 +25903,12 @@ These scanners have a handful of built-in modes, switched by scanning a specific
 The scanner vibrates once on a successful read, in addition to the beep — handy in a loud classroom, or if you've muted the beeper for a quieter environment. Scan "Off" below to disable it, or "On" to re-enable.
 
 ![Vibration On and Off setup codes, from the Tera scanner manual](docs/tera-scanner-codes/vibration.png)
+
+### Battery Level
+
+Scan the code below to have the scanner report its current battery level — useful if a wireless scanner seems sluggish or is dropping its connection and you want to rule out a low battery before troubleshooting anything else.
+
+![Show Battery Level setup code, from the Tera scanner manual](docs/tera-scanner-codes/battery-level.png)
 
 ### Time Stamp Prefix/Suffix
 
