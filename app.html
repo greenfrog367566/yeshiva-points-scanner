@@ -338,8 +338,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      list/grid re-render plus the beep. */
   #view-passes > .scan-box,
   #pesukChartMode > .scan-box{display:none}
-  #scanInput{width:100%;font-size:1.15rem;padding:16px 16px;border:2px dashed var(--ink);border-radius:12px;background:#fbfbfd;text-align:center;letter-spacing:1px}
-  #scanInput::placeholder{color:#9aa1b6;letter-spacing:0;font-size:.95rem}
   .scan-hint{font-size:.82rem;color:var(--muted);margin-top:8px;text-align:center}
 
   /* Seats tab scan bar — everything (input, armed activity, last scan +
@@ -422,6 +420,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .flash.ice .delta{color:var(--ice)}
   .flash .total{font-size:.95rem;color:var(--muted)}
   @media(prefers-reduced-motion:reduce){.flash{transition:none}}
+  /* The MAIN scan feedback is a floating toast, not a box inside the Dashboard —
+     scans land from every tab (global key capture) and from the full-screen
+     seating chart, and feedback buried in one tab's panel was invisible from
+     all of them. Same .flash palette/typography; only the positioning differs.
+     pointer-events:none so it can never sit between the rebbi and a seat tile.
+     z-index above the full-screen seating overlay (120) and the lifted scan
+     bar (130). Bottom-center, clear of the scan bar at the top and matching
+     the app's other bottom-center toast (the "two windows open" notice). */
+  .flash-toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,6px);z-index:140;width:min(420px,calc(100vw - 32px));min-height:0;padding:14px 20px;margin-top:0;box-shadow:0 10px 30px rgba(20,25,45,.22);pointer-events:none}
+  .flash-toast.show{transform:translate(-50%,0)}
 
   .recent h3{font-family:var(--serif);font-size:1.05rem;margin:0 0 10px}
   .recent-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:.92rem}
@@ -1926,9 +1934,17 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <button class="contest-c-badge" id="contestCBadge" style="display:none" title="A contest is running — these scans count for it. Tap to pause/resume contest-counting without ending the contest.">C</button>
   <input id="seatsScanInput" autocomplete="off" placeholder="Scan a QR code here  (or type a student code + Enter)">
   <div class="scan-strip" id="scanStrip"></div>
+  <button class="btn btn-sm" id="seatsUndoBtn" title="Reverse the most recent scan — same as the printed Undo card">↩ Undo</button>
   <button class="btn btn-sm seats-hist-btn" id="seatsHistoryBtn">History <span class="chev">▾</span></button>
   <div class="seats-hist-dropdown" id="seatsHistoryDropdown" style="display:none"></div>
 </div>
+
+<!-- Scan feedback toast. Lived inside the Dashboard's scan-box panel until that
+     panel retired (the box was the third redundant way to feed a scan in, after
+     the global key capture and #seatsScanInput above) — but flash() is how EVERY
+     scan confirms itself, so the element now floats at document level where all
+     tabs and the full-screen chart can see it. -->
+<div class="flash flash-toast" id="flash"></div>
 
 <main>
   <div id="saveWarn">
@@ -2020,16 +2036,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
               <span class="an">Custom (subtract)</span>
               <span class="av neg" id="customSubVal">−1 pts</span>
             </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel" id="panel-scanbar" data-panel="scanbar">
-        <div class="panel-tools"><span class="panel-name">Scan box</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
-        <div class="panel-body">
-          <div class="scan-box card pad">
-            <input id="scanInput" autocomplete="off" placeholder="Scan a QR code here  (or type a student code + Enter)">
-            <div class="flash" id="flash"></div>
           </div>
         </div>
       </div>
@@ -4199,9 +4205,30 @@ function setupRoster() {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Scan Confirmation Banner</h3>
+      <p class="view-note" style="margin:0 0 10px">The floating banner that briefly confirms a scan or tap — "+1 Davening for Dovid", a demerit, a freeze, an attendance mark. All three are on by default; the beep still sounds either way, so turning a kind off only hides the banner, not the confirmation sound.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setBannerPositive"> Points earned</label>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-top:8px"><input type="checkbox" id="setBannerNegative"> Points lost, including freeze</label>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-top:8px"><input type="checkbox" id="setBannerTracked"> Tracked items (attendance, homework, pass, tracker)</label>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Header Shortcuts</h3>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHeaderShortcuts"> Show the Points / Timer / Picker floating buttons</label>
       <p class="view-note" style="margin:8px 0 0">On by default. These three float on top of the screen wherever you scroll, and can be dragged anywhere — drop one wherever it's out of your way. Turn this off to hide all three if you don't use the floating points scanner, timer, or picker wheel — the class dropdown and sound button stay either way, and you can always turn this back on here.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">How Record Opens</h3>
+      <div class="toolbar">
+        <span style="font-weight:600">Open Record on:</span>
+        <span class="seg" id="setRecordOpen">
+          <button data-mode="last" class="active">Remember last</button>
+          <button data-mode="dash">Dashboard</button>
+          <button data-mode="fs">⛶ Full-screen chart</button>
+        </span>
+      </div>
+      <p class="view-note" style="margin:8px 0 14px"><strong>Remember last</strong> by default: if you were scanning from the full-screen seating chart when you left, the app opens back into it; close it with ✕ and the app goes back to opening on the Dashboard. <strong>Dashboard</strong> means always start there, even if you were full screen yesterday. <strong>Full-screen chart</strong> means always start in the full-screen seating chart — the room, the scan bar, nothing else — however you left things. Whatever you pick, the ⛶ and ✕ buttons keep working exactly as before within the day.</p>
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
@@ -5639,7 +5666,7 @@ function setupRoster() {
     if(typeof stopGameShow==="function") stopGameShow();
     if(typeof resetDndStuck==="function") resetDndStuck();
     if(tab==="scan"){
-      renderScanBoard(); renderTapPanel(); setTimeout(function(){ $("scanInput").focus(); },50);
+      renderScanBoard(); renderTapPanel(); setTimeout(function(){ $("seatsScanInput").focus(); },50);
     }
     if(tab==="history") renderHistoryTab();
     if(tab==="standings") renderStandings();
@@ -6156,7 +6183,8 @@ function setupRoster() {
   function attCycleFlash(s, next){
     flash(next!=="absent", s.name, ATT_LABEL[next]||next,
       next==="present" ? "Back to present — scan again for absent"
-        : "Scan again for "+(ATT_LABEL[attNextStatus(next)]||"").toLowerCase());
+        : "Scan again for "+(ATT_LABEL[attNextStatus(next)]||"").toLowerCase(),
+      "tracked");
     beep(next!=="absent");
   }
   function attendanceScan(code){
@@ -7124,7 +7152,7 @@ function setupRoster() {
     var a=actById(actId);
     if(!a){ flash(false,"No tracked activity","","Add one first"); beep(false); return; }
     trackerLogAdd(s, a);
-    flash(true, s.name, a.name, "Logged");
+    flash(true, s.name, a.name, "Logged", "tracked");
     beep(true);
     renderTracker();
   }
@@ -7499,7 +7527,7 @@ function setupRoster() {
     if(!s){ flash(false,"Unknown code","","\u201C"+code+"\u201D isn't a student"); beep(false); return; }
     if(!studentInCurrentClass(s)){ flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student"); beep(false); return; }
     setHw(s.id, true);
-    flash(true, s.name, "HW Checked", "Homework marked checked");
+    flash(true, s.name, "HW Checked", "Homework marked checked", "tracked");
     beep(true);
     if(hwViewMode==="student") renderHwStudentView(); else renderHomework();
   }
@@ -8448,6 +8476,21 @@ function setupRoster() {
       b.classList.toggle("active", b.dataset.mode===data.pickerMode);
     });
   }
+  function syncRecordOpenSetting(){
+    document.querySelectorAll("#setRecordOpen button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.mode===data.recordOpenMode);
+    });
+  }
+  document.querySelectorAll("#setRecordOpen button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var m=btn.dataset.mode;
+      data.recordOpenMode = (m==="dash"||m==="fs") ? m : "last";
+      save(); syncRecordOpenSetting();
+      // Takes effect at the NEXT load by design — yanking the rebbi in or out
+      // of full screen the moment he taps a Settings button would be the
+      // setting doing the opposite of what it promises ("how Record OPENS").
+    });
+  });
   function syncMatchModeSetting(){
     document.querySelectorAll("#setMatchMode button").forEach(function(b){
       b.classList.toggle("active", b.dataset.mode===data.matchMode);
@@ -8480,12 +8523,16 @@ function setupRoster() {
     renderShulchaniStatus();
     $("setTapBreakdown").checked = !!data.tapShowsBreakdown;
     $("setSeatListFallback").checked = data.seatListFallback!==false;
+    $("setBannerPositive").checked = data.bannerPositive!==false;
+    $("setBannerNegative").checked = data.bannerNegative!==false;
+    $("setBannerTracked").checked = data.bannerTracked!==false;
     $("setHeaderShortcuts").checked = data.showHeaderShortcuts!==false;
     $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setFullWidth").checked = !!data.fullWidth;
     $("setSixSeven").checked = !!data.sixSeven;
     syncPickerModeSetting();
     syncMatchModeSetting();
+    syncRecordOpenSetting();
     // Phase 1: Teach flip / quiz delay / game auto inits moved to renderTeach,
     // renderQuiz, renderGame — those controls now live on their feature panels.
     renderSerialUI();
@@ -8533,6 +8580,9 @@ function setupRoster() {
     var mb=$("muteBtn"); if(mb) mb.textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   });
   $("setTapBreakdown").addEventListener("change", function(){ data.tapShowsBreakdown=this.checked; save(); });
+  $("setBannerPositive").addEventListener("change", function(){ data.bannerPositive=this.checked; save(); });
+  $("setBannerNegative").addEventListener("change", function(){ data.bannerNegative=this.checked; save(); });
+  $("setBannerTracked").addEventListener("change", function(){ data.bannerTracked=this.checked; save(); });
   // Switching it off mid-recording stops the microphone there and then, rather
   // than leaving one open that the setting claims can no longer be opened.
   $("setVoiceNotes").addEventListener("change", function(){
@@ -9510,14 +9560,31 @@ function setupRoster() {
       // "+0" would read as "scanning this gives nothing". Name only. Both .an and
       // .av are display:block, so omitting .av just makes a shorter card.
       if(!reroutedActivity(a)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
-      b.addEventListener("click", function(){ setArmed(a.name, a.pts, a); $("scanInput").focus(); });
+      b.addEventListener("click", function(){ setArmed(a.name, a.pts, a); $("seatsScanInput").focus(); });
       wrap.appendChild(b);
     });
   }
 
-  function flash(ok, line1, line2, line3){
+  // band is optional and only ever passed at a real scan/tap OUTCOME (points
+  // scored, freeze applied, a tracked mark written) — never at an error or
+  // status message ("Unknown code", "Not in selected class", "No email
+  // address saved", …), which must always show or a silenced banner would
+  // read as a scan that quietly worked. 'positive'/'negative'/'tracked' map
+  // to the three Settings → Scan Confirmation Banner toggles; skipping here
+  // is a true no-op — beep() is always a separate call at the call site, so
+  // muting a band never mutes the confirmation sound.
+  function bannerBandOn(band){
+    if(band==="positive") return data.bannerPositive!==false;
+    if(band==="negative") return data.bannerNegative!==false;
+    if(band==="tracked") return data.bannerTracked!==false;
+    return true;
+  }
+  function flash(ok, line1, line2, line3, band){
+    if(!bannerBandOn(band)) return;
     var f=$("flash");
-    f.className="flash show "+(ok==="ice"?"ice":(ok?"good":"bad"));
+    // flash-toast must survive this wholesale className write — it is what
+    // keeps the element a fixed toast rather than a block in the page flow.
+    f.className="flash flash-toast show "+(ok==="ice"?"ice":(ok?"good":"bad"));
     f.innerHTML="";
     if(line1) f.appendChild(el("div","who",line1));
     if(line2) f.appendChild(el("div","delta",line2));
@@ -9779,7 +9846,7 @@ function setupRoster() {
       // markHwCheckedToday (not setHw) for the same reason: setHw writes to
       // hwDate, the date the Homework tab is showing.
       markHwCheckedToday(s.id);
-      flash(true, s.name, "HW Checked", "Homework marked checked (today)");
+      flash(true, s.name, "HW Checked", "Homework marked checked (today)", "tracked");
       beep(true);
       // "checked" in the old boolean store IS "full credit" in the four-state
       // preset. Mirroring the preset's own vocabulary rather than `true` keeps
@@ -9796,7 +9863,7 @@ function setupRoster() {
         beep(false);
         return {ok:false};
       }
-      flash(true, s.name, "Pass used", "that's their one for this week");
+      flash(true, s.name, "Pass used", "that's their one for this week", "tracked");
       beep(true);
       // setPass() writes a real data.log entry, unlike the two above, so the
       // Recent scans panel and the scan strip have something new to show.
@@ -9812,7 +9879,7 @@ function setupRoster() {
     if(TRACKED_LEGACY[item.id]) return TRACKED_LEGACY[item.id];
     if(item.method==="count") return function(s){
       trackerLogAdd(s, a);
-      flash(true, s.name, a.name, "Logged");
+      flash(true, s.name, a.name, "Logged", "tracked");
       beep(true);
       if($("view-tracker") && $("view-tracker").classList.contains("active")) renderTracker();
       return {ok:true};
@@ -10018,7 +10085,7 @@ function setupRoster() {
       // Nothing left to fill is a real answer, not a failure: the roll is
       // already complete. Saying so beats a button that looks dead.
       if(!n){ flash(false, "Attendance", "Nobody left to mark", "Everyone is already marked for today"); beep(false); return; }
-      flash(true, "Attendance", attFillLabel(), n+(n===1?" student":" students"));
+      flash(true, "Attendance", attFillLabel(), n+(n===1?" student":" students"), "tracked");
       beep(true);
       // The badges change under the rebbi's finger rather than on the next full
       // repaint — the same reason recordTrackedScan() calls this instead of
@@ -10192,7 +10259,7 @@ function setupRoster() {
       // writes its own mirror entry, so logging again would double the row for
       // one scan.
       addTrackedLogEntry(s.id, item.name, {ts:entry.ts, value:entry.value, about:gbDateKeyForTs(entry.ts)});
-      flash(true, s.name, item.name, String(entry.value));
+      flash(true, s.name, item.name, String(entry.value), "tracked");
       beep(true);
     }
     save();
@@ -10285,7 +10352,7 @@ function setupRoster() {
     var logEntry=addLogEntry({ts:Date.now(), sid:s.id, label:label, delta:delta, contestId:tag.contestId, contestOnly:tag.contestOnly, mcId:mcId||undefined});
     save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
-    flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
+    flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""), delta>=0?"positive":"negative");
     beep(delta>=0);
     renderRecent();
     renderScanBoard();
@@ -10445,7 +10512,7 @@ function setupRoster() {
     // "why" against.
     addTrackedLogEntry(s.id, (act && act.name) || "❄️ Freeze", {value:fmtFreezeDuration(seconds), about:todayKey()});
     save();
-    flash("ice", s.name, "❄️ "+fmtFreezeDuration(seconds), "now "+fmtFreezeTime(freezeRemainingMs(s.id))+" frozen");
+    flash("ice", s.name, "❄️ "+fmtFreezeDuration(seconds), "now "+fmtFreezeTime(freezeRemainingMs(s.id))+" frozen", "negative");
     beep(true);
     refreshFreezeTile(s.id, true);
     renderFreezeAllBtn();
@@ -10545,7 +10612,7 @@ function setupRoster() {
     ids.forEach(function(sid){ refreshFreezeTile(sid, false); });
     renderFreezeAllBtn();
     flash("ice", running?"❄️ All freezes paused":"▶ All freezes resumed", String(n),
-          n+" student"+(n===1?"":"s")+(running?" — nobody's time is ticking down":" — counting down again"));
+          n+" student"+(n===1?"":"s")+(running?" — nobody's time is ticking down":" — counting down again"), "negative");
     beep(true);
   }
   // Walks every active freeze once a second, updating badges live and — on
@@ -10671,7 +10738,7 @@ function setupRoster() {
     if(!opts.deferSave) save();
     if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:delta, total:score(s.id), id:logEntry.id}); }
     if(!quiet){
-      flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""));
+      flash(delta>=0, s.name, fmtDeltaBare(delta), mcScanNote(s, label, mcId) || label+" · now "+fmtScore(s.id)+(tag.contestOnly?"  (contest only)":""), delta>=0?"positive":"negative");
       beep(delta>=0);
       renderRecent(); renderScanBoard(); refreshLiveViews();
     }
@@ -10750,7 +10817,7 @@ function setupRoster() {
     flash(delta>=0, "Whole class", fmtDeltaBare(delta),
           armed.label+" · "+done+" student"+(done===1?"":"s")
           +(absent.length && targets.length!==list.length ? "  ("+absent.length+" absent skipped)" : "")
-          +(frozen ? "  ("+frozen+" ❄️ frozen skipped)" : ""));
+          +(frozen ? "  ("+frozen+" ❄️ frozen skipped)" : ""), delta>=0?"positive":"negative");
     beep(delta>=0);
   }
   // 6-7 celebration (optional — data.sixSeven, Settings tab). Checked after any
@@ -10817,7 +10884,7 @@ function setupRoster() {
           beep(false); return;
         }
         markHwCheckedToday(ps.id);
-        flash(true, ps.name, "HW Checked", "Homework marked checked (today)");
+        flash(true, ps.name, "HW Checked", "Homework marked checked (today)", "tracked");
         beep(true);
         return;
       }
@@ -10833,7 +10900,7 @@ function setupRoster() {
           flash(false, ps.name, "Already used their pass", "this week — give it back on Run → Passes if that's wrong");
           beep(false);
         } else {
-          flash(true, ps.name, "Pass used", "that's their one for this week");
+          flash(true, ps.name, "Pass used", "that's their one for this week", "tracked");
           beep(true);
         }
         if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
@@ -11071,6 +11138,12 @@ function setupRoster() {
       wrap.appendChild(row);
     });
   }
+  // One-tap undo on the bar itself — the bar is present on every scanning
+  // surface (including the full-screen seating chart, which lifts it above the
+  // overlay), so a mis-scan no longer means opening the History dropdown and
+  // hunting a per-row ↩ mid-shiur. Same code path as the Dashboard button and
+  // the printed CTRL:UNDO card.
+  $("seatsUndoBtn").addEventListener("click", function(){ undoMostRecentScan(); });
   $("seatsHistoryBtn").addEventListener("click", function(e){
     e.stopPropagation();
     var dd=$("seatsHistoryDropdown");
@@ -11145,6 +11218,12 @@ function setupRoster() {
   }
   $("seatsPopOut").addEventListener("click", function(){
     var vs=$("view-seats");
+    // Remember the mode. For a rebbi who scans from the full-screen chart —
+    // the usual way to run a room — the app now reopens straight into it (see
+    // the init block) instead of starting him at the Dashboard every morning.
+    // Only the deliberate ✕ close clears this; a tab switch away is navigation,
+    // not a decision to stop scanning full screen.
+    if(data.seatsFsOpen!==true){ data.seatsFsOpen=true; save(); }
     vs.classList.add("seats-fullscreen");
     $("seatsCloseBtn").style.display="";
     document.body.style.overflow="hidden"; // no background scroll behind the overlay
@@ -11172,6 +11251,7 @@ function setupRoster() {
   function closeSeatsPopout(){
     var vs=$("view-seats");
     if(!vs) return;
+    if(data.seatsFsOpen!==false){ data.seatsFsOpen=false; save(); } // deliberate exit — stop reopening at boot
     $("seatsCloseBtn").style.display="none";
     var done=false;
     var finish=function(){
@@ -13077,14 +13157,14 @@ function setupRoster() {
   // by the Shorashim tap panel, which no longer exists on this page.
 
   /* ---------- Customizable Scan-tab (Dashboard) layout ---------- */
-  var SCAN_PANELS=["activities","scanbar","recent","tappanel","leaderboard"];
+  var SCAN_PANELS=["activities","recent","tappanel","leaderboard"];
   // Layout is {cols:2|3, columns:[[...],[...],[...]]} — always three column
   // arrays, but only the first `cols` are shown. The seating chart ("Class
   // list") is one of these movable panels here AND also has its own
   // dedicated Seats tab (full-screen, with a scan box pinned above it) —
   // both stay in sync since they render from the exact same underlying data
   // and the same renderTapPanel() logic, just into two different containers.
-  function defaultScanLayout(){ return {cols:2, columns:[["activities","scanbar","recent"],["leaderboard","tappanel"],[]]}; }
+  function defaultScanLayout(){ return {cols:2, columns:[["activities","recent"],["leaderboard","tappanel"],[]]}; }
   // Valid only if every known panel appears exactly once across the *active*
   // columns and none sit in a hidden column — so applyScanLayout() can never
   // lose, duplicate, or strand a panel. A corrupted pref falls back to default.
@@ -13124,6 +13204,14 @@ function setupRoster() {
       delete data.scanLayout.rowCollapsed;
       delete data.scanLayout.rowsSeatPos;
       delete data.scanLayout.rowsVisible;
+      // The "scanbar" panel (the Dashboard's dashed scan box) retired — strip it
+      // from a stored layout rather than letting validScanLayout() see an
+      // unknown id and throw the rebbi's whole arrangement back to default.
+      if(Array.isArray(data.scanLayout.columns)){
+        data.scanLayout.columns.forEach(function(col,i){
+          if(Array.isArray(col)) data.scanLayout.columns[i]=col.filter(function(id){ return id!=="scanbar"; });
+        });
+      }
     }
     if(!validScanLayout(data.scanLayout)) data.scanLayout=defaultScanLayout();
   }
@@ -13531,10 +13619,10 @@ function setupRoster() {
     }
     beep(true);
   }
-  // scan input (points)
-  $("scanInput").addEventListener("keydown", function(e){
-    if(e.key==="Enter"){ e.preventDefault(); var v=this.value; this.value=""; handleScannedCode(v); }
-  });
+  // The Dashboard's own dashed scan box retired — the global key capture below
+  // takes wedge scans with no input at all, and #seatsScanInput on the sticky
+  // bar is the typing path. What survives of it is the focus-keeping click
+  // handler, retargeted at the bar's input:
   // keep it focused while on scan tab — but never steal focus (which scrolls the
   // page to bring the input into view) for anything inside the Tap Panel. Seating-chart
   // tiles are plain <div>s rather than <button>s, so they need their own explicit
@@ -13550,7 +13638,7 @@ function setupRoster() {
     // just that one, which is why this tests the element type rather than
     // naming #customAmt.
     if(e.target.closest("input, textarea, select, [contenteditable=true]")) return;
-    $("scanInput").focus();
+    $("seatsScanInput").focus();
   });
 
   // ONE parse for every place a custom amount enters the app — the box itself,
@@ -13645,10 +13733,10 @@ function setupRoster() {
         handleScannedCode(scanned);
         return;
       }
-      // An amount, not a scan. Commit it and hand focus on to the scan box, so
+      // An amount, not a scan. Commit it and hand focus on to the scan bar, so
       // the next thing scanned is a student rather than more digits.
       commitCustomAmt();
-      $("scanInput").focus();
+      $("seatsScanInput").focus();
       return;
     }
     if(e.key.length===1) caBuf+=e.key;
@@ -18964,7 +19052,7 @@ nameLine
         // Returns false when nothing changed, in which case there is nothing to
         // re-render and nothing to say.
         if(setAttendance(sid, st, dateKey)){
-          flash(st!=="absent", s.name, ATT_LABEL[st]||st, gbDateLabel(dateKey)+" — corrected from the Gradebook");
+          flash(st!=="absent", s.name, ATT_LABEL[st]||st, gbDateLabel(dateKey)+" — corrected from the Gradebook", "tracked");
           if($("view-attendance") && $("view-attendance").classList.contains("active")){
             if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
           }
@@ -22785,6 +22873,23 @@ nameLine
     // end, never something a rebbi chose, so there is nothing to preserve.
     // Reads data.seating and writes nothing to it.
     if(typeof data.seatListFallback!=="boolean") data.seatListFallback=true;
+    // Which kinds of scan/tap outcome the floating confirmation banner shows.
+    // Three independent additive booleans, all default ON — the banner shows
+    // exactly what it always has until a rebbi turns one off. The beep is a
+    // separate call at every flash() site, so muting a band never mutes sound.
+    if(typeof data.bannerPositive!=="boolean") data.bannerPositive=true;
+    if(typeof data.bannerNegative!=="boolean") data.bannerNegative=true;
+    if(typeof data.bannerTracked!=="boolean") data.bannerTracked=true;
+    // Whether the full-screen seating chart was open when the rebbi left —
+    // reopened at boot so his scanning surface survives a reload. Additive
+    // boolean, defaults OFF: existing saves keep starting at the Dashboard
+    // until the ⛶ button is pressed once.
+    if(typeof data.seatsFsOpen!=="boolean") data.seatsFsOpen=false;
+    // How Record opens: "last" (follow seatsFsOpen), "dash" (always Dashboard),
+    // "fs" (always the full-screen chart). Additive string with a whitelist
+    // guard — anything unrecognized becomes the default, matching pickerMode's
+    // pattern.
+    if(data.recordOpenMode!=="dash" && data.recordOpenMode!=="fs" && data.recordOpenMode!=="last") data.recordOpenMode="last";
     if(typeof data.tapShowsBreakdown!=="boolean") data.tapShowsBreakdown=false;
     if(typeof data.showHeaderShortcuts!=="boolean") data.showHeaderShortcuts=true;
     // Dropped position per floating launcher FAB. Additive/empty-safe — an
@@ -23986,7 +24091,20 @@ nameLine
   // 1.5s delay so the full app is rendered before the toast appears.
   // Auto-generate only if teacher opted in (default: true)
   if (data.wizardLearning && data.wizardLearning.autoGenerate !== false) setTimeout(function(){ autoGenerateWizardTextSet(); }, 1500);
-  setTimeout(function(){ $("scanInput").focus(); },80);
+  setTimeout(function(){ $("seatsScanInput").focus(); },80);
+  // Open the full-screen seating chart at boot when the rebbi's "How Record
+  // Opens" setting says to: "fs" opens it always; "last" (the default) opens it
+  // if that is how he left the app (data.seatsFsOpen — set by ⛶, cleared by ✕);
+  // "dash" never auto-opens. Goes through the button's own click path so the
+  // overlay, scan-bar lift and no-scroll fit all set up exactly as a manual
+  // open would. Deferred past first paint; guarded on the scan tab being active
+  // (it is at boot, but a hash/wizard flow may differ) and on the button
+  // existing at all.
+  setTimeout(function(){
+    var vscan=$("view-scan"), btn=$("seatsPopOut");
+    var wantFs = data.recordOpenMode==="fs" || (data.recordOpenMode!=="dash" && data.seatsFsOpen===true);
+    if(wantFs && btn && vscan && vscan.classList.contains("active")) btn.click();
+  },140);
   // Backup staleness check. Deferred so it never competes with first paint, and
   // wrapped like its neighbours — a nudge failing must never stop the app from
   // starting. Runs once per load; the bar is otherwise only touched by its own
