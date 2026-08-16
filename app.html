@@ -5574,10 +5574,17 @@ function setupRoster() {
   /* ROUTE_HASH_FUNCTIONS_END */
 
   var LAST_ACTIVE_CLASS_KEY = "menchmark_lastActiveClassId";
+  // PR2 (docs/Firebase_Step4_Routing_Design_Proposal.md): today's app has
+  // exactly one implicit class, so classId is hardcoded here rather than
+  // resolved from Firestore/tier-1 — that resolution is PR4's job, gated on
+  // real multi-class existing. Every router.go() call below uses this.
+  var LOCAL_CLASS_ID = "local";
   // The sole thing allowed to call history.pushState for a nav-shaped action
   // (class switch, group switch, tab switch) — one call, one history entry,
-  // no coalescing, so back always undoes exactly the last action. Not yet
-  // called by anything (PR1) — see the header comment above.
+  // no coalescing, so back always undoes exactly the last action. Renders
+  // immediately after pushing, since pushState itself fires no event —
+  // popstate (browser back/forward) is the only thing that arrives for
+  // free, which is why applyRoute() is also wired to that below.
   function routerGo(opts){
     opts = opts || {};
     var tab = opts.tab || "scan";
@@ -5586,6 +5593,7 @@ function setupRoster() {
     if(!hash) return false;
     history.pushState({menchmarkRoute:true}, "", hash);
     try{ localStorage.setItem(LAST_ACTIVE_CLASS_KEY, opts.classId); }catch(e){}
+    routerApplyRoute();
     return true;
   }
   // PR1/PR3 scope only: parse the hash and render. No tier guard, no async
@@ -5598,6 +5606,10 @@ function setupRoster() {
     activateTab(tab);
   }
   var router = { go: routerGo, applyRoute: routerApplyRoute, parse: routeParse, build: routeBuild };
+  // PR2: the back/forward half of the loop. router.go() above renders
+  // immediately for a click; this is what makes the browser's own Back/
+  // Forward buttons do the same thing without a second render path.
+  window.addEventListener("popstate", function(){ routerApplyRoute(); });
 
   // "manage" (holds Settings) and the "settings" tab itself can never be hidden,
   // so there's always a way back into this screen to turn tabs back on.
@@ -5831,6 +5843,11 @@ function setupRoster() {
     if(!isTabVisible(activeTabName)){ activateTab(firstVisibleTab(activeGroupName)); }
     else { renderGroupTabs(activeGroupName); renderSubTabs(activeGroupName, activeTabName); }
   }
+  // PR2 (docs/Firebase_Step4_Routing_Design_Proposal.md): these two are the
+  // only click handlers router.go() replaces activateTab() in for now — the
+  // design's own "one extra line per call site" minimal-disruption choice.
+  // Every other indirect activateTab() caller (print buttons, the contest
+  // badge, etc.) is untouched; PR5 sweeps those opportunistically.
   $("groupTabs").addEventListener("click", function(e){
     var b=e.target.closest("button"); if(!b) return;
     // Remap legacy tab ids that no longer exist
@@ -5838,11 +5855,11 @@ function setupRoster() {
     var group=b.dataset.group;
     var tab = b.dataset.tab || lastTabInGroup[group] || firstVisibleTab(group);
     if(!isTabVisible(tab)) tab=firstVisibleTab(group);
-    activateTab(tab);
+    router.go({ classId: LOCAL_CLASS_ID, tab: tab });
   });
   $("subTabs").addEventListener("click", function(e){
     var b=e.target.closest("button"); if(!b) return;
-    activateTab(b.dataset.tab);
+    router.go({ classId: LOCAL_CLASS_ID, tab: b.dataset.tab });
   });
 
   /* ---------- BRACHOS ---------- */
