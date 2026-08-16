@@ -2050,7 +2050,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
           <button class="btn sec" id="printWandsBtn">Print</button>
         </div>
       </div>
-      <div class="note" id="wandStockNote">Sized for <strong>Premium Label Supply</strong> square label sheets (gap and margin geometry taken from PLS's own templates). <strong>Field-tested: the 2.5" marker reads reliably at ~25 ft.</strong> Print at <strong>100% / actual size</strong>, not "fit to page" — the labels must land on the die-cuts. In the print dialog's <strong>More settings</strong>, set <strong>Margins to "None"</strong> — this sheet is registered edge-to-edge on purpose, and "Default" margins on a real printer adds its own inch or so of blank border on top of that, pushing every label down and right. Each wand takes <strong>5 labels</strong>: A/B/C/D around the four sides (▲ TOP pointing up), plus a <strong>top label</strong> with the wand number and name — its edge letters point at the matching sides, so rotate it until they line up, then stick.</div>
+      <div class="note" id="wandStockNote">Sized for <strong>Premium Label Supply</strong> square label sheets (gap/spacing geometry taken from PLS's own templates; the outer margins are pulled in slightly from PLS's own numbers as a print-registration safety margin — see below). The marker was recently shrunk a size for that same reason, so the old 25ft read-distance field test no longer applies at this size and is due for a re-check. Print at <strong>100% / actual size</strong>, not "fit to page" — the labels must land on the die-cuts. In the print dialog's <strong>More settings</strong>, set <strong>Margins to "None"</strong> — this sheet is registered edge-to-edge on purpose, and "Default" margins on a real printer adds its own inch or so of blank border on top of that, pushing every label down and right. Labels never print a boy's name — only a wand number — so one physical set can move between classes; his name still appears live on the board whenever his wand is scanned. Each wand takes <strong>5 labels</strong>: A/B/C/D around the four sides (▲ TOP pointing up), plus a <strong>top label</strong> with the wand number — its edge letters point at the matching sides, so rotate it until they line up, then stick.</div>
     </div>
     <div class="card"><div id="cardsheet"></div></div>
   </section>
@@ -2354,10 +2354,24 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       pad:".25in", colGap:"0in", rowGap:".125in",
       marker:"1.15in", topFont:".11in", nameFont:".19in",
       faceSize:".24in", faceFont:".15in", cellPad:".05in", markerMargin:".03in" },
+    /* PLS470's own numbers (pad/colGap/rowGap) are read from Premium Label
+       Supply's real .docx template geometry and are exact. marker/cellPad/
+       pad-top below are NOT template numbers — they're a print-registration
+       safety margin, tuned 2026-08-16 against a real physical print that
+       came out both a bit large and ~0.2in low even with the printer's
+       Margins set to None. Rather than chase that exactly (some of it is
+       ordinary mechanical paper-feed tolerance no software can remove), the
+       marker was shrunk and cellPad grown for forgiveness against the real
+       die-cut edges, and pad-top was pulled in — intentionally short of the
+       template's literal .25in — to absorb the observed low-and-right drift
+       while staying above this machine's measured ~0.117in hardware
+       printable-area floor. The 25ft read-distance claim was field-tested
+       at the OLD, larger 2.12in marker and has not been re-confirmed at
+       this smaller size. */
     pls470:{ sku:"PLS470", cell:"2.5in", cols:3, rows:4, perPage:12,
-      pad:".25in .375in", colGap:".125in", rowGap:".1667in",
-      marker:"2.12in", topFont:".13in", nameFont:".22in",
-      faceSize:".24in", faceFont:".15in", cellPad:".06in", markerMargin:".01in" }
+      pad:".15in .375in", colGap:".125in", rowGap:".1667in",
+      marker:"2in", topFont:".13in", nameFont:".22in",
+      faceSize:".24in", faceFont:".15in", cellPad:".09in", markerMargin:".01in" }
   };
   function wandMarkerSVG(id){
     /* crispEdges keeps the module edges sharp at print size instead of letting
@@ -2380,8 +2394,8 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     }
     count=Math.min(count,ceiling-start+1);
     $("wandMode").innerHTML = hasRoster()
-      ? "<strong>Class list set:</strong> each label carries the boy's name — wand #N belongs to the Nth boy on the list, and his answers score points just like his cards."
-      : "<strong>No class list:</strong> numbered wands, counted into the anonymous letter tally. Set a class list to put names on the labels and keep points.";
+      ? "<strong>Class list set:</strong> labels are numbered only (never a name printed), so one physical set can move between classes — wand #N still belongs to the Nth boy on today's list and scores points just like his cards. His name appears live on the board — in the lobby, the answer list and the overlay — whenever his wand is scanned, never on the wand itself."
+      : "<strong>No class list:</strong> numbered wands, counted into the anonymous letter tally. Set a class list to keep points and see names appear live on the board as wands are scanned.";
 
     var wrap=el("div","wand-sheets");
     var s=wrap.style;
@@ -2408,14 +2422,17 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
           cell=el("div","wand-cell wl-topcell");
           LETTERS.forEach(function(L){ cell.appendChild(el("span","wl-face "+L+" wl-edge e"+L,L)); });
           cell.appendChild(el("div","wl-bignum","#"+(it.w+1)));
-          if(hasRoster()) cell.appendChild(el("div","wl-topname",nameOf(String(it.w+1))));
+          /* Deliberately never the boy's real name — see wandMode note above:
+             one physical wand set should move between classes/games without
+             being tied to whoever happened to hold #7 today. */
+          cell.appendChild(el("div","wl-topname","Student"));
           cell.appendChild(el("div","wl-tophint","TOP — letters point to the sides"));
         }else{
           cell=el("div","wand-cell");
           cell.appendChild(el("div","wl-top","▲ TOP"));
           var mk=el("div","wl-marker"); mk.innerHTML=wandMarkerSVG(wandFaceIdOf(it.w,it.f)); cell.appendChild(mk);
           var nm=el("div","wl-name");
-          nm.appendChild(el("span","nm", hasRoster()? (it.w+1)+" · "+nameOf(String(it.w+1)) : "WAND #"+(it.w+1)));
+          nm.appendChild(el("span","nm","Student "+(it.w+1)));
           nm.appendChild(el("span","wl-face "+LETTERS[it.f],LETTERS[it.f]));
           cell.appendChild(nm);
         }
