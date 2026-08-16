@@ -1632,7 +1632,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
      rather than squeezing the sheet — a squeezed page made the grid overflow
      its own margins, which read as a broken layout. Print is unaffected. */
   .wand-sheets{display:flex;flex-direction:column;align-items:flex-start;gap:24px;margin-top:14px;width:100%;overflow-x:auto}
-  .wand-page{width:8.5in;flex:none;padding:var(--wl-pad);background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);page:wandsheet}
+  .wand-page{width:8.5in;flex:none;padding:var(--wl-pad);background:#fff;border:1px solid var(--line);box-shadow:var(--shadow)}
   .wand-grid{
     display:grid;
     grid-template-columns:repeat(var(--wl-cols),var(--wl-cell));
@@ -1671,12 +1671,21 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   .wl-topname{font-weight:800;font-size:var(--wl-name-font);line-height:1.15;margin-top:.06in;max-width:80%;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .wl-tophint{font-size:var(--wl-top-font);font-weight:700;letter-spacing:.3px;color:var(--muted);line-height:1;margin-top:.08in}
 
-  @page{size:8.5in 11in;margin:.4in}
   /* Label sheets must register against the physical die-cuts, so their pages
-     print with NO printer margin — the sheet's own padding IS the margin
-     (.25in/.375in on PLS470). A named page scopes that to .wand-page alone;
-     everything else keeps the default .4in. */
-  @page wandsheet{size:8.5in 11in;margin:0}
+     need to print with NO printer margin — the sheet's own padding (.25in/
+     .375in on PLS470) IS the registration margin. That first shipped as a
+     CSS named page (@page wandsheet{margin:0}, scoped to .wand-page alone via
+     the `page:` property) so the QR/control cards could keep the old .4in
+     default — but a real print showed content pushed down and the grid too
+     big for the labels, meaning the named page's margin:0 wasn't actually
+     overriding the default and the two margins were stacking. Rather than
+     keep guessing at an unproven browser feature with no way to print-test
+     it here, this drops named pages entirely for ONE global zero-margin
+     @page, the exact pattern already field-tested working in
+     chazaroom-aruco-test.html. QR/control cards lose their .4in outer
+     buffer and now print close to the physical edge instead (cosmetic only
+     — they're meant to be hand-cut, not registered against die-cuts). */
+  @page{size:8.5in 11in;margin:0}
   @media print{
     body{background:#fff}
     .noprint{display:none!important}
@@ -1685,10 +1694,11 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
        the drawer prints in normal flow right after it (see the #drawer print
        override above), so #viewPlay's leftover space became a false, mostly-
        blank first page before the real card/wand sheet. Harmless for the QR
-       cards, which just flow onto whatever was left of that page, but the
-       wand sheet's named @page forces a hard break there, turning the same
-       gap into an unmistakable wasted page. Printing is only ever triggered
-       from inside the Cards tab, so #viewPlay never needs to print at all. */
+       cards, which just flow onto whatever was left of that page, but
+       .wand-page's own break-after:page (below) forces a hard break there,
+       turning the same gap into an unmistakable wasted page. Printing is
+       only ever triggered from inside the Cards tab, so #viewPlay never
+       needs to print at all. */
     #viewPlay{display:none!important}
     .wrap{max-width:none;padding:0;margin:0}
     .card{border:none;box-shadow:none;padding:0;margin:0}
