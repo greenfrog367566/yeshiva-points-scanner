@@ -2,15 +2,15 @@
 
 ## Status
 
-**PROPOSAL — not yet approved.** This doc fills a gap surfaced twice during
+**✅ APPROVED 2026-08-16 by Ben.** This doc fills a gap surfaced twice during
 step 4's implementation: `docs/Firebase_Step2_Auth_Rules_Design_Proposal.md`
 specifies the sign-in *flows* (screens, reads, writes) and
 `docs/Firebase_Step4_Routing_Design_Proposal.md` assumes sign-in UI exists
 somewhere, but **no doc actually designs the screens** — where they live in
 `app.html`, what triggers them, how the SDK-free/SDK-loaded split works in
-practice, or how this coexists with the tier-2/offline promise. Nothing here
-is built. Read this, then say yes/no/amend before any of it is implemented —
-same review gate every other step's doc went through.
+practice, or how this coexists with the tier-2/offline promise. Implementation
+in progress on `feat/firebase-step2-auth-rules` (PR #290) — see
+`docs/NOW.md` for current status.
 
 ## Why this is the actual critical path
 

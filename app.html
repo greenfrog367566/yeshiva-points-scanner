@@ -2,6 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Firebase project config + OAuth client ID — plain data, not the SDK
+     (see CLAUDE.md rule 3's amendment). Every user's browser loads this
+     tiny file so the sign-in button can be built; the vendored Firebase
+     SDK itself only loads later, and only for confirmed tier-1 accounts —
+     see docs/Firebase_SignIn_UI_Design_Proposal.md §2. -->
+<script src="firebase-config.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Menchmark</title>
 <meta name="theme-color" content="#1b2440">
@@ -4328,6 +4334,42 @@ function setupRoster() {
 <script>
 (function(){
   "use strict";
+
+  /* ---------- Sign-in: capture the OAuth redirect BEFORE anything else
+   * touches location.hash (docs/Firebase_SignIn_UI_Design_Proposal.md §2) ---
+   * Google's implicit-flow redirect puts the response in the URL FRAGMENT.
+   * That matters because step 4's router (docs/Firebase_Step4_Routing_Design_
+   * Proposal.md, a separate branch/PR at the time of writing, but destined
+   * for the same file) ALSO lives in location.hash (#/c/{classId}/...) — two
+   * features with no relationship to each other, both wanting the same piece
+   * of the URL. Left to run in whatever order the file happens to define
+   * things, a hash-based router's own boot-time read would either choke on
+   * "#id_token=...&state=..." or silently overwrite it with a default route
+   * before this code ever saw it. So this runs FIRST, unconditionally, before
+   * load(), before anything else in the IIFE: pull the OAuth params out,
+   * then immediately replaceState the hash away so nothing downstream — the
+   * router included, whenever it lands here — ever has to know it was there.
+   * Discovered while implementing, not anticipated by the design doc, which
+   * only said "token comes back in the URL fragment" without working through
+   * what else already lives there.
+   */
+  var pendingOAuthResult = (function(){
+    if (!location.hash || location.hash.length < 2) return null;
+    var raw = location.hash.slice(1);
+    if (raw.indexOf("id_token=") < 0 && raw.indexOf("error=") < 0) return null;
+    var p;
+    try { p = new URLSearchParams(raw); } catch (e) { return null; }
+    if (!p.get("id_token") && !p.get("error")) return null;
+    var result = {
+      idToken: p.get("id_token"),
+      state: p.get("state") || "",
+      error: p.get("error"),
+      errorDescription: p.get("error_description")
+    };
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    return result;
+  })();
+
   var KEY = "qrPointsData_v1";
   // The seeded Bathroom Pass activity's name. It is matched BY NAME in several
   // places (the same way "Homework Checked" is), so it lives in one constant —

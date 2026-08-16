@@ -17,3 +17,11 @@ window.MENCHMARK_FIREBASE_CONFIG = {
   appId: "1:566788715634:web:017e116d23f6272e0cfeeb",
   measurementId: "G-7VWHZGX4RB"
 };
+
+// OAuth 2.0 Web client ID for the SDK-free Google sign-in redirect
+// (docs/Firebase_SignIn_UI_Design_Proposal.md §2) — a public identifier, not
+// a secret; safe alongside the config above for the same reason. Used to
+// build the accounts.google.com authorization URL directly, before any
+// Firebase SDK is ever loaded.
+window.MENCHMARK_GOOGLE_CLIENT_ID =
+  "566788715634-8vsvti13qhtr67ac64vhq57mfmuijek5.apps.googleusercontent.com";
