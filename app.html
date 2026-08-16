@@ -4936,6 +4936,46 @@ function setupRoster() {
       // banner is already up, and this tab's own data is untouched.
     }
   });
+
+  // ---------- Firebase rebuild step 3: normalization bridge ----------
+  // docs/Firebase_Step3_Converter_Tool_Design_Proposal.md: "Normalization is
+  // never re-implemented: backup JSON is run through migrateData()/load2fix()
+  // in-browser via [a] hidden-iframe bridge (window.__exportNormalized())
+  // before anything is written" — so the converter (tools/admin-convert.html,
+  // or app.html's own tier-1 Settings restore) can never drift from the exact
+  // shape app.html itself trusts.
+  //
+  // Pure function from every caller's point of view: always saves and
+  // restores this tab's own live `data` in a finally block, so calling it —
+  // whether directly (the in-app Settings mount) or via postMessage from an
+  // iframe (tools/admin-convert.html, a different document) — never leaves
+  // THIS tab pointed at someone else's uploaded backup.
+  window.__exportNormalized = function(input){
+    var saved = data;
+    try{
+      var isPlainObj = input && typeof input==="object" && !Array.isArray(input);
+      var d = JSON.parse(JSON.stringify(isPlainObj ? input : defaults));
+      data = migrateData(d);
+      load2fix();
+      return JSON.parse(JSON.stringify(data));
+    } finally {
+      data = saved;
+    }
+  };
+  window.addEventListener("message", function(ev){
+    if(!ev.data || ev.data.type!=="menchmark:normalize") return;
+    if(ev.origin!==location.origin) return; // same-origin only — see comment above
+    var reply = { type:"menchmark:normalized", reqId: ev.data.reqId };
+    try{
+      reply.ok = true;
+      reply.data = window.__exportNormalized(ev.data.payload);
+    }catch(e){
+      reply.ok = false;
+      reply.error = String((e && e.message) || e);
+    }
+    if(ev.source) ev.source.postMessage(reply, ev.origin);
+  });
+
   // Shown when a save had to give something up, or could not happen at all.
   // Deliberately a banner and not an alert(): save() runs on every scan, and a
   // modal per scan would be unusable exactly when the rebbi is mid-lesson. Sits

@@ -116,11 +116,32 @@ service cloud.firestore {
         allow write: if canWriteClassContent(parentClass(classId));
       }
 
+      // Added in step 3 (docs/Firebase_Step3_Converter_Tool_Design_Proposal.md)
+      // — same read/write pattern as students/trackedItems/trackedEntries.
+      match /activities/{aid} {
+        allow read: if canReadClass(parentClass(classId));
+        allow write: if canWriteClassContent(parentClass(classId));
+      }
+
+      match /log/{lid} {
+        allow read: if canReadClass(parentClass(classId));
+        allow write: if canWriteClassContent(parentClass(classId));
+      }
+
       // Private ledger — no admin default-read even with sharedWithAdmin,
       // and no view-as either (docs/Firebase_DataModel_Design_Proposal.md:
       // "no admin default-read — private ledger").
       match /prizeLedger/{eid} {
         allow read, write: if isOwner(parentClass(classId)) || isSuperadmin();
+      }
+
+      // Step 3's verification harness receipt
+      // (docs/Firebase_Step3_Converter_Tool_Design_Proposal.md, "Result").
+      // Function-only write — the whole point is a receipt the client
+      // can't forge; owner/superadmin can read it to render the diff report.
+      match /importReceipts/{runId} {
+        allow read: if canReadClass(parentClass(classId));
+        allow write: if false;
       }
     }
 

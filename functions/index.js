@@ -12,6 +12,13 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { setGlobalOptions } = require("firebase-functions/v2");
+const {
+  buildClassWriteOps,
+  commitChunked,
+  verifyClassWrite,
+  classHasContent,
+  nextAvailableClassId,
+} = require("./classWriter");
 
 setGlobalOptions({ region: "us-central1" });
 
@@ -92,69 +99,30 @@ exports.redeemCode = onCall(async (request) => {
   });
 });
 
-/**
- * Admin self-provisioning (docs/Firebase_Step2_Auth_Rules_Design_Proposal.md,
- * "Admin self-provisioning"). The request's schoolId is never read — the
- * function pulls it from the CALLER's own account doc, which is the entire
- * guarantee: an admin can only ever mint accounts inside his own school
- * because there is no parameter through which he could name a different one.
- *
- * Idempotent by construction: newUid_1 is deterministic (matches the
- * locked write-id pattern), so retrying a partially-failed call creates
- * nothing twice.
- */
-exports.provisionRebbi = onCall(async (request) => {
-  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
-
-  const caller = await getAccount(request.auth.uid);
-  if (!caller || caller.role !== "admin") {
-    throw new HttpsError("permission-denied", "Only a school admin can provision a rebbi.");
-  }
-
-  const email = request.data && request.data.email;
-  if (!email || typeof email !== "string") {
-    throw new HttpsError("invalid-argument", "An email is required.");
-  }
-  const schoolId = caller.schoolId;
-
-  let userRecord;
+async function mintOrFindUid(email) {
   try {
-    userRecord = await auth.getUserByEmail(email);
+    const userRecord = await auth.getUserByEmail(email);
+    return userRecord.uid;
   } catch (e) {
-    userRecord = await auth.createUser({ email });
+    const userRecord = await auth.createUser({ email });
+    return userRecord.uid;
   }
-  const newUid = userRecord.uid;
+}
 
-  const accountRef = db.collection("accounts").doc(newUid);
-  const classRef = db.collection("classes").doc(`${newUid}_1`);
+async function ensureAccount(uid, schoolId, email) {
+  const accountRef = db.collection("accounts").doc(uid);
+  const snap = await accountRef.get();
+  if (!snap.exists) {
+    await accountRef.set({
+      role: "rebbi",
+      schoolId,
+      email,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  }
+}
 
-  await db.runTransaction(async (tx) => {
-    const [accountSnap, classSnap] = await Promise.all([tx.get(accountRef), tx.get(classRef)]);
-
-    if (!accountSnap.exists) {
-      tx.set(accountRef, {
-        role: "rebbi",
-        schoolId,
-        email,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-    }
-
-    if (!classSnap.exists) {
-      tx.set(classRef, {
-        ownerId: newUid,
-        schoolId,
-        name: "",
-        sectionOf: null,
-        archived: false,
-        sharedWithAdmin: false,
-        lastWriteDevice: "admin:" + request.auth.uid,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-    }
-  });
-
+async function issueSignInLink(email) {
   // Requires menchmark.app (or whatever APP_SIGNIN_URL points at) to be
   // listed under Firebase Auth -> Settings -> Authorized domains, or the
   // email link will fail to complete sign-in.
@@ -162,9 +130,153 @@ exports.provisionRebbi = onCall(async (request) => {
     url: process.env.APP_SIGNIN_URL || "https://menchmark.app/app.html",
     handleCodeInApp: true,
   };
-  const signInLink = await auth.generateSignInWithEmailLink(email, actionCodeSettings);
+  return auth.generateSignInWithEmailLink(email, actionCodeSettings);
+}
 
-  return { uid: newUid, signInLink };
+/**
+ * Writes one class's content (empty starter, roster-only, or a full
+ * normalized backup blob) and runs the verification harness before
+ * returning — see functions/classWriter.js and
+ * docs/Firebase_Step3_Converter_Tool_Design_Proposal.md.
+ *
+ * `normalized` may be null (admin-invite: empty starter class) or a
+ * migrateData()/load2fix()-normalized `data` blob (roster/backup modes —
+ * for roster mode, `normalized` is synthesized from the roster rows below
+ * rather than coming from a real backup file).
+ */
+async function writeClassAndVerify(classId, ownerId, schoolId, normalized, deviceId) {
+  const { ops, expectedCounts, nameSplitFlags } = buildClassWriteOps(
+    db, classId, ownerId, schoolId, normalized || {}, deviceId
+  );
+  await commitChunked(db, ops);
+  const receipt = { ...(await verifyClassWrite(db, classId, expectedCounts)), nameSplitFlags };
+
+  const runId = db.collection("_").doc().id; // cheap way to mint a random id
+  await db.collection("classes").doc(classId).collection("importReceipts").doc(runId).set({
+    ...receipt,
+    ts: FieldValue.serverTimestamp(),
+  });
+
+  return { classId, runId, receipt };
+}
+
+/**
+ * Provisions a rebbi's account and class, or restores a rebbi's own backup,
+ * depending on `mode`. One function, not four, per the design doc's "extend
+ * provisionRebbi, don't fork it" — every route that ends in a new
+ * accounts/{uid} doc or a class write funnels through here, which is what
+ * satisfies accounts' `allow write: if false` by construction.
+ *
+ * data.mode:
+ *   "admin-invite" (default) — unchanged from step 2: empty starter class,
+ *     admin-driven.
+ *   "roster"  — admin-driven, payload.email + payload.students:[{name,group}].
+ *   "backup"  — admin-driven (payload.email + payload.normalized), OR
+ *               self-serve when data.self===true (target is the caller,
+ *               no role check — "a rebbi restoring his own backup isn't
+ *               provisioning anyone").
+ * data.force        — required to overwrite a class that already has content.
+ * data.asNewClass   — self-serve only: write to the next free {uid}_{seq}
+ *                      instead of refusing/overwriting.
+ * data.deviceId     — stamped onto lastWriteDevice; falls back to "unknown".
+ */
+exports.provisionRebbi = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+  const payload = request.data || {};
+  const mode = payload.mode || "admin-invite";
+  const deviceId = typeof payload.deviceId === "string" && payload.deviceId ? payload.deviceId : "unknown";
+
+  // ---- self-serve restore: caller acts on his own account only ----
+  if (payload.self === true) {
+    if (mode !== "backup") {
+      throw new HttpsError("invalid-argument", "Self-serve is only supported for mode: 'backup'.");
+    }
+    if (!payload.normalized || typeof payload.normalized !== "object") {
+      throw new HttpsError("invalid-argument", "A normalized backup payload is required.");
+    }
+    const uid = request.auth.uid;
+    const caller = await getAccount(uid);
+    if (!caller) throw new HttpsError("failed-precondition", "Sign in and complete account setup first.");
+
+    let classId = `${uid}_1`;
+    if (payload.asNewClass === true) {
+      classId = await nextAvailableClassId(db, uid);
+    } else if (await classHasContent(db, classId)) {
+      if (payload.force !== true) {
+        throw new HttpsError(
+          "already-exists",
+          "This account already has a class with data. Pass force:true to overwrite, or asNewClass:true to restore alongside it."
+        );
+      }
+    }
+
+    return writeClassAndVerify(classId, uid, caller.schoolId, payload.normalized, "self:" + uid.slice(0, 8) + ":" + deviceId);
+  }
+
+  // ---- admin-driven: admin-invite | roster | backup-for-someone-else ----
+  const caller = await getAccount(request.auth.uid);
+  if (!caller || caller.role !== "admin") {
+    throw new HttpsError("permission-denied", "Only a school admin can provision a rebbi.");
+  }
+  const schoolId = caller.schoolId;
+  const deviceTag = "admin:" + request.auth.uid.slice(0, 8) + ":" + deviceId;
+
+  if (mode === "admin-invite") {
+    const email = payload.email;
+    if (!email || typeof email !== "string") {
+      throw new HttpsError("invalid-argument", "An email is required.");
+    }
+    const newUid = await mintOrFindUid(email);
+    await ensureAccount(newUid, schoolId, email);
+    const classId = `${newUid}_1`;
+    if (!(await classHasContent(db, classId))) {
+      await writeClassAndVerify(classId, newUid, schoolId, null, deviceTag);
+    }
+    const signInLink = await issueSignInLink(email);
+    return { uid: newUid, classId, signInLink };
+  }
+
+  if (mode === "roster") {
+    const email = payload.email;
+    const rows = Array.isArray(payload.students) ? payload.students : [];
+    if (!email || typeof email !== "string") {
+      throw new HttpsError("invalid-argument", "An email is required.");
+    }
+    const newUid = await mintOrFindUid(email);
+    await ensureAccount(newUid, schoolId, email);
+    const classId = `${newUid}_1`;
+    if (!payload.force && (await classHasContent(db, classId))) {
+      throw new HttpsError("already-exists", "That rebbi already has a class with data. Pass force:true to overwrite.");
+    }
+    const normalized = {
+      className: payload.className || "",
+      students: rows.map((r, i) => ({ id: r.id || `roster_${i}`, name: r.name || "", group: r.group || null })),
+    };
+    const { runId, receipt } = await writeClassAndVerify(classId, newUid, schoolId, normalized, deviceTag);
+    const signInLink = await issueSignInLink(email);
+    return { uid: newUid, classId, runId, receipt, signInLink };
+  }
+
+  if (mode === "backup") {
+    const email = payload.email;
+    if (!email || typeof email !== "string") {
+      throw new HttpsError("invalid-argument", "An email is required.");
+    }
+    if (!payload.normalized || typeof payload.normalized !== "object") {
+      throw new HttpsError("invalid-argument", "A normalized backup payload is required.");
+    }
+    const newUid = await mintOrFindUid(email);
+    await ensureAccount(newUid, schoolId, email);
+    const classId = `${newUid}_1`;
+    if (!payload.force && (await classHasContent(db, classId))) {
+      throw new HttpsError("already-exists", "That rebbi already has a class with data. Pass force:true to overwrite.");
+    }
+    const { runId, receipt } = await writeClassAndVerify(classId, newUid, schoolId, payload.normalized, deviceTag);
+    const signInLink = await issueSignInLink(email);
+    return { uid: newUid, classId, runId, receipt, signInLink };
+  }
+
+  throw new HttpsError("invalid-argument", `Unknown mode: ${mode}`);
 });
 
 /**

@@ -161,6 +161,16 @@ async function main() {
   await check("Prize ledger: no admin default-read (private ledger) -> deny", asAdmin.doc("classes/a_1/prizeLedger/x").get(), "deny");
   await check("Prize ledger: owner can read -> allow", asA.doc("classes/a_1/prizeLedger/x").get(), "allow");
 
+  // Step 3 additions (docs/Firebase_Step3_Converter_Tool_Design_Proposal.md)
+  await check("Activities: owner can read -> allow", asA.doc("classes/a_1/activities/x").get(), "allow");
+  await check("Activities: B cannot read A's -> deny", asB.doc("classes/a_1/activities/x").get(), "deny");
+  await check("Activities: admin cannot write directly -> deny", asAdmin.doc("classes/a_1/activities/x").set({ name: "hack" }), "deny");
+  await check("Log: owner can read -> allow", asA.doc("classes/a_1/log/x").get(), "allow");
+  await check("Log: B cannot read A's -> deny", asB.doc("classes/a_1/log/x").get(), "deny");
+  await check("Import receipts: owner can read -> allow", asA.doc("classes/a_1/importReceipts/x").get(), "allow");
+  await check("Import receipts: client write -> deny (Cloud-Function-only)", asA.doc("classes/a_1/importReceipts/x").set({ status: "verified" }), "deny");
+  await check("Import receipts: even superadmin cannot client-write -> deny", asSuper.doc("classes/a_1/importReceipts/x").set({ status: "verified" }), "deny");
+
   await testEnv.cleanup();
 
   console.log(`\n${passed} passed, ${failed} failed`);
