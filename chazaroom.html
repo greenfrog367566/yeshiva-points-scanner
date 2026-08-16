@@ -2373,11 +2373,35 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       marker:"2in", topFont:".13in", nameFont:".22in",
       faceSize:".24in", faceFont:".15in", cellPad:".09in", markerMargin:".01in" }
   };
+  /* js-aruco2's generateSVG() (vendored above) draws a marker as a white
+     background rect, a black 6x6 border rect on top, then a separate white
+     1x1 rect for every '1' bit, laid edge-to-edge against the black field —
+     e.g. <rect x="4" y="2" width="1" height="1" fill="white"/>. Each of
+     those is its own shape, independently anti-aliased; when a print
+     pipeline rasterizes/rescales the page (a different, often higher-DPI
+     pass than screen rendering — crispEdges is a hint, not a guarantee it
+     survives that pass), a shared edge between two same-color shapes can
+     pick up a faint gap where the rendering rounds each one a fraction of a
+     pixel apart. Laid out in a grid, that reads as thin lines cutting
+     through the marker — reported after a real print, selectively on the
+     markers and not on the surrounding text, which is what a rasterization
+     seam looks like (an ink/nozzle problem would streak everything on the
+     page, not just this one fine grid pattern). WAND_MARKER_BLEED grows
+     every rect by a hair on all sides so adjacent same-color shapes overlap
+     instead of touching — any seam then falls inside the overlap, hidden
+     under solid color either way. The overlap is small and symmetric (it
+     can't shift a module's centroid), so it doesn't threaten the detector's
+     own center-sampling threshold. */
+  var WAND_MARKER_BLEED = 0.04;
   function wandMarkerSVG(id){
-    /* crispEdges keeps the module edges sharp at print size instead of letting
-       the renderer anti-alias them into gray — contrast is exactly what the
-       detector's threshold step needs. */
-    return wandLabelDict.generateSVG(id).replace("<svg ", '<svg shape-rendering="crispEdges" ');
+    var svg = wandLabelDict.generateSVG(id).replace("<svg ", '<svg shape-rendering="crispEdges" ');
+    var b = WAND_MARKER_BLEED, b2 = b*2;
+    svg = svg.replace(/<rect x="(-?[\d.]+)" y="(-?[\d.]+)" width="([\d.]+)" height="([\d.]+)"/g,
+      function(m, x, y, w, h){
+        return '<rect x="' + (parseFloat(x)-b) + '" y="' + (parseFloat(y)-b) +
+          '" width="' + (parseFloat(w)+b2) + '" height="' + (parseFloat(h)+b2) + '"';
+      });
+    return svg;
   }
   function buildWandLabels(){
     var sheet=$("cardsheet"); sheet.innerHTML="";
