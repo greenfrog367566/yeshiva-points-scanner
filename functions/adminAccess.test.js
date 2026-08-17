@@ -36,8 +36,14 @@ async function assertThrows(promise, codeSubstring) {
   try {
     await promise;
   } catch (e) {
-    if (codeSubstring && !String(e.message || e).toLowerCase().includes(codeSubstring.toLowerCase())) {
-      throw new Error(`expected error containing "${codeSubstring}", got: ${e.message || e}`);
+    // HttpsError's own .message is the human-readable string ("Sign in
+    // required."), not the machine code ("unauthenticated") — check both,
+    // same as provisionRebbi.test.js's existing threw.code||threw.message
+    // pattern, so a check like "unauthenticated" matches the code even
+    // though it never appears in the message text.
+    const haystack = String((e.code || "") + " " + (e.message || e)).toLowerCase();
+    if (codeSubstring && !haystack.includes(codeSubstring.toLowerCase())) {
+      throw new Error(`expected error containing "${codeSubstring}", got: ${e.code || ""} ${e.message || e}`);
     }
     return;
   }
