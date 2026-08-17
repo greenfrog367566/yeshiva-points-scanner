@@ -11,6 +11,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentWritten, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const {
   buildClassWriteOps,
@@ -19,6 +20,13 @@ const {
   classHasContent,
   nextAvailableClassId,
 } = require("./classWriter");
+const {
+  stampSignIn,
+  bumpActivityForClassWrite,
+  bumpActivityForNewClass,
+  logAudit,
+  csvField,
+} = require("./superadmin");
 
 setGlobalOptions({ region: "us-central1" });
 
@@ -48,15 +56,25 @@ exports.redeemCode = onCall(async (request) => {
   const uid = request.auth.uid;
 
   const existing = await getAccount(uid);
-  if (existing) return existing;
+  if (existing) {
+    // Step 5 (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md,
+    // "activitySummary: what populates it", trigger 1 — "every successful
+    // sign-in updates lastActive and lastSignIn"): the client already calls
+    // redeemCode() unconditionally on every sign-in (see this function's own
+    // doc comment above), which makes it the natural home for that stamp —
+    // no separate client-invoked function needed.
+    await stampSignIn(db, uid, existing, false);
+    return existing;
+  }
 
   const accountRef = db.collection("accounts").doc(uid);
   const email = request.auth.token.email || null;
   const displayName = request.auth.token.name || null;
   const code = ((request.data && request.data.code) || "").trim();
 
+  let account;
   if (!code) {
-    const account = {
+    account = {
       role: "rebbi",
       schoolId: null,
       email,
@@ -64,39 +82,44 @@ exports.redeemCode = onCall(async (request) => {
       createdAt: FieldValue.serverTimestamp(),
     };
     await accountRef.set(account);
-    return account;
+  } else {
+    const codeRef = db.collection("codes").doc(code);
+
+    account = await db.runTransaction(async (tx) => {
+      const codeSnap = await tx.get(codeRef);
+      if (!codeSnap.exists) {
+        throw new HttpsError("not-found", "That code isn't recognized.");
+      }
+      const c = codeSnap.data();
+      if (c.revoked) {
+        throw new HttpsError("failed-precondition", "That code has been revoked.");
+      }
+      const usedBy = c.usedBy || [];
+      const alreadyRedeemedByMe = usedBy.includes(uid);
+      if (!alreadyRedeemedByMe) {
+        if (typeof c.maxUses === "number" && usedBy.length >= c.maxUses) {
+          throw new HttpsError("resource-exhausted", "That code has reached its use limit.");
+        }
+        tx.update(codeRef, { usedBy: FieldValue.arrayUnion(uid) });
+      }
+
+      const newAccount = {
+        role: "rebbi",
+        schoolId: c.type === "school" ? c.schoolId : null,
+        email,
+        displayName,
+        createdAt: FieldValue.serverTimestamp(),
+      };
+      tx.set(accountRef, newAccount);
+      return newAccount;
+    });
   }
 
-  const codeRef = db.collection("codes").doc(code);
-
-  return db.runTransaction(async (tx) => {
-    const codeSnap = await tx.get(codeRef);
-    if (!codeSnap.exists) {
-      throw new HttpsError("not-found", "That code isn't recognized.");
-    }
-    const c = codeSnap.data();
-    if (c.revoked) {
-      throw new HttpsError("failed-precondition", "That code has been revoked.");
-    }
-    const usedBy = c.usedBy || [];
-    const alreadyRedeemedByMe = usedBy.includes(uid);
-    if (!alreadyRedeemedByMe) {
-      if (typeof c.maxUses === "number" && usedBy.length >= c.maxUses) {
-        throw new HttpsError("resource-exhausted", "That code has reached its use limit.");
-      }
-      tx.update(codeRef, { usedBy: FieldValue.arrayUnion(uid) });
-    }
-
-    const account = {
-      role: "rebbi",
-      schoolId: c.type === "school" ? c.schoolId : null,
-      email,
-      displayName,
-      createdAt: FieldValue.serverTimestamp(),
-    };
-    tx.set(accountRef, account);
-    return account;
-  });
+  // stampSignIn runs OUTSIDE the transaction above (when there was one) —
+  // activitySummary isn't part of that transaction's invariant (over-
+  // redemption of a code), it's a separate best-effort telemetry write.
+  await stampSignIn(db, uid, account, true);
+  return account;
 });
 
 // Shared by the admin-driven roster branch and self-serve's roster mode —
@@ -342,4 +365,96 @@ exports.viewAs = onCall(async (request) => {
   });
 
   return { token, viewAsExp };
+});
+
+// ---- step 5: activitySummary Firestore triggers ----
+// (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md, "activitySummary:
+// what populates it"). Never client-invoked — these fire on the real write
+// events, which is what makes activitySummary a summary rather than
+// something admin.html has to compute itself on every load.
+
+exports.onClassContentWrite = onDocumentWritten(
+  "classes/{classId}/{collectionId}/{docId}",
+  async (event) => {
+    await bumpActivityForClassWrite(db, event.params.classId);
+  }
+);
+
+exports.onClassCreated = onDocumentCreated("classes/{classId}", async (event) => {
+  const data = event.data.data();
+  await bumpActivityForNewClass(db, data.ownerId);
+});
+
+// ---- step 5: admin.html access control + audit log ----
+// (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md, "Access
+// boundary"). auditLog is step 5's own collection, separate from step 2's
+// existing viewAsLog — kept apart rather than folding viewAs() into it too,
+// so this doesn't touch already-shipped step 2 code; admin.html can read
+// both if a single combined view is ever wanted.
+
+/**
+ * Called once by admin.html right after auth resolves, before the page
+ * decides whether to render anything privileged. This is what makes a
+ * curious non-superadmin's page load visible to Berel even if the client-
+ * side gate never lets the UI mount — the design doc's "even a no-op
+ * checkAccess ping" failed-authorization logging.
+ */
+exports.checkAccess = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+  const caller = await getAccount(request.auth.uid);
+  if (!caller || caller.role !== "superadmin") {
+    await logAudit(db, "unauthorizedAccessAttempt", request.auth.uid, { email: request.auth.token.email || null });
+    throw new HttpsError("permission-denied", "Superadmin only.");
+  }
+  return { ok: true };
+});
+
+/**
+ * Minimal generic logger for admin.html's own privileged reads that aren't
+ * already a Cloud Function call — today, just the activity-overview load
+ * (a plain client-side Firestore read, gated by firestore.rules, not a
+ * function) — so it still lands in the same audit trail as viewAs mints and
+ * the export below, per the design doc's "one consistent privileged-read
+ * log, not a special case."
+ */
+exports.logAdminEvent = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+  const caller = await getAccount(request.auth.uid);
+  if (!caller || caller.role !== "superadmin") {
+    throw new HttpsError("permission-denied", "Superadmin only.");
+  }
+  const event = request.data && request.data.event;
+  if (!event || typeof event !== "string") {
+    throw new HttpsError("invalid-argument", "event is required.");
+  }
+  const meta = (request.data && request.data.meta && typeof request.data.meta === "object") ? request.data.meta : {};
+  await logAudit(db, event, request.auth.uid, meta);
+  return { ok: true };
+});
+
+/**
+ * Single server-side CSV export (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md,
+ * "Email export scope") — "export the list, don't build a mailer." Reads
+ * `accounts` only, a flat single-collection scan (lastActive lives directly
+ * on the account doc via stampSignIn() above, so this never joins against
+ * activitySummary). No filters, no preview, no scheduling.
+ */
+exports.exportEmails = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+  const caller = await getAccount(request.auth.uid);
+  if (!caller || caller.role !== "superadmin") {
+    throw new HttpsError("permission-denied", "Superadmin only.");
+  }
+
+  const snap = await db.collection("accounts").get();
+  const rows = [["name", "email", "school", "role", "lastActive"].map(csvField).join(",")];
+  snap.forEach((doc) => {
+    const d = doc.data();
+    const lastActive = d.lastActive && typeof d.lastActive.toDate === "function" ? d.lastActive.toDate().toISOString() : "";
+    rows.push([d.displayName || "", d.email || "", d.schoolId || "", d.role || "", lastActive].map(csvField).join(","));
+  });
+  const csv = rows.join("\n");
+
+  await logAudit(db, "emailExport", request.auth.uid, { rowCount: snap.size });
+  return { csv, rowCount: snap.size };
 });

@@ -80,6 +80,21 @@ async function main() {
     await db.collection("classes").doc("b_1").collection("students").doc("s2")
       .set({ firstName: "Dovid", lastName: "L" });
 
+    // Step 6 (docs/Firebase_Step6_Admin_Gradebook_View_Design_Proposal.md):
+    // itemVisible() fixtures. a_1.sharedWithAdmin=true (whole-book override,
+    // seeded above); b_1.sharedWithAdmin=false — the two classes deliberately
+    // disagree so a 'teacher' item's visibility can be attributed to the
+    // right one of itemVisible()'s two OR'd conditions, not just "some admin
+    // read worked."
+    await db.collection("classes").doc("b_1").collection("trackedItems").doc("item-class")
+      .set({ name: "Attendance", method: "preselect", config: null, book: "class" });
+    await db.collection("classes").doc("b_1").collection("trackedItems").doc("item-teacher")
+      .set({ name: "Middos Points", method: "count", config: null, book: "teacher" });
+    await db.collection("classes").doc("a_1").collection("trackedItems").doc("item-teacher-shared")
+      .set({ name: "Middos Points", method: "count", config: null, book: "teacher" });
+    await db.collection("classes").doc("b_1").collection("trackedEntries").doc("entry-teacher")
+      .set({ itemId: "item-teacher", studentId: "s2", value: 1, ts: 1000 });
+
     // Dedicated docs per mutation test, so one test's write can never change
     // what an earlier- or later-run read test observes.
     await db.collection("classes").doc("a_mut1").set({
@@ -170,6 +185,27 @@ async function main() {
   await check("Import receipts: owner can read -> allow", asA.doc("classes/a_1/importReceipts/x").get(), "allow");
   await check("Import receipts: client write -> deny (Cloud-Function-only)", asA.doc("classes/a_1/importReceipts/x").set({ status: "verified" }), "deny");
   await check("Import receipts: even superadmin cannot client-write -> deny", asSuper.doc("classes/a_1/importReceipts/x").set({ status: "verified" }), "deny");
+
+  // ---- step 5: activitySummary / viewAsLog / auditLog (superadmin-only telemetry) ----
+  await check("activitySummary: superadmin can read -> allow", asSuper.doc("activitySummary/a").get(), "allow");
+  await check("activitySummary: owner (non-superadmin) cannot read their own summary -> deny", asA.doc("activitySummary/a").get(), "deny");
+  await check("activitySummary: client write -> deny (Cloud-Function-only)", asSuper.doc("activitySummary/a").set({ classCount: 99 }), "deny");
+  await check("viewAsLog: superadmin can read -> allow", asSuper.doc("viewAsLog/x").get(), "allow");
+  await check("viewAsLog: non-superadmin cannot read -> deny", asA.doc("viewAsLog/x").get(), "deny");
+  await check("viewAsLog: client write -> deny (Cloud-Function-only)", asSuper.doc("viewAsLog/x").set({ targetUid: "a" }), "deny");
+  await check("auditLog: superadmin can read -> allow", asSuper.doc("auditLog/x").get(), "allow");
+  await check("auditLog: non-superadmin cannot read -> deny", asA.doc("auditLog/x").get(), "deny");
+  await check("auditLog: client write -> deny (Cloud-Function-only)", asSuper.doc("auditLog/x").set({ event: "hack" }), "deny");
+
+  // ---- step 6: itemVisible() — book:'class' vs. 'teacher' vs. whole-book sharedWithAdmin override ----
+  await check("Admin reads a book:'class' item on a class with sharedWithAdmin:false -> allow", asAdmin.doc("classes/b_1/trackedItems/item-class").get(), "allow");
+  await check("Admin reads a book:'teacher' item on a class with sharedWithAdmin:false -> deny", asAdmin.doc("classes/b_1/trackedItems/item-teacher").get(), "deny");
+  await check("Admin reads a book:'teacher' item on a class with sharedWithAdmin:true -> allow (whole-book override)", asAdmin.doc("classes/a_1/trackedItems/item-teacher-shared").get(), "allow");
+  await check("Owner always reads their own trackedItems regardless of book -> allow", asB.doc("classes/b_1/trackedItems/item-teacher").get(), "allow");
+  await check("Superadmin always reads trackedItems regardless of book -> allow", asSuper.doc("classes/b_1/trackedItems/item-teacher").get(), "allow");
+  await check("Admin write to trackedItems -> deny (write stays owner/superadmin only)", asAdmin.doc("classes/b_1/trackedItems/item-class").update({ name: "hijacked" }), "deny");
+  await check("Admin reads a trackedEntry whose item is book:'teacher' on a non-shared class -> deny", asAdmin.doc("classes/b_1/trackedEntries/entry-teacher").get(), "deny");
+  await check("Owner reads their own trackedEntry regardless of item's book -> allow", asB.doc("classes/b_1/trackedEntries/entry-teacher").get(), "allow");
 
   await testEnv.cleanup();
 

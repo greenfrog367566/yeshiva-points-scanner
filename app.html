@@ -200,6 +200,23 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #signinNudge{display:none;background:#eef4fb;color:#1b3a5c;border:1px solid #c9dcf0;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem;align-items:center;gap:12px;flex-wrap:wrap}
   #signinNudge.show{display:flex}
   #signinNudge .sn-spacer{flex:1 1 auto}
+  /* Step 5 (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md, "The
+     view-as UI transition") — "a fixed top bar, rendered whenever the
+     active Auth instance is the viewAs one". Fixed, not inline like the
+     nudges above: it has to stay visible across every tab switch in this
+     session, since forgetting you're in a view-as tab is exactly the
+     mistake this exists to prevent. */
+  #viewAsBanner{display:none;position:fixed;top:0;left:0;right:0;z-index:9997;background:#3a2a5c;color:#fff;padding:8px 16px;font-size:.85rem;align-items:center;gap:12px;flex-wrap:wrap}
+  #viewAsBanner.show{display:flex}
+  #viewAsBanner .va-spacer{flex:1 1 auto}
+  body.viewing-as{padding-top:40px}
+  /* Step 6 (docs/Firebase_Step6_Admin_Gradebook_View_Design_Proposal.md) —
+     "not a tab in TAB_GROUPS, the rebbi's own nav never shows it". The
+     group/subtab bars and the global scan bar all belong to activateTab()'s
+     tab system, which this standalone route bypasses. */
+  body.admin-class-book-active header,
+  body.admin-class-book-active .subtabs-row,
+  body.admin-class-book-active #globalScanBar{display:none}
   /* Shown inside a downloaded offline copy when its built-in snapshot was held
      back because this browser already had saved work. Amber, not red, like
      #backupNudge: nothing is broken and nothing was lost — the rebbi is being
@@ -1958,6 +1975,17 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      scan confirms itself, so the element now floats at document level where all
      tabs and the full-screen chart can see it. -->
 <div class="flash flash-toast" id="flash"></div>
+
+<!-- Step 5 (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md, "The
+     view-as UI transition") — populated/shown only by viewAsBootFromHandoff()
+     landing a token from admin.html; empty and hidden otherwise. Lives
+     outside <main> deliberately: fixed, document-level, survives every tab
+     switch a viewing superadmin makes. -->
+<div id="viewAsBanner">
+  <span id="viewAsBannerText"></span>
+  <span class="va-spacer"></span>
+  <button class="btn btn-sm" id="viewAsExitBtn" style="background:#fff;color:#3a2a5c">Exit view-as</button>
+</div>
 
 <main>
   <div id="saveWarn">
@@ -4101,6 +4129,40 @@ function setupRoster() {
     <div class="gb-warn" id="gbWarn"></div>
   </section>
 
+  <!-- Step 6 (docs/Firebase_Step6_Admin_Gradebook_View_Design_Proposal.md,
+       "Admin's Class Book UI") — read-only, admin/superadmin only, reached
+       at #/admin/classes/{classId}/book. Deliberately NOT in TAB_GROUPS: a
+       rebbi's own nav never shows it, and it's shown/hidden by
+       applyAdminClassBookRoute() directly rather than through
+       activateTab()'s normal tab machinery, matching "not a tab" from the
+       design doc. -->
+  <section id="view-adminClassBook" class="view">
+    <h2 class="view-title">Class Book</h2>
+    <p class="view-note">Read-only. Shows exactly the items this account is allowed to see — server-enforced by firestore.rules, nothing hidden or filtered here on top of that.</p>
+
+    <div class="card pad" style="margin-bottom:12px">
+      <label class="lbl" for="acbClassIdInput">Class ID</label>
+      <div class="toolbar" style="gap:8px">
+        <input type="text" id="acbClassIdInput" class="field" placeholder="e.g. abc123_1" style="flex:0 1 260px">
+        <button class="btn btn-sm btn-primary" id="acbLoadBtn">Open</button>
+      </div>
+      <p class="view-note" style="margin:8px 0 0">No class browser yet — paste a class ID directly. A school picker is a known, deliberately deferred follow-on, not an oversight.</p>
+    </div>
+
+    <div id="acbStatus" class="view-note"></div>
+    <div class="card pad" id="acbResult" style="display:none">
+      <div class="gb-print-head">
+        <div class="gb-print-title" id="acbTitle"></div>
+        <div class="gb-print-sub" id="acbBadge"></div>
+      </div>
+      <div class="gb-scroll">
+        <table class="gb-tbl" id="acbTable"></table>
+      </div>
+      <div class="gb-legend" id="acbLegend"></div>
+      <div class="gb-note" id="acbNote"></div>
+    </div>
+  </section>
+
   <!-- ============ SPINNER ============ -->
   <section id="view-spinner" class="view">
     <h2 class="view-title">Spinner</h2>
@@ -5816,7 +5878,16 @@ function setupRoster() {
   // `data` is already loaded synchronously for the one class that exists,
   // so a passing guard renders immediately. Falls back to the Dashboard for
   // a missing or unrecognized tab rather than a blank screen.
+  // Step 6 (docs/Firebase_Step6_Admin_Gradebook_View_Design_Proposal.md,
+  // "Admin's Class Book UI", 2026-08-14 consistency-pass note): step 4's
+  // router only ever specifies the #/c/{classId}/{group}/{tab} shape — no
+  // #/admin/ namespace, no role-based guard. Checked first, before
+  // routeParse() (which only understands #/c/...), rather than teaching
+  // routeParse() a second, unrelated hash grammar.
+  var ADMIN_CLASS_BOOK_RE = /^#\/admin\/classes\/([^\/]+)\/book$/;
   function routerApplyRoute(){
+    var adminMatch = ADMIN_CLASS_BOOK_RE.exec(location.hash);
+    if (adminMatch) { applyAdminClassBookRoute(decodeURIComponent(adminMatch[1])); return; }
     var parsed = routeParse(location.hash);
     var classId = (parsed && parsed.classId) ? parsed.classId : LOCAL_CLASS_ID;
     var tab = (parsed && parsed.tab && TAB_LABELS.hasOwnProperty(parsed.tab)) ? parsed.tab : "scan";
@@ -5938,6 +6009,86 @@ function setupRoster() {
     });
   }
 
+  // ---------- step 6 / step 5's read pipeline (docs/Firebase_Step6_Admin_Gradebook_View_Design_Proposal.md,
+  // "Admin's Class Book UI") ----------
+  // Neither step 5's view-as nor step 6's Class Book had anywhere to
+  // actually read a target class's real Firestore content until this —
+  // flagged as a known gap in both PRs, not solved by either alone. Reuses
+  // firestoreFieldsToObject() above rather than a second type-unwrap.
+  function firestoreListCollection(path, firebaseIdToken){
+    var base = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId() +
+      "/databases/(default)/documents/" + path;
+    function page(pageToken, acc){
+      var url = base + "?pageSize=300" + (pageToken ? "&pageToken=" + encodeURIComponent(pageToken) : "");
+      return fetch(url, { headers: { "Authorization": "Bearer " + firebaseIdToken } }).then(function(r){
+        if (!r.ok) return r.json().then(function(j){ throw new Error((j.error && j.error.message) || ("Could not read " + path)); });
+        return r.json();
+      }).then(function(j){
+        var docs = (j.documents || []).map(function(d){
+          var obj = firestoreFieldsToObject(d.fields || {});
+          obj.id = d.name.split("/").pop();
+          return obj;
+        });
+        var combined = acc.concat(docs);
+        return j.nextPageToken ? page(j.nextPageToken, combined) : combined;
+      });
+    }
+    return page(null, []);
+  }
+
+  // Reads one class's real content and reshapes it into the same
+  // students/trackedItems/trackedData shapes app.html's own Gradebook code
+  // already trusts — the mirror image of functions/classWriter.js's write
+  // side. Read-only: nothing here ever calls save() or touches local
+  // `data`; callers decide what to do with the returned object.
+  function fetchClassFromFirestore(classId, firebaseIdToken){
+    var classUrl = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId() +
+      "/databases/(default)/documents/classes/" + encodeURIComponent(classId);
+    return fetch(classUrl, { headers: { "Authorization": "Bearer " + firebaseIdToken } }).then(function(r){
+      if (r.status === 404) return null;
+      if (!r.ok) return r.json().then(function(j){ throw new Error((j.error && j.error.message) || "Could not read class."); });
+      return r.json().then(function(doc){ return firestoreFieldsToObject(doc.fields || {}); });
+    }).then(function(classDoc){
+      if (!classDoc) return null;
+      var base = "classes/" + encodeURIComponent(classId) + "/";
+      return Promise.all([
+        firestoreListCollection(base + "students", firebaseIdToken),
+        firestoreListCollection(base + "trackedItems", firebaseIdToken),
+        firestoreListCollection(base + "trackedEntries", firebaseIdToken)
+      ]).then(function(results){
+        var studentsRaw = results[0], trackedItemsRaw = results[1], trackedEntriesRaw = results[2];
+        var students = studentsRaw.map(function(s){
+          return {
+            id: s.id,
+            name: (String(s.firstName || "") + " " + String(s.lastName || "")).trim(),
+            section: s.section || null,
+            score: typeof s.score === "number" ? s.score : 0
+          };
+        });
+        var trackedItems = trackedItemsRaw.map(function(it){
+          return { id: it.id, name: it.name || "", method: it.method || null, config: it.config || null, book: it.book || "teacher" };
+        });
+        var trackedData = {};
+        trackedEntriesRaw.forEach(function(e){
+          if (!e.itemId || !e.studentId) return;
+          if (!trackedData[e.itemId]) trackedData[e.itemId] = {};
+          if (!trackedData[e.itemId][e.studentId]) trackedData[e.itemId][e.studentId] = [];
+          trackedData[e.itemId][e.studentId].push({ value: e.value, ts: e.ts, date: e.date, src: e.src });
+        });
+        return {
+          classId: classId,
+          className: classDoc.name || "",
+          ownerId: classDoc.ownerId || null,
+          schoolId: classDoc.schoolId || null,
+          sharedWithAdmin: !!classDoc.sharedWithAdmin,
+          students: students,
+          trackedItems: trackedItems,
+          trackedData: trackedData
+        };
+      });
+    });
+  }
+
   // Dynamically injected, once, only for a confirmed tier-1 account — see
   // the design doc's §2. Never referenced by anything tier-2 touches.
   var SIGNIN_SDK_SCRIPTS = [
@@ -5946,10 +6097,17 @@ function setupRoster() {
     "vendor/firebase/firebase-firestore-compat.js",
     "vendor/firebase/firebase-functions-compat.js"
   ];
-  var signinSdkLoadPromise = null;
-  function loadFirebaseSdk(){
-    if (signinSdkLoadPromise) return signinSdkLoadPromise;
-    signinSdkLoadPromise = SIGNIN_SDK_SCRIPTS.reduce(function(p, src){
+  // Split from loadFirebaseSdk() below (step 5,
+  // docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md, "In the new
+  // tab") so a view-as landing can load the same vendored scripts without
+  // also initializing the DEFAULT app instance — view-as needs its own
+  // separate, second `initializeApp(config, "viewAs")` instance instead,
+  // so its token can never collide with whatever default-instance auth
+  // this tab's own normal sign-in sets up.
+  var signinSdkScriptsLoadPromise = null;
+  function loadFirebaseSdkScripts(){
+    if (signinSdkScriptsLoadPromise) return signinSdkScriptsLoadPromise;
+    signinSdkScriptsLoadPromise = SIGNIN_SDK_SCRIPTS.reduce(function(p, src){
       return p.then(function(){
         return new Promise(function(resolve, reject){
           var s = document.createElement("script");
@@ -5959,12 +6117,15 @@ function setupRoster() {
           document.head.appendChild(s);
         });
       });
-    }, Promise.resolve()).then(function(){
+    }, Promise.resolve());
+    return signinSdkScriptsLoadPromise;
+  }
+  function loadFirebaseSdk(){
+    return loadFirebaseSdkScripts().then(function(){
       if (!window.firebase.apps || !window.firebase.apps.length) {
         window.firebase.initializeApp(window.MENCHMARK_FIREBASE_CONFIG);
       }
     });
-    return signinSdkLoadPromise;
   }
 
   // Adopts the already-obtained Google credential into the SDK's own Auth
@@ -5975,6 +6136,83 @@ function setupRoster() {
       var cred = window.firebase.auth.GoogleAuthProvider.credential(googleIdToken);
       return window.firebase.auth().signInWithCredential(cred);
     });
+  }
+
+  // ---------- step 5: view-as landing (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md,
+  // "The view-as UI transition" + "Handoff mechanism") ----------
+  // admin.html writes this sessionStorage key immediately before
+  // window.open()'ing this tab. sessionStorage is copied into a same-origin
+  // tab opened via window.open — that's the whole mechanism, no query
+  // string, no change to step 4's hash-only router.
+  var VIEWAS_HANDOFF_KEY = "menchmark_viewAsHandoff";
+  // Non-null only while this tab is a live view-as session — read by
+  // renderViewAsBanner() below and by the "Exit view-as" handler.
+  var viewAsSession = null;
+
+  function viewAsBootFromHandoff(){
+    var raw;
+    try { raw = sessionStorage.getItem(VIEWAS_HANDOFF_KEY); } catch(e){ raw = null; }
+    if (!raw) return Promise.resolve();
+    // Captured-then-cleared immediately, same discipline as
+    // pendingOAuthResult above — a reload of this same tab must never
+    // re-consume a stale handoff.
+    try { sessionStorage.removeItem(VIEWAS_HANDOFF_KEY); } catch(e){}
+    var handoff;
+    try { handoff = JSON.parse(raw); } catch(e){ return Promise.resolve(); }
+    if (!handoff || !handoff.token) return Promise.resolve();
+
+    return loadFirebaseSdkScripts().then(function(){
+      // A second, separate `initializeApp(config, "viewAs")` instance —
+      // never the default app this tab's own sign-in uses (design doc,
+      // "this new tab has no superadmin session of its own to protect —
+      // it's a fresh tab, so 'second instance' here just means: don't let
+      // this token collide with whatever default-instance auth app.html
+      // normally sets up on load").
+      var existing = (window.firebase.apps || []).filter(function(a){ return a.name === "viewAs"; })[0];
+      var viewAsApp = existing || window.firebase.initializeApp(window.MENCHMARK_FIREBASE_CONFIG, "viewAs");
+      return window.firebase.auth(viewAsApp).signInWithCustomToken(handoff.token);
+    }).then(function(){
+      viewAsSession = { name: handoff.name, school: handoff.school, viewAsExp: handoff.viewAsExp };
+      if (typeof renderViewAsBanner === "function") renderViewAsBanner();
+      // Step 6's read pipeline is what makes this real rather than a banner
+      // over nothing: land straight on the target's own Class Book, using
+      // the same fetchClassFromFirestore()/gbBuildTable() this tab now
+      // shares with step 6's admin route. Every other tab in this app
+      // still assumes local `data` and isn't safe to point at someone
+      // else's account yet — flagged, not silently pretended away.
+      if (handoff.targetUid && typeof applyAdminClassBookRoute === "function") {
+        routerGoAdminClassBook(handoff.targetUid + "_1");
+      }
+    }).catch(function(){
+      // Fail closed and quiet — a broken/expired handoff shouldn't block
+      // normal boot; the banner simply never appears, same as any other
+      // "nothing to do here" boot path in this file.
+      viewAsSession = null;
+    });
+  }
+
+  function exitViewAs(){
+    if (!viewAsSession) return;
+    var existing = (window.firebase.apps || []).filter(function(a){ return a.name === "viewAs"; })[0];
+    var done = existing ? window.firebase.auth(existing).signOut() : Promise.resolve();
+    done.then(function(){
+      viewAsSession = null;
+      // "Exit returns to the admin overview (not Berel's own class)" —
+      // this tab was only ever opened to show the view-as session, so
+      // closing it is exactly that; admin.html's own tab was never
+      // navigated away from.
+      window.close();
+    });
+  }
+
+  function renderViewAsBanner(){
+    var el = $("viewAsBanner");
+    if (!el) return;
+    if (!viewAsSession) { el.classList.remove("show"); document.body.classList.remove("viewing-as"); return; }
+    $("viewAsBannerText").textContent =
+      "Viewing as " + viewAsSession.name + (viewAsSession.school ? " — " + viewAsSession.school : "") + " (read-only)";
+    el.classList.add("show");
+    document.body.classList.add("viewing-as");
   }
 
   // In-memory only — holds state across the code-entry screen's Continue
@@ -6214,6 +6452,10 @@ function setupRoster() {
     }
   }
   function activateTab(tab){
+    // Undoes applyAdminClassBookRoute()'s nav-hiding — activateTab() is the
+    // normal path back into any real tab (Back button, a tab click), and
+    // that route is the only thing that ever sets this class.
+    document.body.classList.remove("admin-class-book-active");
     // Leaving the class sheet DISARMS arranging. Every other bit of seating
     // state is deliberately shared between the three panels, but this one is
     // different in kind: left armed, drag-and-drop stays live on the Dashboard
@@ -19922,10 +20164,17 @@ nameLine
     document.addEventListener("mousedown", gbPickAway, true);
     document.addEventListener("keydown", gbPickKey, true);
   }
-  function gbCollect(items, studs, r){
+  // `trackedDataOverride` (step 6, docs/Firebase_Step6_Admin_Gradebook_View_Design_Proposal.md,
+  // "Admin's Class Book UI"): optional, defaults to the live rebbi's own
+  // `data.trackedData` exactly as before — every existing call site is
+  // unaffected. Passed explicitly only by applyAdminClassBookRoute() below,
+  // so the admin's own local `data` is never touched while rendering a
+  // fetched, read-only, remote class through this same proven table logic.
+  function gbCollect(items, studs, r, trackedDataOverride){
     var out={};
+    var source = trackedDataOverride || data.trackedData;
     items.forEach(function(it){
-      var perStud=(data.trackedData && data.trackedData[it.id]) || {}, byStud={};
+      var perStud=(source && source[it.id]) || {}, byStud={};
       studs.forEach(function(s){
         var list=perStud[s.id];
         if(!Array.isArray(list)) return;
@@ -20260,6 +20509,119 @@ nameLine
     document.head.appendChild(gbLandscapeStyleEl);
     window.print();
   });
+
+  /* ---------- step 6: admin's Class Book (docs/Firebase_Step6_Admin_Gradebook_View_Design_Proposal.md,
+   * "Admin's Class Book UI") — read-only, admin/superadmin only. Reuses
+   * gbBuildTable()/gbBuildCodeMaps()/gbDatesFor()/gbBuildInitials()/
+   * gbBuildLegend() verbatim (all already parameterized, none read global
+   * `data`) plus gbCollect()'s new trackedDataOverride param, so this is
+   * genuinely the same rendering code the rebbi's own Gradebook uses —
+   * never a second implementation to keep in sync — without ever touching
+   * the admin's own local `data` while showing someone else's class. */
+  function applyAdminClassBookRoute(classId){
+    document.querySelectorAll(".view").forEach(function(v){ v.classList.toggle("active", v.id==="view-adminClassBook"); });
+    // "Not a tab in TAB_GROUPS — the rebbi's own nav never shows it" (design
+    // doc) — the group/subtab bars belong to activateTab()'s tab system,
+    // which this route deliberately bypasses, so they're hidden directly
+    // rather than left showing a nav that doesn't apply here.
+    document.body.classList.add("admin-class-book-active");
+    if (classId) {
+      $("acbClassIdInput").value = classId;
+      loadAdminClassBook(classId);
+    }
+  }
+  function loadAdminClassBook(classId){
+    var status=$("acbStatus"), result=$("acbResult");
+    result.style.display="none";
+    status.textContent="Loading…";
+    // A view-as session's local `data.account` belongs to whatever's on
+    // THIS device — unrelated to the superadmin's real, remote identity,
+    // which lives entirely in the "viewAs" Auth instance below. The role
+    // check only applies to a same-device admin/superadmin using this
+    // route directly; view-as's own authorization already happened
+    // server-side when viewAs() minted the token this tab signed in with.
+    if (!viewAsSession && (!data.account || (data.account.role!=="admin" && data.account.role!=="superadmin"))) {
+      status.textContent="This account is not an admin or superadmin.";
+      return;
+    }
+    loadFirebaseSdk().then(function(){
+      var authInstance;
+      if (viewAsSession) {
+        var viewAsApp = (window.firebase.apps || []).filter(function(a){ return a.name === "viewAs"; })[0];
+        authInstance = viewAsApp && window.firebase.auth(viewAsApp);
+      } else {
+        authInstance = window.firebase.auth();
+      }
+      var user = authInstance && authInstance.currentUser;
+      if (!user) { status.textContent="Not signed in."; return; }
+      return user.getIdToken().then(function(idToken){
+        return fetchClassFromFirestore(classId, idToken);
+      });
+    }).then(function(cls){
+      if (!cls) { status.textContent="No class found with that ID, or you don't have access to it."; return; }
+      status.textContent="";
+      renderAdminClassBook(cls);
+    }).catch(function(err){
+      status.textContent="Failed: " + err.message;
+    });
+  }
+  function renderAdminClassBook(cls){
+    var result=$("acbResult"), tbl=$("acbTable"), legend=$("acbLegend"), note=$("acbNote");
+    tbl.innerHTML=""; legend.innerHTML=""; note.textContent="";
+    $("acbTitle").textContent = cls.className || cls.classId;
+    $("acbBadge").textContent = cls.sharedWithAdmin
+      ? "This rebbi has shared their full Teacher's Book"
+      : "";
+    result.style.display="block";
+
+    var studs = cls.students.slice().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+    if (!studs.length) { note.textContent="No students in this class."; return; }
+    var items = cls.trackedItems;
+    if (!items.length) { note.textContent="Nothing visible in this class's Class Book yet."; return; }
+
+    var r = {from:"0000-01-01", to:"9999-12-31"}; // full history — no date filter in this minimal view
+    var collected = gbCollect(items, studs, r, cls.trackedData);
+    var codeMaps = gbBuildCodeMaps(items);
+    var datesByItem = {};
+    items.forEach(function(it){ datesByItem[it.id] = gbDatesFor(it.id, studs, collected); });
+    var ctx = { collected: collected, codeMaps: codeMaps, datesByItem: datesByItem, initials: gbBuildInitials(studs) };
+
+    var built = gbBuildTable(items, studs, ctx); // no `editable` arg — read-only, same as the print-page calls
+    // Visual distinction (design doc, "the load-bearing part"): a
+    // book:'teacher' column only exists in this response because
+    // sharedWithAdmin let it through, since itemVisible() otherwise blocks
+    // it server-side — badge every header the rules let through that isn't
+    // plain 'class', never hover-only or icon-only.
+    var headerRow = built.querySelector("thead tr");
+    if (headerRow) {
+      items.forEach(function(it, i){
+        if (it.book === "class") return;
+        var th = headerRow.children[i+1]; // +1: the leading "Student" column
+        if (!th) return;
+        var badge = document.createElement("div");
+        badge.style.cssText = "font-size:.7rem;font-weight:700;color:#9a6b1f;margin-top:2px";
+        badge.textContent = "🔓 shared";
+        th.appendChild(badge);
+      });
+    }
+    tbl.appendChild(built);
+    gbBuildLegend(items, codeMaps, legend);
+  }
+  $("acbLoadBtn").addEventListener("click", function(){
+    var id = $("acbClassIdInput").value.trim();
+    if (!id) return;
+    routerGoAdminClassBook(id);
+  });
+  // Nav-shaped action (opening a specific class's book is a real page you
+  // can bookmark/Back out of), so this is a pushState — one entry, matching
+  // router.go()'s own discipline for the #/c/... shape, just for the
+  // separate #/admin/... namespace the design doc's own consistency-pass
+  // note flagged step 4's router as not covering.
+  function routerGoAdminClassBook(classId){
+    var hash = "#/admin/classes/" + encodeURIComponent(classId) + "/book";
+    history.pushState({menchmarkRoute:true}, "", hash);
+    applyAdminClassBookRoute(classId);
+  }
 
   /* ---------- STUDENTS ---------- */
   var studentBreakdownOpen = {};
@@ -23148,6 +23510,7 @@ nameLine
     data.signinNudgeSeen = true; save();
     $("signinNudge").classList.remove("show");
   });
+  $("viewAsExitBtn").addEventListener("click", function(){ exitViewAs(); });
   // Builds a fully self-contained offline copy of the app:
   //  1. Gets this page's own current HTML — preferably by re-fetching it
   //     fresh over the network (avoids baking in transient runtime-only DOM
@@ -24881,6 +25244,12 @@ nameLine
   // redirect lands. Does nothing at all if pendingOAuthResult is null —
   // the overwhelming majority of boots, tier-2 or never-signed-in included.
   signinCompleteFromRedirect();
+  // Step 5's view-as landing (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md):
+  // does nothing at all unless admin.html just window.open()'d this exact
+  // tab with a handoff waiting in sessionStorage — the overwhelming
+  // majority of boots. Independent of signinCompleteFromRedirect() above;
+  // both check their own, mutually exclusive trigger.
+  viewAsBootFromHandoff();
   // Tier-1 devices: the SDK loads eagerly on every boot (not just right
   // after signing in), so Firebase Auth's own persisted session can resume
   // silently — no redirect, no click, the SDK's own IndexedDB-backed
@@ -24990,10 +25359,16 @@ nameLine
   // outcome counts as "already resolved" for the fallback logic below.
   var routeDeepLinked = false;
   try {
-    var bootRoute = routeParse(location.hash);
-    if (bootRoute && bootRoute.tab && TAB_LABELS.hasOwnProperty(bootRoute.tab)) {
-      routerGuardAndRender(bootRoute.classId || LOCAL_CLASS_ID, bootRoute.tab);
+    var bootAdminMatch = ADMIN_CLASS_BOOK_RE.exec(location.hash);
+    if (bootAdminMatch) {
+      applyAdminClassBookRoute(decodeURIComponent(bootAdminMatch[1]));
       routeDeepLinked = true;
+    } else {
+      var bootRoute = routeParse(location.hash);
+      if (bootRoute && bootRoute.tab && TAB_LABELS.hasOwnProperty(bootRoute.tab)) {
+        routerGuardAndRender(bootRoute.classId || LOCAL_CLASS_ID, bootRoute.tab);
+        routeDeepLinked = true;
+      }
     }
   } catch(e) {}
   // The setup wizard finishes by sending the rebbi here, so his first sight of

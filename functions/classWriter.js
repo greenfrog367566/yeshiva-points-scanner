@@ -32,6 +32,17 @@ const BATCH_LIMIT = 400; // stays under Firestore's hard 500-op cap with headroo
  * rather than silently guessing (docs/Firebase_DataModel_Design_Proposal.md:
  * "flagged for manual review, never silently dropped").
  */
+// Step 6 (docs/Firebase_Step6_Admin_Gradebook_View_Design_Proposal.md,
+// "Default book classification for new items"): the exact same three
+// name-match predicates app.html's trackedActIdsStamped() already uses
+// (PASS_ACT_NAME/ATT_ACT_NAME/homeworkActivity()'s "Homework Checked") —
+// not new inference logic, the identical classification already shipped,
+// applied once more to set `book` instead of a tracked-item id. Anything
+// that doesn't match falls through to 'teacher' — private by default.
+function classifyBook(name) {
+  return name === "Attendance" || name === "Bathroom Pass" || name === "Homework Checked" ? "class" : "teacher";
+}
+
 function splitName(name) {
   const trimmed = (name || "").trim();
   if (!trimmed) return { firstName: "", lastName: "", nameSplitFlagged: true };
@@ -100,7 +111,7 @@ function buildClassWriteOps(db, classId, ownerId, schoolId, normalized, deviceId
     if (!it || !it.id) return;
     ops.push({
       ref: classRef.collection("trackedItems").doc(String(it.id)),
-      data: { name: it.name || "", method: it.method || null, config: it.config || null },
+      data: { name: it.name || "", method: it.method || null, config: it.config || null, book: classifyBook(it.name) },
     });
   });
 
