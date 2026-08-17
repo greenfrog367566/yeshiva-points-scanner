@@ -2733,7 +2733,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
        pop-up only survives a real user gesture — it can never be opened on load. */
     if(opts.secondScreen && !(present.win && !present.win.closed)) presentOpen();
     perStudent=hasRoster();
-    var v={ width:{ideal:1920}, height:{ideal:1080} }; if(camSel.value) v.deviceId={exact:camSel.value};
+    var v={ width:{ideal:3840}, height:{ideal:2160} }; if(camSel.value) v.deviceId={exact:camSel.value};   /* ideal, not exact — a camera that can't do 4K just gets its own closest */
     startBtn.disabled=true;
     navigator.mediaDevices.getUserMedia({video:v,audio:false}).then(function(s){ stream=s; vid.srcObject=s; return vid.play().catch(function(){}); })
     .then(function(){
@@ -2880,6 +2880,20 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
        gate): the choices aren't even on screen yet, so nothing should be able
        to lock in as an answer before a student has actually seen them. */
     renderTiles(); startTimer();
+    /* A camera that just sits centred for the whole answer window structurally
+       favours whoever happens to be in that one spot — everyone else gets no
+       real chance to register until the single end-of-window scanPass(). With
+       the PTZ bridge, sweep continuously through the ENTIRE answer window
+       instead (sweepAdvance is now gated to run in this phase too — see
+       handleCodes), so every seat gets roughly equal cumulative visible time
+       while students are actually thinking, not just a last-second scramble.
+       scanPass() at lock already halts any continuous sweep itself
+       (sweep.on=false, by design) and takes over for one final thorough pass —
+       nothing else needs to change there. This is PTZ-only: a fixed camera
+       with no gimbal has no way to widen its coverage in software: the 4K
+       capture (startBtn) is the only lever that helps that case, by keeping
+       off-centre seats legible at all. */
+    if(ptzhttp.ok && $("sweepOn").checked) sweepStart();
   }
   function snapshot(){
     if(!perStudent){ var t=tallyPeak; return {counts:{A:t.A,B:t.B,C:t.C,D:t.D}, answered:t.A+t.B+t.C+t.D, byLetter:null}; }
@@ -3239,7 +3253,16 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   function onePass(){
     if(!running) return;
     var vw=vid.videoWidth, vh=vid.videoHeight; if(!vw||!vh){ loopT=setTimeout(onePass,150); return; }
-    var W=Math.min(1920,vw), H=Math.round(vh*(W/vw)); if(work.width!==W){ work.width=W; work.height=H; }
+    /* Detection canvas caps at the camera's own stream width — now requested at
+       4K — not a fixed 1080p downscale. A smaller/farther wand needs more real
+       pixels across its printed grid to decode at all; throwing that resolution
+       away before detection ever saw it would make asking the camera for 4K
+       pointless. The tradeoff is real (more pixels per pass costs more time in
+       both the QR detector and js-aruco2's own CV pipeline) but the loop is
+       self-pacing (setTimeout schedules the next pass only after this one's
+       promise settles), so a slower pass just means a slower cadence, never a
+       growing backlog. */
+    var W=Math.min(3840,vw), H=Math.round(vh*(W/vw)); if(work.width!==W){ work.width=W; work.height=H; }
     wctx.drawImage(vid,0,0,W,H);
     /* ArUco wands are detected synchronously off the same frame the QR pass is
        about to use (js-aruco2 wants raw ImageData, not the canvas element), then
@@ -3305,7 +3328,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     if(!perStudent) tallyNow=count;
     if(mode==="game"&&!revealed){ LETTERS.forEach(function(L){ if(count[L]>tallyPeak[L]) tallyPeak[L]=count[L]; }); }
     $("sSeen").textContent=String(total);
-    if(mode==="calib") sweepAdvance();     /* continuous sweep only while checking visibility */
+    if(mode==="calib" || (mode==="game" && qphase==="answer")) sweepAdvance();   /* continuous sweep — lobby join, and now the whole answer window too (see beginAnswerPhase) */
     if(mode==="calib") renderCalib(); else renderTiles();
     if(capturing) renderLiftList();
   }
