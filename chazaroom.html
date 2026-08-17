@@ -1445,7 +1445,15 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   ul.qlist li .a b{color:var(--good)}
   ul.qlist li .x{background:none;border:none;color:var(--bad);font-size:1.1rem;flex:0 0 auto}
 
-  .students{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  /* align-items/align-content default to stretch on a flex-wrap container —
+     harmless at natural size, but once #calibGrid was given real flex-grow
+     (to fill the fixed-height lobby box — see the body:has(#playArea...)
+     block) that default stretched every chip, and each wrapped row of
+     chips, to fill whatever extra vertical room existed: a short roster in
+     a tall lobby turned its one row of chips into oversized blobs instead
+     of staying pill-shaped. Pinning both to flex-start keeps chips at their
+     own natural size regardless of how much space the container is given. */
+  .students{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:flex-start;align-content:flex-start}
   .chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:.85rem;background:#f4f5f9;display:flex;gap:6px;align-items:center}
   .chip .id{color:var(--muted);font-size:.75rem}
 
@@ -1594,7 +1602,6 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
      flips on for mode==="game"). Scoping this to body.playing left the ring
      positioned against the wrong ancestor for the whole lobby beat. */
   #playArea{position:relative}
-  body.playing .wrap{max-width:none;padding:16px 22px}
   body.playing #playArea{display:block}
   body.playing #gameBoard{margin-bottom:0}
   body.playing .rebbi{display:contents}
@@ -1614,7 +1621,20 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
      rather than either scrolling or clipping into a sibling. */
   body:has(#playArea:not([hidden])){height:100vh;overflow:hidden;display:flex;flex-direction:column}
   body:has(#playArea:not([hidden])) header{flex:0 0 auto}
-  body:has(#playArea:not([hidden])) .wrap{flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+  /* max-width:none/padding used to be body.playing-only — meaning the lobby
+     rendered under the SITE's normal 1150px-capped, centered .wrap while
+     the game board (once mode==="game" set body.playing) jumped to full
+     width the moment the first question loaded. That's the other half of
+     "the page changes size based on the beat": not just height (fixed
+     above) but a visible side-margin jump going into the very first
+     question. Both states now share this unconditionally. */
+  /* margin:0 explicitly — the base .wrap{margin:0 auto} centers it at its
+     own content width when max-width is capped, but auto side margins on a
+     flex item override stretch (the default cross-axis behavior) and make
+     it size to content instead of filling the row — so without resetting
+     it here, max-width:none alone still left .wrap narrow and centered
+     rather than actually going full width. */
+  body:has(#playArea:not([hidden])) .wrap{max-width:none;margin:0;padding:16px 22px;flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column}
   /* #playArea's real parent is <section id="viewPlay"> (a plain block by
      default), not .wrap directly — #scrim/#drawer are .wrap's OTHER
      children but both are position:fixed, so they're out of flow and don't
@@ -1646,15 +1666,23 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   body:has(#playArea:not([hidden])) .tiles,
   body:has(#playArea:not([hidden])) #calibPanel>h2,
   body:has(#playArea:not([hidden])) #calibPanel>.row{flex:0 0 auto}
-  /* #pillBar is the one element here whose natural size scales with class
-     size rather than with the beat — 8 students and 40 both need to fit
-     the same fixed box, and unlike .tiles it isn't itself the gameplay
-     content (losing sight of an answer tile is a real bug; needing to
-     scroll the roster strip is a minor one). It absorbs essentially the
-     whole squeeze — a real internal scrollbar under real pressure, rather
-     than the half-clipped row a plain overflow:hidden would have produced.
-     min-height keeps at least one row visible even at its most squeezed. */
-  body:has(#playArea:not([hidden])) #pillBar{flex:1 1 0;min-height:52px;overflow-y:auto;overflow-x:hidden}
+  /* #pillBar (game) and #calibGrid (lobby) are the two elements here whose
+     natural size scales with class size rather than with the beat — 8
+     students and 40 both need to fit the same fixed box, and unlike .tiles
+     neither is itself the actual gameplay content (losing sight of an
+     answer tile is a real bug; needing to scroll the roster strip is a
+     minor one). Both were originally lumped in with the plain-shrink group
+     below, sharing its flex-shrink weight with .hint/#calibAnon — under
+     real pressure from .rebbi (the lobby's OTHER real flex child, also
+     flex:1 1 auto) that let #calibGrid's shrink go all the way to
+     min-height:0, hiding the roster chips almost entirely rather than just
+     trimming them. Both now get their own dedicated flex-grow share and a
+     real internal scrollbar instead — the chips/pills stay visible and
+     legible at their natural size, and only the strip's own overflow
+     scrolls, never a half-clipped row. min-height keeps at least one row
+     visible even at the most squeezed. */
+  body:has(#playArea:not([hidden])) #pillBar,
+  body:has(#playArea:not([hidden])) #calibGrid{flex:1 1 0;min-height:52px;overflow-y:auto;overflow-x:hidden}
   body:has(#playArea:not([hidden])) .qbig,
   body:has(#playArea:not([hidden])) #readyLine,
   body:has(#playArea:not([hidden])) #captureLine,
@@ -1662,7 +1690,6 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   body:has(#playArea:not([hidden])) #boardPodium,
   body:has(#playArea:not([hidden])) #revealResult,
   body:has(#playArea:not([hidden])) #calibPanel>.hint,
-  body:has(#playArea:not([hidden])) #calibGrid,
   body:has(#playArea:not([hidden])) #calibAnon{flex:0 1 auto;min-height:0;overflow:hidden}
   /* The ring itself — top-right of #playArea, visible in every mode (lobby
      included, so it can't be scoped to body.playing). Some labels ("starts
@@ -1696,7 +1723,13 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   @media(max-width:900px){ body.playing #camCard{position:static;width:auto;bottom:auto;margin-bottom:16px} }
   /* who's answered — a pill per student, always visible during the question.
      Sized to read from the back of a classroom, not a phone screen. */
-  .pillbar{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:20px 0}
+  /* Same fix as .students just above, and the same actual symptom this
+     turn's bug report named directly: once #pillBar got real flex-grow (to
+     fill the board's fixed height — see the body:has(#playArea...) block),
+     the default stretch alignment turned a short class's one row of pills
+     into oversized blobs filling all the leftover vertical space instead
+     of staying pill-shaped. */
+  .pillbar{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:20px 0;align-items:flex-start;align-content:flex-start}
   /* A pre-existing gap surfaced by giving #pillBar its own scroll/flex
      sizing above: .pillbar{display:flex} has the exact same specificity as
      the browser's own [hidden]{display:none} (both one selector), and an
