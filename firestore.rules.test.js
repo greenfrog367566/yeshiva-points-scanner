@@ -171,6 +171,17 @@ async function main() {
   await check("Import receipts: client write -> deny (Cloud-Function-only)", asA.doc("classes/a_1/importReceipts/x").set({ status: "verified" }), "deny");
   await check("Import receipts: even superadmin cannot client-write -> deny", asSuper.doc("classes/a_1/importReceipts/x").set({ status: "verified" }), "deny");
 
+  // ---- step 5: activitySummary / viewAsLog / auditLog (superadmin-only telemetry) ----
+  await check("activitySummary: superadmin can read -> allow", asSuper.doc("activitySummary/a").get(), "allow");
+  await check("activitySummary: owner (non-superadmin) cannot read their own summary -> deny", asA.doc("activitySummary/a").get(), "deny");
+  await check("activitySummary: client write -> deny (Cloud-Function-only)", asSuper.doc("activitySummary/a").set({ classCount: 99 }), "deny");
+  await check("viewAsLog: superadmin can read -> allow", asSuper.doc("viewAsLog/x").get(), "allow");
+  await check("viewAsLog: non-superadmin cannot read -> deny", asA.doc("viewAsLog/x").get(), "deny");
+  await check("viewAsLog: client write -> deny (Cloud-Function-only)", asSuper.doc("viewAsLog/x").set({ targetUid: "a" }), "deny");
+  await check("auditLog: superadmin can read -> allow", asSuper.doc("auditLog/x").get(), "allow");
+  await check("auditLog: non-superadmin cannot read -> deny", asA.doc("auditLog/x").get(), "deny");
+  await check("auditLog: client write -> deny (Cloud-Function-only)", asSuper.doc("auditLog/x").set({ event: "hack" }), "deny");
+
   await testEnv.cleanup();
 
   console.log(`\n${passed} passed, ${failed} failed`);

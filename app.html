@@ -200,6 +200,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #signinNudge{display:none;background:#eef4fb;color:#1b3a5c;border:1px solid #c9dcf0;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:.9rem;align-items:center;gap:12px;flex-wrap:wrap}
   #signinNudge.show{display:flex}
   #signinNudge .sn-spacer{flex:1 1 auto}
+  /* Step 5 (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md, "The
+     view-as UI transition") — "a fixed top bar, rendered whenever the
+     active Auth instance is the viewAs one". Fixed, not inline like the
+     nudges above: it has to stay visible across every tab switch in this
+     session, since forgetting you're in a view-as tab is exactly the
+     mistake this exists to prevent. */
+  #viewAsBanner{display:none;position:fixed;top:0;left:0;right:0;z-index:9997;background:#3a2a5c;color:#fff;padding:8px 16px;font-size:.85rem;align-items:center;gap:12px;flex-wrap:wrap}
+  #viewAsBanner.show{display:flex}
+  #viewAsBanner .va-spacer{flex:1 1 auto}
+  body.viewing-as{padding-top:40px}
   /* Shown inside a downloaded offline copy when its built-in snapshot was held
      back because this browser already had saved work. Amber, not red, like
      #backupNudge: nothing is broken and nothing was lost — the rebbi is being
@@ -1958,6 +1968,17 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      scan confirms itself, so the element now floats at document level where all
      tabs and the full-screen chart can see it. -->
 <div class="flash flash-toast" id="flash"></div>
+
+<!-- Step 5 (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md, "The
+     view-as UI transition") — populated/shown only by viewAsBootFromHandoff()
+     landing a token from admin.html; empty and hidden otherwise. Lives
+     outside <main> deliberately: fixed, document-level, survives every tab
+     switch a viewing superadmin makes. -->
+<div id="viewAsBanner">
+  <span id="viewAsBannerText"></span>
+  <span class="va-spacer"></span>
+  <button class="btn btn-sm" id="viewAsExitBtn" style="background:#fff;color:#3a2a5c">Exit view-as</button>
+</div>
 
 <main>
   <div id="saveWarn">
@@ -5870,10 +5891,17 @@ function setupRoster() {
     "vendor/firebase/firebase-firestore-compat.js",
     "vendor/firebase/firebase-functions-compat.js"
   ];
-  var signinSdkLoadPromise = null;
-  function loadFirebaseSdk(){
-    if (signinSdkLoadPromise) return signinSdkLoadPromise;
-    signinSdkLoadPromise = SIGNIN_SDK_SCRIPTS.reduce(function(p, src){
+  // Split from loadFirebaseSdk() below (step 5,
+  // docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md, "In the new
+  // tab") so a view-as landing can load the same vendored scripts without
+  // also initializing the DEFAULT app instance — view-as needs its own
+  // separate, second `initializeApp(config, "viewAs")` instance instead,
+  // so its token can never collide with whatever default-instance auth
+  // this tab's own normal sign-in sets up.
+  var signinSdkScriptsLoadPromise = null;
+  function loadFirebaseSdkScripts(){
+    if (signinSdkScriptsLoadPromise) return signinSdkScriptsLoadPromise;
+    signinSdkScriptsLoadPromise = SIGNIN_SDK_SCRIPTS.reduce(function(p, src){
       return p.then(function(){
         return new Promise(function(resolve, reject){
           var s = document.createElement("script");
@@ -5883,12 +5911,15 @@ function setupRoster() {
           document.head.appendChild(s);
         });
       });
-    }, Promise.resolve()).then(function(){
+    }, Promise.resolve());
+    return signinSdkScriptsLoadPromise;
+  }
+  function loadFirebaseSdk(){
+    return loadFirebaseSdkScripts().then(function(){
       if (!window.firebase.apps || !window.firebase.apps.length) {
         window.firebase.initializeApp(window.MENCHMARK_FIREBASE_CONFIG);
       }
     });
-    return signinSdkLoadPromise;
   }
 
   // Adopts the already-obtained Google credential into the SDK's own Auth
@@ -5899,6 +5930,74 @@ function setupRoster() {
       var cred = window.firebase.auth.GoogleAuthProvider.credential(googleIdToken);
       return window.firebase.auth().signInWithCredential(cred);
     });
+  }
+
+  // ---------- step 5: view-as landing (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md,
+  // "The view-as UI transition" + "Handoff mechanism") ----------
+  // admin.html writes this sessionStorage key immediately before
+  // window.open()'ing this tab. sessionStorage is copied into a same-origin
+  // tab opened via window.open — that's the whole mechanism, no query
+  // string, no change to step 4's hash-only router.
+  var VIEWAS_HANDOFF_KEY = "menchmark_viewAsHandoff";
+  // Non-null only while this tab is a live view-as session — read by
+  // renderViewAsBanner() below and by the "Exit view-as" handler.
+  var viewAsSession = null;
+
+  function viewAsBootFromHandoff(){
+    var raw;
+    try { raw = sessionStorage.getItem(VIEWAS_HANDOFF_KEY); } catch(e){ raw = null; }
+    if (!raw) return Promise.resolve();
+    // Captured-then-cleared immediately, same discipline as
+    // pendingOAuthResult above — a reload of this same tab must never
+    // re-consume a stale handoff.
+    try { sessionStorage.removeItem(VIEWAS_HANDOFF_KEY); } catch(e){}
+    var handoff;
+    try { handoff = JSON.parse(raw); } catch(e){ return Promise.resolve(); }
+    if (!handoff || !handoff.token) return Promise.resolve();
+
+    return loadFirebaseSdkScripts().then(function(){
+      // A second, separate `initializeApp(config, "viewAs")` instance —
+      // never the default app this tab's own sign-in uses (design doc,
+      // "this new tab has no superadmin session of its own to protect —
+      // it's a fresh tab, so 'second instance' here just means: don't let
+      // this token collide with whatever default-instance auth app.html
+      // normally sets up on load").
+      var existing = (window.firebase.apps || []).filter(function(a){ return a.name === "viewAs"; })[0];
+      var viewAsApp = existing || window.firebase.initializeApp(window.MENCHMARK_FIREBASE_CONFIG, "viewAs");
+      return window.firebase.auth(viewAsApp).signInWithCustomToken(handoff.token);
+    }).then(function(){
+      viewAsSession = { name: handoff.name, school: handoff.school, viewAsExp: handoff.viewAsExp };
+      if (typeof renderViewAsBanner === "function") renderViewAsBanner();
+    }).catch(function(){
+      // Fail closed and quiet — a broken/expired handoff shouldn't block
+      // normal boot; the banner simply never appears, same as any other
+      // "nothing to do here" boot path in this file.
+      viewAsSession = null;
+    });
+  }
+
+  function exitViewAs(){
+    if (!viewAsSession) return;
+    var existing = (window.firebase.apps || []).filter(function(a){ return a.name === "viewAs"; })[0];
+    var done = existing ? window.firebase.auth(existing).signOut() : Promise.resolve();
+    done.then(function(){
+      viewAsSession = null;
+      // "Exit returns to the admin overview (not Berel's own class)" —
+      // this tab was only ever opened to show the view-as session, so
+      // closing it is exactly that; admin.html's own tab was never
+      // navigated away from.
+      window.close();
+    });
+  }
+
+  function renderViewAsBanner(){
+    var el = $("viewAsBanner");
+    if (!el) return;
+    if (!viewAsSession) { el.classList.remove("show"); document.body.classList.remove("viewing-as"); return; }
+    $("viewAsBannerText").textContent =
+      "Viewing as " + viewAsSession.name + (viewAsSession.school ? " — " + viewAsSession.school : "") + " (read-only)";
+    el.classList.add("show");
+    document.body.classList.add("viewing-as");
   }
 
   // In-memory only — holds state across the code-entry screen's Continue
@@ -23067,6 +23166,7 @@ nameLine
     data.signinNudgeSeen = true; save();
     $("signinNudge").classList.remove("show");
   });
+  $("viewAsExitBtn").addEventListener("click", function(){ exitViewAs(); });
   // Builds a fully self-contained offline copy of the app:
   //  1. Gets this page's own current HTML — preferably by re-fetching it
   //     fresh over the network (avoids baking in transient runtime-only DOM
@@ -24800,6 +24900,12 @@ nameLine
   // redirect lands. Does nothing at all if pendingOAuthResult is null —
   // the overwhelming majority of boots, tier-2 or never-signed-in included.
   signinCompleteFromRedirect();
+  // Step 5's view-as landing (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md):
+  // does nothing at all unless admin.html just window.open()'d this exact
+  // tab with a handoff waiting in sessionStorage — the overwhelming
+  // majority of boots. Independent of signinCompleteFromRedirect() above;
+  // both check their own, mutually exclusive trigger.
+  viewAsBootFromHandoff();
   // Tier-1 devices: the SDK loads eagerly on every boot (not just right
   // after signing in), so Firebase Auth's own persisted session can resume
   // silently — no redirect, no click, the SDK's own IndexedDB-backed

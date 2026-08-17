@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Menchmark — Superadmin Tools</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 20px; background: #f5f6fa; color: #1b2440; }
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.1rem; margin-top: 30px; }
+  p.hint { font-size: .9rem; color: #6a7187; }
+  .card { background: #fff; border: 1px solid #d8dbe4; border-radius: 10px; padding: 16px 20px; margin: 14px 0; }
+  input[type=text], input[type=search] {
+    font-size: .9rem; border: 1px solid #d8dbe4; border-radius: 8px; padding: 8px 10px; box-sizing: border-box;
+  }
+  button { font-size: .9rem; padding: 9px 18px; cursor: pointer; border-radius: 8px; border: 1px solid #d8dbe4; background: #1b2440; color: #fff; margin-top: 10px; }
+  button:hover { background: #2c3860; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.secondary { background: #fff; color: #1b2440; }
+  button.small { padding: 5px 10px; font-size: .8rem; margin-top: 0; }
+  .status { font-size: .85rem; margin-top: 8px; white-space: pre-wrap; }
+  .status.err { color: #b04432; font-weight: 600; }
+  .status.ok { color: #1f8a5b; font-weight: 600; }
+  #gateError { color: #b04432; font-size: .9rem; margin-top: 10px; }
+  #whoami { font-size: .85rem; color: #6a7187; }
+  #notAuthorized { display: none; text-align: center; padding: 60px 20px; }
+  table.activity { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: .85rem; }
+  table.activity th, table.activity td { border: 1px solid #d8dbe4; padding: 6px 10px; text-align: left; }
+  table.activity th { cursor: pointer; user-select: none; background: #f0f1f6; }
+  table.activity th.sorted::after { content: " " attr(data-arrow); }
+  .flag { color: #9a6b1f; font-weight: 600; }
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .toolbar input[type=search] { flex: 1; min-width: 200px; }
+  #viewAsConfirm { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 100; align-items: center; justify-content: center; }
+  #viewAsConfirm .box { background: #fff; border-radius: 10px; padding: 24px; max-width: 380px; }
+</style>
+</head>
+<body>
+
+<h1>Menchmark — Superadmin Tools</h1>
+<p class="hint">docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md — activity overview, view-as, email export. Superadmin only; enforced by firestore.rules and every Cloud Function call, not by this page.</p>
+
+<div id="gate" class="card">
+  <p id="whoami">Not signed in.</p>
+  <button id="signInBtn">Sign in with Google</button>
+  <p id="gateError"></p>
+</div>
+
+<div id="notAuthorized" class="card">
+  <h2>Not authorized</h2>
+  <p class="hint">This account does not have superadmin access.</p>
+</div>
+
+<div id="toolUi" style="display:none">
+  <div class="card">
+    <span id="whoamiSignedIn"></span>
+    <button id="signOutBtn" class="secondary" style="float:right;margin-top:0">Sign out</button>
+  </div>
+
+  <div class="card">
+    <h2>Activity overview</h2>
+    <p class="hint">A snapshot, not a live view — click Load to fetch the current state. Default sort is last-active ascending, so whoever's been quiet longest sorts to the top.</p>
+    <button id="loadActivityBtn">Load activity</button>
+    <span id="loadStatus" class="status"></span>
+    <div class="toolbar" id="activityToolbar" style="display:none">
+      <input type="search" id="activitySearch" placeholder="Filter by name, email, or school…">
+    </div>
+    <div id="activityTableWrap"></div>
+  </div>
+
+  <div class="card">
+    <h2>Export emails</h2>
+    <p class="hint">One flat CSV — name, email, school, role, last-active. No filters, no mailer; open it in whatever mail client you already use.</p>
+    <button id="exportBtn">Export emails (CSV)</button>
+    <span id="exportStatus" class="status"></span>
+  </div>
+</div>
+
+<div id="viewAsConfirm">
+  <div class="box">
+    <h2 style="margin-top:0">View as this rebbi?</h2>
+    <p id="viewAsConfirmText"></p>
+    <p class="hint">Opens in a new tab, read-only, for 30 minutes. Logged.</p>
+    <button id="viewAsConfirmGo">View as</button>
+    <button id="viewAsConfirmCancel" class="secondary">Cancel</button>
+  </div>
+</div>
+
+<script src="/firebase-config.js"></script>
+<script src="/vendor/firebase/firebase-app-compat.js"></script>
+<script src="/vendor/firebase/firebase-auth-compat.js"></script>
+<script src="/vendor/firebase/firebase-firestore-compat.js"></script>
+<script src="/vendor/firebase/firebase-functions-compat.js"></script>
+<script>
+(function(){
+  "use strict";
+  firebase.initializeApp(window.MENCHMARK_FIREBASE_CONFIG);
+  var auth = firebase.auth();
+  var db = firebase.firestore();
+  var functions = firebase.functions();
+
+  var gate = document.getElementById("gate");
+  var notAuthorized = document.getElementById("notAuthorized");
+  var toolUi = document.getElementById("toolUi");
+  var gateError = document.getElementById("gateError");
+  var whoami = document.getElementById("whoami");
+  var whoamiSignedIn = document.getElementById("whoamiSignedIn");
+
+  document.getElementById("signInBtn").addEventListener("click", function () {
+    gateError.textContent = "";
+    var provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider).catch(function (err) {
+      gateError.textContent = err.message;
+    });
+  });
+  document.getElementById("signOutBtn").addEventListener("click", function () {
+    auth.signOut();
+  });
+
+  // The real gate is server-side, per call — see checkAccess() and every
+  // other function in functions/index.js, each independently re-checking
+  // role === 'superadmin'. This client-side check exists purely to avoid
+  // flashing a broken/error-riddled UI at the wrong person; it is NOT
+  // load-bearing for security (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md,
+  // "Access boundary").
+  auth.onAuthStateChanged(function (user) {
+    toolUi.style.display = "none";
+    notAuthorized.style.display = "none";
+    if (!user) {
+      gate.style.display = "block";
+      whoami.textContent = "Not signed in.";
+      return;
+    }
+    whoami.textContent = "Checking authorization for " + user.email + "…";
+
+    // Called unconditionally, before the client-side role check below
+    // decides whether to render anything — this is what makes a curious
+    // non-superadmin's page load visible to Berel even if the UI never
+    // mounts for them (design doc, "failed authorization attempt").
+    var checkAccessFn = functions.httpsCallable("checkAccess");
+    checkAccessFn().catch(function () { /* logged server-side; UI path below handles the user-facing message */ });
+
+    db.collection("accounts").doc(user.uid).get().then(function (snap) {
+      if (!snap.exists || snap.data().role !== "superadmin") {
+        gate.style.display = "none";
+        notAuthorized.style.display = "block";
+        return;
+      }
+      whoamiSignedIn.textContent = "Signed in as " + user.email + " (superadmin)";
+      gate.style.display = "none";
+      toolUi.style.display = "block";
+    }).catch(function (err) {
+      gateError.textContent = err.message;
+      gate.style.display = "block";
+    });
+  });
+
+  function setStatus(el, msg, cls) {
+    el.textContent = msg;
+    el.className = "status" + (cls ? " " + cls : "");
+  }
+
+  // ---- activity overview ----
+  var loadActivityBtn = document.getElementById("loadActivityBtn");
+  var loadStatus = document.getElementById("loadStatus");
+  var activityToolbar = document.getElementById("activityToolbar");
+  var activitySearch = document.getElementById("activitySearch");
+  var tableWrap = document.getElementById("activityTableWrap");
+
+  var activityRows = []; // [{uid, name, email, schoolId, lastActive, lastWrite, classCount, invitedAt}]
+  var sortKey = "lastActive";
+  var sortAsc = true; // "last-active ascending" default — who's stuck sorts first
+
+  function tsMillis(ts) {
+    if (!ts) return 0;
+    if (typeof ts.toMillis === "function") return ts.toMillis();
+    return 0;
+  }
+
+  function fmtTs(ts) {
+    var ms = tsMillis(ts);
+    return ms ? new Date(ms).toLocaleString() : "—";
+  }
+
+  function daysSince(ts) {
+    var ms = tsMillis(ts);
+    if (!ms) return null;
+    return Math.floor((Date.now() - ms) / 86400000);
+  }
+
+  function renderTable() {
+    var q = activitySearch.value.trim().toLowerCase();
+    var filtered = !q ? activityRows.slice() : activityRows.filter(function (r) {
+      return (r.name || "").toLowerCase().indexOf(q) >= 0 ||
+        (r.email || "").toLowerCase().indexOf(q) >= 0 ||
+        (r.schoolId || "").toLowerCase().indexOf(q) >= 0;
+    });
+    filtered.sort(function (a, b) {
+      var av = sortKey === "classCount" ? (a.classCount || 0) : tsMillis(a[sortKey]);
+      var bv = sortKey === "classCount" ? (b.classCount || 0) : tsMillis(b[sortKey]);
+      return sortAsc ? av - bv : bv - av;
+    });
+
+    var cols = [
+      { key: "name", label: "Rebbi" },
+      { key: "schoolId", label: "School" },
+      { key: "lastActive", label: "Last active" },
+      { key: "lastWrite", label: "Last write" },
+      { key: "classCount", label: "Classes" },
+    ];
+
+    var table = document.createElement("table");
+    table.className = "activity";
+    var thead = document.createElement("thead");
+    var trh = document.createElement("tr");
+    cols.forEach(function (c) {
+      var th = document.createElement("th");
+      th.textContent = c.label;
+      if (c.key === sortKey) {
+        th.className = "sorted";
+        th.setAttribute("data-arrow", sortAsc ? "▲" : "▼");
+      }
+      th.addEventListener("click", function () {
+        if (sortKey === c.key) sortAsc = !sortAsc; else { sortKey = c.key; sortAsc = true; }
+        renderTable();
+      });
+      trh.appendChild(th);
+    });
+    trh.appendChild(document.createElement("th")); // actions column, no sort
+    thead.appendChild(trh);
+    table.appendChild(thead);
+
+    var tbody = document.createElement("tbody");
+    filtered.forEach(function (r) {
+      var tr = document.createElement("tr");
+      var stuckFlag = (r.classCount || 0) === 0 && daysSince(r.invitedAt) !== null && daysSince(r.invitedAt) >= 3;
+
+      var nameCell = document.createElement("td");
+      nameCell.textContent = (r.name || r.email || r.uid) + (stuckFlag ? " " : "");
+      if (stuckFlag) {
+        var flag = document.createElement("span");
+        flag.className = "flag";
+        flag.textContent = "⚑ " + daysSince(r.invitedAt) + "d, no class yet";
+        nameCell.appendChild(document.createElement("br"));
+        nameCell.appendChild(flag);
+      }
+      tr.appendChild(nameCell);
+
+      var schoolCell = document.createElement("td");
+      schoolCell.textContent = r.schoolId || "—";
+      tr.appendChild(schoolCell);
+
+      var lastActiveCell = document.createElement("td");
+      lastActiveCell.textContent = fmtTs(r.lastActive);
+      tr.appendChild(lastActiveCell);
+
+      var lastWriteCell = document.createElement("td");
+      lastWriteCell.textContent = fmtTs(r.lastWrite);
+      tr.appendChild(lastWriteCell);
+
+      var classCountCell = document.createElement("td");
+      classCountCell.textContent = String(r.classCount || 0);
+      tr.appendChild(classCountCell);
+
+      var actionCell = document.createElement("td");
+      var viewAsBtn = document.createElement("button");
+      viewAsBtn.className = "small secondary";
+      viewAsBtn.textContent = "View as";
+      viewAsBtn.addEventListener("click", function () { openViewAsConfirm(r); });
+      actionCell.appendChild(viewAsBtn);
+      tr.appendChild(actionCell);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    tableWrap.innerHTML = "";
+    tableWrap.appendChild(table);
+  }
+
+  activitySearch.addEventListener("input", renderTable);
+
+  loadActivityBtn.addEventListener("click", function () {
+    setStatus(loadStatus, "Loading…");
+    db.collection("activitySummary").get().then(function (snap) {
+      activityRows = snap.docs.map(function (d) { return Object.assign({ uid: d.id }, d.data()); });
+      setStatus(loadStatus, activityRows.length + " rebbi(s) loaded.", "ok");
+      activityToolbar.style.display = "flex";
+      renderTable();
+      // The load itself is a privileged read and belongs in the same audit
+      // trail as viewAs mints and the export (design doc, "Activity
+      // overview UI" — "even reading everyone's activity is privileged").
+      var logFn = functions.httpsCallable("logAdminEvent");
+      logFn({ event: "activityLoad", meta: { rowCount: activityRows.length } }).catch(function () { /* best-effort */ });
+    }).catch(function (err) {
+      setStatus(loadStatus, "Failed: " + err.message, "err");
+    });
+  });
+
+  // ---- view-as ----
+  var viewAsConfirm = document.getElementById("viewAsConfirm");
+  var viewAsConfirmText = document.getElementById("viewAsConfirmText");
+  var pendingViewAsTarget = null;
+
+  function openViewAsConfirm(row) {
+    pendingViewAsTarget = row;
+    viewAsConfirmText.textContent =
+      "View as " + (row.name || row.email || row.uid) + " (" + (row.schoolId || "no school") + ")?";
+    viewAsConfirm.style.display = "flex";
+  }
+  document.getElementById("viewAsConfirmCancel").addEventListener("click", function () {
+    viewAsConfirm.style.display = "none";
+    pendingViewAsTarget = null;
+  });
+  document.getElementById("viewAsConfirmGo").addEventListener("click", function () {
+    var row = pendingViewAsTarget;
+    viewAsConfirm.style.display = "none";
+    pendingViewAsTarget = null;
+    if (!row) return;
+
+    var viewAsFn = functions.httpsCallable("viewAs");
+    viewAsFn({ targetUid: row.uid }).then(function (res) {
+      // Handoff mechanism (docs/Firebase_SignIn_UI... / step 5 design,
+      // "Handoff mechanism"): step 4's router only parses the hash on
+      // boot, so a query-string bootstrap param has nowhere to land.
+      // sessionStorage is copied into a same-origin tab opened via
+      // window.open(), which is exactly the property this needs — the new
+      // tab's app.html reads and clears this key on first load, then
+      // proceeds through the normal hash-only router.
+      var handoff = {
+        token: res.data.token,
+        viewAsExp: res.data.viewAsExp,
+        name: row.name || row.email || row.uid,
+        school: row.schoolId || null,
+      };
+      try { sessionStorage.setItem("menchmark_viewAsHandoff", JSON.stringify(handoff)); } catch (e) { /* ignore */ }
+      // "Their default class" — every provisioning path in
+      // functions/index.js writes a rebbi's first class as {uid}_1; no
+      // extra read needed to find it.
+      window.open("/app.html#/c/" + encodeURIComponent(row.uid) + "_1/scan/scan", "_blank");
+    }).catch(function (err) {
+      alert("View-as failed: " + err.message);
+    });
+  });
+
+  // ---- export emails ----
+  var exportBtn = document.getElementById("exportBtn");
+  var exportStatus = document.getElementById("exportStatus");
+  exportBtn.addEventListener("click", function () {
+    setStatus(exportStatus, "Exporting…");
+    var exportFn = functions.httpsCallable("exportEmails");
+    exportFn().then(function (res) {
+      var blob = new Blob([res.data.csv], { type: "text/csv" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "menchmark-emails-" + new Date().toISOString().slice(0, 10) + ".csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setStatus(exportStatus, "Exported " + res.data.rowCount + " row(s).", "ok");
+    }).catch(function (err) {
+      setStatus(exportStatus, "Failed: " + err.message, "err");
+    });
+  });
+})();
+</script>
+</body>
+</html>
