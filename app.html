@@ -36,6 +36,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     --bad-soft:#f6e6e2;
     --ice:#2b6ca3;        /* freeze — neither good nor bad, its own tone */
     --ice-soft:#e2eef7;
+    --amber:#8a6410;      /* tile modes — "late"/stale, between good and bad */
+    --amber-soft:#fdf4e0;
     --shadow:0 1px 2px rgba(27,36,64,.06),0 8px 24px rgba(27,36,64,.07);
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -539,6 +541,21 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .tap-btn .tile-track-badge,.seat .tile-track-badge{display:block;font-size:.7rem;font-weight:700;margin-top:2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
   .tap-btn .tile-track-badge.ok,.seat .tile-track-badge.ok{color:var(--good)}
   .tap-btn .tile-track-badge.warn,.seat .tile-track-badge.warn{color:var(--bad)}
+  .tap-btn .tile-track-badge.late,.seat .tile-track-badge.late{color:var(--amber)}
+  /* TILE MODES — status chip look, attendance only (trackedTileBadgeEl() adds
+     .chip when the armed item is ti-attendance). Everything else stays the
+     plain muted line above: a badge with only two or three enumerated states
+     reads well as a pill, a "last: 4d"/"never" recency line does not. */
+  .tap-btn .tile-track-badge.chip,.seat .tile-track-badge.chip{
+    display:inline-block;border-radius:999px;padding:2px 9px;margin-top:3px;
+    background:#fff;border:1px dashed #c8cedb;color:#9aa1b4;
+  }
+  .tap-btn .tile-track-badge.chip.ok,.seat .tile-track-badge.chip.ok{background:var(--good-soft);border:1px solid var(--good);color:var(--good)}
+  .tap-btn .tile-track-badge.chip.warn,.seat .tile-track-badge.chip.warn{background:var(--bad-soft);border:1px solid var(--bad);color:var(--bad)}
+  .tap-btn .tile-track-badge.chip.late,.seat .tile-track-badge.chip.late{background:var(--amber-soft);border:1px solid var(--amber);color:var(--amber)}
+  /* TILE MODES — "also show points": a small secondary figure once a tracked
+     item's badge has taken over as the tile's primary content (fillSeatLiveCard). */
+  .tap-btn .ts.also-pts,.seat .ts.also-pts{color:var(--brass)}
   /* .todo keeps the inherited muted grey: "nobody has looked at him yet" is not
      a problem, it is just work still to do, and 25 red tiles at the start of a
      period would read as 25 things wrong. */
@@ -10917,7 +10934,7 @@ function setupRoster() {
       // looked at him yet, which is exactly what this badge exists to surface.
       var st=attStatusOn(todayKey(), sid);
       if(!st) return {text:"unmarked", tone:"todo"};
-      return {text:st, tone:(st==="present" ? "ok" : "warn")};
+      return {text:st, tone:(st==="present" ? "ok" : (st==="late" ? "late" : "warn"))};
     },
     "ti-homework": function(sid){
       // data.hw[...] read directly, never hwDayRecord(), which CREATES the day
@@ -11001,12 +11018,18 @@ function setupRoster() {
      */
     if(!item) item={id:null, method:"count", config:{step:1}};
     var reader=TRACKED_BADGE[item.id];
-    return reader ? reader(s.id) : trackedBadgeFromItem(item, a, s.id);
+    var b = reader ? reader(s.id) : trackedBadgeFromItem(item, a, s.id);
+    if(b) b.itemId=item.id;
+    return b;
   }
   function trackedTileBadgeEl(s){
     var b=trackedTileBadge(s);
     if(!b || !b.text) return null;
-    return el("span","tile-track-badge "+(b.tone||"todo"), b.text);
+    // Chip look for attendance only — a two/three-state status reads as a
+    // pill; everything else (recency text, "N of cap used", …) stays the
+    // plain muted line it always was. See the .chip CSS rule for why.
+    var cls="tile-track-badge "+(b.tone||"todo")+(b.itemId==="ti-attendance" ? " chip" : "");
+    return el("span", cls, b.text);
   }
   /* Repaint just the badges — the refreshFreezeTile() approach, and for the same
    * reason. Arming an item changes one line on each card; a full
@@ -11024,6 +11047,13 @@ function setupRoster() {
       var s=studentById(tb.dataset.sid);
       if(!s) return;
       var b=trackedTileBadgeEl(s);
+      // TILE MODES: the points line, if this card has one at all, steps to
+      // its small "also show" style whenever a tracked badge is present and
+      // back to full size when it isn't — the same rule fillSeatLiveCard
+      // applies on a full render. Kept in sync here too since arming only
+      // repaints the badge, never rebuilds the card.
+      var ptsEl=tb.querySelector(".ts");
+      if(ptsEl) ptsEl.classList.toggle("also-pts", !!b);
       if(b) tb.appendChild(b);
     });
   }
@@ -13737,7 +13767,16 @@ function setupRoster() {
     }
     if(both) card.appendChild(host);
     card.appendChild(el("span","seat-name",s.name));
-    if(showPts){
+    /* TILE MODES: computed first because it decides how points render below.
+     * A tracked item being armed makes its badge the tile's primary content
+     * (2d's rule this comment used to state: independent of showPts, because
+     * "Points" is a setting about scores and the badge is not a score — a
+     * rebbi who turned points off has not asked to stop seeing who is still
+     * unmarked). What's new here is the other direction: points now step
+     * aside to a small secondary figure instead of sitting beside the badge
+     * at full size. Nothing tracked armed, points render exactly as before. */
+    var trkBadge=trackedTileBadgeEl(s);
+    if(showPts && !trkBadge){
       card.appendChild(coinScoreEl(s.id,"ts"));
       /* HELD CONTEST POINTS, on the surface a rebbi is actually looking at.
        *
@@ -13753,18 +13792,11 @@ function setupRoster() {
        */
       var mcHeld=mcHeldFor(s.id);
       if(mcHeld) card.appendChild(el("span","ts-mc", mcHeld));
+    } else if(showPts && trkBadge){
+      // Also-show: a small secondary figure (see .also-pts) — held aside
+      // rather than shown as the primary number the badge now is.
+      card.appendChild(coinScoreEl(s.id,"ts also-pts"));
     }
-    /* THE TRACKED-ITEM BADGE (2d). Appended here, in the one shared builder,
-     * for the same reason the score is: the Dashboard's class list and the
-     * seating chart must not be able to tell a rebbi two different things about
-     * the same boy.
-     *
-     * Independent of showPts, unlike the contest line above it. "Points" is a
-     * setting about scores, and this is not a score — a rebbi who turned points
-     * off to get a cleaner chart has not asked to stop seeing who is still
-     * unmarked. It only ever appears while a tracked item is ARMED, so it is
-     * self-limiting: nothing tracked armed, nothing on the card. */
-    var trkBadge=trackedTileBadgeEl(s);
     if(trkBadge) card.appendChild(trkBadge);
   }
   // The held total for one boy, already formatted, or "" when there is nothing
