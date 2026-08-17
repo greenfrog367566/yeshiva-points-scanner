@@ -22,6 +22,14 @@ var PRECACHE = [
   "./branding/menchmark-mark.svg",
   "./icons/icon-maskable.svg"
 ];
+// Deliberately NOT listing vendor/firebase/*.js here: this array is fetched
+// unconditionally for every install, tier-1 and tier-2 alike, and CLAUDE.md
+// rule 3's amendment requires the tier-2 majority to re-download nothing
+// extra. Instead, the SDK gets cached the same way any other same-origin
+// asset does — the cache-first branch in the fetch handler below — the
+// first time a tier-1 browser actually requests it via <script src>. That's
+// still "precached" in the sense that matters (available offline after
+// first load); it's just never eagerly fetched for someone who never asks.
 
 self.addEventListener("install", function(event){
   event.waitUntil(

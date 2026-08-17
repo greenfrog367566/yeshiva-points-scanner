@@ -402,6 +402,19 @@ deliberately shaped so that it costs nothing:
   general licence to split `app.html`, add a second app script, or move CSS
   out. Anything beyond the SDK is a fresh PROPOSE FIRST.
 
+**EXTENDED 2026-08-16 by Ben — the same vendored SDK may also load in
+`tools/admin-convert.html` (step 3's superadmin converter tool) and
+`admin.html` (step 5's superadmin tools), never in a third file without
+asking again.** `docs/Firebase_Step3_Converter_Tool_Design_Proposal.md`
+flagged this explicitly rather than assuming it: both are new, standalone,
+superadmin-only files outside `app.html`, so the original amendment's text
+("nothing else... anything beyond the SDK is a fresh PROPOSE FIRST") did not
+already cover them, and this is that ask, answered. What doesn't change: the
+SDK is still same-origin/vendored (never a CDN `<script>`), still never loads
+for tier 2 or for a rebbi-facing surface, and `app.html` itself is still one
+file for everyone. This is not a general license — a fourth SDK-loading
+surface is a fresh PROPOSE FIRST, same as before.
+
 Rule 3's original justification — download one file, double-click it — survives
 untouched for tier 2, which never touches Firebase Auth. It was only ever going
 to die for tier 1, where Firebase Auth cannot work from a `file://` origin at
