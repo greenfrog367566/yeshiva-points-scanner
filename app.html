@@ -196,6 +196,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #backupNudge.show{display:flex}
   #backupNudge b{color:#4d3706}
   #backupNudge .bn-spacer{flex:1 1 auto}
+  /* Step 7 (docs/Firebase_Step7_Fragile_Storage_Warning_Design_Proposal.md,
+     "a second, red/urgent CSS variant... used only for unpersisted storage
+     with no durable copy elsewhere — that's the one state where data can
+     vanish outright, and it must not look like routine 8-day staleness"). */
+  #backupNudge.urgent{background:#fdeceb;color:#7a2419;border-color:#f2b8b0}
+  #backupNudge.urgent b{color:#5c1710}
   /* Entry point C (docs/Firebase_SignIn_UI_Design_Proposal.md §1) — same
      shape as #backupNudge, deliberately a calmer blue rather than amber:
      this is an invitation, not a warning — nothing is stale or at risk. */
@@ -2019,7 +2025,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div id="backupNudge">
     <span id="backupNudgeText"></span>
     <span class="bn-spacer"></span>
-    <button class="btn btn-sm btn-primary" id="backupNudgeGo">Back up now</button>
+    <!-- Step 7: shown only for the unpersisted-storage-with-no-durable-copy
+         case, and only when Drive is actually connected and online — see
+         maybeShowBackupNudge()'s own gating. Primary when present. -->
+    <button class="btn btn-sm btn-primary" id="backupNudgeDrive" style="display:none">Save to Drive</button>
+    <button class="btn btn-sm" id="backupNudgeGo">Back up now</button>
     <button class="btn btn-sm" id="backupNudgeLater">Not now</button>
   </div>
 
@@ -3125,6 +3135,23 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <button class="btn" id="folderBackupStop" style="display:none">Stop using this folder</button>
         </div>
         <p style="margin:10px 0 0;font-size:.82rem;color:var(--muted)">If the folder is on a USB stick that is unplugged, or your school's Chromebook blocks it, Menchmark tells you here and goes back to reminding you to save a backup by hand. It never fails silently.</p>
+      </div>
+      <!-- Step 7 (docs/Firebase_Step7_Fragile_Storage_Warning_Design_Proposal.md)
+           + the Drive integration it needed built. Hidden by default —
+           renderDriveBackupCard() only shows it once a signed-in account
+           exists (data.account.email), same "nothing to configure until
+           there's someone to configure it for" pattern as the sign-in
+           nudge elsewhere in this file. -->
+      <div class="card pad bk-card" id="driveBackupCard" style="display:none;border-left:4px solid var(--good)">
+        <h3>Back up to Google Drive automatically</h3>
+        <p>Connect your Google account once, and Menchmark saves a backup to a "Menchmark Backup" folder in your Drive by itself — once each time you open the app. Works on any device, not just this one, as long as you're signed in.</p>
+        <div id="driveBackupStatus" style="margin:10px 0 0;font-size:.88rem;font-weight:600"></div>
+        <div style="margin-top:10px">
+          <button class="btn btn-primary" id="driveBackupConnect">Connect Google Drive</button>
+          <button class="btn" id="driveBackupNow" style="display:none">Back up now</button>
+          <button class="btn" id="driveBackupStop" style="display:none">Disconnect</button>
+        </div>
+        <p style="margin:10px 0 0;font-size:.82rem;color:var(--muted)">Needs an internet connection to run. If you're offline when it's due, Menchmark tells you here and falls back to reminding you to back up by hand.</p>
       </div>
       <div class="card pad bk-card">
         <h3>Install Menchmark as an app <span style="font-size:.72rem;font-weight:700;color:var(--good);background:var(--good-soft);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px">Best way to work offline</span></h3>
@@ -4476,6 +4503,57 @@ function setupRoster() {
    * only said "token comes back in the URL fragment" without working through
    * what else already lives there.
    */
+  /* Step 7 (docs/Firebase_Step7_Fragile_Storage_Warning_Design_Proposal.md,
+   * "Tier-2 event"): the real Google Drive integration this design assumed
+   * already existed and didn't — the spike (spikes/drive-oauth-spike.html)
+   * had never been ported into app.html. Its OAuth redirect ALSO returns a
+   * response in the URL fragment (response_type=token, not id_token), which
+   * is a THIRD thing now contending for location.hash alongside step 4's
+   * router and the sign-in flow's own OAuth capture directly below. Runs
+   * FIRST — before parseOAuthFragment() — and, on a match, clears the hash
+   * immediately the same way, so by the time parseOAuthFragment() runs
+   * location.hash is already empty and it correctly sees nothing. Told
+   * apart by state's "drive." prefix (buildDriveAuthUrl() below sets it),
+   * not by which params are present — an error-only Drive redirect
+   * (#error=...&state=drive.xyz, no access_token at all) is otherwise
+   * indistinguishable from a sign-in error redirect by param names alone. */
+  /* DRIVE_OAUTH_FRAGMENT_PARSE_START — dependency-free like OAUTH_FRAGMENT_PARSE
+   * below: .github/scripts/check-drive-oauth-fragment.js extracts and runs
+   * this exact function under Node, no second copy to drift out of sync. */
+  function parseDriveOAuthFragment(hash){
+    if (!hash || hash.length < 2) return null;
+    var raw = hash.charAt(0) === "#" ? hash.slice(1) : hash;
+    if (raw.indexOf("state=drive.") < 0) return null;
+    var p;
+    try { p = new URLSearchParams(raw); } catch (e) { return null; }
+    var state = p.get("state") || "";
+    if (state.indexOf("drive.") !== 0) return null;
+    return {
+      accessToken: p.get("access_token"),
+      expiresIn: parseInt(p.get("expires_in") || "0", 10),
+      scope: p.get("scope") || "",
+      state: state,
+      error: p.get("error"),
+      errorDescription: p.get("error_description")
+    };
+  }
+  /* DRIVE_OAUTH_FRAGMENT_PARSE_END */
+  var pendingDriveOAuthResult = parseDriveOAuthFragment(location.hash);
+  if (pendingDriveOAuthResult) {
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  }
+  // Running inside driveSilentReauth()'s own hidden iframe (below): report
+  // the result up to the parent window and stop here — the exact
+  // short-circuit spikes/drive-oauth-spike.html itself used. Nothing past
+  // this line — load(), the router, every render — has any business running
+  // a second, invisible copy of the whole app inside a 0x0 iframe.
+  if (window.parent !== window && pendingDriveOAuthResult) {
+    try {
+      window.parent.postMessage(Object.assign({ type: "menchmark-drive-token" }, pendingDriveOAuthResult), location.origin);
+    } catch (e) {}
+    return;
+  }
+
   /* OAUTH_FRAGMENT_PARSE_START — deliberately dependency-free (no `location`,
    * no `history`, no DOM), same reasoning as routeParse()/routeBuild() above:
    * .github/scripts/check-oauth-fragment.js extracts and runs this exact
@@ -23468,6 +23546,25 @@ nameLine
   // those are reports, not restorable backups. Rebuilding from a Log CSV is a
   // salvage path, and treating it as a backup would silence the nudge for
   // someone who has no way back.
+  //
+  // Step 7 (docs/Firebase_Step7_Fragile_Storage_Warning_Design_Proposal.md,
+  // "Check timing"): read as window._storagePersisted, deliberately never a
+  // bare closure variable. reportStorage() (far below) lives in a genuinely
+  // SEPARATE <script> tag/IIFE — not nested inside this one, a real
+  // pre-existing split ("PWA: register the service worker...", fully
+  // self-contained by design) — so the two share no closure at all. Two
+  // real bugs found chasing this in browser testing before landing here:
+  // (1) a bare `_storagePersisted` read here first threw a silent
+  // ReferenceError inside reportStorage(), swallowed by a try/catch, so the
+  // whole unpersisted-storage branch below never ran; (2) moving the `var`
+  // to this scope didn't fix it either — the PWA script isn't in strict
+  // mode, so its own bare `_storagePersisted = persisted` assignment
+  // silently created an IMPLICIT GLOBAL instead of erroring, which is a
+  // THIRD variable, not this one. window._storagePersisted, written and
+  // read explicitly on both sides, is the only version with no ambiguity
+  // left in it. Stays undefined (not false) until reportStorage() resolves
+  // — maybeShowBackupNudge() treats "not resolved yet" the same as "API
+  // missing": fall through to the existing staleness-only path, never block.
   function markBackedUp(){
     data.lastBackupAt = Date.now();
     save();
@@ -23487,6 +23584,18 @@ nameLine
     if(bar) bar.classList.remove("show");
   }
 
+  // Step 7 (docs/Firebase_Step7_Fragile_Storage_Warning_Design_Proposal.md,
+  // "Decision logic"). One deliberate deviation from the doc's literal
+  // trigger-1 text, flagged rather than silently followed: the design's
+  // tier-1 branch suppresses this warning ("nothing is at risk") on the
+  // strength of a live Firestore write-sync path that does not exist
+  // anywhere in this codebase — building it is out of scope for this pass
+  // (see CHANGELOG). Telling a signed-in rebbi his data is safe when the
+  // mechanism that would make that true isn't built would be exactly the
+  // false reassurance this file's own risk-calibration rules exist to
+  // prevent, so a tier-1 account gets NO special treatment below — it sees
+  // the same unpersisted-storage warning everyone else does. Re-enable the
+  // tier-1 branch once real write-sync exists to back its claim.
   function maybeShowBackupNudge(){
     var bar = $("backupNudge"), txt = $("backupNudgeText");
     if(!bar || !txt) return;
@@ -23500,6 +23609,30 @@ nameLine
     // the Sheet, should not travel in a backup file, and should come back
     // tomorrow — it silences the bar for this sitting, not permanently.
     try{ if(sessionStorage.getItem(NUDGE_DISMISS_KEY)) return; }catch(e){}
+
+    var driveBtn = $("backupNudgeDrive"), goBtn = $("backupNudgeGo");
+    // window._storagePersisted undefined (not yet resolved) is treated the
+    // same as the API being missing — never block on it (design doc, step 2).
+    var unpersisted = (window._storagePersisted === false);
+    if(unpersisted){
+      bar.classList.add("urgent");
+      txt.innerHTML = "<b>This browser can wipe your data at any time, with no warning.</b> "
+        + "Get on wifi so it can back up, or save a copy right now.";
+      var driveReady = data.driveBackupEnabled && driveSupported() && navigator.onLine;
+      driveBtn.style.display = driveReady ? "" : "none";
+      // "Save to Drive" is primary when it's offered — it's the automatic
+      // safety net (step 3b), so forcing it now on demand is the correct
+      // recommended action; "Back up now" steps down to secondary rather
+      // than the two competing for the same visual weight.
+      goBtn.classList.toggle("btn-primary", !driveReady);
+      driveBtn.classList.toggle("btn-primary", driveReady);
+      bar.classList.add("show");
+      return;
+    }
+    bar.classList.remove("urgent");
+    driveBtn.style.display = "none";
+    goBtn.classList.add("btn-primary");
+
     var days = daysSinceBackup();
     if(days < BACKUP_NUDGE_DAYS) return;
     if(data.lastBackupAt){
@@ -23513,7 +23646,19 @@ nameLine
     }
     bar.classList.add("show");
   }
+  // The PWA/storage-persistence code (below, "PWA: register the service
+  // worker...") lives in its OWN separate <script> tag/IIFE, not nested
+  // inside this one — found in real browser testing, not assumed: calling
+  // maybeShowBackupNudge() bare from reportStorage() silently resolved to
+  // undefined (strict mode ReferenceError, swallowed by a try/catch further
+  // up the call chain) because the two share no closure at all. Same bridge
+  // pattern already established in this file for exactly this situation
+  // (window._refreshTimerPanel, window.__exportNormalized).
+  window.maybeShowBackupNudge = maybeShowBackupNudge;
 
+  $("backupNudgeDrive").addEventListener("click", function(){
+    driveWriteBackup(false); // stamps and hides the bar on success (markBackedUp)
+  });
   $("backupNudgeGo").addEventListener("click", function(){
     downloadBackupFile(); // stamps and hides the bar
   });
@@ -23793,6 +23938,274 @@ nameLine
     fbWrite(true);
   });
 
+  /* ---------- GOOGLE DRIVE BACKUP ----------
+   * Step 7's design (docs/Firebase_Step7_Fragile_Storage_Warning_Design_
+   * Proposal.md, "Tier-2 event") assumed this already existed — it didn't.
+   * spikes/drive-oauth-spike.html proved the mechanism (2026-08-09/10
+   * findings, reused verbatim below) but was never ported into app.html.
+   * This is that port, built because step 7 needed a real "Save to Drive"
+   * to call, not a description of one.
+   *
+   * SAME NON-NEGOTIABLES THE SPIKE ESTABLISHED:
+   *  - The access token lives in memory only (driveToken below), never in
+   *    `data`, never in localStorage. Persisting it is the one thing every
+   *    version of this feature must not do.
+   *  - login_hint is mandatory, not a nicety — a browser with more than one
+   *    Google account makes silent re-auth fail without it. Unlike the
+   *    spike (which needed a "who am I" round trip via Drive's own
+   *    about.get), app.html already knows the rebbi's Google email from
+   *    sign-in (data.account.email), so this is free here.
+   *  - No refresh token exists in a browser-only flow (Google requires a
+   *    client secret, and uniquely won't accept PKCE instead) — renewal
+   *    rides the Google account's own browser session via a silent
+   *    prompt=none request, which the spike proved works invisibly once
+   *    login_hint is sent.
+   */
+  var DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+  var DRIVE_FOLDER_NAME = "Menchmark Backup";
+  var DRIVE_FILE_NAME = "menchmark-backup.json";
+  var DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
+  var driveToken = null, driveTokenExp = 0, driveFolderId = null, driveFileId = null, driveBusy = false;
+
+  function driveSupported(){ return !!(window.MENCHMARK_GOOGLE_CLIENT_ID && data.account && data.account.email); }
+
+  function buildDriveAuthUrl(silent){
+    var nonce = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    var params = {
+      client_id: window.MENCHMARK_GOOGLE_CLIENT_ID,
+      redirect_uri: signInRedirectUri(),
+      response_type: "token",
+      scope: DRIVE_SCOPE,
+      // "drive." prefix is what lets the boot-time capture above tell this
+      // apart from the sign-in flow's own OAuth response, including on a
+      // bare error redirect with no access_token present at all.
+      state: "drive." + nonce,
+      include_granted_scopes: "true"
+    };
+    if (data.account && data.account.email) params.login_hint = data.account.email;
+    if (silent) params.prompt = "none";
+    return GOOGLE_AUTH_URL + "?" + new URLSearchParams(params).toString();
+  }
+
+  function driveAdoptToken(r){
+    driveToken = r.accessToken;
+    driveTokenExp = Date.now() + (r.expiresIn * 1000);
+  }
+
+  // Silent re-auth via a hidden iframe with prompt=none — spikes/drive-oauth-
+  // spike.html's proven pattern (finding: "silent re-auth works — invisibly,
+  // with login_hint"). The iframe loads this SAME app.html; the boot-time
+  // check above is what makes it report back and stop instead of running a
+  // second copy of the whole app.
+  function driveSilentReauth(){
+    return new Promise(function(resolve){
+      if (!driveSupported()) { resolve({ ok: false, reason: "not supported" }); return; }
+      var done = false;
+      var iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      function finish(result){
+        if (done) return;
+        done = true;
+        window.removeEventListener("message", onMsg);
+        clearTimeout(timer);
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        resolve(result);
+      }
+      function onMsg(e){
+        if (e.origin !== location.origin) return;
+        if (!e.data || e.data.type !== "menchmark-drive-token") return;
+        if (e.data.error) { finish({ ok: false, reason: e.data.error }); return; }
+        driveAdoptToken(e.data);
+        finish({ ok: true });
+      }
+      var timer = setTimeout(function(){ finish({ ok: false, reason: "timed out after 12s" }); }, 12000);
+      window.addEventListener("message", onMsg);
+      iframe.src = buildDriveAuthUrl(true);
+      document.body.appendChild(iframe);
+    });
+  }
+
+  function driveApi(url, opts){
+    opts = opts || {};
+    opts.headers = Object.assign({ Authorization: "Bearer " + driveToken }, opts.headers || {});
+    return fetch(url, opts).then(function(res){
+      if (res.status === 401) {
+        var e = new Error("401 — token rejected by Google");
+        e.unauthorized = true;
+        throw e;
+      }
+      return res.text().then(function(body){
+        if (!res.ok) throw new Error(res.status + " " + body.slice(0, 300));
+        if (!body) return null;
+        try { return JSON.parse(body); } catch (_) { return body; }
+      });
+    });
+  }
+
+  // On a genuine 401 (an expired/revoked token — driveToken is never
+  // persisted, so this fires on literally every fresh page load too, not
+  // just mid-session expiry), try one silent re-auth and retry once. This is
+  // the shape the spike's own withRecovery() proved works; the difference
+  // here is production code has to actually SHIP the recovery, not just
+  // exercise it in a log.
+  function driveWithRecovery(fn){
+    return fn().catch(function(err){
+      if (!err.unauthorized) throw err;
+      return driveSilentReauth().then(function(r){
+        if (!r.ok) throw new Error("re-auth required (" + r.reason + ")");
+        return fn();
+      });
+    });
+  }
+
+  function driveFindOrCreateFolder(){
+    var q = "name='" + DRIVE_FOLDER_NAME + "' and mimeType='" + DRIVE_FOLDER_MIME + "' and trashed=false";
+    var url = "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(q) + "&fields=files(id,name)";
+    return driveApi(url).then(function(r){
+      if (r && r.files && r.files.length) { driveFolderId = r.files[0].id; return driveFolderId; }
+      return driveApi("https://www.googleapis.com/drive/v3/files?fields=id,name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: DRIVE_FOLDER_NAME, mimeType: DRIVE_FOLDER_MIME })
+      }).then(function(f){ driveFolderId = f.id; return driveFolderId; });
+    });
+  }
+
+  function driveStatus(msg, tone){
+    var el = $("driveBackupStatus"); if (!el) return;
+    el.textContent = msg || "";
+    el.style.color = tone === "bad" ? "var(--bad)" : tone === "good" ? "var(--good)" : "var(--muted)";
+  }
+
+  // Same JSON content shape as downloadBackupFile()/fbWrite() — one backup
+  // format, restorable through the same path regardless of where it lives.
+  function driveWriteBackupInner(){
+    var payload = JSON.stringify(data);
+    var findQ = "name='" + DRIVE_FILE_NAME + "' and '" + driveFolderId + "' in parents and trashed=false";
+    var findUrl = "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(findQ) + "&fields=files(id,name)";
+    return driveApi(findUrl).then(function(r){
+      if (r && r.files && r.files.length) {
+        driveFileId = r.files[0].id;
+        return driveApi("https://www.googleapis.com/upload/drive/v3/files/" + driveFileId + "?uploadType=media&fields=id", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: payload
+        });
+      }
+      var boundary = "menchmark" + Math.random().toString(36).slice(2);
+      var meta = { name: DRIVE_FILE_NAME, parents: [driveFolderId], mimeType: "application/json" };
+      var body =
+        "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(meta) +
+        "\r\n--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" + payload + "\r\n--" + boundary + "--";
+      return driveApi("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+        method: "POST",
+        headers: { "Content-Type": "multipart/related; boundary=" + boundary },
+        body: body
+      }).then(function(f){ driveFileId = f.id; return f; });
+    });
+  }
+
+  // The single entry point every caller (the Settings card, step 7's "Save
+  // to Drive" button, the automatic per-session write) goes through.
+  // `silent` suppresses the success status line, matching fbWrite()'s own
+  // convention for its automatic writes.
+  function driveWriteBackup(silent){
+    if (!driveSupported() || driveBusy) return Promise.resolve(false);
+    if (!navigator.onLine) {
+      if (!silent) driveStatus("You're offline — Drive backup needs a connection. Use “Back up now” instead.", "bad");
+      return Promise.resolve(false);
+    }
+    driveBusy = true;
+    if (!silent) driveStatus("Backing up to Drive…");
+    // driveWithRecovery(fn) calls fn() and chains .catch() onto its return
+    // value, so fn must return a rejected promise here, never throw
+    // synchronously — a synchronous throw escapes .catch() entirely and
+    // surfaces as an uncaught exception instead of triggering recovery
+    // (caught in browser testing: this exact line did that on every fresh
+    // page load, since driveToken is never persisted).
+    var chain = driveToken ? Promise.resolve() : driveWithRecovery(function(){
+      return Promise.reject(Object.assign(new Error("no token"), { unauthorized: true }));
+    });
+    return chain
+      .then(function(){ return driveWithRecovery(function(){ return driveFindOrCreateFolder().then(driveWriteBackupInner); }); })
+      .then(function(){
+        markBackedUp();
+        try { if (!silent) driveStatus("Backed up to Google Drive just now.", "good"); } catch(_){}
+        return true;
+      })
+      .catch(function(err){
+        try { driveStatus("Could not back up to Drive (" + err.message + "). Your data is safe here — try again, or use “Back up now.”", "bad"); } catch(_){}
+        return false;
+      })
+      .then(function(r){ driveBusy = false; return r; },
+            function(){ driveBusy = false; return false; });
+  }
+
+  // Explicit, interactive, first-time connect — full-page redirect, since a
+  // brand-new grant cannot be silent (prompt=none only ever renews a grant
+  // that already exists). Lands back via driveCompleteFromRedirect() below.
+  function driveConnect(){
+    if (!driveSupported()) return;
+    location.href = buildDriveAuthUrl(false);
+  }
+
+  // Called once at boot, after load() — mirrors signinCompleteFromRedirect()'s
+  // own shape. Only ever fires right after driveConnect()'s redirect lands.
+  function driveCompleteFromRedirect(){
+    if (!pendingDriveOAuthResult) return;
+    if (pendingDriveOAuthResult.error) {
+      driveStatus("Could not connect Google Drive (" + pendingDriveOAuthResult.error + ").", "bad");
+      return;
+    }
+    driveAdoptToken(pendingDriveOAuthResult);
+    data.driveBackupEnabled = true;
+    save();
+    renderDriveBackupCard();
+    driveWriteBackup(false);
+  }
+
+  function renderDriveBackupCard(){
+    var card = $("driveBackupCard"); if (!card) return;
+    if (!driveSupported()) { card.style.display = "none"; return; }
+    card.style.display = "";
+    var connectBtn = $("driveBackupConnect"), nowBtn = $("driveBackupNow"), stopBtn = $("driveBackupStop");
+    if (data.driveBackupEnabled) {
+      if (connectBtn) connectBtn.style.display = "none";
+      if (nowBtn) nowBtn.style.display = "";
+      if (stopBtn) stopBtn.style.display = "";
+      driveStatus("Backing up automatically to Google Drive (" + (data.account && data.account.email || "") + ").", "good");
+    } else {
+      if (connectBtn) connectBtn.style.display = "";
+      if (nowBtn) nowBtn.style.display = "none";
+      if (stopBtn) stopBtn.style.display = "none";
+      driveStatus("Not connected yet.", "");
+    }
+  }
+  if ($("driveBackupConnect")) $("driveBackupConnect").addEventListener("click", driveConnect);
+  if ($("driveBackupNow")) $("driveBackupNow").addEventListener("click", function(){ driveWriteBackup(false); });
+  if ($("driveBackupStop")) $("driveBackupStop").addEventListener("click", function(){
+    // Only forgets the connection. Never touches the file already in Drive —
+    // that's the rebbi's backup, not ours to delete, same discipline as
+    // "Stop" on the folder-backup card above.
+    data.driveBackupEnabled = false;
+    driveToken = null; driveTokenExp = 0; driveFolderId = null; driveFileId = null;
+    save();
+    renderDriveBackupCard();
+  });
+
+  // First successful write per SESSION, not per scan — tier-1's own step-7
+  // event (below) needs the same restraint once a live write path exists,
+  // and this is the tier-2 half of that discipline today: silently renewing
+  // a token and hitting the Drive API on every single scan would be both
+  // wasteful and a genuine rate-limit risk. One attempt per page load.
+  var driveAutoWriteTriedThisSession = false;
+  function driveMaybeAutoWrite(){
+    if (driveAutoWriteTriedThisSession) return;
+    if (!data.driveBackupEnabled || !driveSupported()) return;
+    driveAutoWriteTriedThisSession = true;
+    driveWriteBackup(true);
+  }
+
   $("offlineDownloadBtn").addEventListener("click", function(){
     var btn=this, statusEl=$("offlineDownloadStatus");
     var origText=btn.textContent;
@@ -24018,6 +24431,13 @@ nameLine
     if(typeof data.firebaseClaimedBy!=="undefined" && data.firebaseClaimedBy!==null && typeof data.firebaseClaimedBy!=="string") data.firebaseClaimedBy=null;
     if(typeof data.firebaseClaimedBy==="undefined") data.firebaseClaimedBy=null;
     if(typeof data.signinNudgeSeen!=="boolean") data.signinNudgeSeen=false;
+    // Step 7 (docs/Firebase_Step7_Fragile_Storage_Warning_Design_Proposal.md)
+    // + the Drive integration it needed built (spikes/drive-oauth-spike.html,
+    // never ported until now). The OAuth access token itself is NEVER
+    // persisted (deliberate, per the spike's own findings) — this is the
+    // only new field, "did the rebbi opt in," nothing about the connection
+    // itself.
+    if(typeof data.driveBackupEnabled!=="boolean") data.driveBackupEnabled=false;
     if(typeof data.sheetUrl!=="string") data.sheetUrl="";
     if(typeof data.autoSheet!=="boolean") data.autoSheet=true;
     // Voice notes are ON as of 2026-08-06. They shipped OFF (#222) so the
@@ -25276,6 +25696,13 @@ nameLine
   // redirect lands. Does nothing at all if pendingOAuthResult is null —
   // the overwhelming majority of boots, tier-2 or never-signed-in included.
   signinCompleteFromRedirect();
+  // Step 7's Drive integration: does nothing unless driveConnect()'s redirect
+  // just landed (pendingDriveOAuthResult null the overwhelming majority of
+  // boots). renderDriveBackupCard()/driveMaybeAutoWrite() below cover the
+  // already-connected case on every other boot.
+  driveCompleteFromRedirect();
+  renderDriveBackupCard();
+  if (data.driveBackupEnabled) driveMaybeAutoWrite();
   // Step 5's view-as landing (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md):
   // does nothing at all unless admin.html just window.open()'d this exact
   // tab with a handoff waiting in sessionStorage — the overwhelming
@@ -26557,15 +26984,35 @@ Two different resets, matching the two sections of the scanner's manual — try 
   //    / engaged sites; it stops automatic eviction but does NOT override an
   //    admin clear-on-exit or Guest wipe (which is why the Google Sheet backup
   //    stays the ultimate safety net).
+  // Step 7 (docs/Firebase_Step7_Fragile_Storage_Warning_Design_Proposal.md,
+  // "Check timing"): read once, here, and cached into window._storagePersisted
+  // — this <script> tag is a genuinely separate top-level IIFE from the main
+  // app's (see the comment above markBackedUp() for the two real bugs that
+  // came from assuming otherwise), so an explicit window property is the
+  // only unambiguous way to share this value with maybeShowBackupNudge().
+  // persisted() is fast and stable within a page lifetime, so
+  // maybeShowBackupNudge() reads the cached value instead of re-polling.
   function reportStorage(){
     var el = document.getElementById("pwaStorageStatus");
-    if(!el) return;
     if(!(navigator.storage && navigator.storage.persisted)){
-      el.textContent = "Storage protection: not available in this browser.";
-      el.style.color = "var(--muted)";
+      if(el){ el.textContent = "Storage protection: not available in this browser."; el.style.color = "var(--muted)"; }
       return;
     }
     function apply(persisted){
+      window._storagePersisted = persisted;
+      // Step 7: the 1200ms nudge timer and this promise chain are two
+      // independent clocks, and — found in real browser testing, not just
+      // reasoned about — this one can genuinely still be unresolved when
+      // that timer fires on a real boot (heavier seed data slows the
+      // synchronous render work ahead of it enough to lose the race, even
+      // though persist()+persisted() alone resolve in single-digit ms
+      // measured in isolation). maybeShowBackupNudge() only ever runs once
+      // per load otherwise, so a race-losing boot would silently never show
+      // the unpersisted-storage warning that session at all. Re-running it
+      // here, the moment persisted-status is actually known, is what
+      // closes that gap — safe to call twice, it only ever updates DOM.
+      if(typeof window.maybeShowBackupNudge==="function") window.maybeShowBackupNudge();
+      if(!el) return;
       if(persisted){
         el.textContent = "✓ Storage protected — this browser won't auto-clear your data.";
         el.style.color = "var(--good, #1f8a5b)";
