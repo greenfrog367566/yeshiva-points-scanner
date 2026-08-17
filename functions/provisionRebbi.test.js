@@ -207,6 +207,39 @@ async function main() {
     assert(studentsSnap.size === 0, "expected an empty starter class");
   });
 
+  // Step 6 (docs/Firebase_Step6_Admin_Gradebook_View_Design_Proposal.md,
+  // "Default book classification for new items"): classifyBook()'s effect
+  // as it actually reaches a written trackedItems doc, via a real
+  // provisionRebbi call — not a unit test of the classifier in isolation.
+  await check("classifyBook() classifies attendance/homework/pass 'class' and everything else 'teacher'", async () => {
+    await db.collection("accounts").doc("rebbiBookTest").set({ role: "rebbi", schoolId: null });
+    const normalized = {
+      className: "Book Test Class",
+      students: [{ id: "bt1", name: "Test Student", group: null }],
+      trackedItems: [
+        { id: "ti-att", name: "Attendance", method: "preselect", config: null },
+        { id: "ti-pass", name: "Bathroom Pass", method: "limited", config: null },
+        { id: "ti-hw", name: "Homework Checked", method: "boolean", config: null },
+        { id: "ti-custom", name: "Middos Points", method: "count", config: null },
+      ],
+      trackedData: {},
+      activities: [],
+      log: [],
+      scores: {},
+    };
+    await provisionRebbi.run({
+      data: { mode: "backup", self: true, normalized, deviceId: "book-test" },
+      auth: { uid: "rebbiBookTest", token: {} },
+    });
+    const itemsSnap = await db.collection("classes").doc("rebbiBookTest_1").collection("trackedItems").get();
+    const books = {};
+    itemsSnap.forEach((d) => { books[d.id] = d.data().book; });
+    assert(books["ti-att"] === "class", "expected Attendance -> class, got " + books["ti-att"]);
+    assert(books["ti-pass"] === "class", "expected Bathroom Pass -> class, got " + books["ti-pass"]);
+    assert(books["ti-hw"] === "class", "expected Homework Checked -> class, got " + books["ti-hw"]);
+    assert(books["ti-custom"] === "teacher", "expected a custom item -> teacher, got " + books["ti-custom"]);
+  });
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }
