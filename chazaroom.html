@@ -2019,6 +2019,16 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     </div>
 
     <div class="card">
+      <h2>Saved sets</h2>
+      <p class="hint" style="margin-top:0">Save the list below under a name — a parsha, a unit, a test — so you can build several ahead of time and switch between them without retyping. Saving under an existing name overwrites it.</p>
+      <div class="row">
+        <label class="f" style="flex:1;min-width:160px">Name this set <input id="setNameInput" type="text" placeholder="e.g. Parshas Noach"></label>
+        <div style="align-self:flex-end;padding-bottom:1px"><button class="btn" id="saveSetBtn">Save current set</button></div>
+      </div>
+      <ul class="qlist" id="setList" style="margin-top:10px"></ul>
+    </div>
+
+    <div class="card">
       <h2>Questions <span class="hint" style="font-weight:400" id="qListCount"></span></h2>
       <div class="row"><button class="btn sec" id="clearQBtn">Clear all</button><button class="btn sec" id="sampleBtn">Load sample questions</button></div>
       <ul class="qlist" id="qlist"></ul>
@@ -2140,13 +2150,15 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   /* ---------------- state + persistence ---------------- */
   var LS_KEY="hadroom_mvp_v2";
   var questions=[], roster=[], scores={}, opts={secondScreen:false};
-  function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify({questions:questions,roster:roster,scores:scores,opts:opts})); }catch(e){} }
+  var savedSets=[];   /* {id,name,questions} — named, saved copies of a question list; see Saved sets card */
+  function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify({questions:questions,roster:roster,scores:scores,opts:opts,savedSets:savedSets})); }catch(e){} }
   function load(){
     try{ var d=JSON.parse(localStorage.getItem(LS_KEY)||"{}");
       if(Array.isArray(d.questions)) questions=d.questions;
       if(Array.isArray(d.roster)) roster=d.roster;
       if(d.scores&&typeof d.scores==="object") scores=d.scores;
       if(d.opts&&typeof d.opts==="object" && typeof d.opts.secondScreen==="boolean") opts.secondScreen=d.opts.secondScreen;
+      if(Array.isArray(d.savedSets)) savedSets=d.savedSets;   /* absent on data saved before this existed — [] default already covers it */
     }catch(e){}
   }
   function hasRoster(){ return roster.length>0; }
@@ -2176,7 +2188,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     document.body.classList.add("drawer-open");
     var cur=$(drawerViews[which]); cur.classList.remove("view-pane"); void cur.offsetWidth; cur.classList.add("view-pane");
     if(which==="Cards") buildCards();
-    if(which==="Q") renderQList();
+    if(which==="Q"){ renderQList(); renderSetList(); }
     if(which==="Class") renderRoster();
     pauseTimer();          /* any running countdown holds while the drawer is open */
   }
@@ -2236,6 +2248,46 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     save(); renderQList();
   });
 
+  /* ---- Saved sets: named, saved copies of the question list — a parsha,
+     a unit, a test — so a rebbi can prepare several ahead of time and switch
+     between them without retyping. Stored as plain data (deep-cloned via
+     JSON round-trip on save/load so a later edit to `questions` can never
+     silently mutate a saved copy through a shared reference). */
+  function renderSetList(){
+    var list=$("setList"); list.innerHTML="";
+    if(!savedSets.length){ list.appendChild(el("li",null,"No saved sets yet — name the list below and save it.")); return; }
+    savedSets.forEach(function(s,i){
+      var li=el("li");
+      var body=el("div","body");
+      body.appendChild(el("div","q",s.name));
+      body.appendChild(el("div","a",s.questions.length+" question"+(s.questions.length===1?"":"s")));
+      li.appendChild(body);
+      var loadBtn=el("button","btn sec","Load"); loadBtn.style.marginRight="6px";
+      loadBtn.addEventListener("click",function(){
+        if(questions.length && !confirm("Replace the current "+questions.length+" question"+(questions.length===1?"":"s")+" with \""+s.name+"\" ("+s.questions.length+")?")) return;
+        questions=JSON.parse(JSON.stringify(s.questions));
+        save(); renderQList();
+      });
+      li.appendChild(loadBtn);
+      var x=el("button","x","✕"); x.title="Delete this saved set";
+      x.addEventListener("click",function(){ if(confirm('Delete the saved set "'+s.name+'"? The current question list is untouched.')){ savedSets.splice(i,1); save(); renderSetList(); } });
+      li.appendChild(x); list.appendChild(li);
+    });
+  }
+  $("saveSetBtn").addEventListener("click",function(){
+    var name=$("setNameInput").value.trim();
+    if(!name){ $("setNameInput").focus(); return; }
+    if(!questions.length){ alert("No questions to save yet — add some first."); return; }
+    var existing=savedSets.filter(function(s){ return s.name===name; })[0];
+    if(existing){
+      if(!confirm('A saved set named "'+name+'" already exists ('+existing.questions.length+' questions). Overwrite it with the current '+questions.length+'?')) return;
+      existing.questions=JSON.parse(JSON.stringify(questions));
+    } else {
+      savedSets.push({id:String(Date.now()),name:name,questions:JSON.parse(JSON.stringify(questions))});
+    }
+    save(); renderSetList(); $("setNameInput").value="";
+  });
+
   /* ---- Kahoot-style CSV import ---- */
   function parseCSV(text){
     var rows=[], row=[], field="", inQ=false; text=text.replace(/\r\n/g,"\n").replace(/\r/g,"\n");
@@ -2292,8 +2344,10 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       "than about a quarter of the time. (Language models tend to make the answer 'B'/position 2 — do not.) "+
       "Put the real answer in a random position and fill the other three with plausible wrong options.\n\n"+
       "Output ONLY CSV — one question per line, no header row, no commentary. "+
-      "Each line has exactly 7 fields and EVERY field must be wrapped in double quotes:\n"+
-      "\"Question\",\"Option A\",\"Option B\",\"Option C\",\"Option D\",\"20\",\"<correct option number 1-4>\"\n\n"+
+      "Each line has exactly 7 fields, matching Kahoot's own quiz-export layout, and EVERY field "+
+      "must be wrapped in double quotes. The 6th field is a per-question time limit in seconds — "+
+      "make up any reasonable number (e.g. 20); it is not actually used:\n"+
+      "\"Question\",\"Option A\",\"Option B\",\"Option C\",\"Option D\",\"<time limit in seconds>\",\"<correct option number 1-4>\"\n\n"+
       "Example line:\n"+
       "\"How many days is Sukkos in Eretz Yisrael?\",\"1\",\"7\",\"8\",\"40\",\"20\",\"2\"\n\n"+
       "TEXT:\n"+text;
@@ -3443,6 +3497,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   $("presentHint").style.display=opts.secondScreen?"block":"";
   listCams();
   renderQList();
+  renderSetList();
   updateSetupHint();
   probePtzHttp().then(function(ok){ if(ok) showSweepSetup(); });
 })();
