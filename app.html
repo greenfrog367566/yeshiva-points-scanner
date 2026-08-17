@@ -4318,6 +4318,20 @@ function setupRoster() {
          their feature panels (Teach view / Quiz toolbar / Game Show card) —
          they only matter to one feature each, so they live with it. -->
   </section>
+
+  <!-- PR4 (docs/Firebase_Step4_Routing_Design_Proposal.md, "Tier-aware route
+       guard"): shown when router.applyRoute()'s guard fails closed — an
+       unknown classId, or a tier-1 class the signed-in account doesn't own.
+       Not reachable today (every class in CLASS_INDEX has schoolId:null),
+       but a bad/stale/hand-edited hash could already reach it (e.g. a
+       bookmarked #/c/typo/scan/scan), so it ships live rather than dormant. -->
+  <section id="view-routeError" class="view">
+    <div class="card pad" style="max-width:420px;margin:60px auto;text-align:center">
+      <h3 style="font-family:var(--serif);font-size:1.15rem;margin:0 0 10px">Can't open that class</h3>
+      <p class="view-note" style="margin:0 0 16px">You don't have access to this class, or the link is out of date.</p>
+      <button class="btn btn-primary" id="routeErrorBackBtn">Back to Dashboard</button>
+    </div>
+  </section>
 </main>
 
 
@@ -5720,6 +5734,66 @@ function setupRoster() {
   // resolved from Firestore/tier-1 — that resolution is PR4's job, gated on
   // real multi-class existing. Every router.go() call below uses this.
   var LOCAL_CLASS_ID = "local";
+
+  /* ---------- PR4 of 5 — tier-aware route guard, ships live but today
+   * always a no-op passthrough (docs/Firebase_Step4_Routing_Design_Proposal.md,
+   * "Tier-aware route guard"). CLASS_INDEX is the "small local class index"
+   * the design doc describes as cached from accounts/{uid} on login — that
+   * login doesn't exist in this branch yet (it's step 2's sign-in work, a
+   * separate PR), so the index is seeded with only the one class this app
+   * has ever had, permanently tier-2 (schoolId:null). A real multi-class
+   * index arrives once accounts/classes (a later step) populate it; nothing
+   * here needs to change when that lands — it's an index, not a hardcode. */
+  var CLASS_INDEX = {};
+  CLASS_INDEX[LOCAL_CLASS_ID] = { schoolId: null, ownerId: null };
+  function classIndexLookup(classId){
+    return CLASS_INDEX.hasOwnProperty(classId) ? CLASS_INDEX[classId] : null;
+  }
+  // Forward-compatible with step 2's sign-in work (a separate, unmerged PR):
+  // reads data.account if present. Harmless no-op today — no class in
+  // CLASS_INDEX has schoolId set, so routeGuardClass never reaches the branch
+  // that calls this.
+  function currentAuthUid(){
+    try{ if(data && data.account && data.account.uid) return data.account.uid; }catch(e){}
+    return null;
+  }
+  /* ROUTE_GUARD_START — dependency-free like ROUTE_HASH_FUNCTIONS above (see
+   * .github/scripts/check-route-guard.js): takes the already-looked-up class
+   * entry and already-resolved auth uid as plain arguments rather than
+   * reaching into CLASS_INDEX/data itself, so it stays Node-testable with no
+   * app.html context. Implements the design doc's 6 guard rules exactly:
+   * unknown classId fails closed; schoolId:null is tier-2 and always allowed;
+   * schoolId set is tier-1 and requires the signed-in uid to be the owner or
+   * an admin-share. */
+  function routeGuardClass(classEntry, authUid){
+    if(!classEntry) return { ok:false, reason:"unknown-class" };
+    if(!classEntry.schoolId) return { ok:true };
+    if(!authUid) return { ok:false, reason:"signed-out" };
+    if(authUid===classEntry.ownerId) return { ok:true };
+    if(Array.isArray(classEntry.adminShareUids) && classEntry.adminShareUids.indexOf(authUid)>=0) return { ok:true };
+    return { ok:false, reason:"forbidden" };
+  }
+  /* ROUTE_GUARD_END */
+  // Shared by routerApplyRoute() (popstate/router.go) and boot's deep-link
+  // check below — one guard+render step so the two never drift. Returns
+  // false (and shows view-routeError) if the guard fails closed; true if it
+  // rendered the requested tab. A failure is always a replaceState to the
+  // default route, never pushState — a bad deep link shouldn't leave a bogus
+  // history entry back can return to (design doc, "Failure path").
+  function routerGuardAndRender(classId, tab){
+    var guard = routeGuardClass(classIndexLookup(classId), currentAuthUid());
+    if(!guard.ok){
+      renderRouteError();
+      var fallbackHash = routeBuild({ classId: LOCAL_CLASS_ID, group: groupOfTab("scan"), tab: "scan" });
+      if(fallbackHash) history.replaceState({menchmarkRoute:true}, "", fallbackHash);
+      return false;
+    }
+    activateTab(tab);
+    return true;
+  }
+  function renderRouteError(){
+    document.querySelectorAll(".view").forEach(function(v){ v.classList.toggle("active", v.id==="view-routeError"); });
+  }
   // The sole thing allowed to call history.pushState for a nav-shaped action
   // (class switch, group switch, tab switch) — one call, one history entry,
   // no coalescing, so back always undoes exactly the last action. Renders
@@ -5737,14 +5811,16 @@ function setupRoster() {
     routerApplyRoute();
     return true;
   }
-  // PR1/PR3 scope only: parse the hash and render. No tier guard, no async
-  // hydrate phase — see the header comment above for why that's fine today
-  // and where it lands later. Falls back to the Dashboard for a missing or
-  // unrecognized tab rather than a blank screen.
+  // PR4: guard runs first (routerGuardAndRender), before any render — see
+  // "Tier-aware route guard" in the design doc. No async hydrate phase yet;
+  // `data` is already loaded synchronously for the one class that exists,
+  // so a passing guard renders immediately. Falls back to the Dashboard for
+  // a missing or unrecognized tab rather than a blank screen.
   function routerApplyRoute(){
     var parsed = routeParse(location.hash);
+    var classId = (parsed && parsed.classId) ? parsed.classId : LOCAL_CLASS_ID;
     var tab = (parsed && parsed.tab && TAB_LABELS.hasOwnProperty(parsed.tab)) ? parsed.tab : "scan";
-    activateTab(tab);
+    routerGuardAndRender(classId, tab);
   }
   var router = { go: routerGo, applyRoute: routerApplyRoute, parse: routeParse, build: routeBuild };
   // PR2: the back/forward half of the loop. router.go() above renders
@@ -12023,6 +12099,11 @@ function setupRoster() {
   $("goPrintPointsBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "printPoints" }); });
   $("printStudentsBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "printStudents" }); });
   $("printActivitiesBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "printActivities" }); });
+  // PR4: the route-error screen's only control. A real nav action, so it
+  // goes through router.go (pushState) rather than replicating the guard's
+  // own replaceState — landing here from a live click is a normal back-out,
+  // not the "bad deep link" case the guard's replaceState exists for.
+  $("routeErrorBackBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "scan" }); });
 
   // Reverses a real scan/spend entry by writing a correction entry rather than deleting
   // history — keeps on-screen totals right and keeps the Google Sheet Log honest.
@@ -24899,16 +24980,19 @@ nameLine
   renderGroupTabs("scan"); renderSubTabs("scan","scan"); activeGroupName="scan"; activeTabName="scan";
   applyGlobalScanBarVisibility("scan");
   // PR3 (docs/Firebase_Step4_Routing_Design_Proposal.md): boot reads the
-  // hash instead of always cold-booting scan/scan. Still single implicit
-  // class (LOCAL_CLASS_ID) — no guard/hydrate phase needed yet, since
-  // there's nothing to fetch: `data` is already loaded by this point. A
-  // deep link to a real tab switches to it; this only ever narrows the
-  // scan/scan default set two lines up, never widens past it.
+  // hash instead of always cold-booting scan/scan. `data` is already loaded
+  // by this point, so a passing guard renders synchronously — no async
+  // hydrate phase needed yet. A deep link to a real tab switches to it; this
+  // only ever narrows the scan/scan default set two lines up, never widens
+  // past it. PR4: routed through the shared guard (routerGuardAndRender) so
+  // a bad/stale classId in a bookmarked hash shows the error screen instead
+  // of silently ignoring classId and rendering the tab anyway — either
+  // outcome counts as "already resolved" for the fallback logic below.
   var routeDeepLinked = false;
   try {
     var bootRoute = routeParse(location.hash);
     if (bootRoute && bootRoute.tab && TAB_LABELS.hasOwnProperty(bootRoute.tab)) {
-      activateTab(bootRoute.tab);
+      routerGuardAndRender(bootRoute.classId || LOCAL_CLASS_ID, bootRoute.tab);
       routeDeepLinked = true;
     }
   } catch(e) {}
