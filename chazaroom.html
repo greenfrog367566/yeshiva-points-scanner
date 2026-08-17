@@ -2597,14 +2597,26 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     });
     return out;
   }
+  /* A real failure mode reported from Gemini specifically: instead of real
+     answer text, it echoed the format template's own field placeholders
+     back literally — every option reading "A"/"B"/"C"/"D" (or "Option A"
+     etc.) instead of actual content. The prompt itself now marks every
+     placeholder with <...> to head this off, but this is a live check on
+     whatever text actually lands here — from any source, not just the
+     prompt maker — so a rebbi who imports it anyway is warned rather than
+     silently ending up with a game where every question reads "A B C D". */
+  function looksLikeBareLetterOption(s){ return /^(option\s*)?[abcd]$/i.test(String(s||"").trim()); }
   function importCSV(){
     var text=$("csvText").value.trim();
     if(!text){ $("csvStatus").textContent="Paste some rows, or choose a file, first."; return; }
     var qs=rowsToQuestions(parseCSV(text));
     if(!qs.length){ $("csvStatus").textContent="No questions found — check the columns."; return; }
+    var bare=qs.filter(function(q){ return LETTERS.some(function(L){ return q.opts && looksLikeBareLetterOption(q.opts[L]); }); }).length;
     qs.forEach(function(q){ questions.push(q); });
     save(); renderQList();
-    $("csvStatus").textContent="Imported "+qs.length+" question"+(qs.length>1?"s":"")+".";
+    $("csvStatus").textContent = bare
+      ? "Imported "+qs.length+" question"+(qs.length>1?"s":"")+" — but "+bare+" of them have an answer that's just the letter A/B/C/D instead of real text. Check those before playing."
+      : "Imported "+qs.length+" question"+(qs.length>1?"s":"")+".";
     $("csvText").value="";
   }
   $("csvImportBtn").addEventListener("click",importCSV);
@@ -2629,9 +2641,11 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       "Output ONLY CSV — one question per line, no header row, no commentary. "+
       "Each line has exactly 7 fields, matching Kahoot's own quiz-export layout, and EVERY field "+
       "must be wrapped in double quotes. The 6th field is a per-question time limit in seconds — "+
-      "make up any reasonable number (e.g. 20); it is not actually used:\n"+
-      "\"Question\",\"Option A\",\"Option B\",\"Option C\",\"Option D\",\"<time limit in seconds>\",\"<correct option number 1-4>\"\n\n"+
-      "Example line:\n"+
+      "make up any reasonable number (e.g. 20); it is not actually used. Every <...> below is a "+
+      "placeholder to replace with real content — never output the literal words \"Option A\" or "+
+      "the bare letters A/B/C/D as an answer's text:\n"+
+      "\"<question text>\",\"<answer option A>\",\"<answer option B>\",\"<answer option C>\",\"<answer option D>\",\"<time limit in seconds>\",\"<correct option number 1-4>\"\n\n"+
+      "Example line — note the actual answer text in fields 2-5, never a bare letter:\n"+
       "\"How many days is Sukkos in Eretz Yisrael?\",\"1\",\"7\",\"8\",\"40\",\"20\",\"2\"\n\n"+
       "TEXT:\n"+text;
     $("promptOut").value=prompt; $("promptOutWrap").hidden=false; $("promptCopyRow").hidden=false; $("copyStatus").textContent="";
