@@ -40,5 +40,48 @@ jobs:
       - name: Tier-aware route guard (Firebase step 4, PR4)
         run: node .github/scripts/check-route-guard.js
 
+      - name: OAuth fragment parser round-trip (Firebase sign-in UI)
+        run: node .github/scripts/check-oauth-fragment.js
+
       - name: sw.js syntax check
         run: node --check sw.js
+
+  firestore-rules:
+    # Firebase rebuild's "test-migration.html analogue" — step 2
+    # (docs/Firebase_Step2_Auth_Rules_Design_Proposal.md, "Rules
+    # Verification Harness") proves the tier-gating claim mechanically
+    # against the Firestore emulator; step 3
+    # (docs/Firebase_Step3_Converter_Tool_Design_Proposal.md, "Verification
+    # harness implementation") proves provisionRebbi's mode dispatch and
+    # overwrite/idempotence guarantees the same way, against the real
+    # exported Cloud Function. ubuntu-latest ships a JDK, which the
+    # emulators need.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install rules-test dependencies
+        run: npm install
+
+      - name: Install Cloud Functions dependencies
+        run: npm install
+        working-directory: functions
+
+      - name: Cache Firestore emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firestore-emulator-${{ runner.os }}
+
+      - name: Run Firestore rules test matrix against the emulator
+        run: npm run test:rules
+
+      - name: Run provisionRebbi mode-dispatch tests against the emulator
+        run: npm run test:functions
+
+      - name: Run raw-HTTP callable-function tests (sign-in's actual calling convention)
+        run: npm run test:http-callable
