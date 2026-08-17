@@ -6,7 +6,7 @@
 <title>Chazaroom — class review game</title>
 <!-- Chazaroom (chazara = review) MVP. Standalone, single file, no build step, no accounts, no
      Menchmark data. A whole-class review game: the rebbi asks a multiple-choice
-     question, every boy holds up a printed answer card, and the camera reads
+     question, every student holds up a printed answer card, and the camera reads
      the whole room at once. Two modes, chosen automatically:
        • No class list  -> anonymous A/B/C/D cards, live letter tally.
        • Class list set  -> per-student cards (id + answer), points + leaderboard.
@@ -1457,10 +1457,11 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   .tiles{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   .tiles[hidden],.podium[hidden]{display:none}   /* author display beats [hidden] otherwise */
   @media(max-width:600px){ .tiles{grid-template-columns:1fr} }
-  .tile{border-radius:14px;padding:20px 22px;min-height:96px;display:flex;align-items:center;gap:16px;color:#fff;position:relative;transition:transform .1s,opacity .2s}
+  /* Sized to read from the back of the room, not a desk. */
+  .tile{border-radius:14px;padding:28px 26px;min-height:120px;display:flex;align-items:center;gap:20px;color:#fff;position:relative;transition:transform .1s,opacity .2s}
   .tile.A{background:var(--a)} .tile.B{background:var(--b)} .tile.C{background:var(--c)} .tile.D{background:var(--d)}
-  .tile .tlt{font-size:2rem;font-weight:800;width:48px;height:48px;border-radius:10px;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
-  .tile .ttx{font-size:clamp(1.1rem,2.4vw,1.7rem);font-weight:600;flex:1;min-width:0}
+  .tile .tlt{font-size:2.6rem;font-weight:800;width:60px;height:60px;border-radius:10px;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .tile .ttx{font-size:clamp(1.6rem,3.4vw,2.6rem);font-weight:600;flex:1;min-width:0}
   .tile .tcnt{font-size:1.6rem;font-weight:800;font-variant-numeric:tabular-nums;background:rgba(0,0,0,.22);border-radius:10px;padding:4px 12px;min-width:44px;text-align:center}
   .tile.correct{outline:5px solid var(--gold);outline-offset:-2px}
   .tile.wrong{opacity:.32}
@@ -1544,18 +1545,34 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
      thumbnail: still needed for scan feedback (the privacy overlay), no
      longer an equal partner in the layout. */
   body.playing .wrap{max-width:none;padding:16px 22px}
-  body.playing #playArea{display:block}
+  body.playing #playArea{display:block;position:relative}
   body.playing #gameBoard{margin-bottom:0}
   body.playing .rebbi{display:contents}
-  body.playing #camCard{position:fixed;top:14px;right:14px;width:200px;z-index:50;margin:0}
+  /* Docked just under the timer, at the board's own top-right — not
+     bottom-right: that spot's clearance depends on how many pill rows and
+     how tall the question text wrap to, both of which change with class
+     size and question length. The top-right corner is the one part of the
+     board whose height never moves regardless of content below it, so
+     anchoring here is what actually guarantees no overlap, not a bigger
+     offset chasing a moving target. Positioned against #playArea (not the
+     viewport) since #camCard isn't a DOM child of #gameBoard (.rebbi's
+     display:contents lifts it to a sibling) — in play mode #playArea's own
+     box coincides with the board's, so this still reads as "under the
+     timer, at the board's edge". */
+  body.playing #camCard{position:absolute;top:112px;right:26px;width:150px;padding:8px;z-index:50;margin:0}
   body.playing #camCard .stage{display:block}
   body.playing #camCard .stage video{width:100%;max-width:none}
-  body.playing #camCard .ptzpad,body.playing #camCard #camRow{display:none}  /* aim in the lobby; pause lives on the board */
+  /* Trimmed to just the video during play — the aim pad, pause row and stat
+     numbers belong to the lobby; keeping them here was most of why the card
+     was tall enough to reach the action-button row underneath it. */
+  body.playing #camCard .ptzpad,body.playing #camCard #camRow,
+  body.playing #camCard .statrow,body.playing #camCard #sweepStatusLine{display:none}
   body.playing #scoreCard{display:none}
-  @media(max-width:900px){ body.playing #camCard{position:static;width:auto;margin-bottom:16px} }
-  /* who's answered — a pill per boy, always visible during the question */
-  .pillbar{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:18px 0}
-  .pill{border:2px solid #41507f;border-radius:999px;padding:7px 16px;font-size:1.05rem;font-weight:700;background:#26315a;color:#cfd5ea}
+  @media(max-width:900px){ body.playing #camCard{position:static;width:auto;bottom:auto;margin-bottom:16px} }
+  /* who's answered — a pill per student, always visible during the question.
+     Sized to read from the back of a classroom, not a phone screen. */
+  .pillbar{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:20px 0}
+  .pill{border:2px solid #41507f;border-radius:999px;padding:10px 22px;font-size:1.6rem;font-weight:700;background:#26315a;color:#cfd5ea}
   .pill.answered{border-color:var(--good);background:#1c3327;color:#d9f2e4}
   .pill.glow{box-shadow:0 0 0 5px rgba(31,138,91,.5)}   /* the "just answered / just changed" flash */
   .pill.warn{border-color:var(--gold);background:#3a2f12;color:#ffe8ac;box-shadow:0 0 0 5px rgba(232,179,33,.45)}   /* wand angled, two faces reading */
@@ -1586,7 +1603,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
 
   /* PRESENTING: the class has its own window on the projector, so this screen
      goes back to being the rebbi's — full camera, aim pad and scores, with the
-     board kept here only as a preview of what the boys are seeing. */
+     board kept here only as a preview of what the students are seeing. */
   body.presenting #playArea{display:block}
   body.presenting .rebbi{display:grid}
   body.presenting #camCard{position:static;width:auto;margin:0;padding:16px;background:var(--card);
@@ -1778,8 +1795,8 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
           </label>
           <span class="hint" id="sweepDetected" style="margin:0;align-self:center"></span>
         </div>
-        <p class="hint">When the countdown ends, the camera pans across the room once to read every raised card — so a big class fits and each boy is counted once.</p>
-        <p class="hint" id="sweepAnonWarn" hidden style="color:var(--bad)"><strong>Set a class list to sweep accurately.</strong> With shared A/B/C/D cards the camera can't tell one boy from another, so it can't add up cards seen at different points of the pan — the count is shown as "at least". Per-student cards fix this completely.</p>
+        <p class="hint">When the countdown ends, the camera pans across the room once to read every raised card — so a big class fits and each student is counted once.</p>
+        <p class="hint" id="sweepAnonWarn" hidden style="color:var(--bad)"><strong>Set a class list to sweep accurately.</strong> With shared A/B/C/D cards the camera can't tell one student from another, so it can't add up cards seen at different points of the pan — the count is shown as "at least". Per-student cards fix this completely.</p>
         <details style="margin-top:6px">
           <summary class="hint" style="cursor:pointer;margin:0;display:list-item">Sweep settings</summary>
           <div class="row" style="margin-top:8px">
@@ -1792,7 +1809,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       <div class="row" style="margin-top:12px">
         <button class="btn gold big" id="startBtn">Start camera</button>
         <button class="btn sec big" id="presentBtn">🖥 Student view</button>
-        <div class="hint" style="margin:0;align-self:center" id="startHint">Opens into the lobby — boys hold up a card to join — then the first question.</div>
+        <div class="hint" style="margin:0;align-self:center" id="startHint">Opens into the lobby — students hold up a card to join — then the first question.</div>
       </div>
       <p class="hint" id="presentHint" style="margin-top:10px">Student view is open — drag that window onto the projector and press <strong>F11</strong> for full screen. This screen stays yours: camera, aim pad and scores.</p>
       <div id="support"></div>
@@ -1820,7 +1837,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         </div>
       </div>
 
-      <!-- Lobby: boys join by holding up a card (doubles as the visibility check) -->
+      <!-- Lobby: students join by holding up a card (doubles as the visibility check) -->
       <div id="calibPanel" class="card" hidden>
         <h2>Lobby — hold up your card to join!</h2>
         <p class="hint" style="margin-top:0" id="calibHint">Hold up <strong>any</strong> card — your name pops up when the camera reads you, and you're in. Start when everyone has joined.</p>
@@ -1841,7 +1858,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         <div class="qbig" id="qBig">—</div>
         <div id="readyLine" class="readyline" hidden>Get ready…</div>
         <div class="tiles" id="tiles"></div>
-        <!-- Who's answered, always visible: a pill per joined boy (never an
+        <!-- Who's answered, always visible: a pill per joined student (never an
              absent one — see joinedRoster()), green once he's in, glowing
              briefly on a new or CHANGED answer, yellow if his wand is angled
              enough that two faces are reading at once (renderPillBar). -->
@@ -2012,7 +2029,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   <section id="viewClass" hidden>
     <div class="card">
       <h2>Class list</h2>
-      <p class="hint" style="margin-top:0">Paste one boy's name per line. Each gets his own printed cards (his id + A/B/C/D),
+      <p class="hint" style="margin-top:0">Paste one student's name per line. Each gets his own printed cards (his id + A/B/C/D),
         so the camera records <strong>who</strong> answered <strong>what</strong> and keeps points. Leave this empty to play
         anonymously with shared A/B/C/D cards instead.</p>
       <label class="f">Names (one per line)
@@ -2025,10 +2042,10 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       <div class="note" style="margin-top:12px">
         <div class="row">
           <strong style="font-size:.9rem">No names? Just numbers.</strong>
-          <label class="f" style="margin:0">Boys <input id="numCount" type="number" value="15" min="1" max="60"></label>
+          <label class="f" style="margin:0">Students <input id="numCount" type="number" value="15" min="1" max="60"></label>
           <button class="btn sec" id="numRosterBtn">Create numbered class</button>
         </div>
-        <p class="hint" style="margin-bottom:0">Makes a class of #1…#N — each boy gets his own printed cards with just his number, so points and the leaderboard still work without typing any names. Assign the numbers however you like (or let each boy keep his card set).</p>
+        <p class="hint" style="margin-bottom:0">Makes a class of #1…#N — each student gets his own printed cards with just his number, so points and the leaderboard still work without typing any names. Assign the numbers however you like (or let each student keep his card set).</p>
       </div>
     </div>
     <div class="card" id="rosterCard" hidden>
@@ -2059,7 +2076,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     </div>
     <div class="card noprint">
       <h2>Cube wands</h2>
-      <p class="hint" style="margin-top:0">Instead of four cards, each boy gets one foam cube with A/B/C/D marker labels on its faces — he answers by turning his letter toward the camera. Wands work in the same game with nothing to switch on: the camera reads cards and wands together. <span id="wandMode"></span></p>
+      <p class="hint" style="margin-top:0">Instead of four cards, each student gets one foam cube with A/B/C/D marker labels on its faces — he answers by turning his letter toward the camera. Wands work in the same game with nothing to switch on: the camera reads cards and wands together. <span id="wandMode"></span></p>
       <div class="row">
         <label class="f">Label sheet
           <select id="wandLabelSize">
@@ -2074,7 +2091,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
           <button class="btn sec" id="printWandsBtn">Print</button>
         </div>
       </div>
-      <div class="note" id="wandStockNote">Sized for <strong>Premium Label Supply</strong> square label sheets (gap/spacing geometry taken from PLS's own templates; the outer margins are pulled in slightly from PLS's own numbers as a print-registration safety margin — see below). The marker was recently shrunk a size for that same reason, so the old 25ft read-distance field test no longer applies at this size and is due for a re-check. Print at <strong>100% / actual size</strong>, not "fit to page" — the labels must land on the die-cuts. In the print dialog's <strong>More settings</strong>, set <strong>Margins to "None"</strong> — this sheet is registered edge-to-edge on purpose, and "Default" margins on a real printer adds its own inch or so of blank border on top of that, pushing every label down and right. Labels never print a boy's name — only a wand number — so one physical set can move between classes; his name still appears live on the board whenever his wand is scanned. Each wand takes <strong>5 labels</strong>: A/B/C/D around the four sides (▲ TOP pointing up), plus a <strong>top label</strong> with the wand number — its edge letters point at the matching sides, so rotate it until they line up, then stick.</div>
+      <div class="note" id="wandStockNote">Sized for <strong>Premium Label Supply</strong> square label sheets (gap/spacing geometry taken from PLS's own templates; the outer margins are pulled in slightly from PLS's own numbers as a print-registration safety margin — see below). The marker was recently shrunk a size for that same reason, so the old 25ft read-distance field test no longer applies at this size and is due for a re-check. Print at <strong>100% / actual size</strong>, not "fit to page" — the labels must land on the die-cuts. In the print dialog's <strong>More settings</strong>, set <strong>Margins to "None"</strong> — this sheet is registered edge-to-edge on purpose, and "Default" margins on a real printer adds its own inch or so of blank border on top of that, pushing every label down and right. Labels never print a student's name — only a wand number — so one physical set can move between classes; his name still appears live on the board whenever his wand is scanned. Each wand takes <strong>5 labels</strong>: A/B/C/D around the four sides (▲ TOP pointing up), plus a <strong>top label</strong> with the wand number — its edge letters point at the matching sides, so rotate it until they line up, then stick.</div>
     </div>
     <div class="card"><div id="cardsheet"></div></div>
   </section>
@@ -2096,7 +2113,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
 
   /* ---------------- ArUco cube wands ----------------
      A wand is a foam cube with four printed ArUco markers (faces A/B/C/D);
-     the boy answers by turning the letter he wants toward the camera. The
+     the student answers by turning the letter he wants toward the camera. The
      numbering scheme is the one proven in chazaroom-aruco-test.html: wand
      index w (0-based) owns the contiguous marker-id block w*4 .. w*4+3, so
      generator and detector stay in sync with no lookup table. Wand #N (the
@@ -2136,10 +2153,10 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   function nameOf(id){ for(var i=0;i<roster.length;i++){ if(roster[i].id===id) return roster[i].name; } return "#"+id; }
   /* The roster is the whole class list; "joined" is whoever actually held up a
      card during THIS session's lobby scan (calibSeen, set only while
-     mode==="calib" — see handleCodes). A boy absent today is still on the
+     mode==="calib" — see handleCodes). A student absent today is still on the
      roster but never joins, so anything that shows "who's playing this game"
      — the answer count's denominator, the live scanned-list — must read off
-     this, not the raw roster, or an absent boy silently counts as expected
+     this, not the raw roster, or an absent student silently counts as expected
      to answer. Scoring/leaderboards stay on the full roster on purpose: a
      final scoreboard listing everyone (even at 0 points) is normal. */
   function joinedRoster(){ return roster.filter(function(s){ return calibSeen[s.id]; }); }
@@ -2315,11 +2332,11 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     });
     roster=newRoster; scores=newScores; save();
     renderRoster();
-    $("rosterStatus").textContent="Class set — "+roster.length+" boys. Print their cards on the Answer cards tab.";
+    $("rosterStatus").textContent="Class set — "+roster.length+" students. Print their cards on the Answer cards tab.";
   });
   $("numRosterBtn").addEventListener("click",function(){
     var n=clampInt($("numCount").value,1,60,15);
-    if(hasRoster() && !confirm("Replace the current class list ("+roster.length+" boys)? Points reset too.")) return;
+    if(hasRoster() && !confirm("Replace the current class list ("+roster.length+" students)? Points reset too.")) return;
     roster=[]; scores={};
     for(var i=1;i<=n;i++) roster.push({id:String(i),name:"#"+i});
     $("rosterText").value=roster.map(function(s){ return s.name; }).join("\n");
@@ -2347,7 +2364,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     var size=parseFloat($("cardSize").value)||5;
     var px=Math.max(150,Math.min(1400,Math.round(size*220)));
     if(hasRoster()){
-      $("cardsMode").innerHTML="<strong>Per-student cards.</strong> Each boy gets his own sheet (his four cards, coded to his id) — so the camera records who answered what. "+roster.length+" sheet"+(roster.length>1?"s":"")+".";
+      $("cardsMode").innerHTML="<strong>Per-student cards.</strong> Each student gets his own sheet (his four cards, coded to his id) — so the camera records who answered what. "+roster.length+" sheet"+(roster.length>1?"s":"")+".";
       $("setsLabel").style.display="none";
       roster.forEach(function(s){
         var sh=el("div","stu-sheet");
@@ -2357,7 +2374,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         sh.appendChild(cc); sheet.appendChild(sh);
       });
     } else {
-      $("cardsMode").innerHTML="<strong>Shared A/B/C/D cards (anonymous).</strong> Print a set per boy, or one class set. Set a class list on the <em>Class</em> tab to switch to per-student cards with points.";
+      $("cardsMode").innerHTML="<strong>Shared A/B/C/D cards (anonymous).</strong> Print a set per student, or one class set. Set a class list on the <em>Class</em> tab to switch to per-student cards with points.";
       $("setsLabel").style.display="";
       var sets=Math.max(1,Math.min(40,parseInt($("cardSets").value,10)||1));
       for(var i=0;i<sets;i++){ LETTERS.forEach(function(L){ sheet.appendChild(cardCell(L, ANON_PREFIX+L, px, size)); }); }
@@ -2448,13 +2465,13 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     var ceiling = hasRoster()? roster.length : WAND_MAX_ANON;
     if(start>ceiling){
       sheet.appendChild(el("div","bad-box", hasRoster()
-        ? "Start #"+start+" is past the class list ("+roster.length+" boys)."
+        ? "Start #"+start+" is past the class list ("+roster.length+" students)."
         : "Without a class list wands go up to #"+WAND_MAX_ANON+" — set a class list for more."));
       return;
     }
     count=Math.min(count,ceiling-start+1);
     $("wandMode").innerHTML = hasRoster()
-      ? "<strong>Class list set:</strong> labels are numbered only (never a name printed), so one physical set can move between classes — wand #N still belongs to the Nth boy on today's list and scores points just like his cards. His name appears live on the board — in the lobby, the answer list and the overlay — whenever his wand is scanned, never on the wand itself."
+      ? "<strong>Class list set:</strong> labels are numbered only (never a name printed), so one physical set can move between classes — wand #N still belongs to the Nth student on today's list and scores points just like his cards. His name appears live on the board — in the lobby, the answer list and the overlay — whenever his wand is scanned, never on the wand itself."
       : "<strong>No class list:</strong> numbered wands, counted into the anonymous letter tally. Set a class list to keep points and see names appear live on the board as wands are scanned.";
 
     var wrap=el("div","wand-sheets");
@@ -2482,7 +2499,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
           cell=el("div","wand-cell wl-topcell");
           LETTERS.forEach(function(L){ cell.appendChild(el("span","wl-face "+L+" wl-edge e"+L,L)); });
           cell.appendChild(el("div","wl-bignum","#"+(it.w+1)));
-          /* Deliberately never the boy's real name — see wandMode note above:
+          /* Deliberately never the student's real name — see wandMode note above:
              one physical wand set should move between classes/games without
              being tied to whoever happened to hold #7 today. */
           cell.appendChild(el("div","wl-topname","Student"));
@@ -2544,9 +2561,9 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
                                        never erase a scan that already completed */
   /* Anonymous + sweep cannot be counted correctly, and the app must not pretend
      otherwise. With no class list there is no identity, so across pan stops it can
-     either SUM (double-counting a boy two overlapping stops both see) or take the
-     PEAK (missing boys only ever seen at a different stop). Peak is chosen — never
-     invent a boy who isn't there — so the number is a floor, and it is labelled
+     either SUM (double-counting a student two overlapping stops both see) or take the
+     PEAK (missing students only ever seen at a different stop). Peak is chosen — never
+     invent a student who isn't there — so the number is a floor, and it is labelled
      "at least" whenever a sweep fed it. A class list removes the ambiguity, and
      the setup panel says so. */
   var sweptThisQ=false;
@@ -2645,10 +2662,10 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     var w=$("sweepAnonWarn"); if(w) w.hidden = hasRoster() || !ptzhttp.ok;   /* only matters when a sweep is possible AND nobody is identified */
     $("startHint").textContent = everStarted
       ? "Camera's paused — picks back up right where you left off, scores and question intact."
-      : "Opens into the lobby — boys hold up a card to join — then the first question.";
+      : "Opens into the lobby — students hold up a card to join — then the first question.";
     var h=$("setupHint");
     if(!questions.length){ h.innerHTML="No questions yet — add some on the <strong>Questions</strong> tab first (or load the samples)."; return; }
-    var m= hasRoster()? (roster.length+" boys — per-student cards, points kept.") : "anonymous A/B/C/D (set a class list for per-student points).";
+    var m= hasRoster()? (roster.length+" students — per-student cards, points kept.") : "anonymous A/B/C/D (set a class list for per-student points).";
     h.textContent=questions.length+" question"+(questions.length>1?"s":"")+" ready · "+m+" Print the cards, aim the camera, and Start.";
   }
 
@@ -2778,7 +2795,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   /* Reset controls, reachable during play (score panel).
      Reset game  = start the quiz over from the first question (scores kept),
                    back through the visibility check.
-     Reset scores = zero every boy's points (roster mode only). */
+     Reset scores = zero every student's points (roster mode only). */
   function resetGame(){
     clearAutoAdvance();
     game={asked:0,right:0}; $("gAsked").textContent="0"; $("gRight").textContent="0";
@@ -2861,7 +2878,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     /* No reset here — studentAnswer is untouched by this transition. A scan
        during get-ready is NOT counted though (see handleCodes' qphase==="answer"
        gate): the choices aren't even on screen yet, so nothing should be able
-       to lock in as an answer before a boy has actually seen them. */
+       to lock in as an answer before a student has actually seen them. */
     renderTiles(); startTimer();
   }
   function snapshot(){
@@ -2891,7 +2908,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     });
     var joinedN=joinedRoster().length;
     $("answeredLine").textContent = perStudent
-      ? (snap.answered+" of "+joinedN+" talmidim have answered")
+      ? (snap.answered+" of "+joinedN+" students have answered")
       : ((sweptThisQ? "at least ":"")+snap.answered+" answered");
     updateRespPanel(snap);
     renderPillBar();
@@ -2924,7 +2941,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
      list already had — surfaced here instead, continuously, so who's
      answered is visible throughout the question rather than only in a
      popup at the very end. Both read off joinedRoster(), never the raw
-     class list: a boy absent today never joined the lobby, so he was never
+     class list: a student absent today never joined the lobby, so he was never
      expected to answer and shouldn't show as "missing". */
   function updateRespPanel(snap){
     var rp=$("respPanel"); if(!rp) return;
@@ -2933,7 +2950,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     snap = snap || snapshot();
     var joined=joinedRoster(), joinedN=joined.length;
     $("respAnswered").innerHTML = perStudent
-      ? "<b>"+snap.answered+" of "+joinedN+"</b> talmidim have answered"+
+      ? "<b>"+snap.answered+" of "+joinedN+"</b> students have answered"+
         (snap.answered<joinedN ? " — "+(joinedN-snap.answered)+" to go" : " — everyone's in!")
       : "<b>"+(sweptThisQ?"at least ":"")+snap.answered+"</b> answered";
     var rr=$("respRoster");
@@ -2980,7 +2997,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   var scannedThisQ=false;
   /* One sweep across the room to read every raised card, then callback. Runs at
      the end of the answer countdown (or when reveal is pressed) — not during
-     answering — so boys commit first, then the camera captures the whole room. */
+     answering — so students commit first, then the camera captures the whole room. */
   function scanPass(done){
     if(!ptzhttp.ok || !$("sweepOn").checked){ done(); return; }
     sweep.on=false;                                   /* halt any continuous sweep */
@@ -2996,7 +3013,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     })();
   }
   /* ---- seat-memory hunt: after the sweep, go looking for whoever is still
-     missing — drive the gimbal to each missing boy's learned bearing, zoom in,
+     missing — drive the gimbal to each missing student's learned bearing, zoom in,
      and give his card a moment to decode. Capped so the game never stalls. ---- */
   var HFOV_BASE=67, HUNT_DWELL=1600, HUNT_MAX=8000, HUNT_ZOOM=180;
   function huntMissing(done){
@@ -3005,19 +3022,19 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
                       .sort(function(a,b){ return seatMap[a.id]-seatMap[b.id]; });
     if(!missing.length){ done(); return; }
     var t0=Date.now(), k=0;
-    (function nextBoy(){
+    (function nextStudent(){
       if(k>=missing.length || Date.now()-t0>HUNT_MAX){
         ptzSet({pan:0,tilt:0,zoom:100}).catch(function(){});
         $("sweepStatusLine").textContent="";
         done(); return;
       }
       var s=missing[k++];
-      if(studentAnswer[s.id]){ nextBoy(); return; }        /* found since the sweep */
+      if(studentAnswer[s.id]){ nextStudent(); return; }        /* found since the sweep */
       $("sweepStatusLine").textContent="Looking for "+s.name+"…";
       ptzSet({pan:seatMap[s.id],zoom:HUNT_ZOOM}).catch(function(){});
       var w0=Date.now();
       (function waitRead(){
-        if(studentAnswer[s.id] || Date.now()-w0>HUNT_DWELL){ nextBoy(); return; }
+        if(studentAnswer[s.id] || Date.now()-w0>HUNT_DWELL){ nextStudent(); return; }
         setTimeout(waitRead,200);
       })();
     })();
@@ -3255,7 +3272,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       /* Presence (seenLive/calibSeen) and the overlay are about WHO was seen,
          tracked in every phase — but an ANSWER, per-student or anonymous,
          only counts once the choices are actually on screen. A card or wand
-         caught during get-ready must never lock in before a boy has even
+         caught during get-ready must never lock in before a student has even
          seen what he's choosing between. */
       var duringAnswer = mode!=="game" || qphase==="answer";
       if(duringAnswer){ count[L]++; total++; }
@@ -3267,7 +3284,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
         }
       }
       /* Privacy: the overlay shows only WHO was scanned — a neutral box and the
-         boy's name, never which letter he chose (no colour-coding by choice). */
+         student's name, never which letter he chose (no colour-coding by choice). */
       var pts=c.cornerPoints;
       if(sid && ptzhttp.ok && pts && pts.length){
         /* learn where he sits: gimbal pan + the card's angular offset in frame */
@@ -3295,7 +3312,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   function nameKnown(id){ for(var i=0;i<roster.length;i++){ if(roster[i].id===id) return true; } return false; }
 
   /* ================= STUDENT VIEW (second window for the projector) =========
-     Presenter-style, like a slideshow app: the boys' window shows only the
+     Presenter-style, like a slideshow app: the students' window shows only the
      board — question, tiles, scoreboard, podium, "lift your cards" — while this
      screen keeps the camera, aim pad, scores and every button.
      The board is MIRRORED, never moved: the original element stays in this
@@ -3307,7 +3324,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     "#mirror>*{width:100%;max-width:1500px;margin:0}"+
     "#mirror .board{padding:26px 32px}"+
     "#mirror .qbig{font-size:clamp(2rem,4.6vw,4rem)}"+
-    "#mirror .tile{min-height:110px} #mirror .tile .ttx{font-size:clamp(1.2rem,2.6vw,2rem)}"+
+    "#mirror .tile{min-height:150px} #mirror .tile .ttx{font-size:clamp(2rem,4vw,3.4rem)} #mirror .tile .tlt{width:76px;height:76px;font-size:3.2rem}"+
     "#mirror .board-foot{padding-right:0;justify-content:center}"+
     "#mirror button,#mirrorLift button{display:none!important}"+
     "#mirror .presenting-tag{display:none!important}"+
@@ -3332,7 +3349,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   /* The popup PULLS its own frames (its rAF, its document). The obvious design —
      the main window pushing on rAF — dies the moment the rebbi clicks the
      projector window to full-screen it: this window backgrounds and rAF stops,
-     freezing the boys' screen. Pulling means whichever window is on screen is
+     freezing the students' screen. Pulling means whichever window is on screen is
      the one driving. A slow interval here is the belt-and-braces for the
      reverse case. Both re-render only when the HTML actually changed. */
   window.__chazPresent=function(doc){
@@ -3356,7 +3373,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     if(present.win && !present.win.closed){ present.win.focus(); return; }
     var w=window.open("","chazaroomStudent","width=1280,height=800");
     /* blocked pop-up: say so, but do NOT switch this screen to presenter mode —
-       there is no boys' window to present to, so the board must stay here */
+       there is no students' window to present to, so the board must stay here */
     if(!w){ var h=$("presentHint"); h.textContent="Your browser blocked the pop-up — allow pop-ups for this page, then press Student view again."; h.style.display="block"; return; }
     $("presentHint").style.display=""; $("presentHint").innerHTML=PRESENT_HINT;
     var styles=""; Array.prototype.forEach.call(document.querySelectorAll("style"),function(s){ styles+=s.outerHTML; });
