@@ -1544,10 +1544,26 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
      fighting the board for space. The camera becomes a small corner
      thumbnail: still needed for scan feedback (the privacy overlay), no
      longer an equal partner in the layout. */
+  /* position:relative is unconditional, not scoped to body.playing — the
+     ring (#ringWrap) is positioned against #playArea from the lobby onward
+     (mode==="calib"), which is before body.playing is ever set (that only
+     flips on for mode==="game"). Scoping this to body.playing left the ring
+     positioned against the wrong ancestor for the whole lobby beat. */
+  #playArea{position:relative}
   body.playing .wrap{max-width:none;padding:16px 22px}
-  body.playing #playArea{display:block;position:relative}
+  body.playing #playArea{display:block}
   body.playing #gameBoard{margin-bottom:0}
   body.playing .rebbi{display:contents}
+  /* The ring itself — top-right of #playArea, visible in every mode (lobby
+     included, so it can't be scoped to body.playing). Some labels ("starts
+     when you say") wrap to 2 lines at this width, so #ringLbl reserves a
+     fixed 2-line height (not just font-size) rather than growing with its
+     text — #camCard docks below at a top offset sized for that worst case
+     (see body.playing #camCard below), so a long label can never push into
+     the camera thumbnail regardless of which one is showing. */
+  #ringWrap{position:absolute;top:16px;right:26px;z-index:55;display:flex;flex-direction:column;align-items:center;gap:6px}
+  #ringWrap[hidden]{display:none}   /* author display beats [hidden] otherwise */
+  #ringLbl{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#aeb6d2;text-align:center;max-width:110px;height:30px;overflow:hidden;line-height:1.2}
   /* Docked just under the timer, at the board's own top-right — not
      bottom-right: that spot's clearance depends on how many pill rows and
      how tall the question text wrap to, both of which change with class
@@ -1558,8 +1574,9 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
      viewport) since #camCard isn't a DOM child of #gameBoard (.rebbi's
      display:contents lifts it to a sibling) — in play mode #playArea's own
      box coincides with the board's, so this still reads as "under the
-     timer, at the board's edge". */
-  body.playing #camCard{position:absolute;top:112px;right:26px;width:150px;padding:8px;z-index:50;margin:0}
+     timer, at the board's edge". 16px ring top + 74px circle + 6px gap +
+     30px reserved 2-line label + 14px clearance = 140px. */
+  body.playing #camCard{position:absolute;top:140px;right:26px;width:150px;padding:8px;z-index:50;margin:0}
   body.playing #camCard .stage{display:block}
   body.playing #camCard .stage video{width:100%;max-width:none}
   /* Trimmed to just the video during play — the aim pad, pause row and stat
@@ -1817,6 +1834,14 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     </div>
 
     <div id="playArea" hidden>
+      <!-- The persistent ring — lives outside both #calibPanel and #gameBoard so
+           it's visible across the whole play session (lobby included), never
+           just within one panel. It's never blank: the label always names
+           whatever it's counting toward. See updateRing(). -->
+      <div id="ringWrap" hidden>
+        <div class="timer off" id="timer">–</div>
+        <div id="ringLbl"></div>
+      </div>
       <!-- "Lift up your cards" popup, shown when the countdown hits 0 -->
       <div id="liftModal" class="lift-modal" hidden>
         <div class="lift-box">
@@ -1853,7 +1878,6 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
       <div id="gameBoard" class="board" hidden>
         <div class="board-top">
           <div><span class="qmeta" id="qNum">Question 1</span><span class="presenting-tag">What the class sees</span></div>
-          <div class="timer off" id="timer">–</div>
         </div>
         <div class="qbig" id="qBig">—</div>
         <div id="readyLine" class="readyline" hidden>Get ready…</div>
@@ -2603,11 +2627,39 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
      skipping a question. */
   function scheduleAutoAdvance(fromPhase,fromQIndex){
     clearAutoAdvance();
+    ringDeadline=Date.now()+AUTO_ADVANCE_MS;   /* deadline-based, not accumulator-based — see updateRing() */
     autoAdvT=setTimeout(function(){
       autoAdvT=null;
       if(mode==="game" && qphase===fromPhase && qIndex===fromQIndex) goNext();
     }, AUTO_ADVANCE_MS);
   }
+  /* ---- the ring: one persistent countdown, visible across the whole play
+     session (lobby included — see #ringWrap markup), never blank. It reads
+     off whichever timer is actually driving the current phase rather than
+     keeping its own: tLeft (the ready/answer countdown startTimer already
+     runs) or ringDeadline (a plain timestamp, stamped wherever a phase's
+     own wait is scheduled — scheduleAutoAdvance above, and onCountdownEnd's
+     capture wait below) — ringTick() just recomputes seconds-remaining from
+     whichever applies each tick, so this can never drift out of sync with
+     the thing it's actually displaying. */
+  var ringDeadline=0;
+  function ringSecs(){ return Math.max(0,Math.ceil((ringDeadline-Date.now())/1000)); }
+  function updateRing(){
+    var rw=$("ringWrap"); if(!rw) return;
+    var visible = !$("playArea").hidden;
+    rw.hidden = !visible || mode==="game" && qphase==="podium";
+    if(!visible) return;
+    var tEl=$("timer"), lbl=$("ringLbl"), last=(qIndex+1>=questions.length);
+    if(timerPaused && tHandle){ tEl.className="timer off"; tEl.textContent="⏸"; lbl.textContent="paused"; return; }
+    if(mode==="calib"){ tEl.className="timer off"; tEl.textContent="∞"; lbl.textContent="starts when you say"; return; }
+    if(qphase==="ready"){ tEl.className="timer ready"; tEl.textContent=String(tLeft); lbl.textContent="answers open in"; }
+    else if(qphase==="answer" && !capturing && !tHandle){ tEl.className="timer off"; tEl.textContent="–"; lbl.textContent="manual pacing"; }
+    else if(qphase==="answer" && !capturing){ tEl.className="timer"+(tLeft<=5?" low":""); tEl.textContent=String(tLeft); lbl.textContent="lock in"; }
+    else if(qphase==="answer" && capturing){ tEl.className="timer"; tEl.textContent=String(ringSecs()); lbl.textContent="revealing in"; }
+    else if(qphase==="result"){ tEl.className="timer"; tEl.textContent=String(ringSecs()); lbl.textContent="scoreboard in"; }
+    else if(qphase==="score"){ tEl.className="timer"; tEl.textContent=String(ringSecs()); lbl.textContent=last?"final results in":"next question in"; }
+  }
+  setInterval(updateRing,250);
   var passTimes=[];
   var tallyNow={A:0,B:0,C:0,D:0};   /* anonymous current-frame letter counts    */
   var tallyPeak={A:0,B:0,C:0,D:0};  /* anonymous: highest simultaneous count per letter
@@ -2915,13 +2967,12 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   /* Read-the-question countdown, scaled to question length (Kahoot's dynamic think time) */
   function startReady(q){
     stopTimer();
-    var secs=Math.min(8,Math.max(4,Math.round(String(q.q||"").length/15))), tEl=$("timer");
-    tLeft=secs; tEl.className="timer ready"; tEl.textContent=tLeft;
+    var secs=Math.min(8,Math.max(4,Math.round(String(q.q||"").length/15)));
+    tLeft=secs;   /* the ring reads tLeft directly — see updateRing() */
     tHandle=setInterval(function(){
       if(timerPaused) return;                        /* drawer open — clock holds */
       tLeft--;
       if(tLeft<=0){ stopTimer(); beginAnswerPhase(); return; }
-      tEl.textContent=tLeft;
     },1000);
   }
   function beginAnswerPhase(){
@@ -3045,18 +3096,17 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
      decrement — so ducking out to fix a question never costs the class time.
      The timer face shows ⏸ while held; closing the drawer picks up mid-count. */
   var timerPaused=false;
-  function pauseTimer(){ timerPaused=true; if(tHandle) $("timer").textContent="⏸"; }
-  function resumeTimer(){ timerPaused=false; if(tHandle) $("timer").textContent=tLeft; }
+  function pauseTimer(){ timerPaused=true; }    /* the ring shows ⏸ — see updateRing() */
+  function resumeTimer(){ timerPaused=false; }
   function startTimer(){
     stopTimer();
-    var secs=clampInt($("timerSecs").value,0,300,0), tEl=$("timer");
-    if(secs<=0){ tEl.className="timer off"; tEl.textContent="–"; return; }
-    tLeft=secs; tEl.className="timer"; tEl.textContent=tLeft;
+    var secs=clampInt($("timerSecs").value,0,300,0);
+    if(secs<=0){ tLeft=0; return; }   /* 0 = fully manual, no auto-lock — updateRing() shows "off" via tHandle===null */
+    tLeft=secs;
     tHandle=setInterval(function(){
       if(timerPaused) return;                        /* drawer open — clock holds */
       tLeft--;
-      if(tLeft<=0){ tEl.textContent="0"; stopTimer(); onCountdownEnd(); return; }
-      tEl.textContent=tLeft; tEl.className = (tLeft<=5? "timer low" : "timer");
+      if(tLeft<=0){ tLeft=0; stopTimer(); onCountdownEnd(); return; }
     },1000);
   }
   function stopTimer(){ if(tHandle){ clearInterval(tHandle); tHandle=null; } }
@@ -3138,8 +3188,14 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
        is exactly what read as "the button doesn't work". */
     $("lockBtn").disabled=true; $("lockBtn").className="btn sec";
     var afterCapture=function(){ if(revealed || $("liftModal").hidden) return; capturing=false; renderLiftList(); if($("liftAuto").checked) finishReveal(); else $("liftSub").textContent="Everyone who answered is shown — reveal when ready, or ✕ to go back."; };
-    if($("sweepOn").checked && ptzhttp.ok && !scannedThisQ){ scannedThisQ=true; scanPass(afterCapture); }
-    else { setTimeout(afterCapture, 4000); }   /* fixed-camera lift window */
+    if($("sweepOn").checked && ptzhttp.ok && !scannedThisQ){
+      scannedThisQ=true;
+      var arc=clampInt($("sweepSpan").value,20,280,120), n=clampInt($("sweepStops").value,2,12,4);
+      var dwell=clampInt($("sweepDwell").value,300,4000,900);
+      ringDeadline=Date.now()+n*(dwell+SWEEP_SETTLE)+HUNT_DWELL;   /* rough estimate — sweep + one hunt dwell */
+      scanPass(afterCapture);
+    }
+    else { ringDeadline=Date.now()+4000; setTimeout(afterCapture, 4000); }   /* fixed-camera lift window */
   }
   /* "Pan the room" — re-scan for stragglers without revealing. With the PTZ
      bridge it sweeps the gimbal across the room again; on a fixed camera it just
@@ -3210,7 +3266,6 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   }
   function showScoreboard(final){
     qphase="score"; hideLift(); stopTimer(); renderPillBar();   /* hides itself — the scoreboard owns the board */
-    var tEl=$("timer"); tEl.className="timer off"; tEl.textContent="–";
     $("tiles").hidden=true; $("readyLine").hidden=true; $("revealResult").hidden=true; $("boardPodium").hidden=true;
     $("qBig").textContent="Scoreboard";
     $("answeredLine").textContent="";
@@ -3234,7 +3289,6 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
   }
   function showPodium(){
     qphase="podium"; hideLift(); stopTimer(); renderPillBar();   /* hides itself */
-    var tEl=$("timer"); tEl.className="timer off"; tEl.textContent="–";
     $("tiles").hidden=true; $("readyLine").hidden=true; $("revealResult").hidden=true; $("boardScore").hidden=true;
     $("qNum").textContent="Game over";
     $("answeredLine").textContent="";
@@ -3269,8 +3323,7 @@ AR.DICTIONARIES['ARUCO_4X4_1000'] = {
     if(qphase==="ready"){ beginAnswerPhase(); return; }
     if(qphase==="answer"){
       dismissed=false;
-      stopTimer(); var tEl=$("timer"); tEl.className="timer off"; tEl.textContent="–";
-      onCountdownEnd();
+      stopTimer(); onCountdownEnd();
     }
   });
   $("nextBtn").addEventListener("click",goNext);
