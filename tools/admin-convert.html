@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Menchmark — Superadmin Converter Tool</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; background: #f5f6fa; color: #1b2440; }
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.1rem; margin-top: 30px; }
+  p.hint { font-size: .9rem; color: #6a7187; }
+  .card { background: #fff; border: 1px solid #d8dbe4; border-radius: 10px; padding: 16px 20px; margin: 14px 0; }
+  label { display: block; font-size: .85rem; font-weight: 600; margin: 10px 0 4px; }
+  input[type=text], input[type=email], input[type=file], textarea {
+    width: 100%; font-size: .9rem; border: 1px solid #d8dbe4; border-radius: 8px; padding: 8px 10px; box-sizing: border-box;
+  }
+  textarea { font-family: monospace; height: 100px; }
+  button { font-size: .9rem; padding: 9px 18px; cursor: pointer; border-radius: 8px; border: 1px solid #d8dbe4; background: #1b2440; color: #fff; margin-top: 10px; }
+  button:hover { background: #2c3860; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.secondary { background: #fff; color: #1b2440; }
+  .status { font-size: .85rem; margin-top: 8px; white-space: pre-wrap; }
+  .status.err { color: #b04432; font-weight: 600; }
+  .status.ok { color: #1f8a5b; font-weight: 600; }
+  #gateError { color: #b04432; font-size: .9rem; margin-top: 10px; }
+  #whoami { font-size: .85rem; color: #6a7187; }
+  nav.tabs { display: flex; gap: 8px; margin: 16px 0; }
+  nav.tabs button { margin-top: 0; }
+  nav.tabs button.active { background: #1f8a5b; }
+  section.panel { display: none; }
+  section.panel.active { display: block; }
+  table.receipt, table.bulk { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: .85rem; }
+  table.receipt th, table.receipt td, table.bulk th, table.bulk td { border: 1px solid #d8dbe4; padding: 6px 10px; text-align: left; }
+  .converter-receipt-status--verified { color: #1f8a5b; font-weight: 700; }
+  .converter-receipt-status--mismatch { color: #b04432; font-weight: 700; }
+  tr.converter-receipt-row--mismatch { background: #fdf3f2; }
+  .row-status { font-weight: 600; }
+  .row-status--queued { color: #6a7187; }
+  .row-status--running { color: #9a6b1f; }
+  .row-status--verified { color: #1f8a5b; }
+  .row-status--mismatch, .row-status--failed { color: #b04432; }
+</style>
+</head>
+<body>
+
+<h1>Menchmark — Superadmin Converter Tool</h1>
+<p class="hint">docs/Firebase_Step3_Converter_Tool_Design_Proposal.md — provisions rebbeim (roster-only or from a real backup) and runs the bulk beta invite. Superadmin only; enforced by firestore.rules, not by this page.</p>
+
+<div id="gate" class="card">
+  <p id="whoami">Not signed in.</p>
+  <button id="signInBtn">Sign in with Google</button>
+  <p id="gateError"></p>
+</div>
+
+<div id="toolUi" style="display:none">
+  <div class="card">
+    <span id="whoamiSignedIn"></span>
+    <button id="signOutBtn" class="secondary" style="float:right;margin-top:0">Sign out</button>
+  </div>
+
+  <nav class="tabs">
+    <button data-panel="roster" class="active">Roster-only</button>
+    <button data-panel="backup">Backup-upload</button>
+    <button data-panel="bulk">Bulk invite</button>
+  </nav>
+
+  <section id="panel-roster" class="panel active card">
+    <h2>Roster-only</h2>
+    <p class="hint">Provisions a new rebbi with a starter class built from a pasted roster. No existing backup involved.</p>
+    <label for="rosterEmail">Rebbi's email</label>
+    <input type="email" id="rosterEmail" placeholder="rebbi@example.com">
+    <label for="rosterClassName">Class name</label>
+    <input type="text" id="rosterClassName" placeholder="Shiur Aleph">
+    <label for="rosterStudents">Students — one per line: <code>Name, Group</code> (Group optional)</label>
+    <textarea id="rosterStudents" placeholder="Chaim Berkowitz, A&#10;Dovid Klein, A"></textarea>
+    <button id="rosterSubmit">Provision</button>
+    <div id="rosterStatus" class="status"></div>
+    <div id="rosterReceipt"></div>
+  </section>
+
+  <section id="panel-backup" class="panel card">
+    <h2>Backup-upload</h2>
+    <p class="hint">Seeds a rebbi's account with his real class, exactly as a downloaded backup describes it — including tracked-item history. Normalized through app.html's own migrateData()/load2fix() before anything is previewed or written.</p>
+    <label for="backupEmail">Rebbi's email</label>
+    <input type="email" id="backupEmail" placeholder="rebbi@example.com">
+    <label for="backupFile">Backup JSON file</label>
+    <input type="file" id="backupFile" accept="application/json">
+    <label style="display:flex;align-items:center;gap:6px;font-weight:400"><input type="checkbox" id="backupForce" style="width:auto"> Overwrite an existing class for this rebbi (force)</label>
+    <button id="backupPreview">Preview</button>
+    <div id="backupStatus" class="status"></div>
+    <div id="backupPreviewBox"></div>
+    <button id="backupConfirm" style="display:none">Confirm &amp; write</button>
+    <div id="backupReceipt"></div>
+  </section>
+
+  <section id="panel-bulk" class="panel card">
+    <h2>Bulk invite</h2>
+    <p class="hint">One row per rebbi: <code>email, class name</code>. Each becomes an empty starter class + magic link — the beta-list bulk invite (docs/Firebase_Rebuild_Scope.md, "Backend and auth"). Runs sequentially so one bad row never stalls the rest.</p>
+    <textarea id="bulkRows" placeholder="rebbi1@example.com, Shiur Aleph&#10;rebbi2@example.com, Shiur Beis" style="height:140px"></textarea>
+    <button id="bulkSubmit">Run bulk invite</button>
+    <table class="bulk" id="bulkTable" style="display:none">
+      <thead><tr><th>#</th><th>Email</th><th>Status</th><th>Sign-in link</th></tr></thead>
+      <tbody id="bulkTbody"></tbody>
+    </table>
+  </section>
+</div>
+
+<script src="/firebase-config.js"></script>
+<script src="/vendor/firebase/firebase-app-compat.js"></script>
+<script src="/vendor/firebase/firebase-auth-compat.js"></script>
+<script src="/vendor/firebase/firebase-firestore-compat.js"></script>
+<script src="/vendor/firebase/firebase-functions-compat.js"></script>
+<script src="/tools/converter-core.js"></script>
+<script>
+(function(){
+  "use strict";
+  firebase.initializeApp(window.MENCHMARK_FIREBASE_CONFIG);
+  var auth = firebase.auth();
+  var db = firebase.firestore();
+  var functions = firebase.functions();
+
+  var gate = document.getElementById("gate");
+  var toolUi = document.getElementById("toolUi");
+  var gateError = document.getElementById("gateError");
+  var whoami = document.getElementById("whoami");
+  var whoamiSignedIn = document.getElementById("whoamiSignedIn");
+
+  document.getElementById("signInBtn").addEventListener("click", function () {
+    gateError.textContent = "";
+    var provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider).catch(function (err) {
+      gateError.textContent = err.message;
+    });
+  });
+  document.getElementById("signOutBtn").addEventListener("click", function () {
+    auth.signOut();
+  });
+
+  auth.onAuthStateChanged(function (user) {
+    if (!user) {
+      toolUi.style.display = "none";
+      gate.style.display = "block";
+      whoami.textContent = "Not signed in.";
+      return;
+    }
+    whoami.textContent = "Checking authorization for " + user.email + "…";
+    db.collection("accounts").doc(user.uid).get().then(function (snap) {
+      if (!snap.exists || snap.data().role !== "superadmin") {
+        gateError.textContent =
+          "Signed in as " + user.email + ", but this account is not a superadmin. Signing out.";
+        auth.signOut();
+        return;
+      }
+      whoamiSignedIn.textContent = "Signed in as " + user.email + " (superadmin)";
+      gate.style.display = "none";
+      toolUi.style.display = "block";
+    }).catch(function (err) {
+      gateError.textContent = err.message;
+      auth.signOut();
+    });
+  });
+
+  // ---- tabs ----
+  var tabButtons = document.querySelectorAll("nav.tabs button");
+  tabButtons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      tabButtons.forEach(function (b) { b.classList.remove("active"); });
+      document.querySelectorAll("section.panel").forEach(function (p) { p.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("panel-" + btn.dataset.panel).classList.add("active");
+    });
+  });
+
+  function setStatus(el, msg, cls) {
+    el.textContent = msg;
+    el.className = "status" + (cls ? " " + cls : "");
+  }
+
+  // ---- roster-only ----
+  document.getElementById("rosterSubmit").addEventListener("click", function () {
+    var email = document.getElementById("rosterEmail").value.trim();
+    var className = document.getElementById("rosterClassName").value.trim();
+    var raw = document.getElementById("rosterStudents").value;
+    var students = raw.split("\n").map(function (line) {
+      var parts = line.split(",").map(function (s) { return s.trim(); });
+      if (!parts[0]) return null;
+      return { name: parts[0], group: parts[1] || null };
+    }).filter(Boolean);
+
+    if (!email) { setStatus(document.getElementById("rosterStatus"), "An email is required.", "err"); return; }
+
+    var statusEl = document.getElementById("rosterStatus");
+    setStatus(statusEl, "Provisioning…");
+    ConverterCore.callProvisionRebbi(functions, {
+      mode: "roster", email: email, className: className, students: students, deviceId: "admin-convert"
+    }).then(function (res) {
+      setStatus(statusEl, "Done. Sign-in link:\n" + res.signInLink, "ok");
+      var box = document.getElementById("rosterReceipt");
+      box.innerHTML = "";
+      box.appendChild(ConverterCore.renderReceiptReport(res.receipt));
+    }).catch(function (err) {
+      setStatus(statusEl, "Failed: " + err.message, "err");
+    });
+  });
+
+  // ---- backup-upload ----
+  var lastNormalized = null;
+  document.getElementById("backupPreview").addEventListener("click", function () {
+    var fileInput = document.getElementById("backupFile");
+    var statusEl = document.getElementById("backupStatus");
+    var previewBox = document.getElementById("backupPreviewBox");
+    var confirmBtn = document.getElementById("backupConfirm");
+    previewBox.innerHTML = "";
+    confirmBtn.style.display = "none";
+    lastNormalized = null;
+
+    var file = fileInput.files && fileInput.files[0];
+    if (!file) { setStatus(statusEl, "Choose a backup JSON file first.", "err"); return; }
+
+    setStatus(statusEl, "Reading…");
+    var reader = new FileReader();
+    reader.onload = function () {
+      var parsed;
+      try { parsed = JSON.parse(reader.result); }
+      catch (e) { setStatus(statusEl, "That file isn't valid JSON: " + e.message, "err"); return; }
+
+      setStatus(statusEl, "Normalizing through app.html's migrateData()/load2fix()…");
+      ConverterCore.normalizeBackup(parsed, { appHtmlUrl: "/app.html" }).then(function (normalized) {
+        lastNormalized = normalized;
+        var studentCount = (normalized.students || []).length;
+        var itemCount = (normalized.trackedItems || []).length;
+        var p = document.createElement("p");
+        p.textContent =
+          "Normalized OK — " + studentCount + " student(s), " + itemCount + " tracked item(s), class \"" +
+          (normalized.className || normalized.school || "") + "\". Review, then confirm to write.";
+        previewBox.appendChild(p);
+        setStatus(statusEl, "");
+        confirmBtn.style.display = "inline-block";
+      }).catch(function (err) {
+        setStatus(statusEl, "Normalization failed: " + err.message, "err");
+      });
+    };
+    reader.onerror = function () { setStatus(statusEl, "Could not read that file.", "err"); };
+    reader.readAsText(file);
+  });
+
+  document.getElementById("backupConfirm").addEventListener("click", function () {
+    var email = document.getElementById("backupEmail").value.trim();
+    var force = document.getElementById("backupForce").checked;
+    var statusEl = document.getElementById("backupStatus");
+    if (!email) { setStatus(statusEl, "An email is required.", "err"); return; }
+    if (!lastNormalized) { setStatus(statusEl, "Preview a backup first.", "err"); return; }
+
+    setStatus(statusEl, "Writing…");
+    ConverterCore.callProvisionRebbi(functions, {
+      mode: "backup", email: email, normalized: lastNormalized, force: force, deviceId: "admin-convert"
+    }).then(function (res) {
+      setStatus(statusEl, "Done. Sign-in link:\n" + res.signInLink, "ok");
+      var box = document.getElementById("backupReceipt");
+      box.innerHTML = "";
+      box.appendChild(ConverterCore.renderReceiptReport(res.receipt));
+    }).catch(function (err) {
+      setStatus(statusEl, "Failed: " + err.message, "err");
+    });
+  });
+
+  // ---- bulk invite ----
+  document.getElementById("bulkSubmit").addEventListener("click", function () {
+    var raw = document.getElementById("bulkRows").value;
+    var rows = raw.split("\n").map(function (line) {
+      var parts = line.split(",").map(function (s) { return s.trim(); });
+      if (!parts[0]) return null;
+      return { email: parts[0], className: parts[1] || "" };
+    }).filter(Boolean);
+    if (!rows.length) return;
+
+    var table = document.getElementById("bulkTable");
+    var tbody = document.getElementById("bulkTbody");
+    tbody.innerHTML = "";
+    table.style.display = "table";
+    rows.forEach(function (row, i) {
+      var tr = document.createElement("tr");
+      tr.id = "bulk-row-" + i;
+      tr.innerHTML =
+        "<td>" + (i + 1) + "</td><td>" + row.email + "</td>" +
+        '<td class="row-status row-status--queued">queued</td><td></td>';
+      tbody.appendChild(tr);
+    });
+
+    var payloads = rows.map(function (row) {
+      return { mode: "admin-invite", email: row.email, className: row.className, deviceId: "admin-convert-bulk" };
+    });
+
+    ConverterCore.runBulk(functions, payloads, function (i, status, detail) {
+      var tr = document.getElementById("bulk-row-" + i);
+      if (!tr) return;
+      var statusCell = tr.children[2];
+      var linkCell = tr.children[3];
+      statusCell.textContent = status;
+      statusCell.className = "row-status row-status--" + status;
+      if (detail && detail.signInLink) linkCell.textContent = detail.signInLink;
+      if (detail && detail.error) linkCell.textContent = detail.error;
+    });
+  });
+})();
+</script>
+</body>
+</html>
