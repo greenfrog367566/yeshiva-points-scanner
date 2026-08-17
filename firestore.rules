@@ -70,6 +70,19 @@ service cloud.firestore {
       return get(/databases/$(db)/documents/classes/$(classId)).data;
     }
 
+    // ---- step 6: per-item admin visibility ----
+    // (docs/Firebase_Step6_Admin_Gradebook_View_Design_Proposal.md,
+    // "Updated security rules"). trackedItems.book defaults 'class' for
+    // attendance/homework/recognition (set at write time — see
+    // functions/classWriter.js's classifyBook()), 'teacher' for everything
+    // else. sharedWithAdmin survives as a whole-book override.
+    function itemBook(classId, iid) {
+      return get(/databases/$(db)/documents/classes/$(classId)/trackedItems/$(iid)).data.book;
+    }
+    function itemVisible(classId, iid) {
+      return itemBook(classId, iid) == 'class' || parentClass(classId).sharedWithAdmin == true;
+    }
+
     // ---- accounts ----
     // Identity docs. Never client-writable — provisioning, code redemption,
     // and adoption all go through Cloud Functions (functions/index.js) so
@@ -106,14 +119,27 @@ service cloud.firestore {
         allow write: if canWriteClassContent(parentClass(classId));
       }
 
+      // Step 6 (docs/Firebase_Step6_Admin_Gradebook_View_Design_Proposal.md,
+      // "Updated security rules"): itemVisible() is the item-scoped analog
+      // of canReadClass() step 2 flagged as missing — it does not replace
+      // canReadClass() for the rest of this file, only for these two
+      // subcollections, where per-item book:'class'|'teacher' has to gate
+      // an admin's read on top of (not instead of) the class-level
+      // sharedWithAdmin override. Implemented exactly per the design doc's
+      // literal rule block, which — like canWriteClassContent() above —
+      // deliberately omits isViewingAs(c): a superadmin's own escape hatch
+      // (isSuperadmin()) already covers support access, so view-as riding
+      // through here too was never in the approved spec.
       match /trackedItems/{iid} {
-        allow read: if canReadClass(parentClass(classId));
-        allow write: if canWriteClassContent(parentClass(classId));
+        allow read: if isOwner(parentClass(classId)) || isSuperadmin()
+          || (isAdminOf(parentClass(classId).schoolId) && itemVisible(classId, iid));
+        allow write: if isOwner(parentClass(classId)) || isSuperadmin();
       }
 
       match /trackedEntries/{eid} {
-        allow read: if canReadClass(parentClass(classId));
-        allow write: if canWriteClassContent(parentClass(classId));
+        allow read: if isOwner(parentClass(classId)) || isSuperadmin()
+          || (isAdminOf(parentClass(classId).schoolId) && itemVisible(classId, resource.data.itemId));
+        allow write: if isOwner(parentClass(classId)) || isSuperadmin();
       }
 
       // Added in step 3 (docs/Firebase_Step3_Converter_Tool_Design_Proposal.md)
