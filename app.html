@@ -348,6 +348,9 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .armed-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
   .armed-pill{font-family:var(--serif);font-size:1.05rem;background:var(--brass-soft);color:#6b4d18;border:1px solid #e4cf9f;border-radius:999px;padding:7px 16px;font-weight:600}
   .armed-pill.neg{background:var(--bad-soft);color:#7c2d1c;border-color:#e3bdb5}
+  /* Same "ice" tone as .av.trk / the tile-modes status chip — tracked, not
+     a point value either direction. */
+  .armed-pill.trk{background:var(--ice-soft);color:#1c4f78;border-color:#bcd6ea}
 
   .act-buttons{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:18px}
   .act-btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 13px;text-align:left;min-width:120px}
@@ -361,6 +364,17 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      rather than a value — ice, the app's "neither good nor bad" tone, and
      muted weight so it doesn't read as a point total. */
   .act-btn .av.trk{color:var(--ice);font-weight:600}
+  /* ACTIVITY BAND (Phase 2): three tone-grouped clusters (Give/Take/Record)
+     inside #actButtons, each capped with a "+N more" overflow trigger. Named
+     "cluster" rather than "group" on purpose — .act-group-* below already
+     means something else entirely (the Activities tab's student-group
+     restriction checklist); reusing "group" here would collide in meaning,
+     not in CSS. */
+  .act-clusters{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+  .act-cluster-hd{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px}
+  .act-cluster-row{display:flex;flex-wrap:wrap;gap:8px}
+  .act-cluster-more{border:1px dashed var(--line);border-radius:10px;padding:10px 13px;background:#fff;color:var(--muted);font-weight:700;font-size:.85rem;cursor:pointer;min-width:120px;text-align:left}
+  .act-cluster-more:hover{border-color:#b9c0d0;color:var(--ink)}
 
   .custom-row{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:18px}
   .custom-row .field{width:90px}
@@ -2089,7 +2103,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <div class="panel-tools"><span class="panel-name">Activities</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
         <div class="panel-body">
           <div class="armed-bar">
-            <span style="font-size:.85rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Now scoring</span>
+            <span id="armedKicker" style="font-size:.85rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Now scoring</span>
             <span class="armed-pill" id="armedPill">—</span>
             <!-- margin-left:auto, not .grow — .grow is only defined inside
                  .toolbar and .erow, and .armed-bar is neither. -->
@@ -5780,9 +5794,26 @@ function setupRoster() {
     // alone — appending its 0 would read as "this scan is worth nothing". True
     // of every rerouted activity, which since 2d is every tracked one, and of
     // the warning flash, which was never a point value to begin with.
-    var armedIsHw = isWarning || reroutedActivity(armedActivity());
+    var armedA = armedActivity();
+    var armedIsHw = isWarning || reroutedActivity(armedA);
     pill.textContent = armedIsHw ? label : (label + "  " + fmtDeltaBare(delta));
     pill.classList.toggle("neg", delta<0 || isWarning);
+    // ACTIVITY BAND (Phase 2): pill + kicker tint/read ice ("trk") for a real
+    // tracked arm, same tone tile-modes' status chip and .av.trk already use
+    // — but never for the warning flash, which stays the existing red/neg
+    // treatment (it is tracked=false in data, opts.warn is what routes it).
+    var isTracked = !isWarning && reroutedActivity(armedA);
+    pill.classList.toggle("trk", isTracked);
+    var kicker=$("armedKicker");
+    if(kicker){
+      // Same ti-attendance special-case tile-modes uses to choose chip vs.
+      // plain line — reused here so the two phases agree on what "status"
+      // means, instead of inventing a second classification.
+      var trkItem = isTracked ? trackedItemForActivity(armedA) : null;
+      kicker.textContent = !isTracked ? "Now scoring"
+        : (trkItem && trkItem.id==="ti-attendance") ? "Now marking"
+        : "Now recording";
+    }
     // highlight matching activity button
     document.querySelectorAll(".act-btn").forEach(function(b){
       b.classList.toggle("selected", b.dataset.label===label && Number(b.dataset.delta)===delta);
@@ -5798,6 +5829,12 @@ function setupRoster() {
     // "✉ Email attendance" rides along, since it is only ever offered while
     // Attendance is armed — and disarming must take it away with the fill.
     if(typeof refreshAttEmailBtn==="function") refreshAttEmailBtn();
+    // ACTIVITY BAND (Phase 2): a full rebuild, unlike the in-place refreshes
+    // above — #actButtons carries no QR codes and no scroll position a
+    // rebuild could disrupt, and a rebuild is the only way "the armed item
+    // is always shown, even if it belongs to the overflow" can hold when
+    // arming happens from inside the overflow modal.
+    if(typeof renderActButtons==="function") renderActButtons();
   }
   // Arms the warning flash exactly like Custom arms an amount — pick it,
   // then scan/tap the boy it's for. Delta is 0 purely as a placeholder;
@@ -10928,6 +10965,30 @@ function setupRoster() {
   // from the screen. The mirror image of printExcluded (#117), which hides a
   // code from print only and leaves the screen alone.
   function actVisibleOnScreen(a){ return !a.hidden && actInCurrentMode(a); }
+  /* ACTIVITY BAND (Phase 2). Same pos/neg/trk tone menuLabelItems() already
+   * uses for the printed codes — Give is points+, Take is points-, Record is
+   * every tracked activity (attendance, homework, tracker items, freeze —
+   * anything that scores nothing). Caps are plain constants, not a setting:
+   * nothing in the app has an overflow-into-a-modal convention to match yet,
+   * and these are easy to retune later without a settings surface. */
+  var ACT_CLUSTERS = [
+    {tone:"pos", label:"Give",   cap:8},
+    {tone:"neg", label:"Take",   cap:4},
+    {tone:"trk", label:"Record", cap:6}
+  ];
+  function actButtonTone(a){ return a.tracked ? "trk" : (a.pts<0 ? "neg" : "pos"); }
+  function buildActButton(a){
+    var b=el("button","act-btn");
+    b.type="button";
+    b.dataset.label=a.name; b.dataset.delta=a.pts;
+    b.appendChild(el("span","an",a.name));
+    // Homework Checked earns no points, so it shows no value line at all — a
+    // "+0" would read as "scanning this gives nothing". Name only. Both .an and
+    // .av are display:block, so omitting .av just makes a shorter card.
+    if(!reroutedActivity(a)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
+    b.addEventListener("click", function(){ setArmed(a.name, a.pts, a); $("seatsScanInput").focus(); });
+    return b;
+  }
   function renderActButtons(){
     // Settings → Warning Flash. Off by default (see load2fix()); the button
     // lives in the static HTML rather than being built here, so this is just
@@ -10951,17 +11012,39 @@ function setupRoster() {
     var visible=armableActivities().filter(actVisibleInCurrentClass).filter(actVisibleOnScreen);
     if(!data.activities.length){ wrap.appendChild(el("span","recent-empty","No activities yet — add some on the Activities tab.")); return; }
     if(!visible.length){ wrap.appendChild(el("span","recent-empty","No activities are set up for this group — check the Activities tab.")); return; }
-    visible.forEach(function(a){
-      var b=el("button","act-btn");
-      b.dataset.label=a.name; b.dataset.delta=a.pts;
-      b.appendChild(el("span","an",a.name));
-      // Homework Checked earns no points, so it shows no value line at all — a
-      // "+0" would read as "scanning this gives nothing". Name only. Both .an and
-      // .av are display:block, so omitting .av just makes a shorter card.
-      if(!reroutedActivity(a)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
-      b.addEventListener("click", function(){ setArmed(a.name, a.pts, a); $("seatsScanInput").focus(); });
-      wrap.appendChild(b);
+    var armedA=armedActivity();
+    var clusters=el("div","act-clusters");
+    ACT_CLUSTERS.forEach(function(def){
+      var list=visible.filter(function(a){ return actButtonTone(a)===def.tone; });
+      if(!list.length) return;
+      var shown=list, extra=0;
+      if(list.length>def.cap){
+        shown=list.slice(0, def.cap-1);
+        extra=list.length-shown.length;
+      }
+      // The armed activity is always a real, highlightable button, even if
+      // it would otherwise overflow — displaces the group's last visible
+      // slot rather than leaving the band showing something that isn't
+      // actually armed. Also required for setArmed()'s .selected loop,
+      // which can only mark a button that's in the DOM.
+      if(armedA && list.indexOf(armedA)>=0 && shown.indexOf(armedA)<0){
+        shown=shown.slice(0, shown.length-1).concat([armedA]);
+      }
+      var box=el("div");
+      box.appendChild(el("div","act-cluster-hd",def.label));
+      var row=el("div","act-cluster-row");
+      shown.forEach(function(a){ row.appendChild(buildActButton(a)); });
+      if(extra>0){
+        var overflowItems=list.filter(function(a){ return shown.indexOf(a)<0; });
+        var more=el("button","act-cluster-more","＋"+overflowItems.length+" more");
+        more.type="button";
+        more.addEventListener("click", function(){ showActivityOverflowModal(def.label, overflowItems); });
+        row.appendChild(more);
+      }
+      box.appendChild(row);
+      clusters.appendChild(box);
     });
+    wrap.appendChild(clusters);
   }
 
   // band is optional and only ever passed at a real scan/tap OUTCOME (points
@@ -15026,6 +15109,42 @@ function setupRoster() {
     overlay.appendChild(card);
     document.body.appendChild(overlay);
     setTimeout(function(){ amtIn.focus(); amtIn.select(); }, 50);
+  }
+  // ACTIVITY BAND (Phase 2)'s "＋N more" overflow — same hand-rolled modal
+  // skeleton as showCustomAmountModal() just above (there's no generic
+  // openModal() helper in the app to call instead). Each row is the exact
+  // same buildActButton() the visible band uses, so an overflowed activity
+  // looks identical whether it's in the band or in here — with one extra
+  // listener to close the modal after arming, since setArmed() already
+  // re-renders the band itself (see its own comment on that call).
+  function showActivityOverflowModal(groupLabel, items){
+    var overlay=el("div","modal-overlay");
+    var card=el("div","modal-card"); card.style.maxWidth="380px";
+    var head=el("div","modal-head");
+    head.appendChild(el("div","modal-title", groupLabel+" — more activities"));
+    var closeBtn=el("button","modal-close","✕"); closeBtn.type="button"; closeBtn.title="Close";
+    head.appendChild(closeBtn);
+    card.appendChild(head);
+
+    var body=el("div","act-cluster-row");
+    items.forEach(function(a){
+      var b=buildActButton(a);
+      b.addEventListener("click", function(){ close(); });
+      body.appendChild(b);
+    });
+    card.appendChild(body);
+
+    function close(){
+      if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+    }
+    function onKey(e){ if(e.key==="Escape") close(); }
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function(e){ if(e.target===overlay) close(); });
+    document.addEventListener("keydown", onKey);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
   }
   // Builds the activity list + Custom option into any dropdown element — the
   // one real implementation of "pick an activity from a dropdown" in the app.
