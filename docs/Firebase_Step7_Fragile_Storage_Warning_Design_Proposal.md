@@ -1,5 +1,16 @@
 # Firebase Rebuild — Step 7 Fragile-Storage Warning Design (Proposal)
 
+> 📦 **ARCHIVED 2026-08-18 — shipped and merged (PR #303).** Added in a
+> follow-up pass after PR #310 (merged same day) confirmed step 7 had landed —
+> this doc was still draft at the original consolidation audit's survey time.
+> Kept in place (not relocated — this path is cited by code comments in
+> `app.html`) but historical only from here on. The managed-Chromebook
+> verification session is still owed per `docs/NOW.md` before this ships to
+> the beta cohort — that's a rollout gate, not a build gate, and doesn't
+> change this doc's ARCHIVED status. Current status lives in `docs/NOW.md`
+> and `Menchmark_Phased_Build_Plan.md`; the load-bearing content is in the
+> shipped code and `CHANGELOG.md`.
+
 ## Status
 
 **✅ APPROVED 2026-08-14 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s build order as step 7's design — the last of the 8 build-order steps to be designed. This doc is now the reference for the trigger sequence, tier-branched copy, action buttons, and managed-Chromebook verification plan below.
