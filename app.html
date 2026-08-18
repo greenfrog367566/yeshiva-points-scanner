@@ -6066,7 +6066,18 @@ function setupRoster() {
   var GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
   function firebaseProjectId(){ return window.MENCHMARK_FIREBASE_CONFIG && window.MENCHMARK_FIREBASE_CONFIG.projectId; }
   function cloudFunctionsBase(){ return "https://us-central1-" + firebaseProjectId() + ".cloudfunctions.net"; }
-  function signInRedirectUri(){ return location.origin + location.pathname; }
+  // Canonical, not location.pathname — this app resolves to TWO different
+  // live paths (Cloudflare's clean-URL rewrite 307s /app.html -> /app for a
+  // normal browser tab; the installed PWA's manifest start_url launches
+  // straight at /app.html, no redirect) and Google requires an exact string
+  // match on redirect_uri, so using the page's live path meant Google Cloud
+  // Console needed BOTH registered or sign-in broke for whichever wasn't
+  // (found live, 2026-08-18: Error 400 redirect_uri_mismatch). Fixing on
+  // /app.html — the PWA's own start_url, so it's guaranteed to exist and
+  // resolve correctly regardless of which URL the rebbi actually opened;
+  // Cloudflare's redirect plus the browser's normal fragment-preservation
+  // across a redirect carries the OAuth response straight through to /app.
+  function signInRedirectUri(){ return location.origin + "/app.html"; }
 
   // login_hint (an email) makes a later silent re-auth attempt reliable when
   // a browser holds more than one Google account — the exact failure mode
