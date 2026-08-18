@@ -7381,10 +7381,12 @@ function setupRoster() {
       var rec=day[s.id]||{status:"present",ts:null};
       // In presence-first, an unmarked boy has NO highlighted state — the row
       // shows three untaken buttons, which is what "nobody has looked at him
-      // yet" is supposed to look like. In absence-first he reads as present,
-      // exactly as before.
+      // yet" is supposed to look like. In absence-first he still reads (and
+      // still COUNTS) as present — that's the mode's whole point — but the row
+      // is dimmed and badged the same way, so "nobody looked at him yet" is
+      // visible in both modes. Look-only: shown/counts/send are untouched.
       var shown=marked ? marked.status : (attPresenceFirst() ? "" : rec.status);
-      var row=el("div","erow"+(attPresenceFirst() && !marked ? " att-unmarked" : ""));
+      var row=el("div","erow"+(!marked ? " att-unmarked" : ""));
       // Tapping the NAME walks the same cycle a scan does, so the screen and the
       // scanner can never disagree about what one input means. The three buttons
       // stay for setting a state directly — this adds a way in, it removes none.
@@ -7397,6 +7399,10 @@ function setupRoster() {
         var tEl=el("span",null, fmtClockTime(rec.ts));
         tEl.style.cssText="font-size:.75rem;color:var(--muted);margin-right:8px";
         row.appendChild(tEl);
+      } else {
+        var uEl=el("span","au-rem","not yet marked");
+        uEl.style.marginRight="8px";
+        row.appendChild(uEl);
       }
       var seg=el("span","seg mini");
       ["present","late","absent"].forEach(function(st){
@@ -11005,14 +11011,15 @@ function setupRoster() {
   }
   var TRACKED_BADGE = {
     "ti-attendance": function(sid){
-      // attStatusOn() rather than attMarkedRec() so the badge speaks whichever
-      // mode the class is in, without re-deciding here what "unmarked" means.
-      // Absence-first returns "present" for a boy nobody has touched, because
-      // in that mode he IS present. Presence-first returns "" — nobody has
-      // looked at him yet, which is exactly what this badge exists to surface.
-      var st=attStatusOn(todayKey(), sid);
-      if(!st) return {text:"unmarked", tone:"todo"};
-      return {text:st, tone:(st==="present" ? "ok" : (st==="late" ? "late" : "warn"))};
+      // attMarkedRec() rather than attStatusOn(): the badge shows "unmarked"
+      // for any boy nobody has actually touched today, in EITHER mode — same
+      // rule homework's badge follows. This is look-only: absence-first still
+      // COUNTS an untouched boy as present everywhere else (summary, send,
+      // Gradebook) — attStatusOn() is what those still read. Only this badge
+      // now distinguishes "nobody looked at him" from "confirmed present".
+      var marked=attMarkedRec(todayKey(), sid);
+      if(!marked) return {text:"unmarked", tone:"todo"};
+      return {text:marked.status, tone:(marked.status==="present" ? "ok" : (marked.status==="late" ? "late" : "warn"))};
     },
     "ti-homework": function(sid){
       // data.hw[...] read directly, never hwDayRecord(), which CREATES the day
