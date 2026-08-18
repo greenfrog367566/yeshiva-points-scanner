@@ -1191,17 +1191,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     width:1.15rem; height:1.15rem; border-radius:50%;
     background:conic-gradient(#F2EFE4 0deg 180deg,#16241C 180deg 360deg); border:1px solid var(--board-btn-border);
   }
-  /* Top-center, not a corner: every per-cell control (.board-controls,
-     .board-remove) anchors to its OWN cell's corner, and whichever box fills
-     the top-right area — which is nearly every layout — puts its .board-remove
-     right where a corner-anchored close button would sit too. Top-center is
-     the one spot no cell layout ever reaches. */
-  #boardCloseBtn{
-    position:fixed; top:clamp(.9rem,2.6vw,1.8rem); left:50%; transform:translateX(-50%); z-index:6;
-    width:2.5rem; height:2.5rem; border-radius:50%; border:1px solid var(--board-btn-border);
-    background:var(--board-btn-bg); color:var(--board-btn-fg); cursor:pointer; font-size:1rem;
+  /* No separate close button — a screen already crowded with per-box ✕'s
+     (remove, shelf delete, screen delete) doesn't need one more, ambiguous,
+     glyph. #boardBtn is already a toggle (see boardToggle()); while the
+     board is open it stays visible, above the overlay, and switches to a
+     plain ✕ so the SAME button that opened it closes it. */
+  #boardBtn.fab-btn.board-active{
+    z-index:401; background:#B23B2E; border-color:#B23B2E;
   }
-  #boardCloseBtn:hover{ background:rgba(178,59,46,.35); color:#F2EFE4 }
   #boardDots{
     position:fixed; left:50%; bottom:clamp(.9rem,2.8vw,1.9rem); transform:translateX(-50%);
     z-index:5; display:flex; align-items:center; gap:.3rem;
@@ -2054,7 +2051,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div id="boardDots" role="tablist" aria-label="Board screens"></div>
   <button id="boardAdd" type="button" aria-label="Add box" title="Add box">+</button>
   <button id="boardSkinBtn" type="button" aria-label="Switch black/white" title="Switch black-on-white / white-on-black"><span class="board-skin-dot"></span></button>
-  <button id="boardCloseBtn" type="button" aria-label="Close board" title="Close board">✕</button>
   <button id="boardShelfTab" type="button" aria-label="Saved messages" title="Saved messages">Saved</button>
   <div id="boardShelfBackdrop"></div>
   <div id="boardShelfPanel" aria-label="Saved messages">
@@ -9902,7 +9898,7 @@ function setupRoster() {
      pageIndex itself is NOT persisted — the board always opens on page 0. */
   (function(){
     var overlay=$("boardOverlay"), stage=$("boardStage"), dotsEl=$("boardDots");
-    var addBtn=$("boardAdd"), skinBtn=$("boardSkinBtn"), closeBtn=$("boardCloseBtn");
+    var addBtn=$("boardAdd"), skinBtn=$("boardSkinBtn"), boardBtn=$("boardBtn");
     var shelfTab=$("boardShelfTab"), shelfPanel=$("boardShelfPanel"), shelfBackdrop=$("boardShelfBackdrop");
     var shelfCloseBtn=$("boardShelfClose"), shelfListEl=$("boardShelfList");
     var MAX_BOXES=4, pageIndex=0, draggingId=null;
@@ -10190,21 +10186,24 @@ function setupRoster() {
     shelfTab.addEventListener("click", openShelf);
     shelfCloseBtn.addEventListener("click", closeShelf);
     shelfBackdrop.addEventListener("click", closeShelf);
-    closeBtn.addEventListener("click", boardClose);
 
     function boardOpen(){
       overlay.setAttribute("data-skin", data.boardSkin==="light" ? "light" : "dark");
       pageIndex=0;
       overlay.style.display="block";
       document.body.style.overflow="hidden";
-      // FABs are freely draggable to anywhere on screen — including right
-      // under boardCloseBtn's own fixed spot, where a dragged FAB's solid
-      // circle would bleed through its translucent background. Hiding the
-      // whole stack while the overlay is open is simpler and more robust
-      // than chasing every FAB's possible position; boardClose() restores
-      // proper visibility via applyHeaderShortcutsVisibility() rather than
-      // blindly re-showing, so a rebbi who hid the shortcuts stays hidden.
-      document.querySelectorAll(".fab-btn").forEach(function(b){ b.style.display="none"; });
+      // The other 3 FABs are freely draggable to anywhere on screen and
+      // would otherwise bleed through the overlay wherever it's translucent
+      // (e.g. board-remove's low-opacity fill) if dropped underneath it —
+      // hide them for the duration. boardBtn itself stays up (raised above
+      // the overlay via .board-active) and becomes the close control: no
+      // separate ✕ needed when the screen already has plenty of them
+      // (per-box remove, shelf delete, screen delete) — the same button
+      // that opened the board closes it, same as boardToggle() already does.
+      ["fsBtn","timerBtn","pickerBtn"].forEach(function(id){ var b=$(id); if(b) b.style.display="none"; });
+      boardBtn.classList.add("board-active");
+      boardBtn.textContent="✕";
+      boardBtn.title="Close board";
       render(); renderShelf();
       var first=stage.querySelector(".board-celltext");
       if(first) setTimeout(function(){ first.focus(); }, 30);
@@ -10213,6 +10212,9 @@ function setupRoster() {
       overlay.style.display="none";
       document.body.style.overflow="";
       closeShelf();
+      boardBtn.classList.remove("board-active");
+      boardBtn.textContent="📋";
+      boardBtn.title="Board — a fullscreen display for homework or a reminder";
       applyHeaderShortcutsVisibility();
     }
     window.boardToggle = function(){
