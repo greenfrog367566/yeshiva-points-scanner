@@ -1,5 +1,12 @@
 # Firebase Rebuild — Step 5 Superadmin Tools Design (Proposal)
 
+> 📦 **ARCHIVED 2026-08-18 — shipped and merged (PR #300).** Kept in place
+> (not relocated — this path is cited by dozens of code comments in
+> `admin.html`, `app.html`, `firestore.rules`, and the Cloud Functions) but
+> historical only from here on. Current status lives in `docs/NOW.md` and
+> `Menchmark_Phased_Build_Plan.md`; the load-bearing content is in the shipped
+> code and `CHANGELOG.md`.
+
 ## Status
 
 **✅ APPROVED 2026-08-14 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s build order as step 5's design. This doc is now the reference for `admin.html`'s shape, the activitySummary triggers, the view-as UI transition, the email export, and the access boundary below.

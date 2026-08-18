@@ -1,5 +1,9 @@
 # The mirror gap — proposal
 
+> 📦 **ARCHIVED 2026-08-18 — shipped and merged (PR #219).** Historical only
+> from here on. The living summary of what this shipped is now CLAUDE.md's
+> "mirror" code-pattern section.
+
 **Status: ACCEPTED 2026-08-05 — all five decisions taken as recommended.
 Implemented in PR #219.** Written 2026-08-05, after Phase 2d landed in two parts
 (#208 + the tile badges), as the PROPOSE-FIRST document for the one piece 2d

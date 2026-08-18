@@ -15,6 +15,10 @@ Read `#218` itself for the full feasibility case (OAuth verification, the
 `drive.file` scope, the no-SDK argument). This document does not repeat that —
 it only works the five open questions the issue left for Ben.
 
+**Companion record:** `Universal_SignIn_Proposal.md` (ACCEPTED the same day)
+carries the sign-in audit and comparable-products case behind §3 below — read
+this doc first for current status, that one for the full reasoning.
+
 ---
 
 ## 1. The decision this doc is downstream of — ACCEPTED 2026-08-09

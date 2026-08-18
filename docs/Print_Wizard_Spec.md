@@ -24,11 +24,12 @@ These get bundled together in conversation but are fundamentally different, and 
 
 **2. Scanner HARDWARE config codes** — vibrate on/off, volume, COM/serial mode, USB-HID mode, storage/memory mode, "upload all," "clear all," timestamp prefix/suffix.
 - These are **printed in the Tera manufacturer's manual**. They are Tera's own proprietary barcodes. **The app cannot generate them** — a "volume up" barcode is a specific image Tera designed; we can't mint it from a string.
-- **Constraint:** to put these on a Menchmark printout we'd have to **reproduce Tera's barcode images**, which raises a redistribution question (are they free to reproduce? probably fine for a free tool, but worth confirming, not assuming). 
-- **Honest options:**
-  - (a) **Link/reference** the specific manual pages ("Scanner setup → see Tera manual p.12–14, or scan the QR below to open it") — safest, zero redistribution question.
-  - (b) **Reproduce the specific codes** a rebbi actually needs (the handful: storage mode, upload all, clear all, timestamp prefix, COM mode, volume, vibrate) as images bundled with the app — only after confirming that's OK to redistribute.
-  - **Recommend starting with (a)** — a clean "Scanner Setup Sheet" that references/links the manual and explains *which* codes to scan and why, without reproducing Tera's images until redistribution is confirmed.
+- ✅ **Settled 2026-08-15 (CLAUDE.md rule 7): Tera gave written permission to
+  reproduce these.** Reproduce cropped images straight from
+  `docs/Tera_UM1300_Manual.pdf`, bit-for-bit, never a hand-regenerated barcode
+  from a guessed payload. Already shipped for seven codes in the app's Help
+  modal → Scanner Setup tab; this Print Wizard component reuses the same asset
+  set from `docs/tera-scanner-codes/`, no new confirmation needed.
 
 Everything else below is category 1 (ours, freely printable) unless noted.
 
@@ -116,8 +117,12 @@ Dinar    192 pr  #B04432      Isar      8 pr  #6B4E9E
 
 A reference sheet for the physical scanner config a no-screen rebbi needs:
 - Which settings to change and why: **storage/memory mode**, **upload all**, **clear all**, **timestamp prefix**, **COM/serial mode**, **volume**, **vibrate**.
-- **Per the constraint above:** v1 **references/links** the Tera manual for the actual config barcodes (option a) rather than reproducing Tera's proprietary images. The sheet explains the workflow in plain language ("to scan all day and upload later: 1. scan Storage Mode from the manual, 2. …") and can include a QR linking to the manual PDF.
-- If redistribution of the specific codes is later confirmed OK, upgrade to reproducing the handful of needed codes directly (option b).
+- **Per the constraint above (now settled):** reproduce the actual barcode
+  images cropped from `docs/Tera_UM1300_Manual.pdf` — the same assets already
+  shipped in the app's Help modal — rather than only linking the manual. The
+  sheet explains the workflow in plain language ("to scan all day and upload
+  later: 1. scan Storage Mode below, 2. …") with the real barcode printed
+  inline.
 
 ---
 
@@ -146,10 +151,10 @@ One button: **"Print everything I need to run on paper."** Assembles, in order:
 - Class-list printable (trivial)
 - Big double-sided all-codes student card (new layout of existing codes)
 - Coin-denominated activity/student cards with color-matched backgrounds (new layout + styling over existing codes + colors)
-- Scanner setup reference sheet (references manual; no proprietary-code reproduction in v1)
+- Scanner setup reference sheet (real Tera barcode images, permission settled)
 - Full Paper Kit assembler + checklist
 
-**Constraint flagged, not hidden:** hardware config codes can't be app-generated; v1 references the Tera manual rather than reproducing Tera's barcode images until redistribution is confirmed.
+**Constraint noted, resolved:** hardware config codes still can't be app-generated (they're Tera's proprietary images), but reproduction is settled — Tera gave written permission (CLAUDE.md rule 7, 2026-08-15) — so this component prints the real barcodes rather than only linking the manual.
 
 ---
 

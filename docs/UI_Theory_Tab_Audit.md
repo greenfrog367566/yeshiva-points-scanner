@@ -6,6 +6,15 @@ the actual shipped code in `app.html`/`setup.html`. Line numbers are against
 this branch's `app.html` and drift as the file changes — grep the named
 function, don't trust the number.*
 
+> 📌 **Tracked as one line in `docs/NOW.md`'s "Next, in order"** (a 27-item
+> ranked punch list, unstarted, this doc for the detail) rather than 27
+> individual entries — NOW.md is deliberately terse and this doc is the
+> backing reference. This is a **dated snapshot** — findings #25 and #26 are
+> individually cited from `Onboarding_Starter_Tabs_Proposal.md` and
+> `Left_Rail_Nav_Decision.md`/`UI_Design_Theory.md` respectively, which is why
+> the file stays in place rather than folding into either of those. Re-verify
+> any item against the real code before acting; line numbers are not durable.
+
 **Status: everything here is a finding, not a commitment.** Items are marked:
 
 - ✅ **settled-spec** — already decided in the design record; implementing is

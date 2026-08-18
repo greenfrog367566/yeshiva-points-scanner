@@ -111,25 +111,25 @@ before the product is proven); **don't prioritize** — 🔥-style class badges
   designed) is the big open workstream; anything below queues behind or beside
   it via `docs/NOW.md`.
 
-## 4. Open items worth a decision (PROPOSE-FIRST, not commitments)
+## 4. Open items — superseded, kept only as a trail (trimmed 2026-08-18)
 
 *A tab-by-tab audit of the shipped app against this theory ran 2026-08-14 —
-see `UI_Theory_Tab_Audit.md` for the ranked findings, which add concrete code
-locations to items 1–4 below plus two bugs and several settled-spec gaps.*
+`UI_Theory_Tab_Audit.md` — and gave every item below concrete code locations,
+plus two bugs and several settled-spec gaps this section never had. That doc
+is now the live reference; this section is kept only so the trail from
+"philosophy" to "finding" to "outcome" isn't lost. Status of each, since none
+are actually open any more:*
 
-1. **Double-scan detection** — the review's one "do now." A soft inline
-   "Dovid was just scanned — again?" within ~2 seconds; no modal. Small,
-   real, unbuilt.
-2. **Teacher-facing naming for "Tracked Items"** — audit what the Gradebook
-   config UI actually calls things. "Tracked Item" is an engine name;
-   "Gradebook → Add → what do you want to track?" is how a rebbi thinks. Keep
-   the internal name; fix only the copy if it leaks.
-3. **Light visual grouping in the Run/Manage subtab row** — enough hierarchy
-   that Backup & Restore doesn't sit visually beside Students (the review
-   sketched Class / Classroom / System).
-4. **First-run staged disclosure** — seed a minimal tab set for *new* users at
-   onboarding (a `navHidden` seed in setup, so it never takes a tab away from
-   an existing user — the same principle as the hide-until-ready seeds, and
-   the route that sidesteps the Lean-mode revert).
-5. **Adopt the closing sentence** at the top of
-   `Menchmark_UI_Redesign_Summary.md` as the standing test for future UI work.
+1. **Double-scan detection** — adopted 2026-08-14, tracked in `docs/NOW.md`
+   item 4. Not yet built.
+2. **Teacher-facing naming for "Tracked Items"** — became Tab Audit findings
+   7–10 (exact strings) plus `Menchmark_UI_Redesign_Summary.md` §12.3 (the
+   "audit what the config UI says" instruction). Not yet built.
+3. **Light visual grouping in the Run/Manage subtab row** — became Tab Audit
+   finding #26 and `Menchmark_UI_Redesign_Summary.md` §12.2 (adopted
+   2026-08-14, sequenced after #227). Not yet built.
+4. **First-run staged disclosure** — became Tab Audit finding #25 and is now
+   its own approved design, `Onboarding_Starter_Tabs_Proposal.md` (all
+   judgment calls decided 2026-08-18). Ready to build.
+5. **Adopt the closing sentence** — done: it's `Menchmark_UI_Redesign_Summary.md`
+   §12.1, adopted 2026-08-14.

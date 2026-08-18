@@ -58,6 +58,8 @@ What is left of the old "small standalone features" item once Freeze and the raf
 - The raffle removal *note* shipped (`renderRaffleAdjustNote()`, "N students removed … from past wins"). What did **not** ship is the question it was filed with: report how a removal could clear itself after the next draw rather than staying sticky. Still open, still a report before a change.
 - **Double-scan detection** (adopted 2026-08-14 from the external UI review — `Menchmark_UI_Redesign_Summary.md` §12): a soft inline "scanned a moment ago — again?" nudge when the same student is scanned twice within ~2 seconds. Never a modal, records nothing, blocks nothing — the second scan still lands unless the rebbi undoes it. Not started.
 
+**5. The tab-audit punch list — `docs/UI_Theory_Tab_Audit.md`, not started.** 27 ranked findings from the 2026-08-14 six-agent audit: 2 bugs (Mishnayos silently teaching Pesukim content; Store's stale pending-count), 4 settled-spec items the code never got (Trends' dead Sheet button, Shorashim emoji default, Text-tab setup collapse, Auction's missing audit-log write), 5 copy fixes for the "Tracked Items" internal-term leak, and 16 small/medium disclosure-and-cockpit fixes (Dashboard leaderboard cap, History render cap, Settings card reorder, etc. — full list and code locations in the doc; **line numbers drift, re-verify before acting**). Nothing here is scheduled — pull individual items opportunistically rather than treating this as one block of work.
+
 ---
 
 ## Waiting on Ben
