@@ -1,9 +1,10 @@
 # Onboarding Starter Tabs — Proposal
 
-*Drafted 2026-08-14. Status: **PROPOSED** — nothing here is built. This is the
-design for the onboarding half of #121, the part the Lean-mode revert
-deliberately left unsolved: a new rebbi still opens on 4 groups and ~20 tabs,
-11 of them in Run.*
+*Drafted 2026-08-14, all §8 judgment calls decided 2026-08-18. Status:
+**APPROVED, not yet built.** This is the design for the onboarding half of
+#121, the part the Lean-mode revert deliberately left unsolved: a new rebbi
+still opens on 4 groups and ~20 tabs, 11 of them in Run. Ready to build per
+§7 whenever this area is next touched.*
 
 ---
 
@@ -180,13 +181,23 @@ One PR, small:
 
 ## 8. Open for Ben (the judgment calls)
 
-1. **Attendance in or out of the day-one set?** In, as drafted — it is the
-   one daily-cadence tab. Out would make day-one purely scan/points.
-2. **Raffle in, or hide the whole Reward group day one?** In, as drafted —
-   rewards are the motivator half of the pitch.
-3. **The "＋ More" affordance: always-on (as recommended) or seed-only?**
-4. Any tab you'd move between columns in §4 — the list is the proposal.
+1. ✅ **Attendance in or out of the day-one set?** **Decided 2026-08-18 (Ben):
+   In, as drafted** — it is the one daily-cadence tab. §4's table already
+   reflects this.
+2. ✅ **Raffle in, or hide the whole Reward group day one?** **Decided
+   2026-08-18 (Ben): In, as drafted** — rewards are the motivator half of the
+   pitch. §4's table already reflects this.
+3. ✅ **The "＋ More" affordance: always-on or seed-only?** **Decided
+   2026-08-18 (Ben): always-on** — shows whenever anything is hidden, by seed
+   or by the rebbi's own choice, no distinction. §5.2's "no extra state" shape
+   is the one to build; the seed-fingerprint fallback in §5.2 is not needed.
+4. Any tab you'd move between columns in §4 — the list is the proposal. Still
+   open; nothing raised so far.
 
 ✅ **Decided 2026-08-14 (Ben): Store joins the day-one set, moved out of
 seeded-hidden.** §4's table and reasoning updated above; Auction stays hidden
-alone in Reward. Everything else in this section is still open.
+alone in Reward.
+
+**All four judgment calls in this section are now resolved except the
+open-ended "anything else to move" (#4), which stays open by nature — the
+proposal is otherwise ready to build per §7.**
