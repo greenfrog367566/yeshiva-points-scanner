@@ -430,6 +430,17 @@ New entries go under `[Unreleased]`. Use `### Added` before `### Fixed`; breakin
 
 Entries here are unusually long by design: they explain *why* to a rebbi, not just *what*, and data-model changes spell out what migrates and why nothing can be lost. Match that voice.
 
+**If this PR implements (or fully overtakes) a design doc in `docs/`, restamp
+that doc's status line — `SHIPPED, PR #N` or equivalent — in the same PR, not
+a follow-up.** Learned from the 2026-08-18 docs-consolidation audit: five docs
+(`Firebase_Step3b/4/5/6_*.md`, `Mirror_Gap_Proposal.md`) sat with stale
+`APPROVED`/`ACCEPTED` headers for days after merging, purely because nothing
+forced the restamp, and a 29-doc audit was needed to catch it. The doc's
+status line is load-bearing for the next person (or session) who reads
+`docs/` to learn what's actually true — it only stays true if the PR that
+makes it true says so. This is the same discipline as the CHANGELOG rule
+above, just aimed at `docs/` instead of `CHANGELOG.md`.
+
 ### 6. Never commit real data
 
 No real student names, scores, raffle history, or Google Sheet URLs. Use `sample-backup.json` for testing.
@@ -441,9 +452,11 @@ scanner configuration barcodes.** They are now embedded directly in the app's
 Help (?) modal → Scanner Setup tab, as cropped images taken from Tera's own
 manual (`docs/Tera_UM1300_Manual.pdf`, also now in this repo) — not
 re-encoded, so the pixels shipped are bit-for-bit the same graphic Tera
-printed. Assets live in `docs/tera-scanner-codes/`. Covered so far: Vibration
-On/Off, Battery Level, Real-Time Mode/Storage Mode, USB-COM/2.4G Mode, Clear
-Timestamp, Wireless Factory Default, and (general) Factory Default.
+printed. Assets live in `docs/tera-scanner-codes/`. Covered so far: Beeper
+Volume (High/Medium/Low/Off), Vibration On/Off, Battery Level, Power Timeout
+Timer (1/5/10/30 min, Never, Immediately), Real-Time Mode/Storage Mode,
+USB-COM/2.4G Mode, Clear Timestamp, Wireless Factory
+Default, and (general) Factory Default.
 
 If this is ever extended, keep the same rule: use an actual cropped image
 from the manual PDF, never a barcode/QR hand-regenerated from a guessed
