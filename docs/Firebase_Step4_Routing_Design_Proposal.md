@@ -1,5 +1,12 @@
 # Firebase Rebuild — Step 4 Routing & Back Button Design (Proposal)
 
+> 📦 **ARCHIVED 2026-08-18 — shipped and merged (PR #292).** Kept in place
+> (not relocated — this path is cited by dozens of code comments in `app.html`,
+> `firestore.rules`, and the CI route-guard scripts) but historical only from
+> here on. Current status lives in `docs/NOW.md` and
+> `Menchmark_Phased_Build_Plan.md`; the load-bearing content is in the shipped
+> code and `CHANGELOG.md`.
+
 ## Status
 
 **✅ APPROVED 2026-08-13 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s build order as step 4's design. This doc is now the reference for the route shape, router-as-choke-point discipline, class-switcher contract, tier guard, 2d/Phase-3 re-anchoring, and migration path below.

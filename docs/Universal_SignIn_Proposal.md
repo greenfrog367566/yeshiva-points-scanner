@@ -1,5 +1,15 @@
 # Universal sign-in — decision record (identity for everyone, custody still tiered)
 
+> 🔗 **Consolidated 2026-08-18 under `Data_Custody_Decision.md`.** Both records
+> were ACCEPTED the same day (2026-08-09) and this doc's conclusions are fully
+> restated in `Firebase_Rebuild_Scope.md`'s "Locked decisions." Kept as its own
+> file — not folded in — because five other docs (`Data_Custody_Decision.md`,
+> `Firebase_Rebuild_Scope.md`, `Firebase_SignIn_UI_Design_Proposal.md`,
+> `Account_Privacy_Note.md`, `app.html`) cite it by specific section number
+> (§4, §5, §8, §10); collapsing it would break every one of those pointers.
+> **Read `Data_Custody_Decision.md` first** — it's the shorter, current
+> reference and links back here for the full audit/comparable-products case.
+
 **Status: ACCEPTED, 2026-08-09.** Rabbi Steinerman took it — *"take it — make
 sure to include a data upload for current beta rebbeim"* — so §10 is now a
 **required part of the accepted design**, not an enhancement, and the doc is a
