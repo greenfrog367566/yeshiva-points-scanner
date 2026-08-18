@@ -1080,6 +1080,193 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #fsBtn.fab-btn{bottom:16px}
   #timerBtn.fab-btn{bottom:80px}
   #pickerBtn.fab-btn{bottom:144px}
+  #boardBtn.fab-btn{bottom:208px}
+
+  /* Board (4th FAB): fullscreen auto-fit big-text display for homework/
+     announcements. Unlike the other three FABs this opens a full-viewport
+     takeover, not a small docked panel — the point is a screen the class
+     reads from across the room. Every control lives INSIDE #boardOverlay so
+     the --board-* tokens below (swapped per data.boardSkin) reach them
+     through normal inheritance; keep new controls nested here rather than
+     siblings, or they won't see the tokens. */
+  #boardOverlay{
+    display:none; position:fixed; inset:0; z-index:400;
+    font-family:var(--sans);
+    --board-ink:#F2EFE4; --board-accent:#D9A62E; --board-divider:rgba(242,239,228,.14);
+    --board-placeholder:rgba(242,239,228,.32); --board-chip-bg:rgba(15,23,18,.82);
+    --board-chip-border:rgba(242,239,228,.22); --board-grip:rgba(242,239,228,.55);
+    --board-btn-bg:rgba(242,239,228,.06); --board-btn-border:rgba(242,239,228,.25);
+    --board-btn-fg:rgba(242,239,228,.55); --board-drop-hi:rgba(217,166,46,.55);
+    --board-text-shadow:0 1px 0 rgba(0,0,0,.25);
+  }
+  #boardOverlay[data-skin="light"]{
+    --board-ink:#14171C; --board-accent:#1B57C7; --board-divider:rgba(20,23,28,.15);
+    --board-placeholder:rgba(20,23,28,.32); --board-chip-bg:rgba(255,255,255,.92);
+    --board-chip-border:rgba(20,23,28,.16); --board-grip:rgba(20,23,28,.5);
+    --board-btn-bg:rgba(20,23,28,.05); --board-btn-border:rgba(20,23,28,.18);
+    --board-btn-fg:rgba(20,23,28,.55); --board-drop-hi:rgba(27,87,199,.55);
+    --board-text-shadow:none;
+  }
+  #boardStage{
+    position:absolute; inset:0; display:grid;
+    grid-gap:clamp(.6rem,1.8vw,1.6rem); padding:clamp(.7rem,2.2vw,1.8rem);
+    transition:background 180ms ease, transform 200ms ease, opacity 200ms ease;
+    background:radial-gradient(ellipse at 18% -10%,#24382C 0%,transparent 55%),radial-gradient(ellipse at 100% 110%,#1B2E22 0%,transparent 60%),#16241C;
+  }
+  #boardOverlay[data-skin="light"] #boardStage{
+    background:linear-gradient(115deg,rgba(214,227,238,.5) 0%,rgba(214,227,238,0) 24%,rgba(214,227,238,0) 76%,rgba(214,227,238,.4) 100%),radial-gradient(ellipse at 12% -18%,rgba(255,255,255,.95) 0%,transparent 55%),#FBFCFB;
+  }
+  .board-cell{
+    position:relative; border-radius:6px; display:flex; flex-direction:column;
+    padding:clamp(.25rem,.9vw,.55rem) clamp(.5rem,2vw,1.4rem) clamp(.5rem,2vw,1.4rem);
+    gap:clamp(.15rem,.6vw,.35rem); min-height:0; min-width:0;
+    transition:outline-color 120ms ease; outline:2px dashed transparent; outline-offset:-2px;
+  }
+  .board-textwrap{ flex:1; min-height:0; min-width:0; display:flex; align-items:center; justify-content:center; }
+  .board-cell.drag-over{ outline-color:var(--board-drop-hi) }
+  .board-cell.dragging{ opacity:.45 }
+  #boardStage[data-count="2"] .board-cell:first-child,
+  #boardStage[data-count="4"] .board-cell:nth-child(-n+2){ border-bottom:2px dashed var(--board-divider) }
+  #boardStage[data-count="3"] .board-cell:nth-child(2){ border-right:2px dashed var(--board-divider) }
+  #boardStage[data-count="4"] .board-cell:nth-child(odd){ border-right:2px dashed var(--board-divider) }
+  .board-controls{
+    align-self:flex-start; flex-shrink:0; display:flex; flex-direction:row; align-items:center; gap:.4rem;
+    background:var(--board-chip-bg); border:1px solid var(--board-chip-border); border-radius:7px; padding:.18rem .4rem;
+  }
+  .board-grip{ color:var(--board-grip); font-size:.85rem; letter-spacing:-1px; cursor:grab; user-select:none; padding:0 .1rem; line-height:1 }
+  .board-grip:active{ cursor:grabbing }
+  .board-swatch{
+    width:.95rem; height:.95rem; border-radius:50%; border:1px solid var(--board-chip-border);
+    background:var(--sw); padding:0; cursor:pointer; transition:transform 100ms ease, box-shadow 100ms ease;
+  }
+  .board-swatch:hover{ transform:scale(1.15) }
+  .board-swatch.active{ box-shadow:0 0 0 2px var(--board-chip-bg), 0 0 0 3.5px var(--board-accent) }
+  .board-swatch:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px }
+  .board-save{
+    display:flex; align-items:center; justify-content:center; color:var(--board-grip);
+    background:transparent; border:none; padding:0 .2rem; cursor:pointer; line-height:1;
+    transition:color 120ms ease, transform 100ms ease;
+  }
+  .board-save:hover{ color:var(--board-accent) }
+  .board-save:active{ transform:scale(.9) }
+  .board-save:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px }
+  .board-save svg{ display:block }
+  .board-save.saved{ color:var(--board-accent) }
+  .board-save.saved svg path{ fill:currentColor }
+  .board-celltext{
+    width:100%; text-align:center; color:var(--board-ink); font-weight:800; line-height:1.08;
+    letter-spacing:-.01em; white-space:pre-wrap; overflow-wrap:normal; word-break:normal;
+    outline:none; text-shadow:var(--board-text-shadow); cursor:text;
+  }
+  .board-celltext:empty::before{
+    content:attr(data-placeholder); color:var(--board-placeholder); font-weight:600;
+    font-size:clamp(1.15rem,3.1vw,2.1rem); line-height:1.35;
+  }
+  .board-remove{
+    position:absolute; top:clamp(.3rem,1.2vw,.7rem); right:clamp(.4rem,1.5vw,1rem);
+    width:1.7rem; height:1.7rem; border-radius:50%; border:1px solid var(--board-btn-border);
+    background:var(--board-btn-bg); color:var(--board-btn-fg); font-size:.9rem; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    transition:background 120ms ease, color 120ms ease;
+  }
+  .board-remove:hover{ background:rgba(178,59,46,.35); color:#F2EFE4; border-color:rgba(178,59,46,.5) }
+  .board-remove:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px }
+  #boardAdd,#boardSkinBtn{
+    position:fixed; z-index:5; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 3px 12px rgba(0,0,0,.35); transition:transform 120ms ease, filter 120ms ease, opacity 120ms ease;
+  }
+  #boardAdd{
+    right:clamp(.9rem,2.6vw,1.8rem); bottom:clamp(.9rem,2.6vw,1.8rem); width:3.1rem; height:3.1rem;
+    border-radius:50%; background:#D9A62E; color:#241A08; font-size:1.6rem; font-weight:700; line-height:1;
+  }
+  #boardAdd:hover{ filter:brightness(1.08); transform:translateY(-1px) }
+  #boardAdd:focus-visible{ outline:2px solid #F2EFE4; outline-offset:3px }
+  #boardSkinBtn{
+    left:clamp(.9rem,2.6vw,1.8rem); bottom:clamp(.9rem,2.6vw,1.8rem); width:2.5rem; height:2.5rem;
+    border-radius:50%; background:var(--board-btn-bg); border:1px solid var(--board-btn-border);
+  }
+  #boardSkinBtn:hover{ filter:brightness(1.15) }
+  #boardSkinBtn:focus-visible{ outline:2px solid var(--board-accent); outline-offset:3px }
+  #boardSkinBtn .board-skin-dot{
+    width:1.15rem; height:1.15rem; border-radius:50%;
+    background:conic-gradient(#F2EFE4 0deg 180deg,#16241C 180deg 360deg); border:1px solid var(--board-btn-border);
+  }
+  #boardCloseBtn{
+    position:fixed; top:clamp(.9rem,2.6vw,1.8rem); right:clamp(.9rem,2.6vw,1.8rem); z-index:6;
+    width:2.5rem; height:2.5rem; border-radius:50%; border:1px solid var(--board-btn-border);
+    background:var(--board-btn-bg); color:var(--board-btn-fg); cursor:pointer; font-size:1rem;
+  }
+  #boardCloseBtn:hover{ background:rgba(178,59,46,.35); color:#F2EFE4 }
+  #boardDots{
+    position:fixed; left:50%; bottom:clamp(.9rem,2.8vw,1.9rem); transform:translateX(-50%);
+    z-index:5; display:flex; align-items:center; gap:.3rem;
+  }
+  .board-dot-wrap{ position:relative; display:flex; align-items:center; justify-content:center; padding:.3rem }
+  .board-dot-btn{
+    width:.55rem; height:.55rem; padding:0; border-radius:50%; border:1px solid transparent;
+    background:var(--board-placeholder); cursor:pointer; transition:background 120ms ease, transform 120ms ease;
+  }
+  .board-dot-btn:hover{ background:var(--board-grip) }
+  .board-dot-btn.active{ background:var(--board-ink); transform:scale(1.3) }
+  .board-dot-btn:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px }
+  .board-dot-x{
+    position:absolute; top:-.15rem; right:-.15rem; width:.85rem; height:.85rem; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; background:var(--board-btn-bg);
+    border:1px solid var(--board-btn-border); color:var(--board-btn-fg); font-size:.5rem; line-height:1;
+    padding:0; cursor:pointer; transition:background 120ms ease, color 120ms ease;
+  }
+  .board-dot-x:hover{ background:rgba(178,59,46,.35); color:#F2EFE4; border-color:rgba(178,59,46,.5) }
+  .board-dot-x:focus-visible{ outline:2px solid var(--board-accent); outline-offset:1px }
+  #boardShelfTab{
+    position:fixed; right:0; top:50%; transform:translateY(-50%); z-index:6;
+    writing-mode:vertical-rl; text-orientation:mixed; background:var(--board-chip-bg);
+    border:1px solid var(--board-chip-border); border-right:none; border-radius:8px 0 0 8px;
+    padding:.7rem .4rem; color:var(--board-ink); font-family:var(--sans); font-size:.78rem;
+    font-weight:600; letter-spacing:.03em; cursor:pointer;
+  }
+  #boardShelfTab:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px }
+  #boardShelfBackdrop{
+    position:fixed; inset:0; z-index:6; background:rgba(0,0,0,.25); opacity:0;
+    pointer-events:none; transition:opacity 200ms ease;
+  }
+  #boardShelfBackdrop.open{ opacity:1; pointer-events:auto }
+  #boardShelfPanel{
+    position:fixed; top:0; right:0; bottom:0; width:min(320px,84vw); z-index:7;
+    background:var(--board-chip-bg); border-left:1px solid var(--board-chip-border);
+    display:flex; flex-direction:column; padding:1.1rem 1rem; gap:.7rem;
+    transform:translateX(100%); transition:transform 220ms ease; overflow-y:auto;
+  }
+  #boardShelfPanel.open{ transform:translateX(0) }
+  .board-shelf-head{ display:flex; align-items:center; justify-content:space-between; flex-shrink:0 }
+  .board-shelf-head h2{ font-size:1.15rem; font-weight:800; color:var(--board-accent); margin:0 }
+  #boardShelfClose{
+    width:1.8rem; height:1.8rem; border-radius:50%; border:1px solid var(--board-btn-border);
+    background:var(--board-btn-bg); color:var(--board-btn-fg); cursor:pointer;
+  }
+  #boardShelfClose:hover{ background:rgba(178,59,46,.35); color:#F2EFE4 }
+  .board-shelf-empty{ color:var(--board-placeholder); font-size:.88rem; line-height:1.55; margin:.4rem 0 0 }
+  .board-shelf-item{
+    display:flex; align-items:center; gap:.55rem; background:var(--board-btn-bg);
+    border:1px solid var(--board-chip-border); border-radius:8px; padding:.55rem .55rem .55rem .7rem;
+    cursor:pointer; text-align:left;
+  }
+  .board-shelf-item:hover{ border-color:var(--board-accent) }
+  .board-shelf-item .board-shelf-dot{ width:.6rem; height:.6rem; border-radius:50%; flex-shrink:0 }
+  .board-shelf-item .board-shelf-txt{
+    flex:1; min-width:0; color:var(--board-ink); font-weight:700; font-size:.88rem;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .board-shelf-item .board-shelf-del{
+    flex-shrink:0; width:1.4rem; height:1.4rem; display:inline-flex; align-items:center; justify-content:center;
+    border-radius:50%; border:none; background:transparent; color:var(--board-btn-fg); cursor:pointer;
+    font-size:.75rem; line-height:1;
+  }
+  .board-shelf-item .board-shelf-del:hover{ background:rgba(178,59,46,.35); color:#F2EFE4 }
+  .board-shelf-item .board-shelf-del:focus-visible{ outline:2px solid var(--board-accent); outline-offset:1px }
+  @media (prefers-reduced-motion:reduce){
+    #boardAdd,#boardSkinBtn,#boardStage,.board-dot-btn,#boardShelfPanel,#boardShelfBackdrop{ transition:none }
+  }
+
   .float-timer{position:fixed;top:12px;right:12px;z-index:200;width:236px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(20,26,46,.28);overflow:hidden;user-select:none;touch-action:none}
   .ft-grip{display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--ink);color:#fff;cursor:grab}
   .ft-grip:active{cursor:grabbing}
@@ -1855,6 +2042,24 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 <button class="fab-btn" id="fsBtn" title="Floating points scanner (with activity buttons and a tap-to-score name list) — drag to move">🎯</button>
 <button class="fab-btn" id="timerBtn" title="Floating timer — drag to move">⏱</button>
 <button class="fab-btn" id="pickerBtn" title="Floating picker wheel — drag to move">🎡</button>
+<button class="fab-btn" id="boardBtn" title="Board — a fullscreen display for homework or a reminder">📋</button>
+
+<div id="boardOverlay" data-skin="dark" style="display:none">
+  <div id="boardStage" data-count="1"></div>
+  <div id="boardDots" role="tablist" aria-label="Board screens"></div>
+  <button id="boardAdd" type="button" aria-label="Add box" title="Add box">+</button>
+  <button id="boardSkinBtn" type="button" aria-label="Switch black/white" title="Switch black-on-white / white-on-black"><span class="board-skin-dot"></span></button>
+  <button id="boardCloseBtn" type="button" aria-label="Close board" title="Close board">✕</button>
+  <button id="boardShelfTab" type="button" aria-label="Saved messages" title="Saved messages">Saved</button>
+  <div id="boardShelfBackdrop"></div>
+  <div id="boardShelfPanel" aria-label="Saved messages">
+    <div class="board-shelf-head">
+      <h2>Saved</h2>
+      <button id="boardShelfClose" type="button" aria-label="Close saved messages">✕</button>
+    </div>
+    <div id="boardShelfList"></div>
+  </div>
+</div>
 
 <div id="floatTimer" class="float-timer" style="display:none">
   <div class="ft-grip" id="ftGrip">
@@ -4916,9 +5121,16 @@ function setupRoster() {
     // the skip-until-everyone-has-had-a-turn rotation it has always had.
     pickerSkip: true,
     // Per-teacher dropped position for each floating launcher FAB (Points/
-    // Timer/Picker), keyed "scan"/"timer"/"picker". Empty means "use the
-    // CSS-stacked bottom-right default" — see applyFabPositions().
+    // Timer/Picker/Board), keyed "scan"/"timer"/"picker"/"board". Empty means
+    // "use the CSS-stacked bottom-right default" — see applyFabPositions().
     fabPos: {},
+    // Board (4th FAB): a fullscreen auto-fit display, screens split into
+    // pages of up to 4 boxes each. boardPages is an array of pages, each a
+    // list of {id,color,text}; boardShelf holds reusable saved messages
+    // (text+color) shown in the shelf drawer, independent of any one page.
+    boardPages: [[{ id: 1, color: "", text: "" }]],
+    boardShelf: [],
+    boardSkin: "dark",
     // Backup staleness tracking. Nothing in the app ever recorded that a backup
     // happened, so it could not tell a rebbi he was weeks stale.
     //
@@ -9358,7 +9570,7 @@ function setupRoster() {
   // so it's called from the same post-load init spots as
   // applyHeaderShortcutsVisibility()/applyFullWidth(), which have the same requirement.
   function applyFabPositions(){
-    [["fsBtn","scan"],["timerBtn","timer"],["pickerBtn","picker"]].forEach(function(pair){
+    [["fsBtn","scan"],["timerBtn","timer"],["pickerBtn","picker"],["boardBtn","board"]].forEach(function(pair){
       var btn=$(pair[0]), saved=data.fabPos[pair[1]];
       if(saved && typeof saved.left==="number" && typeof saved.top==="number"){
         btn.style.left=saved.left+"px"; btn.style.top=saved.top+"px"; btn.style.right="auto"; btn.style.bottom="auto";
@@ -9670,6 +9882,326 @@ function setupRoster() {
     // re-opening mid-session repaints whichever mode the rebbi last chose.
     if(pickerOpen){ $("floatPicker").classList.remove("min"); setPickMode(pickViewMode); }
   }
+  /* ---------- BOARD (4th FAB): fullscreen auto-fit big-text display ----------
+     data.boardPages: array of pages, each an array of {id,color,text} boxes
+     (max 4 boxes/page — hit that and Add opens a new page instead).
+     data.boardShelf: reusable saved messages {text,color}, independent of
+     any one page — the "Saved" drawer on the right.
+     data.boardSkin: "dark"|"light" — chalkboard vs dry-erase whiteboard.
+     pageIndex itself is NOT persisted — the board always opens on page 0. */
+  (function(){
+    var overlay=$("boardOverlay"), stage=$("boardStage"), dotsEl=$("boardDots");
+    var addBtn=$("boardAdd"), skinBtn=$("boardSkinBtn"), closeBtn=$("boardCloseBtn");
+    var shelfTab=$("boardShelfTab"), shelfPanel=$("boardShelfPanel"), shelfBackdrop=$("boardShelfBackdrop");
+    var shelfCloseBtn=$("boardShelfClose"), shelfListEl=$("boardShelfList");
+    var MAX_BOXES=4, pageIndex=0, draggingId=null;
+    var REDUCE_MOTION = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var SWATCHES=[
+      { key:"", label:"Default color" },
+      { key:"blue", label:"Blue", hex:"#2F6FED" },
+      { key:"green", label:"Green", hex:"#22B04C" },
+      { key:"red", label:"Red", hex:"#E0433A" }
+    ];
+    var BOOKMARK_SVG='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4V3z"/></svg>';
+    var resizeObserver = new ResizeObserver(function(entries){
+      entries.forEach(function(entry){
+        var textEl = entry.target.querySelector("[data-role=text]");
+        if(textEl) fitText(entry.target, textEl);
+      });
+    });
+
+    function pages(){ return data.boardPages; }
+    function nextBoxId(){
+      var max=0;
+      pages().forEach(function(p){ p.forEach(function(b){ if(b.id>max) max=b.id; }); });
+      return max+1;
+    }
+    function escapeHtml(s){
+      return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; });
+    }
+    function swatchHex(key){
+      var s=SWATCHES.filter(function(sw){ return sw.key===key; })[0];
+      return (s && s.hex) || "var(--board-ink)";
+    }
+
+    function fitText(wrap, textEl){
+      var maxH=wrap.clientHeight, maxW=wrap.clientWidth;
+      if(!maxH || !maxW) return;
+      if(!textEl.textContent || !textEl.textContent.trim()){ textEl.style.fontSize=""; return; }
+      var lo=10, hi=Math.max(lo+1, Math.min(480, maxH*1.6));
+      for(var i=0;i<12;i++){
+        var mid=(lo+hi)/2;
+        textEl.style.fontSize=mid+"px";
+        var fits = textEl.scrollHeight<=maxH+0.5 && textEl.scrollWidth<=maxW+0.5;
+        if(fits) lo=mid; else hi=mid;
+      }
+      textEl.style.fontSize=lo+"px";
+    }
+
+    function applyLayout(n){
+      stage.setAttribute("data-count", String(n));
+      var EQ="minmax(0, 1fr)";
+      if(n===1){ stage.style.gridTemplateColumns=EQ; stage.style.gridTemplateRows=EQ; }
+      else if(n===2){ stage.style.gridTemplateColumns=EQ; stage.style.gridTemplateRows=EQ+" "+EQ; }
+      else { stage.style.gridTemplateColumns=EQ+" "+EQ; stage.style.gridTemplateRows=EQ+" "+EQ; }
+    }
+    function cellSpan(index, n){ return (n===3 && index===0) ? "grid-column: 1 / 3;" : ""; }
+
+    function shelfIndexOf(box){
+      return data.boardShelf.findIndex(function(s){ return s.text===box.text && s.color===box.color; });
+    }
+    function toggleSaved(box){
+      var idx=shelfIndexOf(box);
+      if(idx>=0){ data.boardShelf.splice(idx,1); }
+      else {
+        if(!(box.text||"").trim()) return;
+        data.boardShelf.unshift({ text:box.text, color:box.color });
+        if(data.boardShelf.length>24) data.boardShelf.length=24;
+      }
+      save(); renderShelf(); render();
+    }
+    function insertFromShelf(item){
+      var boxes=pages()[pageIndex];
+      var newBox={ id:nextBoxId(), color:item.color||"", text:item.text };
+      if(boxes.length<MAX_BOXES){ boxes.push(newBox); render(); }
+      else { pages().push([newBox]); goToPage(pages().length-1, 1); }
+      save(); closeShelf();
+    }
+    function removeFromShelf(i){ data.boardShelf.splice(i,1); save(); renderShelf(); }
+
+    function renderShelf(){
+      if(!data.boardShelf.length){
+        shelfListEl.innerHTML='<p class="board-shelf-empty">Nothing saved yet — tap the bookmark on a box to keep it here for next time.</p>';
+        return;
+      }
+      shelfListEl.innerHTML = data.boardShelf.map(function(item, i){
+        var preview = item.text.replace(/\s+/g," ").trim();
+        return '<button class="board-shelf-item" type="button" data-i="'+i+'">'+
+          '<span class="board-shelf-dot" style="background:'+swatchHex(item.color)+'"></span>'+
+          '<span class="board-shelf-txt">'+escapeHtml(preview)+'</span>'+
+          '<span class="board-shelf-del" role="button" tabindex="0" data-i="'+i+'" aria-label="Remove saved message">✕</span>'+
+        '</button>';
+      }).join("");
+      Array.prototype.forEach.call(shelfListEl.querySelectorAll(".board-shelf-item"), function(el){
+        var i=Number(el.getAttribute("data-i"));
+        el.addEventListener("click", function(e){
+          if(e.target.closest(".board-shelf-del")) return;
+          insertFromShelf(data.boardShelf[i]);
+        });
+      });
+      Array.prototype.forEach.call(shelfListEl.querySelectorAll(".board-shelf-del"), function(el){
+        var i=Number(el.getAttribute("data-i"));
+        el.addEventListener("click", function(e){ e.stopPropagation(); removeFromShelf(i); });
+        el.addEventListener("keydown", function(e){
+          if(e.key==="Enter" || e.key===" "){ e.preventDefault(); e.stopPropagation(); removeFromShelf(i); }
+        });
+      });
+    }
+    function openShelf(){ shelfPanel.classList.add("open"); shelfBackdrop.classList.add("open"); }
+    function closeShelf(){ shelfPanel.classList.remove("open"); shelfBackdrop.classList.remove("open"); }
+
+    function removeBox(box){
+      var boxes=pages()[pageIndex];
+      if(boxes.length===1 && pages().length===1){
+        box.text=""; box.color=""; save(); render(); return;
+      }
+      var kept=boxes.filter(function(b){ return b.id!==box.id; });
+      if(kept.length){ pages()[pageIndex]=kept; }
+      else { pages().splice(pageIndex,1); pageIndex=Math.min(pageIndex, pages().length-1); }
+      save(); render();
+    }
+    function deletePage(i){
+      if(pages().length<2 || i<0 || i>=pages().length) return;
+      pages().splice(i,1);
+      if(i<pageIndex) pageIndex--;
+      else if(i===pageIndex) pageIndex=Math.min(pageIndex, pages().length-1);
+      save(); render();
+    }
+    function reorder(fromId, toId){
+      if(fromId===toId) return;
+      var boxes=pages()[pageIndex];
+      var fromIdx=boxes.findIndex(function(b){ return b.id===fromId; });
+      var toIdx=boxes.findIndex(function(b){ return b.id===toId; });
+      if(fromIdx<0 || toIdx<0) return;
+      var item=boxes.splice(fromIdx,1)[0];
+      boxes.splice(toIdx,0,item);
+      save(); render();
+    }
+
+    function renderDots(){
+      if(pages().length<2){ dotsEl.innerHTML=""; return; }
+      dotsEl.innerHTML = pages().map(function(_, i){
+        return '<span class="board-dot-wrap">'+
+          '<button class="board-dot-btn'+(i===pageIndex?" active":"")+'" type="button" role="tab" aria-label="Screen '+(i+1)+' of '+pages().length+'" aria-selected="'+(i===pageIndex)+'"></button>'+
+          '<button class="board-dot-x" type="button" data-i="'+i+'" aria-label="Delete screen '+(i+1)+'" title="Delete screen">✕</button>'+
+        '</span>';
+      }).join("");
+      Array.prototype.forEach.call(dotsEl.querySelectorAll(".board-dot-btn"), function(btn,i){
+        btn.addEventListener("click", function(){ goToPage(i); });
+      });
+      Array.prototype.forEach.call(dotsEl.querySelectorAll(".board-dot-x"), function(btn){
+        var i=Number(btn.getAttribute("data-i"));
+        btn.addEventListener("click", function(e){ e.stopPropagation(); deletePage(i); });
+      });
+    }
+
+    function render(){
+      var boxes=pages()[pageIndex];
+      applyLayout(boxes.length);
+      resizeObserver.disconnect();
+      stage.innerHTML="";
+      boxes.forEach(function(box, i){
+        var cell=document.createElement("div");
+        cell.className="board-cell";
+        cell.setAttribute("data-id", box.id);
+        cell.style.cssText=cellSpan(i, boxes.length);
+        var swatchHtml=SWATCHES.map(function(s){
+          var sw=s.hex || "var(--board-ink)";
+          var active=box.color===s.key ? " active" : "";
+          return '<button class="board-swatch'+active+'" type="button" data-color="'+s.key+'" title="'+s.label+'" aria-label="'+s.label+'" style="--sw:'+sw+'"></button>';
+        }).join("");
+        var saved=shelfIndexOf(box)>=0;
+        cell.innerHTML=
+          '<div class="board-controls">'+
+            (boxes.length>1 ? '<span class="board-grip" draggable="true" title="Drag to reorder">⠿</span>' : "")+
+            swatchHtml+
+            '<button class="board-save'+(saved?" saved":"")+'" type="button" title="'+(saved?"Remove from shelf":"Save to shelf")+'" aria-label="'+(saved?"Remove from shelf":"Save to shelf")+'" aria-pressed="'+saved+'">'+BOOKMARK_SVG+'</button>'+
+          '</div>'+
+          '<button class="board-remove" type="button" aria-label="Remove box">✕</button>'+
+          '<div class="board-textwrap"><div class="board-celltext" data-role="text" contenteditable="true" data-placeholder="Tap here and start typing — homework, a reminder, anything the class needs to see."></div></div>';
+
+        var removeBtn=cell.querySelector(".board-remove");
+        var grip=cell.querySelector(".board-grip");
+        var textwrap=cell.querySelector(".board-textwrap");
+        var textEl=cell.querySelector("[data-role=text]");
+        textEl.textContent=box.text;
+        var chosen=SWATCHES.filter(function(s){ return s.key===box.color; })[0];
+        textEl.style.color=(chosen && chosen.hex) ? chosen.hex : "";
+
+        cell.querySelectorAll(".board-swatch").forEach(function(btn){
+          btn.addEventListener("click", function(){ box.color=btn.getAttribute("data-color"); save(); render(); });
+        });
+        cell.querySelector(".board-save").addEventListener("click", function(){ toggleSaved(box); });
+        removeBtn.addEventListener("click", function(){ removeBox(box); });
+        if(grip){
+          grip.addEventListener("dragstart", function(e){
+            draggingId=box.id; cell.classList.add("dragging");
+            e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain", String(box.id));
+          });
+          grip.addEventListener("dragend", function(){ draggingId=null; cell.classList.remove("dragging"); });
+        }
+        cell.addEventListener("dragover", function(e){ if(draggingId===null) return; e.preventDefault(); cell.classList.add("drag-over"); });
+        cell.addEventListener("dragleave", function(){ cell.classList.remove("drag-over"); });
+        cell.addEventListener("drop", function(e){
+          e.preventDefault(); cell.classList.remove("drag-over");
+          if(draggingId!==null) reorder(draggingId, box.id);
+        });
+
+        var onEdit=debounce(function(){ box.text=textEl.textContent; fitText(textwrap, textEl); save(); }, 100);
+        textEl.addEventListener("input", onEdit);
+
+        stage.appendChild(cell);
+        resizeObserver.observe(textwrap);
+        requestAnimationFrame(function(){ fitText(textwrap, textEl); });
+      });
+      renderDots();
+    }
+
+    function debounce(fn, ms){
+      var t;
+      return function(){
+        var args=arguments, ctx=this;
+        clearTimeout(t);
+        t=setTimeout(function(){ fn.apply(ctx,args); }, ms);
+      };
+    }
+
+    function animateEntrance(dir){
+      if(REDUCE_MOTION || !dir) return;
+      stage.style.transition="none"; stage.style.opacity="0";
+      stage.style.transform="translateX("+(dir>0?"26px":"-26px")+")";
+      requestAnimationFrame(function(){
+        requestAnimationFrame(function(){
+          stage.style.transition=""; stage.style.opacity="1"; stage.style.transform="translateX(0)";
+        });
+      });
+    }
+    function goToPage(newIndex, dir){
+      newIndex=Math.max(0, Math.min(pages().length-1, newIndex));
+      if(newIndex===pageIndex) return;
+      if(dir===undefined) dir = newIndex>pageIndex ? 1 : -1;
+      pageIndex=newIndex; render(); animateEntrance(dir);
+    }
+
+    addBtn.addEventListener("click", function(){
+      var boxes=pages()[pageIndex];
+      if(boxes.length<MAX_BOXES){ boxes.push({ id:nextBoxId(), color:"", text:"" }); save(); render(); }
+      else { pages().push([{ id:nextBoxId(), color:"", text:"" }]); save(); goToPage(pages().length-1, 1); }
+    });
+    skinBtn.addEventListener("click", function(){
+      data.boardSkin = data.boardSkin==="light" ? "dark" : "light";
+      overlay.setAttribute("data-skin", data.boardSkin);
+      save();
+    });
+
+    function isControl(el){
+      return !!(el && el.closest && el.closest(".board-celltext, .board-swatch, .board-remove, .board-grip, .board-save, #boardAdd, #boardSkinBtn, .board-dot-wrap, #boardShelfTab, #boardShelfPanel, #boardShelfBackdrop"));
+    }
+    var touchX=null, touchY=null, touchActive=false;
+    overlay.addEventListener("touchstart", function(e){
+      if(e.touches.length!==1 || isControl(e.target)){ touchActive=false; return; }
+      touchX=e.touches[0].clientX; touchY=e.touches[0].clientY; touchActive=true;
+    }, { passive:true });
+    overlay.addEventListener("touchend", function(e){
+      if(!touchActive || touchX===null) return;
+      touchActive=false;
+      var t=e.changedTouches[0];
+      var dx=t.clientX-touchX, dy=t.clientY-touchY;
+      touchX=null;
+      if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.4){
+        if(dx<0) goToPage(pageIndex+1, 1); else goToPage(pageIndex-1, -1);
+      }
+    }, { passive:true });
+
+    function onBoardKeydown(e){
+      if(overlay.style.display==="none") return;
+      if(e.key==="Escape"){
+        if(shelfPanel.classList.contains("open")) closeShelf(); else boardClose();
+        return;
+      }
+      var ae=document.activeElement;
+      if(ae && (ae.isContentEditable || ae.tagName==="INPUT")) return;
+      if(e.key==="ArrowRight") goToPage(pageIndex+1, 1);
+      if(e.key==="ArrowLeft") goToPage(pageIndex-1, -1);
+    }
+    document.addEventListener("keydown", onBoardKeydown);
+
+    shelfTab.addEventListener("click", openShelf);
+    shelfCloseBtn.addEventListener("click", closeShelf);
+    shelfBackdrop.addEventListener("click", closeShelf);
+    closeBtn.addEventListener("click", boardClose);
+
+    function boardOpen(){
+      overlay.setAttribute("data-skin", data.boardSkin==="light" ? "light" : "dark");
+      pageIndex=0;
+      overlay.style.display="block";
+      document.body.style.overflow="hidden";
+      render(); renderShelf();
+      var first=stage.querySelector(".board-celltext");
+      if(first) setTimeout(function(){ first.focus(); }, 30);
+    }
+    function boardClose(){
+      overlay.style.display="none";
+      document.body.style.overflow="";
+      closeShelf();
+    }
+    window.boardToggle = function(){
+      if(overlay.style.display==="none" || !overlay.style.display) boardOpen();
+      else boardClose();
+    };
+  })();
+
+  makeFabDraggable($("boardBtn"), "board", function(){ boardToggle(); });
   makeFabDraggable($("pickerBtn"), "picker", function(){ pickerToggle(); });
   $("pkClose").addEventListener("click", function(){ pickerToggle(false); });
   $("pkMin").addEventListener("click", function(){ $("floatPicker").classList.toggle("min"); });
@@ -25380,6 +25912,16 @@ nameLine
     // Dropped position per floating launcher FAB. Additive/empty-safe — an
     // existing save without it just keeps every FAB at its default corner spot.
     if(!data.fabPos || typeof data.fabPos!=="object" || Array.isArray(data.fabPos)) data.fabPos={};
+    // Board (4th FAB). boardPages must always hold at least one page with at
+    // least one box — the UI clears a box's text rather than deleting it when
+    // it's the very last one, so nothing but a corrupted/missing save should
+    // ever fail this check. Additive/empty-safe: an existing save without it
+    // just starts the board with one blank box.
+    if(!Array.isArray(data.boardPages) || !data.boardPages.length || !Array.isArray(data.boardPages[0]) || !data.boardPages[0].length){
+      data.boardPages = [[{ id:1, color:"", text:"" }]];
+    }
+    if(!Array.isArray(data.boardShelf)) data.boardShelf = [];
+    if(data.boardSkin!=="light" && data.boardSkin!=="dark") data.boardSkin = "dark";
     // Backup staleness. Both purely additive — no DATA_VERSION bump, nothing
     // converted, nothing read destructively. See the `defaults` entry for why
     // there are two fields rather than one.
@@ -26253,7 +26795,7 @@ nameLine
   // header simpler; the class dropdown and sound button are unaffected either way.
   function applyHeaderShortcutsVisibility(){
     var show = data.showHeaderShortcuts!==false;
-    ["fsBtn","timerBtn","pickerBtn"].forEach(function(id){
+    ["fsBtn","timerBtn","pickerBtn","boardBtn"].forEach(function(id){
       var b=$(id); if(b) b.style.display = show ? "" : "none";
     });
   }
