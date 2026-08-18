@@ -442,8 +442,9 @@ Help (?) modal → Scanner Setup tab, as cropped images taken from Tera's own
 manual (`docs/Tera_UM1300_Manual.pdf`, also now in this repo) — not
 re-encoded, so the pixels shipped are bit-for-bit the same graphic Tera
 printed. Assets live in `docs/tera-scanner-codes/`. Covered so far: Beeper
-Volume (High/Medium/Low/Off), Vibration On/Off, Battery Level, Real-Time
-Mode/Storage Mode, USB-COM/2.4G Mode, Clear Timestamp, Wireless Factory
+Volume (High/Medium/Low/Off), Vibration On/Off, Battery Level, Power Timeout
+Timer (1/5/10/30 min, Never, Immediately), Real-Time Mode/Storage Mode,
+USB-COM/2.4G Mode, Clear Timestamp, Wireless Factory
 Default, and (general) Factory Default.
 
 If this is ever extended, keep the same rule: use an actual cropped image
