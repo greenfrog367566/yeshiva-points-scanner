@@ -2,7 +2,19 @@
 
 *A theoretical build order. Not a schedule — a dependency map. The goal is to sequence the work so each phase ships something testable, nothing breaks live teacher data, and later phases build on foundations laid earlier rather than requiring rework.*
 
-> **Which doc is authoritative for what:** *Status* (what has shipped, partially shipped, or not started) lives in the per-phase status stamps in this document — update those, and only those, when a phase moves. *Sequencing and dependencies* live in the dependency map at the bottom. *Rebuild scope* (what the Firebase build includes, folds in, retires, or defers) lives in `Firebase_Rebuild_Scope.md`. *The immediate queue* lives in `docs/NOW.md`. When these disagree, this doc wins on status, the Firebase doc wins on rebuild scope, and the disagreement itself is a bug — file it.
+> **Which doc is authoritative for what:** *Status* (what has shipped, partially shipped, or not started) lives in the per-phase status stamps in this document — update those, and only those, when a phase moves. *Sequencing and dependencies* live in the dependency map at the bottom. *Rebuild scope* (what the Firebase build includes, folds in, retires, or defers) lives in `Firebase_Rebuild_Scope.md`. *The immediate queue* lives in `docs/NOW.md`. *What each phase actually builds* (the tab map, per-tab decisions) lives in `Menchmark_UI_Redesign_Summary.md` — this doc sequences that spec, it doesn't restate it. When these disagree, this doc wins on status, the Firebase doc wins on rebuild scope, `Menchmark_UI_Redesign_Summary.md` wins on design decisions, and the disagreement itself is a bug — file it.
+
+> **Related UI-planning docs, added as an index 2026-08-18** (previously
+> content-coupled to this plan with no filename links, which is its own kind
+> of drift risk): `Menchmark_UI_Redesign_Summary.md` (the spec these phases
+> implement, 1:1 by section — Phase 1 ↔ its §1, Phase 2 ↔ its §6 Gradebook
+> consolidation, etc.); `UI_Design_Theory.md` (the design philosophy this
+> spec was reviewed against); `UI_Theory_Tab_Audit.md` (the 2026-08-14
+> code-location audit of what shipped vs. that theory — tracked as one line
+> in `docs/NOW.md`); `Left_Rail_Nav_Decision.md` (an open, undecided nav
+> proposal); `Onboarding_Starter_Tabs_Proposal.md` (approved 2026-08-18,
+> the first-run tab-visibility seed — the part of Phase 1's Lean-mode revert
+> left unsolved).
 
 > **Status stamps verified against the code on 2026-08-04.** Before that sweep this plan had no status at all and the Firebase doc's version of it was wrong in four places. If you are reading a stamp much later than that date, re-verify rather than trust it.
 

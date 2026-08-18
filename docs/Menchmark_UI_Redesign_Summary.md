@@ -1,6 +1,15 @@
 # Menchmark — UI Redesign & Feature Planning Summary
 
-*Working summary from planning session — July 2026. Nothing here is built yet; this is the agreed spec to implement against.*
+*Working summary from planning session — July 2026. This is the agreed spec
+to implement against — most of it has since shipped in phases (see §10's
+status notes and §12's 2026-08-14 adopted decisions below); this document
+stays the design record even after a section ships.*
+
+> **Sequencing and current build status for everything below lives in
+> `Menchmark_Phased_Build_Plan.md`**, section-by-section against this doc
+> (its Phase 1 ↔ this §1, Phase 2 ↔ this §6, etc.) — added as an explicit
+> link 2026-08-18; the two docs previously tracked each other only by
+> content, with no filename pointer either direction.
 
 ---
 

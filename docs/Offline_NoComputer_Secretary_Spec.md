@@ -173,46 +173,22 @@ The end-of-day ingest. Same engine whether the rebbi does it themselves or a sec
 
 ## Part 4 — Secretary Mode (bulk upload on behalf of others)
 
-**⚠ This is the point where Menchmark stops being purely single-user.** One person (secretary) touches many rebbeim's data from one station. Real need (rebbeim who won't touch a computer), real new risks (wrong-target uploads, data isolation). Build carefully; it's a distinct, later sub-phase. **No accounts, no server, still local-first** — the roster is saved data on the secretary's device; each upload goes to that rebbi's *own* existing Sheet via a stored link.
-
-### The saved-rebbi roster
-```
-📥 Secretary Mode — upload for someone else
-
-  Uploading for:  [ Rabbi Cohen — 5A ▾ ]
-    Rabbi Cohen — 5A          (sheet ✓ saved)
-    Rabbi Levy — 6B           (sheet ✓ saved)
-    Rabbi Goldwasser — 4A     (sheet ✓ saved)
-    + Add a rebbi…            (name + their Apps Script / Sheet link)
-
-  Paste today's stored scans for Rabbi Cohen:
-  [ scanner dump textarea ]
-  [ Review before uploading ]
-```
-```js
-// data.secretary = {
-//   roster: [ { id, name, className, sheetUrl }, ... ]
-// }
-```
-
-### Guarding the #1 error: uploading to the wrong rebbi
-- The selected rebbi is shown **large and repeated at every step**, especially on the review-before-commit screen: **"Uploading 37 scans to Rabbi Cohen — 5A"** — hard to misread.
-- Because each rebbi has their own Sheet (the app already enforces "every teacher needs their own sheet"), the upload writes to the *selected* rebbi's link only. Picking wrong = wrong Sheet, so the confirmation is the safety gate.
-- **Privacy note:** the secretary's device now holds several rebbeim's Sheet links (semi-sensitive). It should be a trusted office computer, not a shared/public one. The wizard should say so once.
-
-### Batch tagging + Revert (honest about limits)
-Every batch upload is a **discrete tagged unit**:
-```js
-// each committed scan carries: batchId, uploadedFor (rebbi id), uploadedAt
-{ ts, sid, label, delta, batchId: "b47", ... }
-```
-This enables **"Revert last batch"** — find all entries with that `batchId` and reverse them, reusing the existing safe `undoEntryById` pattern (which writes correction entries, not hard deletes — consistent with how the app already undoes).
-
-**Honest revert limits (do NOT over-promise):**
-- ✅ **Reliable immediately after upload** — batch is fresh, tagged, nothing built on top. This covers the common "oops, wrong rebbi / wrong file" mistake — the case that matters.
-- ⚠️ **Riskier once it's propagated to the rebbi's Google Sheet** — revert must also un-write those Sheet rows, which is harder and may lag.
-- ⚠️ **Entangled once the rebbi has opened their app and scanned more on top** — the batch is no longer cleanly separable.
-- **So:** revert is presented as "safest right after you notice," not "undo anything anytime." The review-before-commit screen is the *primary* defense (catch it before it's written); revert is the backstop.
+*Trimmed 2026-08-18 — relocated, not deleted.* Secretary Mode folds into the
+Firebase rebuild (see the note at the top of this doc and
+`Firebase_Rebuild_Scope.md`'s Phase 7d entry): real accounts make "which
+rebbi does this batch belong to" a solved problem instead of a
+locally-saved-roster-plus-stored-Sheet-link workaround, and building the
+local-first version here first would mean rebuilding it on real accounts
+immediately after. The **shape** this section originally designed — a
+secretary picks a target rebbi from a saved list, pastes a scanner dump,
+reviews a large repeated "Uploading N scans to {rebbi}" confirmation before
+committing, and every batch is tagged (`batchId`) for a "Revert last batch"
+safety net that's honest about its own limits (reliable right after upload,
+riskier once it's synced or the rebbi has scanned on top) — is still the
+right shape and should carry forward into however the rebuild specs the
+multi-user upload flow. Not re-specified here to avoid two live copies of the
+same plan; the rebuild's own step docs are the current reference once this
+gets scheduled.
 
 ---
 

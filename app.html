@@ -7968,10 +7968,12 @@ function setupRoster() {
       var rec=day[s.id]||{status:"present",ts:null};
       // In presence-first, an unmarked boy has NO highlighted state — the row
       // shows three untaken buttons, which is what "nobody has looked at him
-      // yet" is supposed to look like. In absence-first he reads as present,
-      // exactly as before.
+      // yet" is supposed to look like. In absence-first he still reads (and
+      // still COUNTS) as present — that's the mode's whole point — but the row
+      // is dimmed and badged the same way, so "nobody looked at him yet" is
+      // visible in both modes. Look-only: shown/counts/send are untouched.
       var shown=marked ? marked.status : (attPresenceFirst() ? "" : rec.status);
-      var row=el("div","erow"+(attPresenceFirst() && !marked ? " att-unmarked" : ""));
+      var row=el("div","erow"+(!marked ? " att-unmarked" : ""));
       // Tapping the NAME walks the same cycle a scan does, so the screen and the
       // scanner can never disagree about what one input means. The three buttons
       // stay for setting a state directly — this adds a way in, it removes none.
@@ -7984,6 +7986,10 @@ function setupRoster() {
         var tEl=el("span",null, fmtClockTime(rec.ts));
         tEl.style.cssText="font-size:.75rem;color:var(--muted);margin-right:8px";
         row.appendChild(tEl);
+      } else {
+        var uEl=el("span","au-rem","not yet marked");
+        uEl.style.marginRight="8px";
+        row.appendChild(uEl);
       }
       var seg=el("span","seg mini");
       ["present","late","absent"].forEach(function(st){
@@ -12071,14 +12077,15 @@ function setupRoster() {
   }
   var TRACKED_BADGE = {
     "ti-attendance": function(sid){
-      // attStatusOn() rather than attMarkedRec() so the badge speaks whichever
-      // mode the class is in, without re-deciding here what "unmarked" means.
-      // Absence-first returns "present" for a boy nobody has touched, because
-      // in that mode he IS present. Presence-first returns "" — nobody has
-      // looked at him yet, which is exactly what this badge exists to surface.
-      var st=attStatusOn(todayKey(), sid);
-      if(!st) return {text:"unmarked", tone:"todo"};
-      return {text:st, tone:(st==="present" ? "ok" : (st==="late" ? "late" : "warn"))};
+      // attMarkedRec() rather than attStatusOn(): the badge shows "unmarked"
+      // for any boy nobody has actually touched today, in EITHER mode — same
+      // rule homework's badge follows. This is look-only: absence-first still
+      // COUNTS an untouched boy as present everywhere else (summary, send,
+      // Gradebook) — attStatusOn() is what those still read. Only this badge
+      // now distinguishes "nobody looked at him" from "confirmed present".
+      var marked=attMarkedRec(todayKey(), sid);
+      if(!marked) return {text:"unmarked", tone:"todo"};
+      return {text:marked.status, tone:(marked.status==="present" ? "ok" : (marked.status==="late" ? "late" : "warn"))};
     },
     "ti-homework": function(sid){
       // data.hw[...] read directly, never hwDayRecord(), which CREATES the day
@@ -28145,6 +28152,12 @@ These scanners have a handful of built-in modes, switched by scanning a specific
 
 ![Real Time Mode and Storage Mode setup codes, from the Tera scanner manual](docs/tera-scanner-codes/operation-storage-mode.png)
 
+### Beeper Volume
+
+The scanner beeps on every successful read — the volume is adjustable in four steps, from **High** (the factory default) down to **Off** (silent, no beep at all). Useful for a quieter classroom, or to combine with Vibration below for a fully silent scanner.
+
+![Beeper Volume setup codes (High, Medium, Low, Off), from the Tera scanner manual](docs/tera-scanner-codes/beeper-volume.png)
+
 ### Vibration
 
 The scanner vibrates once on a successful read, in addition to the beep — handy in a loud classroom, or if you've muted the beeper for a quieter environment. Scan "Off" below to disable it, or "On" to re-enable.
@@ -28156,6 +28169,12 @@ The scanner vibrates once on a successful read, in addition to the beep — hand
 Scan the code below to have the scanner report its current battery level — useful if a wireless scanner seems sluggish or is dropping its connection and you want to rule out a low battery before troubleshooting anything else.
 
 ![Show Battery Level setup code, from the Tera scanner manual](docs/tera-scanner-codes/battery-level.png)
+
+### Power Timeout Timer
+
+A wireless scanner powers itself off after sitting idle to save battery — how long it waits is adjustable from **1 min** up to **30 mins**, or set to **Never** to disable auto-off entirely (drains the battery faster if the scanner is often left idle). **5 mins** is the factory default. **Immediately** powers the scanner off the moment it's idle, which isn't useful for classroom scanning. If a wireless scanner keeps needing to be woken up (a button press or two before it responds) between uses, a longer timeout usually fixes it.
+
+![Power Timeout Timer setup codes (1 min, 5 mins, 10 mins, 30 mins, Never, Immediately), from the Tera scanner manual](docs/tera-scanner-codes/power-timeout.png)
 
 ### Time Stamp Prefix/Suffix
 

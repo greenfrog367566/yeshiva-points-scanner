@@ -1,5 +1,11 @@
 # Firebase Rebuild — Step 3b Existing-Cohort Upload Path Design (Proposal)
 
+> 📦 **ARCHIVED 2026-08-18 — shipped and merged (PR #309).** Kept in place
+> (not relocated — this path is cited by dozens of code comments in `app.html`
+> and elsewhere) but historical only from here on. Current status lives in
+> `docs/NOW.md` and `Menchmark_Phased_Build_Plan.md`; the load-bearing content
+> is in the shipped code and `CHANGELOG.md`.
+
 ## Status
 
 **✅ APPROVED 2026-08-13 by Ben.** Locked into `Firebase_Rebuild_Scope.md`'s build order as step 3b's design. This doc is now the reference for the same-device adoption, Drive-restore, conflict-resolution, and tier-2 custody decisions below.
