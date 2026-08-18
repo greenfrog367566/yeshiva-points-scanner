@@ -3167,6 +3167,30 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         </div>
         <p style="margin:10px 0 0;font-size:.82rem;color:var(--muted)">Needs an internet connection to run. If you're offline when it's due, Menchmark tells you here and falls back to reminding you to back up by hand.</p>
       </div>
+      <!-- Step 3b (docs/Firebase_Step3b_Existing_Cohort_Upload_Design_Proposal.md):
+           self-serve own-account restore — a new device, recovery, or the
+           file:// cohort with no local class for same-device adoption to
+           detect. Hidden until a tier-1 signed-in account exists —
+           renderBackupRestoreCard() controls visibility, same pattern as
+           the Drive card above. -->
+      <div class="card pad bk-card" id="backupRestoreCard" style="display:none;border-left:4px solid var(--brass)">
+        <h3>Restore a class from a backup file</h3>
+        <p>New device, or recovering from a lost one? Choose a backup file — the JSON download from "Back up everything" above — and Menchmark restores it into your signed-in account.</p>
+        <div id="backupRestoreStatus" style="margin:10px 0 0;font-size:.88rem;font-weight:600"></div>
+        <div id="backupRestorePreview" style="margin-top:8px"></div>
+        <div style="margin-top:10px">
+          <input type="file" id="backupRestoreFile" accept="application/json,.json" style="display:none">
+          <button class="btn btn-primary" id="backupRestoreChoose">Choose backup file…</button>
+          <button class="btn btn-primary" id="backupRestoreConfirm" style="display:none">Restore this backup</button>
+        </div>
+        <div id="backupRestoreConflict" style="margin-top:10px;display:none">
+          <p class="pill-note">Your account already has a class saved. Nothing is overwritten until you choose.</p>
+          <button class="btn" id="backupRestoreOverwrite">Overwrite it</button>
+          <button class="btn" id="backupRestoreSeparate" style="margin-left:8px">Add as a separate class instead</button>
+          <button class="btn btn-sm" id="backupRestoreCancel" style="margin-left:8px">Cancel</button>
+        </div>
+        <div id="backupRestoreReceipt" style="margin-top:10px"></div>
+      </div>
       <div class="card pad bk-card">
         <h3>Install Menchmark as an app <span style="font-size:.72rem;font-weight:700;color:var(--good);background:var(--good-soft);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px">Best way to work offline</span></h3>
         <p>Install Menchmark from your browser (look for <b>Install</b> in the menu, or the ⊕ / install icon in the address bar) to run it like a real app — its own window, an icon on your device, and <b>persistent storage</b> that resists the browser clearing your data. Works fully offline once installed, <b>and it stays the same Menchmark</b> — the same students, the same scores, whether you are online or not.</p>
@@ -6105,7 +6129,19 @@ function setupRoster() {
       body: JSON.stringify({ data: payload || {} })
     }).then(function(r){
       return r.json().then(function(j){
-        if (j.error) throw new Error(j.error.message || "Request failed.");
+        if (j.error) {
+          // j.error.status is the callable protocol's gRPC-style status
+          // string (e.g. "ALREADY_EXISTS") — the HTTP mirror of the
+          // HttpsError code the function threw. Exposed as err.code (lower,
+          // hyphenated, matching the code strings functions/index.js
+          // actually throws) so callers can branch on it — step 3b's
+          // two-device conflict screen needs to tell "already-exists" apart
+          // from every other failure, which the message string alone can't
+          // do reliably.
+          var err = new Error(j.error.message || "Request failed.");
+          if (j.error.status) err.code = String(j.error.status).toLowerCase().replace(/_/g, "-");
+          throw err;
+        }
         return j.result;
       });
     });
@@ -6350,13 +6386,16 @@ function setupRoster() {
   // In-memory only — holds state across the code-entry screen's Continue
   // click, never persisted. Cleared on sign-out or a fresh sign-in attempt.
   var signinState = {
-    step: "idle", // idle | needsCode | needsAdoptionChoice | needsRoster | error
+    step: "idle", // idle | needsCode | needsAdoptionChoice | needsConflictChoice | needsDriveRestore | needsRoster | error
     firebaseIdToken: null,
     firebaseUid: null,
     googleIdToken: null,
     email: null,
     displayName: null,
-    error: null
+    error: null,
+    adoptionOffer: null, // step 3b same-device offer; also read by the conflict step
+    driveRestoreOffer: null, // step 3b Drive-restore offer
+    lastReceipt: null // most recent provisionRebbi receipt, for the light one-line confirmation
   };
 
   function signinDetectLocalClass(){
@@ -6395,6 +6434,11 @@ function setupRoster() {
       if (offer) { signinState.step = "needsAdoptionChoice"; signinState.adoptionOffer = offer; }
       else { signinState.step = "idle"; }
       if (typeof renderAccountSection === "function") renderAccountSection();
+      if (typeof renderBackupRestoreCard === "function") renderBackupRestoreCard();
+      // Drive restore (docs/Firebase_Step3b_..., "Drive-restore flow"): only
+      // ever checked when same-device adoption found NO local match at all
+      // — a genuine second scenario, not a fallback from a declined offer.
+      if (!offer && typeof signinMaybeOfferDriveRestore === "function") signinMaybeOfferDriveRestore();
     });
   }
 
@@ -6440,17 +6484,95 @@ function setupRoster() {
 
   function signinClaimLocalClass(){
     var normalized = window.__exportNormalized(data); // never trust a stale/pre-migration snapshot
-    signinState.step = "idle";
+    signinState.error = null;
     return callCloudFunction("provisionRebbi", {
       mode: "backup", self: true, normalized: normalized, deviceId: "signin-adoption"
     }, signinState.firebaseIdToken).then(function(res){
       data.firebaseClaimedBy = signinState.firebaseUid;
+      data.firebaseMigrated = res.runId;
       save();
       signinState.step = "idle";
       signinState.adoptionOffer = null;
+      signinState.lastReceipt = res.receipt;
       if (typeof renderAccountSection === "function") renderAccountSection();
       return res;
     }).catch(function(err){
+      if (err.code === "already-exists") {
+        // Step 3b's two-device conflict case (docs/Firebase_Step3b_Existing_
+        // Cohort_Upload_Design_Proposal.md, "Two-device conflict resolution"):
+        // this account already has a claimed class from another device. The
+        // overwrite-refusal gate already made the unsafe path impossible —
+        // this is only ever the UI for the gap it leaves. Never resolve it
+        // silently or by convention.
+        signinState.step = "needsConflictChoice";
+        if (typeof renderAccountSection === "function") renderAccountSection();
+        return;
+      }
+      signinState.step = "needsAdoptionChoice"; // stay on the offer so the error and a retry are both visible
+      signinState.error = err.message || String(err);
+      if (typeof renderAccountSection === "function") renderAccountSection();
+    });
+  }
+
+  // Step 3b's two safe, non-destructive choices once signinClaimLocalClass()
+  // hits the two-device conflict. Neither one can ever overwrite or discard
+  // — "use my account's class" writes nothing at all, "add separate" always
+  // targets a fresh classId (asNewClass), never the existing one.
+  function signinResolveConflict(choice){
+    if (choice === "useAccount") {
+      // Local data is left exactly as-is in localStorage — not claimed, not
+      // deleted. If the rebbi wants it added later, this same conflict
+      // screen re-offers next sign-in, since nothing here is recorded.
+      signinState.step = "idle";
+      signinState.adoptionOffer = null;
+      signinState.error = null;
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      return;
+    }
+    var normalized = window.__exportNormalized(data);
+    signinState.error = null;
+    return callCloudFunction("provisionRebbi", {
+      mode: "backup", self: true, normalized: normalized, asNewClass: true, deviceId: "signin-adoption-separate"
+    }, signinState.firebaseIdToken).then(function(res){
+      data.firebaseClaimedBy = signinState.firebaseUid;
+      data.firebaseMigrated = res.runId;
+      save();
+      signinState.step = "idle";
+      signinState.adoptionOffer = null;
+      signinState.lastReceipt = res.receipt;
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      return res;
+    }).catch(function(err){
+      signinState.error = err.message || String(err);
+      if (typeof renderAccountSection === "function") renderAccountSection();
+    });
+  }
+
+  function signinDeclineDriveRestore(){
+    signinState.step = "idle";
+    signinState.driveRestoreOffer = null;
+    if (typeof renderAccountSection === "function") renderAccountSection();
+  }
+  function signinAcceptDriveRestore(){
+    var offer = signinState.driveRestoreOffer;
+    if (!offer) { signinDeclineDriveRestore(); return; }
+    signinState.error = null;
+    return callCloudFunction("provisionRebbi", {
+      mode: "backup", self: true, normalized: offer.normalized, deviceId: "signin-drive-restore"
+    }, signinState.firebaseIdToken).then(function(res){
+      data.firebaseClaimedBy = signinState.firebaseUid;
+      data.firebaseMigrated = res.runId;
+      save();
+      signinState.step = "idle";
+      signinState.driveRestoreOffer = null;
+      signinState.lastReceipt = res.receipt;
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      return res;
+    }).catch(function(err){
+      // No dedicated conflict handling here on purpose — the gate this
+      // offer is built on (data.firebaseClaimedBy !== uid, checked right
+      // before offering) already makes "already-exists" a rare race rather
+      // than an expected path. Fail loud and visible rather than silent.
       signinState.error = err.message || String(err);
       if (typeof renderAccountSection === "function") renderAccountSection();
     });
@@ -6480,12 +6602,155 @@ function setupRoster() {
   function signinSignOut(){
     data.account = null;
     save();
-    signinState = { step: "idle", firebaseIdToken: null, firebaseUid: null, googleIdToken: null, email: null, displayName: null, error: null };
+    signinState = { step: "idle", firebaseIdToken: null, firebaseUid: null, googleIdToken: null, email: null, displayName: null, error: null,
+      adoptionOffer: null, driveRestoreOffer: null, lastReceipt: null };
+    signinDriveRestoreChecked = false; // re-check on the next sign-in, possibly a different account
     if (window.firebase && window.firebase.auth) {
       try { window.firebase.auth().signOut(); } catch (e) {}
     }
     if (typeof renderAccountSection === "function") renderAccountSection();
+    if (typeof renderBackupRestoreCard === "function") renderBackupRestoreCard();
   }
+
+  // ---------- Step 3b: self-serve backup-upload restore ----------
+  // docs/Firebase_Step3b_Existing_Cohort_Upload_Design_Proposal.md: same
+  // payload-sourcing pattern as same-device adoption and Drive restore —
+  // one provisionRebbi call, one receipt shape, the source here is a chosen
+  // file instead of localStorage or a Drive fetch. Covers the case neither
+  // of those two reach: a brand-new device, a recovery, or the file://
+  // cohort with no local class to auto-detect.
+  var restoreUploadState = { normalized: null, pendingChoice: null };
+
+  // A compact copy of tools/converter-core.js's renderReceiptReport() — kept
+  // separate rather than a <script src> because app.html stays one file for
+  // every tier (CLAUDE.md rule 3's Firebase-SDK-only exception doesn't cover
+  // this). Keep the two in sync if either changes; this one drops the
+  // sample-student list and nameSplitFlags note, since a rebbi restoring his
+  // own class already knows his own students — the counts table is the
+  // load-bearing signal either way.
+  function renderRestoreReceipt(receipt){
+    var wrap = el("div", null);
+    if (!receipt) { wrap.textContent = "No receipt to show."; return wrap; }
+    var statusLine = el("p", null, receipt.status === "verified"
+      ? "✓ Verified — every count matched." : "✗ Mismatch — do not rely on this restore yet.");
+    statusLine.style.fontWeight = "700";
+    statusLine.style.color = receipt.status === "verified" ? "var(--good)" : "var(--bad)";
+    wrap.appendChild(statusLine);
+    var table = document.createElement("table");
+    table.style.borderCollapse = "collapse";
+    table.style.fontSize = ".85rem";
+    var thead = document.createElement("tr");
+    ["Collection", "Expected", "Actual", ""].forEach(function(h){
+      var th = document.createElement("th");
+      th.textContent = h; th.style.textAlign = "left"; th.style.padding = "2px 10px 2px 0";
+      thead.appendChild(th);
+    });
+    table.appendChild(thead);
+    var expected = (receipt.counts && receipt.counts.expected) || {};
+    var actual = (receipt.counts && receipt.counts.actual) || {};
+    Object.keys(expected).forEach(function(key){
+      var row = document.createElement("tr");
+      var ok = expected[key] === actual[key];
+      [key, expected[key], actual[key], ok ? "✓" : "✗"].forEach(function(val){
+        var td = document.createElement("td");
+        td.textContent = String(val); td.style.padding = "2px 10px 2px 0";
+        if (!ok) td.style.color = "var(--bad)";
+        row.appendChild(td);
+      });
+      table.appendChild(row);
+    });
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  function renderBackupRestoreCard(){
+    var card = $("backupRestoreCard"); if (!card) return;
+    var tier1SignedIn = !!(data.account && data.account.schoolId != null);
+    card.style.display = tier1SignedIn ? "" : "none";
+  }
+
+  function backupRestoreSetStatus(msg, tone){
+    var el2 = $("backupRestoreStatus"); if (!el2) return;
+    el2.textContent = msg || "";
+    el2.style.color = tone === "bad" ? "var(--bad)" : tone === "good" ? "var(--good)" : "var(--muted)";
+  }
+
+  function backupRestoreReset(){
+    restoreUploadState = { normalized: null, pendingChoice: null };
+    var fileInput = $("backupRestoreFile"); if (fileInput) fileInput.value = "";
+    var preview = $("backupRestorePreview"); if (preview) preview.innerHTML = "";
+    var confirmBtn = $("backupRestoreConfirm"); if (confirmBtn) confirmBtn.style.display = "none";
+    var conflict = $("backupRestoreConflict"); if (conflict) conflict.style.display = "none";
+    backupRestoreSetStatus("");
+  }
+
+  function backupRestoreSubmit(extra){
+    var statusEl = $("backupRestoreStatus");
+    var conflictEl = $("backupRestoreConflict");
+    if (!restoreUploadState.normalized) return;
+    backupRestoreSetStatus("Restoring…");
+    if (conflictEl) conflictEl.style.display = "none";
+    var payload = Object.assign({
+      mode: "backup", self: true, normalized: restoreUploadState.normalized, deviceId: "settings-manual-upload"
+    }, extra || {});
+    return callCloudFunction("provisionRebbi", payload, signinState.firebaseIdToken).then(function(res){
+      data.firebaseClaimedBy = signinState.firebaseUid;
+      data.firebaseMigrated = res.runId;
+      save();
+      backupRestoreSetStatus(res.receipt && res.receipt.status === "verified" ? "Restored." : "Restored, but some counts didn't match.",
+        res.receipt && res.receipt.status === "verified" ? "good" : "bad");
+      var receiptBox = $("backupRestoreReceipt"); if (receiptBox) { receiptBox.innerHTML = ""; receiptBox.appendChild(renderRestoreReceipt(res.receipt)); }
+      var confirmBtn = $("backupRestoreConfirm"); if (confirmBtn) confirmBtn.style.display = "none";
+      restoreUploadState.normalized = null;
+    }).catch(function(err){
+      if (err.code === "already-exists" && conflictEl) {
+        // Never silently overwrite — same two safe choices as step 3b's
+        // sign-in-time conflict screen (see signinResolveConflict()).
+        conflictEl.style.display = "";
+        backupRestoreSetStatus("Your account already has a class. Choose how to proceed below.", "bad");
+        return;
+      }
+      backupRestoreSetStatus("Failed: " + err.message, "bad");
+    });
+  }
+
+  if ($("backupRestoreChoose")) $("backupRestoreChoose").addEventListener("click", function(){
+    var fileInput = $("backupRestoreFile"); if (fileInput) fileInput.click();
+  });
+  if ($("backupRestoreFile")) $("backupRestoreFile").addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    var preview = $("backupRestorePreview"); if (preview) preview.innerHTML = "";
+    var confirmBtn = $("backupRestoreConfirm"); if (confirmBtn) confirmBtn.style.display = "none";
+    restoreUploadState.normalized = null;
+    if (!file) return;
+    backupRestoreSetStatus("Reading…");
+    var reader = new FileReader();
+    reader.onload = function(){
+      var parsed;
+      try { parsed = JSON.parse(reader.result); }
+      catch (e) { backupRestoreSetStatus("That file isn't valid JSON: " + e.message, "bad"); return; }
+      var normalized;
+      try { normalized = window.__exportNormalized(parsed); }
+      catch (e) { backupRestoreSetStatus("Could not read that backup: " + e.message, "bad"); return; }
+      restoreUploadState.normalized = normalized;
+      var p = el("p", null, "Ready — " + (normalized.students || []).length + " student(s), \"" +
+        (normalized.className || normalized.school || "") + "\". Review, then restore.");
+      if (preview) preview.appendChild(p);
+      backupRestoreSetStatus("");
+      if (confirmBtn) confirmBtn.style.display = "";
+    };
+    reader.onerror = function(){ backupRestoreSetStatus("Could not read that file.", "bad"); };
+    reader.readAsText(file);
+  });
+  if ($("backupRestoreConfirm")) $("backupRestoreConfirm").addEventListener("click", function(){ backupRestoreSubmit(); });
+  if ($("backupRestoreOverwrite")) $("backupRestoreOverwrite").addEventListener("click", function(){
+    if (!confirm("This replaces your account's saved class entirely. Continue?")) return;
+    backupRestoreSubmit({ force: true });
+  });
+  if ($("backupRestoreSeparate")) $("backupRestoreSeparate").addEventListener("click", function(){
+    backupRestoreSubmit({ asNewClass: true });
+  });
+  if ($("backupRestoreCancel")) $("backupRestoreCancel").addEventListener("click", backupRestoreReset);
 
   // "manage" (holds Settings) and the "settings" tab itself can never be hidden,
   // so there's always a way back into this screen to turn tabs back on.
@@ -9539,6 +9804,8 @@ function setupRoster() {
 
     if (signinState.step === "needsCode") { renderAccountCodeStep(box); return; }
     if (signinState.step === "needsAdoptionChoice") { renderAccountAdoptionStep(box); return; }
+    if (signinState.step === "needsConflictChoice") { renderAccountConflictStep(box); return; }
+    if (signinState.step === "needsDriveRestore") { renderAccountDriveRestoreStep(box); return; }
     if (signinState.step === "needsRoster") { renderAccountRosterStep(box); return; }
 
     if (data.account) {
@@ -9548,6 +9815,25 @@ function setupRoster() {
         : data.account.email;
       line.appendChild(document.createTextNode("Signed in as " + label));
       box.appendChild(line);
+      if (signinState.lastReceipt) {
+        // Step 3b's "lighter confirmation" (design doc): one line, not the
+        // full diff grid, since the data never left the device.
+        var rline = el("p", "view-note");
+        var rCounts = (signinState.lastReceipt.counts && signinState.lastReceipt.counts.actual) || {};
+        var rStudents = typeof rCounts.students === "number" ? rCounts.students : null;
+        rline.textContent = signinState.lastReceipt.status === "verified"
+          ? ("Added" + (rStudents != null ? " " + rStudents + " student(s)" : "") + " to your account.")
+          : "Restored, but some counts didn't match.";
+        box.appendChild(rline);
+        var rdetails = document.createElement("details");
+        rdetails.style.marginTop = "4px";
+        var rsummary = document.createElement("summary");
+        rsummary.textContent = "See details";
+        rsummary.style.cursor = "pointer";
+        rdetails.appendChild(rsummary);
+        rdetails.appendChild(renderRestoreReceipt(signinState.lastReceipt));
+        box.appendChild(rdetails);
+      }
       if (signinState.error) {
         var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
       }
@@ -9612,6 +9898,52 @@ function setupRoster() {
     freshBtn.style.marginLeft = "8px";
     freshBtn.addEventListener("click", signinStartFresh);
     box.appendChild(freshBtn);
+  }
+  // Step 3b's two-device conflict (docs/Firebase_Step3b_Existing_Cohort_
+  // Upload_Design_Proposal.md, "Two-device conflict resolution"): this
+  // account already has a class from another device, and this device also
+  // has local data. Two non-destructive choices only — see
+  // signinResolveConflict()'s own comment for why not a third (merge).
+  function renderAccountConflictStep(box){
+    var offer = signinState.adoptionOffer;
+    var p = el("p", "view-note");
+    p.textContent = "Your account already has a class saved from another device." +
+      (offer ? (" This device also has " + offer.className + ", " + offer.studentCount + " " +
+        (offer.studentCount === 1 ? "boy" : "boys") + ", last scan " + signinRelativeDayText(offer.lastScanTs) + ".") : "") +
+      " These look different — nothing is overwritten either way.";
+    box.appendChild(p);
+    if (signinState.error) {
+      var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
+    }
+    var useBtn = el("button", "btn btn-primary", "Use my account's class here");
+    useBtn.addEventListener("click", function(){ signinResolveConflict("useAccount"); });
+    box.appendChild(useBtn);
+    var addBtn = el("button", "btn btn-sm", "Add this device's data as a separate class");
+    addBtn.style.marginLeft = "8px";
+    addBtn.addEventListener("click", function(){ signinResolveConflict("addSeparate"); });
+    box.appendChild(addBtn);
+  }
+  // Step 3b's Drive-restore offer — only ever shown after same-device
+  // adoption found no local match at all (signinMaybeOfferDriveRestore()'s
+  // own gate). Full diff-style confirmation, not the lighter same-device
+  // summary, since this data left the device (docs/Firebase_Step3b_..., "Drive-restore flow").
+  function renderAccountDriveRestoreStep(box){
+    var offer = signinState.driveRestoreOffer;
+    var p = el("p", "view-note");
+    p.textContent = "Found a backup in your Drive from " + signinRelativeDayText(offer.modifiedTs) + " — " +
+      offer.studentCount + " " + (offer.studentCount === 1 ? "student" : "students") +
+      (offer.className ? (", \"" + offer.className + "\"") : "") + ". Restore it?";
+    box.appendChild(p);
+    if (signinState.error) {
+      var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
+    }
+    var restoreBtn = el("button", "btn btn-primary", "Restore this backup");
+    restoreBtn.addEventListener("click", signinAcceptDriveRestore);
+    box.appendChild(restoreBtn);
+    var skipBtn = el("button", "btn btn-sm", "Not now");
+    skipBtn.style.marginLeft = "8px";
+    skipBtn.addEventListener("click", signinDeclineDriveRestore);
+    box.appendChild(skipBtn);
   }
   function renderAccountRosterStep(box){
     var p = el("p", "view-note");
@@ -24197,6 +24529,56 @@ nameLine
     });
   }
 
+  function driveListBackupFiles(){
+    var q = "name='" + DRIVE_FILE_NAME + "' and '" + driveFolderId + "' in parents and trashed=false";
+    var url = "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(q) + "&fields=files(id,name,modifiedTime)";
+    return driveApi(url).then(function(r){ return (r && r.files) || []; });
+  }
+
+  var signinDriveRestoreChecked = false;
+  // Step 3b's Drive-restore offer (docs/Firebase_Step3b_Existing_Cohort_
+  // Upload_Design_Proposal.md, "Drive restore"): once per session, tier-1
+  // only (this restores INTO Firestore, which tier 2 doesn't have), only
+  // once no claimed class exists yet, and only after same-device adoption
+  // found no local match at all — the caller (signinContinueAfterAccount)
+  // enforces that ordering. Best-effort and silent on failure: no Drive
+  // backup at all is the overwhelmingly common case here, not an error.
+  function signinMaybeOfferDriveRestore(){
+    if (signinDriveRestoreChecked) return;
+    if (!(data.account && data.account.schoolId != null)) return;
+    if (data.firebaseClaimedBy) return;
+    if (!driveSupported()) return;
+    signinDriveRestoreChecked = true;
+    var chain = driveToken ? Promise.resolve() : driveWithRecovery(function(){
+      return Promise.reject(Object.assign(new Error("no token"), { unauthorized: true }));
+    });
+    chain.then(function(){
+      return driveWithRecovery(function(){ return driveFindOrCreateFolder().then(driveListBackupFiles); });
+    }).then(function(files){
+      if (!files || !files.length) return;
+      files.sort(function(a, b){ return new Date(b.modifiedTime) - new Date(a.modifiedTime); });
+      var newest = files[0];
+      return driveApi("https://www.googleapis.com/drive/v3/files/" + newest.id + "?alt=media").then(function(content){
+        var parsed = (typeof content === "string") ? JSON.parse(content) : content;
+        // Not live in-memory state — needs the same normalization a file
+        // upload would get (0c's insight, restated in the design doc).
+        var normalized = window.__exportNormalized(parsed);
+        signinState.driveRestoreOffer = {
+          normalized: normalized,
+          modifiedTs: new Date(newest.modifiedTime).getTime(),
+          studentCount: (normalized.students || []).length,
+          className: normalized.className || normalized.school || ""
+        };
+        signinState.step = "needsDriveRestore";
+        if (typeof renderAccountSection === "function") renderAccountSection();
+      });
+    }).catch(function(){
+      // Silent — no backup, no permission yet, or offline. None of these
+      // are worth surfacing as an error on top of an otherwise-successful
+      // sign-in.
+    });
+  }
+
   function driveStatus(msg, tone){
     var el = $("driveBackupStatus"); if (!el) return;
     el.textContent = msg || "";
@@ -24556,6 +24938,11 @@ nameLine
     if(typeof data.account==="undefined") data.account=null;
     if(typeof data.firebaseClaimedBy!=="undefined" && data.firebaseClaimedBy!==null && typeof data.firebaseClaimedBy!=="string") data.firebaseClaimedBy=null;
     if(typeof data.firebaseClaimedBy==="undefined") data.firebaseClaimedBy=null;
+    // data.firebaseMigrated points at the importReceipts runId behind
+    // whichever claim succeeded (step 3b) — display-only, never read to gate
+    // anything, so a missing/malformed value just resets to null.
+    if(typeof data.firebaseMigrated!=="undefined" && data.firebaseMigrated!==null && typeof data.firebaseMigrated!=="string") data.firebaseMigrated=null;
+    if(typeof data.firebaseMigrated==="undefined") data.firebaseMigrated=null;
     if(typeof data.signinNudgeSeen!=="boolean") data.signinNudgeSeen=false;
     // Step 7 (docs/Firebase_Step7_Fragile_Storage_Warning_Design_Proposal.md)
     // + the Drive integration it needed built (spikes/drive-oauth-spike.html,
@@ -25829,6 +26216,7 @@ nameLine
   driveCompleteFromRedirect();
   renderDriveBackupCard();
   if (data.driveBackupEnabled) driveMaybeAutoWrite();
+  renderBackupRestoreCard(); // step 3b's Settings restore mount — tier-1-gated inside
   // Step 5's view-as landing (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md):
   // does nothing at all unless admin.html just window.open()'d this exact
   // tab with a handoff waiting in sessionStorage — the overwhelming
