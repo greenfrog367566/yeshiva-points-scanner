@@ -4740,7 +4740,9 @@ function setupRoster() {
     else if(item.method==="count")     v = (item.config && typeof item.config.step==="number") ? item.config.step : 1;
     else if(item.method==="limited")   v = 1;
     else return null;
-    var entry = {value:v, ts:(typeof opts.ts==="number" ? opts.ts : Date.now())};
+    // id is this entry's own handle — an itemless item has no legacy store to
+    // point back to, so this is what a later undo matches against instead.
+    var entry = {value:v, ts:(typeof opts.ts==="number" ? opts.ts : Date.now()), id:newId()};
     list.push(entry);
     return entry;
   }
@@ -5641,6 +5643,13 @@ function setupRoster() {
     if(e.kind==="tracked") return true;
     return e.delta===0 && /^Bathroom pass /.test(e.label||"");
   }
+  // Can undoTrackedLogEntry() actually put this row back? `titem` says which
+  // store wrote it; a row written before that existed (or an old pre-tracked
+  // "Bathroom pass" row, caught by isTrackedEntry()'s second clause above)
+  // carries neither and stays exactly as un-undoable as it always was.
+  function trackedEntryReversible(e){
+    return isTrackedEntry(e) && !!e.titem;
+  }
   /* THE one writer for a non-point scan. Attendance, homework, a tracker count,
    * a freeze, a pass and an itemless tracked item all reach History through
    * here, so every row has the same shape and every reader has one test.
@@ -5652,7 +5661,19 @@ function setupRoster() {
    *
    * `value` is what was recorded ("Present", "checked", "+1"), shown in place
    * of the "+0" a points row would carry. `src` links back to the legacy
-   * record so undoing it there can mark this row undone here.
+   * record so undoing it there can mark this row undone here — and, since
+   * undoTrackedLogEntry(), the same link the OTHER way: this row's own ↩
+   * finds the legacy record by `src` and puts it back.
+   *
+   * `titem` is which tracked item wrote the row ("ti-attendance",
+   * "ti-homework", "ti-pass", or a count item's own id) — the discriminator
+   * undoTrackedLogEntry() switches on, since a bare log row otherwise carries
+   * nothing reliable enough to say which store it came from.
+   *
+   * `prev` is the value the record held immediately before this write —
+   * undefined for a first mark. Undoing an attendance/homework row restores
+   * exactly this, not "whatever the boy's status happens to be now" — see
+   * reverseTrackedWrite().
    */
   function addTrackedLogEntry(sid, label, opts){
     opts = opts || {};
@@ -5664,7 +5685,9 @@ function setupRoster() {
       kind: "tracked",
       tval: (opts.value===undefined || opts.value===null) ? undefined : String(opts.value),
       about: opts.about || undefined,
-      src: opts.src || undefined
+      src: opts.src || undefined,
+      titem: opts.itemId || undefined,
+      tprev: (opts.prev===undefined || opts.prev===null) ? undefined : String(opts.prev)
     });
   }
   /* The History label for a tracked row, taken from the tracked ITEM where
@@ -7077,13 +7100,17 @@ function setupRoster() {
     var label=on?"Bathroom pass used":"Bathroom pass returned";
     // Was a bare addLogEntry() — the one non-point scan that already reached
     // History, from before there was a tracked concept. Now it goes through the
-    // same writer as the other five, so it gets the same no-Undo treatment
-    // (undoing this row never gave a pass back) and the same filter.
+    // same writer as the other five, so it gets the same filter.
+    //
+    // itemId is stamped only on the USED row, not the given-back one — a scan
+    // is what "undo scan" reverses, and the only scan here is a pass being
+    // used. "Give back" is already itself the manual, tab-driven undo for that;
+    // undoing an undo is not a case this needs to cover.
     //
     // History takes the ITEM's name and puts used/given-back in the value; the
     // Sheet push below deliberately keeps the old sentence, because that column
     // has no second field to put it in and rebbeim have existing rows in it.
-    addTrackedLogEntry(sid, trackedLogLabel("ti-pass","Bathroom Pass"), {value:on?"used":"given back", about:todayKey()});
+    addTrackedLogEntry(sid, trackedLogLabel("ti-pass","Bathroom Pass"), {value:on?"used":"given back", about:todayKey(), itemId:on?"ti-pass":undefined});
     if(data.autoSheet && s) pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:label, delta:0, total:score(sid)});
     save();
   }
@@ -7370,7 +7397,13 @@ function setupRoster() {
     var prev=day[sid];
     // Unchanged: leave the record — and its timestamp — completely alone.
     if(prev && prev.status===status && typeof prev.ts==="number") return false;
-    day[sid]={status:status, ts:Date.now()};
+    // id is this write's own handle — what a later undo (a fresh scan or a ↩
+    // on the History row) matches against to reverse exactly this record and
+    // no other, not "whichever one happens to be newest by the time it's
+    // clicked". prev is captured above, before the overwrite; carrying it
+    // forward is what lets an undo restore the status this write replaced
+    // instead of guessing or clearing outright.
+    day[sid]={status:status, ts:Date.now(), id:newId()};
     /* THE ONE PLACE ATTENDANCE REACHES THE GRADEBOOK. Every attendance write in
      * the app funnels through here — the cycle, "Mark the rest Present", the
      * scan path and the tab's own per-row buttons — so one line here covers all
@@ -7379,8 +7412,9 @@ function setupRoster() {
      * `dk`, not today: a rebbi correcting Monday on a Wednesday is writing
      * about Monday, and the Gradebook groups by the day an entry is ABOUT.
      * day[sid].ts, not a fresh one, so the mirror and the record it transcribes
-     * carry the same timestamp and dedup against each other. */
-    mirrorTracked("ti-attendance", sid, {value:status, ts:day[sid].ts, date:dk});
+     * carry the same timestamp and dedup against each other. src carries this
+     * write's own id so an undo can find and remove exactly this mirror entry. */
+    mirrorTracked("ti-attendance", sid, {value:status, ts:day[sid].ts, date:dk, src:day[sid].id});
     /* AND THE SAME ARGUMENT PUTS THE EXCEPTIONS IN HISTORY. Every attendance
      * write funnels through here, so one line covers the cycle, "Mark the rest
      * Present", the scan path and the tab's own buttons — a rebbi can note any
@@ -7399,7 +7433,7 @@ function setupRoster() {
      * so re-marking a boy absent does not write a second row.
      */
     if(trackedValueIsNotable(status) || trackedValueIsNotable(prev && prev.status)){
-      addTrackedLogEntry(sid, trackedLogLabel("ti-attendance","Attendance"), {ts:day[sid].ts, value:(ATT_LABEL[status]||status), about:dk});
+      addTrackedLogEntry(sid, trackedLogLabel("ti-attendance","Attendance"), {ts:day[sid].ts, value:(ATT_LABEL[status]||status), about:dk, src:day[sid].id, itemId:"ti-attendance", prev:prev&&prev.status});
     }
     save();
     if(attDaySent(dk)){
@@ -7407,6 +7441,26 @@ function setupRoster() {
       // just this one student, rather than requiring a full resend.
       var s=studentById(sid);
       if(data.autoSheet && s){ pushToSheet({type:"attendance", ts:day[sid].ts, date:dk, name:s.name, group:s.group||"", status:status}); }
+    }
+    return true;
+  }
+  /* Undoes a FIRST mark of the day — there is no previous status to restore
+   * to, so the record is removed entirely rather than corrected, exactly like
+   * a pass "give back". Guarded on recordId so this only ever removes the
+   * exact record it was asked to remove: if the boy has since been marked
+   * again (a manual re-tap on the Attendance tab, say), day[sid].id has
+   * already moved on and this safely no-ops rather than deleting a newer
+   * mark it was never asked about. See reverseTrackedWrite().
+   */
+  function clearAttendance(sid, dk, recordId){
+    var day=attDayRecord(dk), rec=day[sid];
+    if(!rec || rec.id!==recordId) return false;
+    delete day[sid];
+    unmirrorTracked("ti-attendance", sid, function(m){ return m.src===recordId; });
+    markTrackedLogUndoneBySrc(recordId);
+    save();
+    if($("view-attendance") && $("view-attendance").classList.contains("active")){
+      if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
     }
     return true;
   }
@@ -8381,7 +8435,7 @@ function setupRoster() {
     // src carries the tracker row's id here too, so trackerUndoOne()/
     // trackerUndoLast() can mark the History row undone rather than leaving a
     // row behind for a tap the rebbi has since taken back.
-    addTrackedLogEntry(s.id, (trkItem && trkItem.name) || a.name, {ts:entry.ts, value:"+"+trackedCountStep(trkItem||{}), about:gbDateKeyForTs(entry.ts), src:entry.id});
+    addTrackedLogEntry(s.id, (trkItem && trkItem.name) || a.name, {ts:entry.ts, value:"+"+trackedCountStep(trkItem||{}), about:gbDateKeyForTs(entry.ts), src:entry.id, itemId:trkItem&&trkItem.id});
     save();
     if(data.autoSheet){ pushToSheet({type:"tracker", ts:Date.now(), name:s.name, group:s.group||"", activity:a.name}); }
     return entry;
@@ -8438,23 +8492,30 @@ function setupRoster() {
     unmirrorTrackerEntry(gone);
     unlogTrackerEntry(gone);
     save();
+    return !!gone;
   }
-  /* Marks the History row for an undone tracker tap `undone` rather than
+  /* Marks the History row for an undone tracked write `undone` rather than
    * deleting it — History has never deleted anything, and the greyed row is
-   * itself the record that the tap was taken back. Matched on src, so undoing
-   * a tap from three weeks ago strikes that row and not the newest one.
+   * itself the record that the write was taken back. Matched on src, so
+   * undoing a write from three weeks ago strikes that row and not the newest
+   * one.
    *
-   * No correction row is written to pair with it, unlike a points undo: there
-   * is no number to reverse, so a "-0" correction would be noise standing in
-   * for nothing.
+   * Generic across every tracked writer (tracker, attendance, homework, an
+   * itemless item) — each stamps its own record's id as `src` on the log row
+   * it writes, so this one search serves all of them. No correction row is
+   * written to pair with it, unlike a points undo: there is no number to
+   * reverse, so a "-0" correction would be noise standing in for nothing.
    */
-  function unlogTrackerEntry(e){
-    if(!e || !e.id) return false;
+  function markTrackedLogUndoneBySrc(src){
+    if(!src) return false;
     for(var i=0;i<data.log.length;i++){
       var L=data.log[i];
-      if(L && L.kind==="tracked" && L.src===e.id && !L.undone){ L.undone=true; return true; }
+      if(L && L.kind==="tracked" && L.src===src && !L.undone){ L.undone=true; return true; }
     }
     return false;
+  }
+  function unlogTrackerEntry(e){
+    return (e && e.id) ? markTrackedLogUndoneBySrc(e.id) : false;
   }
   /* The second of the two places that removes a mirror entry, and like the
    * pass give-back it mirrors a deletion the rebbi performed himself. A count
@@ -8724,10 +8785,12 @@ function setupRoster() {
     var hwPrev=day[sid];
     // Unchanged: leave the record — and its timestamp — completely alone.
     if(hwPrev && hwPrev.checked===checked && typeof hwPrev.ts==="number") return false;
-    day[sid]={checked:checked, ts:Date.now()};
+    // id, like setAttendance()'s, is what a later undo matches against.
+    day[sid]={checked:checked, ts:Date.now(), id:newId()};
     // dk, not always "today" or "whatever the tab shows": this is the day the
-    // correction is ABOUT.
-    mirrorTracked("ti-homework", sid, {value:hwMirrorValue(checked), ts:day[sid].ts, date:dk});
+    // correction is ABOUT. src carries this write's own id for the same reason
+    // setAttendance()'s does.
+    mirrorTracked("ti-homework", sid, {value:hwMirrorValue(checked), ts:day[sid].ts, date:dk, src:day[sid].id});
     /* Same exception rule as attendance, and today it matches nothing: this
      * store is still the old boolean, so hwMirrorValue() can only say "full
      * credit" or "unchecked" and neither is an exception. That is deliberate —
@@ -8736,11 +8799,26 @@ function setupRoster() {
      * real cycle starts producing rows here without touching this line.
      */
     if(trackedValueIsNotable(hwMirrorValue(checked)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
-      addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(checked), about:dk});
+      addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(checked), about:dk, src:day[sid].id, itemId:"ti-homework", prev:hwPrev?hwPrev.checked:undefined});
     }
     save();
     var s=studentById(sid);
     if(data.autoSheet && s){ pushToSheet({type:"hw", ts:day[sid].ts, date:dk, name:s.name, group:s.group||"", checked:checked}); }
+    return true;
+  }
+  // Same shape as clearAttendance() — undoes a first mark of the day by
+  // removing the record rather than correcting it, guarded on recordId so a
+  // stale reversal can never delete a mark it wasn't asked about.
+  function clearHomework(sid, dk, recordId){
+    var day=hwDayRecord(dk), rec=day[sid];
+    if(!rec || rec.id!==recordId) return false;
+    delete day[sid];
+    unmirrorTracked("ti-homework", sid, function(m){ return m.src===recordId; });
+    markTrackedLogUndoneBySrc(recordId);
+    save();
+    if($("view-homework").classList.contains("active")){
+      if(hwViewMode==="student") renderHwStudentView(); else renderHomework();
+    }
     return true;
   }
   // Used by the "Homework Checked" personal QR code (PA:sid:actid), which can
@@ -8753,8 +8831,8 @@ function setupRoster() {
     var today=todayKey();
     var day=hwDayRecord(today);
     var hwPrev=day[sid];
-    day[sid]={checked:true, ts:Date.now()};
-    mirrorTracked("ti-homework", sid, {value:hwMirrorValue(true), ts:day[sid].ts, date:today});
+    day[sid]={checked:true, ts:Date.now(), id:newId()};
+    mirrorTracked("ti-homework", sid, {value:hwMirrorValue(true), ts:day[sid].ts, date:today, src:day[sid].id});
     /* Only ever writes "full credit", so the left half can never fire — the
      * right half is the live one, catching a boy who was marked no/partial
      * credit and has since had his folder scanned. This is also what stops the
@@ -8762,7 +8840,7 @@ function setupRoster() {
      * a previous value that is no longer an exception, and records nothing.
      */
     if(trackedValueIsNotable(hwMirrorValue(true)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
-      addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(true), about:today});
+      addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(true), about:today, src:day[sid].id, itemId:"ti-homework", prev:hwPrev?hwPrev.checked:undefined});
     }
     save();
     var s=studentById(sid);
@@ -11312,28 +11390,39 @@ function setupRoster() {
    * is what gets mirrored. The mirror never re-derives the value on its own,
    * because two cycles advancing independently is how the store and the tab
    * would drift apart while both looked right.
+   *
+   * Each hook also returns `undo`: enough of a snapshot for recordTrackedScan()
+   * to hand to reverseTrackedWrite() if this exact scan turns out to be the one
+   * "Undo last scan" needs to take back. Taken BEFORE the write, which is the
+   * only reason a hook can say what to restore.
    */
   var TRACKED_LEGACY = {
     "ti-attendance": function(s){
       // ALWAYS real today, never the date the Attendance TAB happens to show —
       // a scan from the Record tab has no "day on screen".
-      var next=attCycle(s.id, todayKey());
+      var dk=todayKey();
+      var day=attDayRecord(dk), prevRec=day[s.id];
+      var next=attCycle(s.id, dk);
       attCycleFlash(s, next);
       if($("view-attendance") && $("view-attendance").classList.contains("active")){
         if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
       }
-      return {ok:true, value:next};
+      return {ok:true, value:next, undo:{legacy:"attendance", sid:s.id, dk:dk,
+        recordId:day[s.id]&&day[s.id].id, prevStatus:prevRec&&prevRec.status}};
     },
     "ti-homework": function(s){
       // markHwCheckedToday (not setHw) for the same reason: setHw writes to
       // hwDate, the date the Homework tab is showing.
+      var dk=todayKey();
+      var day=hwDayRecord(dk), prevRec=day[s.id];
       markHwCheckedToday(s.id);
       flash(true, s.name, "HW Checked", "Homework marked checked (today)", "tracked");
       beep(true);
       // "checked" in the old boolean store IS "full credit" in the four-state
       // preset. Mirroring the preset's own vocabulary rather than `true` keeps
       // the Gradebook column readable in one language.
-      return {ok:true, value:"full credit"};
+      return {ok:true, value:"full credit", undo:{legacy:"homework", sid:s.id, dk:dk,
+        recordId:day[s.id]&&day[s.id].id, prevChecked:prevRec?prevRec.checked:undefined}};
     },
     "ti-pass": function(s){
       // passMarkUsed() is the SAME function the Passes tab's scan box uses, so
@@ -11351,7 +11440,7 @@ function setupRoster() {
       // Recent scans panel and the scan strip have something new to show.
       renderRecent();
       if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
-      return {ok:true, value:1};
+      return {ok:true, value:1, undo:{legacy:"pass", sid:s.id}};
     }
   };
   // A count item's activity is a Tracker activity, and the Tracker tab is still
@@ -11360,11 +11449,11 @@ function setupRoster() {
   function trackedLegacyFor(item, a){
     if(TRACKED_LEGACY[item.id]) return TRACKED_LEGACY[item.id];
     if(item.method==="count") return function(s){
-      trackerLogAdd(s, a);
+      var entry=trackerLogAdd(s, a);
       flash(true, s.name, a.name, "Logged", "tracked");
       beep(true);
       if($("view-tracker") && $("view-tracker").classList.contains("active")) renderTracker();
-      return {ok:true};
+      return {ok:true, undo:{legacy:"tracker", trackerEntryId:entry.id}};
     };
     return null;
   }
@@ -11712,6 +11801,11 @@ function setupRoster() {
     });
   }
 
+  // The single most recent tracked (non-point) scan, in enough detail for
+  // reverseTrackedWrite() to put it back — not persisted, and deliberately
+  // just one slot deep. See recordTrackedScan() for what sets it and
+  // undoMostRecentScan() for what reads it.
+  var lastTrackedScan = null;
   // THE one path a tracked scan travels. Records and reports, or refuses — the
   // flash and the write are the same call, so "it said it worked" and "it wrote
   // something" cannot be independently true.
@@ -11739,6 +11833,12 @@ function setupRoster() {
        * setter and needs no path of its own. TRACKED_LEGACY still owns the
        * value, the flash and the refusal — it simply no longer owns the copy.
        */
+      // Remembered so "Undo last scan" can reverse THIS write even though most
+      // of these (a routine Present/full-credit mark) never reach data.log at
+      // all — see undoMostRecentScan(). One step of memory only: a second
+      // tracked scan before the first is undone overwrites this, same as a
+      // second real scan would bump the log's own "most recent" pointer.
+      if(res.undo){ res.undo.ts=Date.now(); lastTrackedScan=res.undo; }
     } else {
       // No legacy store behind it: the tracked item IS the record. An
       // unrecognised method returns null rather than guessing at a value, and
@@ -11752,10 +11852,12 @@ function setupRoster() {
       // recordTracked() IS the record. The legacy branch above needs nothing
       // here: each of those setters writes its own History row, exactly as it
       // writes its own mirror entry, so logging again would double the row for
-      // one scan.
-      addTrackedLogEntry(s.id, item.name, {ts:entry.ts, value:entry.value, about:gbDateKeyForTs(entry.ts)});
+      // one scan. src carries the record's own id, symmetric with the tracker
+      // pattern, so an undo (row-level or "last scan") can find it again.
+      addTrackedLogEntry(s.id, item.name, {ts:entry.ts, value:entry.value, about:gbDateKeyForTs(entry.ts), src:entry.id, itemId:item.id});
       flash(true, s.name, item.name, String(entry.value), "tracked");
       beep(true);
+      lastTrackedScan={legacy:"itemless", itemId:item.id, sid:s.id, ts:entry.ts, logSrc:entry.id};
     }
     save();
     refreshLiveViews();
@@ -12517,8 +12619,10 @@ function setupRoster() {
             : isTracked   ? el("span","rd tracked", logEntryValueText(entry))
             : el("span","rd "+(entry.delta<0?"neg":"pos"), fmt(entry.delta));
       row.appendChild(name); row.appendChild(d);
-      // No ↩ on a tracked row — there is nothing for it to reverse. See undoEntry().
-      if(!isCorrection && !entry.undone && !isTracked){
+      // ↩ on a tracked row reverses it back at the store that wrote it — see
+      // undoTrackedLogEntry() — but only when the row carries enough to do
+      // that; see trackedEntryReversible().
+      if(!isCorrection && !entry.undone && (!isTracked || trackedEntryReversible(entry))){
         var u=el("button","btn btn-sm","↩");
         u.title="Undo this"; u.addEventListener("click", function(){ undoEntryById(entry.id); });
         row.appendChild(u);
@@ -12635,7 +12739,7 @@ function setupRoster() {
           }
           if(entry.undone){
             entryEl.appendChild(el("span","ss-label"," (undone)"));
-          } else if(entry.kind!=="correction" && !ssTracked){
+          } else if(entry.kind!=="correction" && (!ssTracked || trackedEntryReversible(entry))){
             var uBtn=el("button","ss-undo","↩");
             uBtn.title="Undo this";
             (function(id){ uBtn.addEventListener("click",function(){ undoEntryById(id); }); })(entry.id);
@@ -12689,7 +12793,7 @@ function setupRoster() {
       row.appendChild(isCorrection ? el("span","shr-delta undo","Undo")
         : shTracked ? el("span","shr-delta tracked", logEntryValueText(entry))
         : el("span","shr-delta "+(entry.delta<0?"neg":"pos"), fmt(entry.delta)));
-      if(!isCorrection && !entry.undone && !shTracked){
+      if(!isCorrection && !entry.undone && (!shTracked || trackedEntryReversible(entry))){
         var u=el("button","btn btn-sm","↩"); u.title="Undo this";
         u.addEventListener("click", function(){ undoEntryById(entry.id); });
         row.appendChild(u);
@@ -12870,22 +12974,91 @@ function setupRoster() {
   // not the "bad deep link" case the guard's replaceState exists for.
   $("routeErrorBackBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "scan" }); });
 
+  /* Reverses one tracked (non-point) descriptor, whichever store wrote it.
+   * Shared by undoTrackedLogEntry() (a ↩ on a row that made it to History)
+   * and undoMostRecentScan() (the ephemeral lastTrackedScan, for the far more
+   * common case of a routine mark that never reached History at all — see
+   * trackedValueIsNotable()). Both build the same shape of descriptor because
+   * this is the one place that knows what to do with it.
+   *
+   * attendance/homework restore the PREVIOUS value when there is one — the
+   * same thing a rebbi correcting the tab by hand would produce — or delete
+   * the record outright when this was the first mark of the day, guarded by
+   * recordId so a write that has since moved on is never touched. pass and
+   * tracker reuse their own tab's existing give-back / trackerUndoOne.
+   */
+  function reverseTrackedWrite(desc){
+    if(!desc) return false;
+    if(desc.legacy==="attendance"){
+      var day=attDayRecord(desc.dk), rec=day[desc.sid];
+      if(!rec || rec.id!==desc.recordId) return false;
+      return desc.prevStatus ? !!setAttendance(desc.sid, desc.prevStatus, desc.dk)
+                              : clearAttendance(desc.sid, desc.dk, desc.recordId);
+    }
+    if(desc.legacy==="homework"){
+      var hday=hwDayRecord(desc.dk), hrec=hday[desc.sid];
+      if(!hrec || hrec.id!==desc.recordId) return false;
+      return (desc.prevChecked!==undefined && desc.prevChecked!==null)
+        ? !!setHw(desc.sid, desc.prevChecked, desc.dk)
+        : clearHomework(desc.sid, desc.dk, desc.recordId);
+    }
+    if(desc.legacy==="pass"){
+      // No per-use history to target a specific use (see setPass()) — this
+      // gives back whichever one is currently outstanding, same limit the
+      // Passes tab's own manual give-back already has.
+      if(passCount(desc.sid)<=0) return false;
+      setPass(desc.sid, false);
+      return true;
+    }
+    if(desc.legacy==="tracker") return trackerUndoOne(desc.trackerEntryId);
+    if(desc.legacy==="itemless"){
+      var removed=unmirrorTracked(desc.itemId, desc.sid, function(m){ return m.id===desc.logSrc || m.src===desc.logSrc; });
+      if(removed){ markTrackedLogUndoneBySrc(desc.logSrc); save(); }
+      return removed;
+    }
+    return false;
+  }
+  /* The ↩ on a tracked History row. Never touches data.scores or writes a
+   * "-0" correction — there is no number here to reverse — it puts back
+   * whatever store wrote the row, via reverseTrackedWrite(). Only reachable
+   * for a row that carries enough to reverse (`titem`+`src`, stamped since
+   * this existed); an older row, or the pre-tracked-concept "Bathroom pass"
+   * rows, has neither and simply isn't drawn a button — see the render sites.
+   */
+  function undoTrackedLogEntry(entry){
+    if(!entry || entry.undone || !entry.titem) return false;
+    var desc=null;
+    if(entry.titem==="ti-attendance" && entry.src){
+      desc={legacy:"attendance", sid:entry.sid, dk:entry.about, recordId:entry.src, prevStatus:entry.tprev||undefined};
+    } else if(entry.titem==="ti-homework" && entry.src){
+      desc={legacy:"homework", sid:entry.sid, dk:entry.about, recordId:entry.src,
+        prevChecked: entry.tprev===undefined ? undefined : (entry.tprev==="true")};
+    } else if(entry.titem==="ti-pass"){
+      desc={legacy:"pass", sid:entry.sid};
+    } else if(entry.src){
+      var it=trackedItemById(entry.titem);
+      desc = (it && it.method==="count")
+        ? {legacy:"tracker", trackerEntryId:entry.src}
+        : {legacy:"itemless", itemId:entry.titem, sid:entry.sid, logSrc:entry.src};
+    }
+    var ok=reverseTrackedWrite(desc);
+    if(ok){
+      entry.undone=true;
+      save();
+      refreshLiveViews();
+      refreshTrackedBadges();
+    }
+    return ok;
+  }
   // Reverses a real scan/spend entry by writing a correction entry rather than deleting
   // history — keeps on-screen totals right and keeps the Google Sheet Log honest.
   function undoEntry(idx){
     var entry=data.log[idx];
     if(!entry || entry.undone || entry.kind==="correction") return;
-    /* A TRACKED ROW HAS NO POINTS TO REVERSE, so undoing one here would write a
-     * "-0" correction, change nothing at all, and look for all the world like
-     * the attendance mark had been taken back. The buttons are not drawn for
-     * these rows, but this is the gate that matters — undoEntryById() is
-     * reachable from the printed CTRL:UNDO code and from "Undo last scan".
-     *
-     * The right place to un-mark attendance is the Attendance tab, to un-check
-     * homework the Homework tab, to give a pass back Run → Passes. Each of
-     * those writes its own correcting History row through the same setter.
-     */
-    if(isTrackedEntry(entry)) return;
+    // A tracked row has no points to reverse and none of the score/contest
+    // bookkeeping below applies to it — it goes through its own reversal
+    // instead, back at the store that wrote it. See undoTrackedLogEntry().
+    if(isTrackedEntry(entry)){ undoTrackedLogEntry(entry); return; }
     entry.undone = true;
     // A contestOnly entry never touched data.scores unless it was later
     // merged in — so only reverse the main score here if this entry actually
@@ -13010,15 +13183,42 @@ function setupRoster() {
   // rather than true because a just-spoken note is now also undoable and the
   // callers word their message differently; every existing `if(undo...())`
   // caller still reads correctly, since both strings are truthy.
+  //
+  // MOST tracked scans (a routine Present, a routine "full credit") never
+  // reach data.log at all — see trackedValueIsNotable() — so walking the log
+  // alone would step straight past the boy just scanned to whatever point
+  // scan came before him. lastTrackedScan is how this still finds him: it is
+  // compared against the newest log-walkable candidate by timestamp, and
+  // whichever is actually more recent is what gets reversed. A stale
+  // lastTrackedScan (something else already changed that record — see
+  // reverseTrackedWrite()'s guards) is simply discarded and the log walk
+  // proceeds as if it had never been there.
   function undoMostRecentScan(){
     if(vnPopNote()) return "note";
+    var candidateIdx=-1, candidate=null;
     for(var i=0;i<data.log.length;i++){
       var e=data.log[i];
-      // Skips tracked rows for the reason in undoEntry(): "Undo last scan"
-      // after marking a boy absent must step back to the last real point scan,
-      // not stall on a row it cannot reverse.
-      if(!e.undone && e.kind!=="correction" && !isTrackedEntry(e)){ undoEntry(i); return "scan"; }
+      if(!e.undone && e.kind!=="correction" && (!isTrackedEntry(e) || trackedEntryReversible(e))){
+        candidateIdx=i; candidate=e; break;
+      }
     }
+    if(lastTrackedScan && (!candidate || lastTrackedScan.ts>=candidate.ts)){
+      var pending=lastTrackedScan;
+      lastTrackedScan=null;
+      if(reverseTrackedWrite(pending)){
+        // The individual setters (setAttendance/setHw/setPass/trackerUndoOne)
+        // each save and re-render their OWN tab if it's the one on screen —
+        // same as any other correction. What they don't touch is everything
+        // else a scan normally refreshes, since this path bypasses
+        // recordTrackedScan() entirely.
+        renderRecent();
+        refreshLiveViews();
+        refreshTrackedBadges();
+        return "scan";
+      }
+      // Stale — fall through and try the log-walk candidate instead.
+    }
+    if(candidate){ undoEntry(candidateIdx); return "scan"; }
     return false;
   }
   $("giveAllBtn").addEventListener("click", function(){ giveArmedToAll(); });
@@ -13316,21 +13516,24 @@ function setupRoster() {
       row.appendChild(isCorrection ? el("span","rd undo","Undo")
         : isTracked ? el("span","rd tracked", logEntryValueText(entry))
         : el("span","rd "+(entry.delta<0?"neg":"pos"), fmt(entry.delta)));
-      // Undo and Edit are points operations. On a tracked row Undo would
-      // reverse nothing while looking like it un-marked the boy, and Edit would
-      // offer to change a point value that does not exist — see undoEntry().
-      if(!isCorrection && !entry.undone && !isTracked){
+      // Edit is a points-only operation — offering to change a point value
+      // that does not exist makes no sense on a tracked row — but Undo now
+      // works on one too, reversing it at the store that wrote it, when the
+      // row carries enough to do that. See undoTrackedLogEntry().
+      if(!isCorrection && !entry.undone && (!isTracked || trackedEntryReversible(entry))){
         var u=el("button","btn btn-sm","↩");
         u.title="Undo this"; u.addEventListener("click", (function(eid){ return function(){ undoEntryById(eid); }; })(entry.id));
         row.appendChild(u);
-        // Edit button — lets a rebbi change the point value of a past scan.
-        // Uses the same correction model as Undo: the original entry is marked
-        // undone and a new correction entry is logged for the DIFFERENCE, so
-        // data.scores, Sheet sync, and the full audit trail all stay consistent.
-        var editBtn=el("button","btn btn-sm","✏️ Edit");
-        editBtn.style.marginLeft="4px";
-        editBtn.addEventListener("click", (function(eid){ return function(){ editEntryPoints(eid); }; })(entry.id));
-        row.appendChild(editBtn);
+        if(!isTracked){
+          // Edit button — lets a rebbi change the point value of a past scan.
+          // Uses the same correction model as Undo: the original entry is marked
+          // undone and a new correction entry is logged for the DIFFERENCE, so
+          // data.scores, Sheet sync, and the full audit trail all stay consistent.
+          var editBtn=el("button","btn btn-sm","✏️ Edit");
+          editBtn.style.marginLeft="4px";
+          editBtn.addEventListener("click", (function(eid){ return function(){ editEntryPoints(eid); }; })(entry.id));
+          row.appendChild(editBtn);
+        }
       } else if(entry.undone){
         row.appendChild(el("span","undone-tag","undone"));
       }
