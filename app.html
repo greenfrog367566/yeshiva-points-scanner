@@ -6578,6 +6578,15 @@ function setupRoster() {
   // the ONLY place pendingOAuthResult is consumed.
   function signinCompleteFromRedirect(){
     if (!pendingOAuthResult) return;
+    // Land on Settings -> Account immediately, not wherever the tab happened
+    // to be before the redirect — the whole rest of this flow (code entry,
+    // same-device adoption, the forced Drive-connect gate below) renders
+    // into #accountBox, which only exists inside the Settings tab. Fires for
+    // both the success and error paths, since an error also belongs here,
+    // not silently on the Scan dashboard.
+    if (typeof router !== "undefined" && router && typeof router.go === "function") {
+      router.go({ classId: LOCAL_CLASS_ID, tab: "settings" });
+    }
     if (pendingOAuthResult.error) {
       try { sessionStorage.removeItem("menchmarkConnectSchoolPending"); } catch (e) {}
       signinState.step = "error";
@@ -6697,11 +6706,16 @@ function setupRoster() {
     }, signinState.firebaseIdToken).then(function(res){
       data.firebaseClaimedBy = signinState.firebaseUid;
       data.firebaseMigrated = res.runId;
+      // Listing/fetching the Drive file already proved Drive access works —
+      // stamping this here avoids immediately re-prompting the forced
+      // Drive-connect gate right after a rebbi just used Drive.
+      data.driveBackupEnabled = true;
       save();
       signinState.step = "idle";
       signinState.driveRestoreOffer = null;
       signinState.lastReceipt = res.receipt;
       if (typeof renderAccountSection === "function") renderAccountSection();
+      if (typeof renderDriveBackupCard === "function") renderDriveBackupCard();
       return res;
     }).catch(function(err){
       // No dedicated conflict handling here on purpose — the gate this
@@ -10086,6 +10100,17 @@ function setupRoster() {
     if (signinState.step === "needsRoster") { renderAccountRosterStep(box); return; }
 
     if (data.account) {
+      // Forced Drive connect: every rebbi, either tier, must connect Google
+      // Drive before Settings -> Account shows anything else — checked here
+      // rather than as a one-shot signinState step, so it applies every time
+      // this box renders while unconnected, not just the moment sign-in
+      // finished. Not an app-wide block (a rebbi who never opens Settings
+      // isn't stopped) — that's a deliberately smaller scope than a true
+      // full-app gate would be.
+      if (!data.driveBackupEnabled && driveSupported()) {
+        renderAccountForceDriveStep(box);
+        return;
+      }
       var line = el("p", null);
       var label = data.account.schoolId != null
         ? (data.account.email + (data.account.schoolId ? " · a school account" : ""))
@@ -10199,6 +10224,24 @@ function setupRoster() {
     addBtn.style.marginLeft = "8px";
     addBtn.addEventListener("click", function(){ signinResolveConflict("addSeparate"); });
     box.appendChild(addBtn);
+  }
+  // Every signed-in account, either tier, must connect Google Drive before
+  // Settings -> Account shows anything else (renderAccountSection()'s own
+  // gate, above). No skip — driveConnect() is a full-page redirect, same
+  // mechanism the Settings card's own "Connect Google Drive" button uses;
+  // driveCompleteFromRedirect() re-renders this box on both the success and
+  // error path, so a failed attempt lands back here with the error visible
+  // and the button ready to retry.
+  function renderAccountForceDriveStep(box){
+    var p = el("p", "view-note");
+    p.textContent = "Connect Google Drive to back up your class before continuing — this only happens once.";
+    box.appendChild(p);
+    if (signinState.error) {
+      var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
+    }
+    var connectBtn = el("button", "btn btn-primary", "Connect Google Drive");
+    connectBtn.addEventListener("click", driveConnect);
+    box.appendChild(connectBtn);
   }
   // Step 3b's Drive-restore offer — only ever shown after same-device
   // adoption found no local match at all (signinMaybeOfferDriveRestore()'s
@@ -25118,12 +25161,21 @@ nameLine
     if (!pendingDriveOAuthResult) return;
     if (pendingDriveOAuthResult.error) {
       driveStatus("Could not connect Google Drive (" + pendingDriveOAuthResult.error + ").", "bad");
+      // Also surfaces on the forced Drive-connect gate (Settings -> Account),
+      // not just the Settings card's own status line — driveConnect() can be
+      // reached from either, and a failed attempt from the forced gate must
+      // land back on the forced gate with the error visible, not silently
+      // on the Drive card a rebbi may never have seen.
+      signinState.error = "Could not connect Google Drive (" + pendingDriveOAuthResult.error + "). Try again.";
+      if (typeof renderAccountSection === "function") renderAccountSection();
       return;
     }
     driveAdoptToken(pendingDriveOAuthResult);
     data.driveBackupEnabled = true;
     save();
     renderDriveBackupCard();
+    signinState.error = null;
+    if (typeof renderAccountSection === "function") renderAccountSection();
     driveWriteBackup(false);
   }
 
