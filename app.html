@@ -2406,11 +2406,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
               <label class="lbl">Custom amount</label>
               <input type="number" id="customAmt" class="field" value="1" min="0" max="1000" step="1">
             </div>
-            <button class="act-btn" id="customAdd" type="button" title="Press again to dial the amount up — three presses arms +3. Custom (subtract) dials it back down.">
+            <button class="act-btn" id="customAdd" type="button" title="Each press moves the amount up by one — press three times for +3. Type in the box to jump straight to a number.">
               <span class="an">Custom (add)</span>
               <span class="av pos" id="customAddVal">+1 pts</span>
             </button>
-            <button class="act-btn" id="customSub" type="button" title="Dials the amount down — press after Custom (add) to step back, or on its own to score a deduction.">
+            <button class="act-btn" id="customSub" type="button" title="Each press moves the amount down by one — press after Custom (add) to step back, or keep going past 0 for a deduction.">
               <span class="an">Custom (subtract)</span>
               <span class="av neg" id="customSubVal">−1 pts</span>
             </button>
@@ -10145,13 +10145,21 @@ function setupRoster() {
   // normal activity here sets fpCustomAct=null, which is what ends a run.
   function fpArmCustom(sign){
     var f=$("fsCustomAmt");
-    var n=normCustomAmt(f.value);
-    if(n>0) lastGoodCustomAmt=n; else n=lastGoodCustomAmt;
-    f.value=n;
-    var base=fpCustomAct ? (Number(fpCustomAct.delta)||0) : 0;
-    var total=base + (sign<0 ? -n : n);
+    var step=(sign<0 ? -1 : 1);
+    var total;
+    // One press is one point once a run is going; the first press arms whatever
+    // this panel's own box is showing. Same rule as nudgeCustom() — see there.
+    if(fpCustomAct){
+      total=(Number(fpCustomAct.delta)||0) + step;
+    } else {
+      var n=normCustomAmt(f.value);
+      if(!(n>0)) n=lastGoodCustomAmt;
+      total=step*n;
+    }
     if(total>CUSTOM_AMT_MAX) total=CUSTOM_AMT_MAX;
     if(total<-CUSTOM_AMT_MAX) total=-CUSTOM_AMT_MAX;
+    f.value=Math.abs(total);
+    if(Math.abs(total)>0) lastGoodCustomAmt=Math.abs(total);
     fpCustomAct={label:"Custom", delta:total}; fpRenderActs();
     if(total===0){ fpFlash(false, "Custom is 0 — dial it up first"); beep(false); }
     else { fpFlash(true, "Now scoring: Custom  "+fmt(total)); beep(true); }
@@ -16960,10 +16968,13 @@ function setupRoster() {
   // down — which is what makes the printed CTRL:CUSTOM+/− cards usable to dial
   // an amount without reaching for the screen at all.
   //
-  // The STEP is whatever is in the amount box; the TOTAL lives in armed.delta
-  // and is shown by the "Now scoring" pill. The box is deliberately left holding
-  // the step rather than the total — it has to survive the dialing to keep being
-  // the step, and it is also what the printed personal Custom card (PC:) reads.
+  // THERE IS ONLY ONE NUMBER. The amount box, the two button labels and the
+  // "Now scoring" pill all show it, and one press moves it by exactly one — a
+  // box reading 5 dials 5 → 6 → 7, never 5 → 10 → 15. Typing in the box is the
+  // override that jumps straight to a number; pressing dials from wherever that
+  // left it. armed.delta is where the number actually lives (so it carries the
+  // sign); the box carries its magnitude, and is also what the printed personal
+  // Custom card (PC:) reads, so that card now follows the dial too.
   //
   // Arming anything else ends the run for free: the accumulate branch only fires
   // when Custom is what is currently armed, so any other activity starts fresh.
@@ -16971,19 +16982,36 @@ function setupRoster() {
   // amount modal) so they cannot drift apart. Returns the new total.
   function nudgeCustom(sign){
     var f=$("customAmt");
-    var n=normCustomAmt(f?f.value:1);
-    // A box holding "abc" (a scanner burst's leftovers) or "0" used to arm
-    // Custom 0 here — and a 0-point scan writes a log entry that moves no
-    // score, which is invisible on screen but still eats an "Undo last scan"
-    // press. Same fallback the commit path has always used.
-    if(n>0) lastGoodCustomAmt=n; else n=lastGoodCustomAmt;
-    if(f) f.value=n;
-    var base=(armed && armed.label==="Custom") ? (Number(armed.delta)||0) : 0;
-    var total=base + (sign<0 ? -n : n);
+    var step=(sign<0 ? -1 : 1);
+    var total;
+    if(armed && !armed.storeId && armed.label==="Custom"){
+      // ONE PRESS IS ALWAYS ONE POINT, whatever the number currently reads.
+      // Not the box's value: dialing in steps of the displayed number meant a
+      // box showing 5 jumped 5 → 10 → 15, which is a multiplier, not a dial.
+      total=(Number(armed.delta)||0) + step;
+    } else {
+      // The first press of a run arms the number already showing, because that
+      // is exactly what the button is offering — a button reading "+5 pts" has
+      // to arm +5, not +1. Every press after this one moves it by one.
+      var n=normCustomAmt(f?f.value:1);
+      // A box holding "abc" (a scanner burst's leftovers) or "0" used to arm
+      // Custom 0 here — and a 0-point scan writes a log entry that moves no
+      // score, which is invisible on screen but still eats an "Undo last scan"
+      // press. Same fallback the commit path has always used.
+      if(!(n>0)) n=lastGoodCustomAmt;
+      total=step*n;
+    }
     // Same bound as a typed amount, in both directions — dialing must not be a
     // way around the cap that normCustomAmt() puts on everything else.
     if(total>CUSTOM_AMT_MAX) total=CUSTOM_AMT_MAX;
     if(total<-CUSTOM_AMT_MAX) total=-CUSTOM_AMT_MAX;
+    // THE BOX, THE BUTTON LABELS AND THE PILL ARE ONE NUMBER — they move
+    // together on every press. The box carries the magnitude (it is a min="0"
+    // number field); which way the total points is shown by the pill and by
+    // which of the two buttons is lit. syncCustomButtons() relabels from the
+    // box, so writing it here is what keeps "+3 pts" on the button in step.
+    if(f) f.value=Math.abs(total);
+    if(Math.abs(total)>0) lastGoodCustomAmt=Math.abs(total);
     setArmed("Custom", total, null, {dial:true});
     syncCustomButtons();
     return total;
