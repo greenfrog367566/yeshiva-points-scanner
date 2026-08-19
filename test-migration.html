@@ -577,6 +577,23 @@ if(typeof data.backupNudgeSince!=="number" || !isFinite(data.backupNudgeSince) |
 if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
 if(typeof data.fullWidth!=="boolean") data.fullWidth=false;
 if(typeof data.sixSeven!=="boolean") data.sixSeven=false;
+/* CLASS POINTS — purely additive, and deliberately NOT a DATA_VERSION
+ * bump. One boolean with a safe default, and no existing value is
+ * converted: the pool balances live as reserved keys inside data.scores,
+ * which every save already carries and every backup already round-trips,
+ * so there is nothing to migrate and nothing that can be lost. A save from
+ * before this shipped simply has no such keys and no flag, which reads
+ * correctly as "off, no pools".
+ *
+ * Defaults to false rather than being seeded from `defaults`, because it
+ * has to reach existing saves as well as new installs, and both should
+ * start in the same place: a rebbi who has never asked for class points
+ * should not find a new bar across the top of his app after an update.
+ *
+ * data.store.items needs no backfill at all — a prize with no `for` field
+ * is a student prize, which is exactly what every prize that already
+ * exists is. See storeItemIsClass(). */
+if(typeof data.classPointsEnabled!=="boolean") data.classPointsEnabled=false;
 // Instant (no-spin) toggles — one per random-selection tool. Additive
 // booleans: absent on every existing save, so they backfill to false and
 // old data keeps the current animated behavior untouched.
@@ -1515,6 +1532,11 @@ function runBuiltInTests() {
   assertField(d1, "navHidden", "object");
   assertField(d1, "features", "object");
   assert("Empty→hwActivitySeeded", d1.hwActivitySeeded === true);
+  // Class Points must default OFF on a brand-new install AND on an existing
+  // save — a rebbi who never asked for it should not find a new bar across the
+  // top of his app after an update. The second half is what actually matters,
+  // and is checked against a populated pre-feature save further down.
+  assert("Empty→classPointsEnabled defaults OFF", d1.classPointsEnabled === false);
   assert("Empty→instant toggles default OFF (animation unchanged)",
     d1.pickerInstant===false && d1.spinnerInstant===false && d1.raffleInstant===false,
     "got picker="+d1.pickerInstant+" spinner="+d1.spinnerInstant+" raffle="+d1.raffleInstant);
@@ -1604,6 +1626,43 @@ function runBuiltInTests() {
   assert("Real→instant toggles backfill OFF",
     d3.pickerInstant===false && d3.spinnerInstant===false && d3.raffleInstant===false,
     "got picker="+d3.pickerInstant+" spinner="+d3.spinnerInstant+" raffle="+d3.raffleInstant);
+  // CLASS POINTS on a save that predates the feature: OFF, and — the half that
+  // actually matters — the boys' own scores must come through untouched. A
+  // class pool is a reserved key in this same data.scores map, so the thing to
+  // prove is that adding the concept changes nothing about a save that has no
+  // pools in it. (The "Real→scores preserved" assertion above is the other
+  // half of that; this one states the intent.)
+  assert("Real→classPointsEnabled backfills OFF", d3.classPointsEnabled === false,
+    "got: "+d3.classPointsEnabled);
+  assert("Real→no class pool keys invented in data.scores",
+    Object.keys(d3.scores).every(function(k){ return k.slice(0,6)!=="CLASS:"; }),
+    "got: "+JSON.stringify(Object.keys(d3.scores)));
+
+  // --- Test 3a2: Class Points — a save that HAS pools keeps them exactly ---
+  // The pools live as reserved "CLASS:<name>" keys inside data.scores rather
+  // than in a store of their own, so this is really a test that migration
+  // treats that map opaquely: it must not drop an unrecognised key, rewrite
+  // it, or fold it into a student. It must also not re-hide the feature for a
+  // rebbi who deliberately turned it on.
+  var d3a2 = runMigration({
+    version: 5,
+    classPointsEnabled: true,
+    students: [{id:"s1",name:"Dovid",group:"Aleph"}],
+    scores: { s1: 20, "CLASS:Aleph": 14, "CLASS:*": 3 },
+    store: { items:[{id:"i1",name:"Pizza party",cost:50,emoji:"🍕",for:"class"},
+                    {id:"i2",name:"Pencil",cost:5,emoji:"✏️"}], log:[] }
+  });
+  assert("ClassPts→enabled flag preserved when ON", d3a2.classPointsEnabled === true);
+  assert("ClassPts→pool balances preserved exactly",
+    d3a2.scores["CLASS:Aleph"]===14 && d3a2.scores["CLASS:*"]===3,
+    "got: "+JSON.stringify(d3a2.scores));
+  assert("ClassPts→student score untouched alongside pools", d3a2.scores.s1===20);
+  assert("ClassPts→pool keys did not become students",
+    d3a2.students.length===1 && d3a2.students[0].id==="s1");
+  assert("ClassPts→class prize keeps its `for` flag",
+    d3a2.store.items[0].for==="class", "got: "+JSON.stringify(d3a2.store.items[0]));
+  assert("ClassPts→student prize still has no `for` flag",
+    d3a2.store.items[1].for===undefined, "got: "+JSON.stringify(d3a2.store.items[1]));
 
   // --- Test 3b: Instant toggles are REMEMBERED (the whole point of saving them) ---
   var d3b = runMigration({ version:2, pickerInstant:true, spinnerInstant:false, raffleInstant:true });
