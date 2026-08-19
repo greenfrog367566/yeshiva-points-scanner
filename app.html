@@ -7356,17 +7356,12 @@ function setupRoster() {
       // A rebbi who has only imported a roster has no seat layout, and this page
       // used to hand him 24 boxes reading "Empty seat" with no student codes at
       // all — a sheet that looks real and is useless. Seat whoever has no seat
-      // before drawing, and say so.
-      // Remembered for the session, not just for this render: auto-placing is
-      // idempotent, so the very next re-render places nobody and would blank the
-      // note straight back out — leaving a rebbi whose chart silently filled
-      // itself with no explanation of why.
-      // Skipped entirely in List: opening a page to print a name list is not a
-      // reason to write a seating chart for a class that has none.
-      if(!seatPrintIsList()){
-        var placed=seatAutoPlaceUnplaced();
-        if(placed) seatAutoPlacedCount+=placed;
-      }
+      // before drawing, and say so. Unconditional on arrival, so a boy added to
+      // the roster since the last visit gets a desk too.
+      // It re-syncs the Rows/Cols spinners itself, which is why it has to come
+      // AFTER seatPrintSyncDims() above rather than before it — placing reshapes
+      // the grid, and the spinners have to describe the grid that resulted.
+      seatPrintAutoPlace();
       // Draws the ⚙ Rearrange seats button (or hides it). Lives in
       // seatPrintSyncAutoPlaceNote() rather than inline here so the layout
       // switch can call it too — see there.
@@ -14718,12 +14713,36 @@ function setupRoster() {
   // explanation of something that just happened, not a preference, so it adds
   // no stored field and needs no migration.
   var seatAutoPlacedCount=0;
+  /* Which classes this session has already offered to auto-seat — the thing
+   * that stops the safety net in renderSeatChartPrint() from becoming a fight.
+   *
+   * That net has to run at DRAW time, because two of the ways to reach the
+   * class sheet never touch an entry point (see the note there). But drawing
+   * happens after every ✕ on a seat too, and re-seating a boy the rebbi just
+   * emptied out — a second after he clicked the button that empties it — would
+   * make the ✕ look broken and the tray unreachable.
+   *
+   * So the net fires at most once per class per session: "this class's sheet
+   * has not been prepared yet in this session" is the condition, not "somebody
+   * is unplaced". Marked here rather than at the call sites so that EVERY
+   * auto-place counts, including the entry points' — otherwise entering the tab
+   * normally would leave the flag clear and the first ✕ would be undone.
+   *
+   * In memory only, and deliberately: it describes this session, not a
+   * preference, so it stores no field and needs no migration. The entry points
+   * stay unconditional, so leaving the tab and coming back still seats anyone
+   * added to the roster since — exactly as before.
+   */
+  var seatAutoPlacedSeen={};
   function seatAutoPlaceUnplaced(){
     var lay=seatLayout();
     var studs=activeStudents();
     // Same unplaced set the live chart already computes (it also prunes ids for
     // students who have since been deleted or moved class).
     var unplaced=seatPruneAndFillUnplaced(lay, studs);
+    // Before the early return, not after: a class where everyone is already
+    // seated has still been considered, and must not re-arm the net.
+    seatAutoPlacedSeen[seatKey()]=1;
     if(!unplaced.length) return 0;
     // Has this rebbi ever arranged anything? Checked AFTER pruning, so a seat
     // holding a student who has since been deleted does not count as arranging.
@@ -23972,17 +23991,43 @@ nameLine
     var rv=$("seatPrintRebbiViewRow"); if(rv) rv.style.display = isList ? "none" : "flex";
     var ar=$("seatPrintArrangeRow"); if(ar) ar.style.display = isList ? "none" : "flex";
   }
+  /* Seat the unplaced for the class sheet, and re-sync the two controls that
+   * describe what it just did. One function so the three callers cannot drift —
+   * they already had, which is the whole bug this exists to close.
+   *
+   * Skipped in List for the same reason seatLayout() is never called there:
+   * opening a page to print a name list is not a reason to write a seating
+   * chart for a class that has none.
+   *
+   * The dims re-sync is the part that was missing everywhere. Auto-placing an
+   * untouched chart RESHAPES the grid — roughly square to the roster instead of
+   * seatLayout()'s invented 4x6 — and activateTab synced the Rows/Cols spinners
+   * BEFORE placing, so eight boys drew a 3x3 chart sitting under boxes reading
+   * 4 and 6, and the next nudge of either spinner then resized from the wrong
+   * numbers.
+   */
+  function seatPrintAutoPlace(){
+    if(seatPrintIsList()) return 0;
+    var placed=seatAutoPlaceUnplaced();
+    if(placed){
+      // Remembered for the session, not just for this render: auto-placing is
+      // idempotent, so the very next re-render places nobody and would blank the
+      // ⚙ Rearrange seats button straight back out — leaving a rebbi whose chart
+      // silently filled itself with no way to get to it.
+      seatAutoPlacedCount+=placed;
+      seatPrintSyncAutoPlaceNote();
+      seatPrintSyncDims();
+    }
+    return placed;
+  }
   document.querySelectorAll("#seatPrintLayout button").forEach(function(btn){
     btn.addEventListener("click", function(){
       data.seatPrintOpts.layout = (btn.dataset.layout==="list") ? "list" : "seating";
       // Switching BACK to the chart has to seat anyone still unplaced, exactly
       // as opening this tab does — otherwise a rebbi who arrived in List, then
       // switched to Seating chart, would get the page of "Empty seat" boxes the
-      // auto-placer exists to prevent, because it only ever ran on tab open.
-      if(!seatPrintIsList()){
-        var placed=seatAutoPlaceUnplaced();
-        if(placed) seatAutoPlacedCount+=placed;
-      }
+      // auto-placer exists to prevent.
+      seatPrintAutoPlace();
       save(); seatPrintSyncLayout(); seatPrintSyncAutoPlaceNote(); renderSeatChartPrint();
     });
   });
@@ -24553,6 +24598,43 @@ nameLine
     // on this page.
     wrap.style.setProperty("--seat-icon-scale", seatPrintIconScale());
     var isList=seatPrintIsList();
+    /* SEAT THE UNPLACED — the net under the two entry points, because arriving
+     * is not the only way this sheet gets drawn.
+     *
+     * Auto-placing used to live ONLY in activateTab("printSeats") and in the
+     * List/Seating switch, on the assumption that those were the only two ways
+     * to reach the class sheet. They are not, and both paths that were missed
+     * printed a page of "Empty seat" boxes for a class full of boys:
+     *
+     *   1. Changing class in the header while already on this tab. That handler
+     *      calls renderSeatChartPrint() on its own, and seatLayout() below
+     *      INVENTS a blank 4x6 for whichever class it is now asked about — so a
+     *      rebbi watched a filled chart turn into 24 empty desks by doing
+     *      nothing but picking his other shiur.
+     *   2. The live chart's own "🖨 Print seating chart" shortcut, which goes
+     *      through triggerSeatChartPrint() and never touches activateTab at all
+     *      — it even swaps the active view to this one itself.
+     *
+     * Self-healing is what hid it for so long: leaving the tab and coming back
+     * ran the entry-point copy and filled the chart, so one class printed
+     * correctly or blank depending on nothing but how the rebbi had reached the
+     * page. Putting the net at DRAW time is what closes both paths at once, and
+     * any fifth caller nobody has thought of yet.
+     *
+     * ONCE PER CLASS PER SESSION, and that limit is load-bearing — this is not
+     * a place to be thorough. Drawing also happens after every ✕ on a seat, so
+     * an unconditional auto-place here would re-seat the boy the rebbi just
+     * emptied out, a second after he clicked the button that empties it: the ✕
+     * would look broken and the "Not yet seated" tray would be unreachable. The
+     * flag is set inside seatAutoPlaceUnplaced() so the entry points arm it too
+     * — see there. The entry points stay unconditional, so leaving the tab and
+     * coming back still seats a boy added to the roster since.
+     *
+     * Skipped in List for the same reason the seatLayout() call below is:
+     * printing a name list is not a reason to write a seating chart for a class
+     * that has none.
+     */
+    if(!isList && !seatAutoPlacedSeen[seatKey()]) seatPrintAutoPlace();
     var studs=activeStudents();
     // seatLayout() INVENTS AND STORES a 4x6 layout for any class it is asked
     // about, so List mode must not call it — printing a name list is not a
@@ -24802,6 +24884,14 @@ nameLine
     renderSeatChartPrint();
     var curActive=document.querySelector(".view.active");
     if(curActive && curActive.id!=="view-printSeats"){
+      // The render above may have just auto-seated the whole class (see the note
+      // in renderSeatChartPrint). This shortcut prints from the LIVE chart, so
+      // that chart is what the rebbi looks back at the moment the print dialog
+      // closes — and it would be sitting there showing empty desks behind a
+      // sheet with every boy on it. Redrawn before #view-printSeats becomes
+      // active, so renderTapPanel's own tail-call back into the sheet stays off
+      // and no QR code is generated twice.
+      renderTapPanel();
       seatPrintPrevView=curActive;
       curActive.classList.remove("active");
       $("view-printSeats").classList.add("active");
