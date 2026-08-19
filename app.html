@@ -2461,6 +2461,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <h2 class="view-title" style="margin:0">Scan to award points</h2>
       <span class="grow"></span>
       <span class="seg" id="scanColsToggle" style="display:none;margin:0">
+        <button data-cols="1">1 column</button>
         <button data-cols="2">2 columns</button>
         <button data-cols="3">3 columns</button>
       </span>
@@ -2476,7 +2477,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button class="btn btn-sm" id="scanCustomizeBtn" title="Rearrange the sections on this page">⚙ Customize layout</button>
       <button class="btn btn-sm btn-bad" id="scanLayoutReset" style="display:none">↺ Reset layout</button>
     </div>
-    <p class="view-note no-print" id="scanCustomizeHint" style="display:none">Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / ◧ / ◨ / 🚫 decide where it lives: on the page, in the left shelf, in the right shelf, or hidden. Everything shows here while you're customizing, whatever you've chosen. Tap "Done" when finished.</p>
+    <p class="view-note no-print" id="scanCustomizeHint" style="display:none">Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / ◧ / ◨ / 🚫 decide where it lives: on the page, in the left shelf, in the right shelf, or hidden. Everything shows here while you're customizing, whatever you've chosen — a hidden section appears faded and marked 🚫 Hidden, and its button now reads 👁 Show, which puts it back. Tap "Done" when finished.</p>
 
     <div class="scan-layout" id="scanLayout">
       <div class="scan-col" id="scanCol0" data-col="0"></div>
@@ -16352,7 +16353,7 @@ function setupRoster() {
   // lose, duplicate, or strand a panel. A corrupted pref falls back to default.
   function validScanLayout(L){
     if(!L||typeof L!=="object") return false;
-    if(L.cols!==2 && L.cols!==3) return false;
+    if(L.cols!==1 && L.cols!==2 && L.cols!==3) return false;
     if(!Array.isArray(L.columns) || L.columns.length<3) return false;
     var seen={}, count=0;
     for(var c=0;c<L.columns.length;c++){
@@ -16649,12 +16650,29 @@ function setupRoster() {
       var pl=panelPlace(id), c=panelColIndex(id);
       var wEl=p.querySelector(".pt-w");
       if(wEl){
-        wEl.textContent = (pl==="col" && c>=0 && c<L.cols && tot>0)
-          ? Math.round(L.widths[c]/tot*100)+"%" : "—";
+        wEl.textContent = (pl!=="col" || c<0 || c>=L.cols || tot<=0) ? "—"
+          // One column is the whole page by definition — the weights have
+          // nothing to divide, so it reads 100% rather than its stored share.
+          : (L.cols===1) ? "100%"
+          : Math.round(L.widths[c]/tot*100)+"%";
       }
       p.querySelectorAll(".pt-place .pt-btn").forEach(function(b){
-        b.classList.toggle("active", b.dataset.place===pl);
+        // The hide button is excluded from the "this is where it is now"
+        // highlight: once hidden it reads "👁 Show" and is an action, and a
+        // highlighted action button reads as already-pressed. The 🚫 Hidden
+        // badge on the left of the row is what states the section's place.
+        b.classList.toggle("active", b.dataset.place===pl && b.dataset.place!=="hidden");
       });
+      // Once a section IS hidden, the button that hid it becomes the way back
+      // — it says so rather than leaving "put it on the page again" as
+      // something you have to deduce from the ▦ button next to it.
+      var hb=p.querySelector('.pt-place .pt-btn[data-place="hidden"]');
+      if(hb && hb.firstChild && hb.firstChild.nodeType===3){
+        var hidden=(pl==="hidden"), hl=hb.querySelector(".ptl");
+        hb.firstChild.nodeValue = hidden ? "👁" : "🚫";
+        if(hl) hl.textContent = hidden ? " Show" : " Hide";
+        hb.title = hidden ? "Show this section on the page again" : "Hide this section";
+      }
       var wh=p.querySelector(".panel-where");
       // Hidden entirely when the section is staying on the page — an empty
       // pill still draws its border and reads as a broken control.
@@ -16663,8 +16681,15 @@ function setupRoster() {
                             : pl==="right" ? "Right shelf ◨"
                             : pl==="hidden" ? "🚫 Hidden" : "";
       // Move and width are about the page grid, so they say nothing about a
-      // section that is going to a shelf or nowhere at all.
-      p.querySelectorAll(".panel-tools [data-pt]").forEach(function(b){ b.disabled = (pl!=="col"); });
+      // section that is going to a shelf or nowhere at all. With a single
+      // column there is also no other column to send a section to and no width
+      // to divide, so ⇄ and ◀ ▶ retire too rather than sitting there doing
+      // nothing when pressed.
+      p.querySelectorAll(".panel-tools [data-pt]").forEach(function(b){
+        var op=b.dataset.pt;
+        var needsColumns = (op==="swap" || op==="narrow" || op==="wide");
+        b.disabled = (pl!=="col") || (needsColumns && L.cols<2);
+      });
       // Same reason: dragging a section that is going to a shelf would be
       // reordering it inside a grid it isn't in.
       p.setAttribute("draggable", (scanCustomizing && pl==="col") ? "true" : "false");
@@ -16688,12 +16713,16 @@ function setupRoster() {
   }
   function setScanCols(n){
     ensureScanLayout();
-    n = (n===3) ? 3 : 2;
+    n = (n===1 || n===3) ? n : 2;
     if(n<data.scanLayout.cols){
-      // Dropping from 3 to 2 columns: fold anything in the 3rd column into the 2nd
-      // so no panel is stranded in a now-hidden column.
-      var extra=data.scanLayout.columns[2].splice(0);
-      extra.forEach(function(id){ data.scanLayout.columns[1].push(id); });
+      // Dropping the column count: fold every column that is about to be hidden
+      // into the last one that stays, so no panel is stranded out of sight.
+      // Folded highest-first (3rd into 2nd, then 2nd into 1st) so a 3→1 change
+      // keeps the sections in the same top-to-bottom order they were reading in.
+      for(var c=data.scanLayout.cols-1;c>=n;c--){
+        var extra=data.scanLayout.columns[c].splice(0);
+        extra.forEach(function(id){ data.scanLayout.columns[c-1].push(id); });
+      }
     }
     data.scanLayout.cols=n;
     save(); applyScanLayout();
@@ -16742,7 +16771,13 @@ function setupRoster() {
   $("view-scan").addEventListener("click", function(e){
     var b=e.target.closest(".pt-place .pt-btn"); if(!b) return;
     var panel=b.closest(".panel"); if(!panel) return;
-    setPanelPlace(panel.dataset.panel, b.dataset.place);
+    var want=b.dataset.place;
+    // The hide button is a toggle. Pressing it again on a section that is
+    // already hidden is the first thing anyone tries in order to get it back,
+    // and it reads "👁 Show" by then (see updatePanelTools) — so pressing it
+    // must be what shows it, rather than quietly re-hiding what is already hidden.
+    if(want==="hidden" && panelPlace(panel.dataset.panel)==="hidden") want="col";
+    setPanelPlace(panel.dataset.panel, want);
   });
   // Native drag-and-drop as the primary interaction; the buttons above do the
   // exact same moves and are a guaranteed fallback if drag misbehaves anywhere.
