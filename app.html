@@ -398,21 +398,30 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      history dropdown is position:absolute so opening it overlays on top of
      the chart instead of pushing it down the page. */
   .seats-scanbar{position:relative; z-index:30; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 10px}
-  /* Class points bar. Brass, like every other "this is a points total" surface
-     in the app, and never printed — it is a live running total, not part of
-     any sheet. display is owned by renderClassPointsBar(), which is why there
-     is no `display:flex` here: the inline style:none in the markup is the
-     off state, and setting it in CSS too would make the bar flash on for one
-     frame on every load before the renderer had run. */
-  .cp-bar{align-items:center; gap:10px; flex-wrap:wrap; padding:5px 12px; background:var(--brass-soft); border-bottom:1px solid var(--line)}
-  .cp-kicker{font-size:.75rem; font-weight:800; letter-spacing:.6px; text-transform:uppercase; color:#6b4d18; white-space:nowrap}
-  .cp-chip{display:inline-flex; align-items:baseline; gap:7px; background:#fff; border:1px solid #e0d2b4; border-radius:999px; padding:2px 12px}
-  .cp-name{font-size:.82rem; font-weight:600; color:var(--muted)}
-  .cp-val{font-size:1rem; font-weight:800; color:var(--brass)}
+  /* Class points pill, in the header beside the class picker. Brass, like
+     every other "this is a points total" surface in the app, and never printed
+     — it is a live running total, not part of any sheet.
+
+     It borrows .mute-btn's shape (the class picker and the account button next
+     to it are both .mute-btn) so the three read as one row of header controls
+     rather than as a bar with something bolted on; only the brass colouring is
+     added here. Visibility is owned by renderClassPoints() via the wrapper's
+     inline style, not by CSS, so the pill cannot flash on for a frame before
+     the renderer has decided whether it belongs on screen at all. */
+  .cp-pill{display:inline-flex; align-items:center; gap:6px; background:var(--brass-soft); border-color:#e0d2b4; color:#6b4d18; font-weight:800; white-space:nowrap}
+  .cp-pill:hover{background:var(--brass); color:#fff}
+  .cp-val{font-weight:800}
+  /* One row per class inside the pill's dropdown. */
+  .cp-row{display:flex; align-items:baseline; gap:10px; width:100%; padding:6px 9px; border-radius:7px; background:none; border:0; text-align:left; cursor:default; font:inherit}
+  .cp-row .cp-name{font-size:.86rem; font-weight:600; color:var(--ink); flex:1}
+  .cp-row .cp-val{font-size:.92rem; color:var(--brass)}
+  .cp-row.cp-current{background:var(--brass-soft)}
   /* A pool whose class has no students left. Dimmed rather than hidden — the
      points are real and still spendable once a boy is back in that class. */
-  .cp-chip.cp-orphan{opacity:.65; border-style:dashed}
-  @media print{ .cp-bar{display:none !important} }
+  .cp-row.cp-orphan .cp-name{color:var(--muted); font-style:italic}
+  .cp-row.cp-orphan .cp-val{color:var(--muted)}
+  .cp-note{padding:5px 9px 3px; font-size:.76rem; color:var(--muted); line-height:1.35}
+  @media print{ .header-cp-wrap{display:none !important} }
   /* GROW ZERO, AND THAT IS THE INTENDED BEHAVIOUR — the input stays 200px
      however wide the bar gets, and .scan-strip below takes every spare pixel so
      the row holds as much scan history as possible.
@@ -2267,6 +2276,20 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div class="header-right">
     <span id="micDot" class="mic-dot" title="Recording a voice note"></span>
     <select id="classSel" class="mute-btn" title="Which class you're working with"></select>
+    <!-- Class points, deliberately RIGHT HERE and nowhere else: the pill shows
+         the selected class's pool, and the control that selects that class is
+         the element immediately to its left. Anywhere further away and the
+         number would need to name its own class to be read at all.
+
+         It replaces the full-width strip this first shipped as — a whole bar
+         across every tab was more furniture than one number is worth. The
+         other classes' pools didn't disappear with it; they moved into this
+         pill's dropdown, which is also the only place an ORPHANED pool (a
+         class renamed out from under its points) can still be seen. -->
+    <span class="header-cp-wrap" id="classPointsWrap" style="position:relative;display:none">
+      <button class="mute-btn cp-pill" id="classPointsPill"></button>
+      <div class="hsb-dropdown" id="classPointsDropdown" style="display:none;left:auto;right:0"></div>
+    </span>
     <span class="header-date" id="todayDate"></span>
     <span class="header-date" id="todayDateHebrew"></span>
     <!-- Header account menu: a persistent, always-visible sign-in state and
@@ -2307,14 +2330,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <button class="btn btn-sm seats-hist-btn" id="seatsHistoryBtn">History <span class="chev">▾</span></button>
   <div class="seats-hist-dropdown" id="seatsHistoryDropdown" style="display:none"></div>
 </div>
-
-<!-- ============ CLASS POINTS BAR — the pool's own place, deliberately
-     OUTSIDE the leaderboard and above the page content on every tab, so a
-     class total is never mistaken for a boy's. Sits directly under the global
-     scan bar rather than inside <main> so it holds the same spot whichever
-     tab is open. Empty and display:none until data.classPointsEnabled is on;
-     built by renderClassPointsBar(). ============ -->
-<div id="classPointsBar" class="cp-bar" style="display:none"></div>
 
 <!-- Scan feedback toast. Lived inside the Dashboard's scan-box panel until that
      panel retired (the box was the third redundant way to feed a scan in, after
@@ -4847,9 +4862,9 @@ function setupRoster() {
     <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Class Points</h3>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setClassPoints"> Give the class its own points, counted separately from the boys'</label>
-      <p class="view-note" style="margin:8px 0 0">Off by default. When on, each class gets its own pool of points that works like an extra "student" — arm an activity and scan the class's own QR card (print it from <b>Run → QR Labels → Activity Menu</b>), or tap <b>🏆 Class</b> on the Record tab. The running total sits in its own bar at the top of every tab, and the class pool never appears in the Leader Board, the raffle, the picker, attendance or the Gradebook — it is a separate count, not a boy.</p>
+      <p class="view-note" style="margin:8px 0 0">Off by default. When on, each class gets its own pool of points that works like an extra "student" — arm an activity and scan the class's own QR card (print it from <b>Run → QR Labels → Activity Menu</b>), or tap <b>🏆 Class</b> on the Record tab. The running total sits in a 🏆 pill in the top bar, right beside the class picker — click it to see every class's total at once. The class pool never appears in the Leader Board, the raffle, the picker, attendance or the Gradebook — it is a separate count, not a boy.</p>
       <p class="view-note" style="margin:8px 0 0">Class points are spent in the <b>Prize Store</b>, where a prize can be marked <b>for the whole class</b> (a pizza party, a trip) instead of for one student. A class scan can be undone and shows in History exactly like any other scan.</p>
-      <p class="view-note" style="margin:8px 0 0">Turning this off later hides the bar, the button and the class prizes — it never deletes a pool's points. Turn it back on and the totals are exactly where they were.</p>
+      <p class="view-note" style="margin:8px 0 0">Turning this off later hides the pill, the button and the class prizes — it never deletes a pool's points. Turn it back on and the totals are exactly where they were.</p>
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
@@ -7642,13 +7657,12 @@ function setupRoster() {
   function applyGlobalScanBarVisibility(tab){
     var bar=$("globalScanBar"); if(!bar) return;
     bar.classList.toggle("hidden-on-tab", GLOBAL_SCAN_BAR_HIDDEN_TABS.indexOf(tab)>=0);
-    /* The class-points bar deliberately does NOT follow that hidden list — a
-     * running total is worth seeing on Settings and the print tabs too, and
-     * unlike the scan bar it takes no input, so there is nothing for it to
-     * steal focus from. Redrawn on every tab switch because the roster can
-     * change on Students without anything else refreshing it (a class emptied
-     * there is what turns a pool into an orphan chip). */
-    renderClassPointsBar();
+    /* The class-points pill lives in the header, so it is never hidden by that
+     * list at all — it is simply redrawn here because a tab switch is the
+     * cheapest reliable moment to catch a roster change made on the Students
+     * tab, which nothing else refreshes it for (emptying a class there is what
+     * turns its pool into an orphan). */
+    renderClassPoints();
   }
   // Runs a tool-tab renderer and, if it throws, shows the actual error message
   // directly in that tab's list box instead of leaving it silently blank —
@@ -11373,7 +11387,7 @@ function setupRoster() {
    * than on the next tab switch. */
   $("setClassPoints").addEventListener("change", function(){
     data.classPointsEnabled=this.checked; save();
-    renderClassPointsBar(); renderClassPointsBtn();
+    renderClassPoints();          // also refreshes the Record tab's 🏆 button
     renderStore(); refreshCodeSurfaces();
   });
   function escHtml(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -13786,7 +13800,7 @@ function setupRoster() {
     flash(delta>=0, "🏆 "+classPoolLabel(cls), fmtDeltaBare(delta),
           label+" · class now "+fmtScore(key), delta>=0?"positive":"negative");
     beep(delta>=0);
-    renderRecent(); renderClassPointsBar(); refreshLiveViews();
+    renderRecent(); renderClassPoints(); refreshLiveViews();
     return true;
   }
   /* The armed activity, given to a class pool — what the printed Class card
@@ -13854,7 +13868,7 @@ function setupRoster() {
     flash(true, "🏆 "+classPoolLabel(cls), (it.emoji||"🎁")+" "+it.name,
           fmtDeltaBare(-it.cost)+" · class now "+fmtScore(key));
     beep(true);
-    renderRecent(); renderScanBoard(); renderClassPointsBar(); refreshLiveViews();
+    renderRecent(); renderScanBoard(); renderClassPoints(); refreshLiveViews();
     if($("view-store") && $("view-store").classList.contains("active")) renderStore();
     return true;
   }
@@ -13876,29 +13890,79 @@ function setupRoster() {
     orphanedClassPools().forEach(function(k){ if(keys.indexOf(k)<0) keys.push(k); });
     return keys;
   }
-  // The bar itself. Lives under the global scan bar, on every tab, and is
-  // simply absent when the feature is off — no empty strip, no reserved space.
-  function renderClassPointsBar(){
+  /* The header pill, beside the class picker. Absent entirely when the feature
+   * is off — no empty slot, no reserved space.
+   *
+   * It shows the SELECTED class's total, because the control naming that class
+   * sits immediately to its left; that adjacency is what lets the pill be just
+   * a number instead of having to label itself. On "All classes" there is no
+   * one pool to show, so it falls back to naming how many there are and leaves
+   * the totals to the dropdown — the same reasoning that hides the Record
+   * tab's 🏆 button in that state, rather than letting either one guess.
+   */
+  function renderClassPoints(){
     // The Record tab's 🏆 button is gated by the same flag and changes at the
     // same moments (feature toggled, class switched, roster edited), so it is
     // refreshed from here rather than from a second set of call sites that
     // would eventually fall out of step with this one.
     renderClassPointsBtn();
-    var bar=$("classPointsBar");
-    if(!bar) return;
-    if(!classPointsOn()){ bar.style.display="none"; bar.innerHTML=""; return; }
-    bar.style.display="flex";
-    bar.innerHTML="";
-    bar.appendChild(el("span","cp-kicker","🏆 Class points"));
-    var live=livePoolKeys();
-    classPoolsToShow().forEach(function(key){
-      var cls=classOfPoolId(key);
-      var chip=el("span","cp-chip"+(live[key]?"":" cp-orphan"));
-      chip.appendChild(el("span","cp-name", classPoolLabel(cls)));
-      chip.appendChild(el("span","cp-val", fmtScoreShort(key)));
-      if(!live[key]) chip.title="No students are in “"+classPoolLabel(cls)+"” any more — these points are still here and nothing has been lost. They become spendable again if a student is put back in that class.";
-      bar.appendChild(chip);
+    var wrap=$("classPointsWrap"), pill=$("classPointsPill");
+    if(!wrap || !pill) return;
+    if(!classPointsOn()){
+      wrap.style.display="none";
+      closeClassPointsDropdown();
+      return;
+    }
+    wrap.style.display="";
+    pill.textContent="";
+    pill.appendChild(document.createTextNode("🏆 "));
+    if(data.currentClass || !groups().length){
+      var key=classPoolKey(data.currentClass);
+      pill.appendChild(el("span","cp-val", fmtScoreShort(key)));
+      pill.title=classPoolLabel(data.currentClass)+"'s class points — "+fmtScoreFull(key)+". Click to see every class.";
+    } else {
+      var n=classPoolsToShow().length;
+      pill.appendChild(el("span","cp-val", n+" class"+(n===1?"":"es")));
+      pill.title="Class points. Pick one class to see its total here — click for all of them.";
+    }
+    if($("classPointsDropdown").style.display!=="none") renderClassPointsDropdown();
+  }
+  /* The pill's dropdown: every class's pool at once. This is the only place an
+   * ORPHANED pool can be seen — a class "renamed" by moving its boys to a new
+   * group name leaves its points behind under the old name, and without this
+   * list there would be no way to discover that they are still there.
+   */
+  function renderClassPointsDropdown(){
+    var dd=$("classPointsDropdown");
+    if(!dd) return;
+    dd.innerHTML="";
+    var live=livePoolKeys(), keys=classPoolsToShow(), anyOrphan=false;
+    // Deliberately every class, not just the selected one — the dropdown is
+    // the "all of them" view the pill itself cannot be.
+    var gs=groups();
+    var allKeys = gs.length ? gs.map(classPoolKey) : [classPoolKey("")];
+    orphanedClassPools().forEach(function(k){ if(allKeys.indexOf(k)<0) allKeys.push(k); });
+    allKeys.forEach(function(key){
+      var cls=classOfPoolId(key), isLive=!!live[key];
+      if(!isLive) anyOrphan=true;
+      var row=el("div","cp-row"+(isLive?"":" cp-orphan")+((isLive && cls===data.currentClass)?" cp-current":""));
+      row.appendChild(el("span","cp-name", classPoolLabel(cls)+(isLive?"":" (no students)")));
+      row.appendChild(el("span","cp-val", fmtScoreShort(key)));
+      dd.appendChild(row);
     });
+    if(anyOrphan){
+      dd.appendChild(el("div","cp-note","A class with no students keeps its points — nothing has been lost. They become spendable again if a student is put back in that class."));
+    }
+  }
+  function closeClassPointsDropdown(){
+    var dd=$("classPointsDropdown");
+    if(dd) dd.style.display="none";
+  }
+  function toggleClassPointsDropdown(){
+    var dd=$("classPointsDropdown");
+    if(!dd) return;
+    if(dd.style.display==="none"){ renderClassPointsDropdown(); dd.style.display="block"; }
+    else dd.style.display="none";
   }
   /* The Record tab's 🏆 Class button. Hidden when the feature is off, and also
    * hidden on "All classes" when the rebbi has more than one class — there is
@@ -14392,6 +14456,8 @@ function setupRoster() {
     if(ad && ad.style.display!=="none" && !e.target.closest(".seats-pill-wrap")) hideSeatsActivityDropdown();
     var had=$("headerAccountDropdown");
     if(had && had.style.display!=="none" && !e.target.closest(".header-account-wrap")) had.style.display="none";
+    var cpd=$("classPointsDropdown");
+    if(cpd && cpd.style.display!=="none" && !e.target.closest(".header-cp-wrap")) closeClassPointsDropdown();
   });
   // Phase 1: Seating chart pop-out (seats folded into Dashboard). Instead of
   // a fixed overlay, this shows view-seats the same way the old Seats tab did
@@ -14641,13 +14707,13 @@ function setupRoster() {
       if($("view-store") && $("view-store").classList.contains("active")) renderStore();
     }
     var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Undo: "+entry.label, delta:-entry.delta, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false, mcId:entry.mcId||undefined, mcMerged:entry.mcMerged||undefined});
-    // renderClassPointsBar() is here for the same reason refreshStudentTiles()
+    // renderClassPoints() is here for the same reason refreshStudentTiles()
     // is below: undoing a CLASS scan corrects data.scores and would otherwise
     // leave the old total sitting in the bar until something else redrew it.
     // Found in the browser, not by reading — the arithmetic was right and only
     // the display was stale, which is exactly the kind of thing a static check
     // cannot see.
-    save(); renderRecent(); renderScanBoard(); renderClassPointsBar();
+    save(); renderRecent(); renderScanBoard(); renderClassPoints();
     // The boy's own tile, on both surfaces. Without this an undo corrected the
     // score in the store and left the old number sitting on the seating chart
     // and the class list until something else rebuilt the panel — and, during a
@@ -14792,6 +14858,7 @@ function setupRoster() {
   }
   $("giveAllBtn").addEventListener("click", function(){ giveArmedToAll(); });
   $("classPointsBtn").addEventListener("click", function(){ awardArmedToClass(data.currentClass); });
+  $("classPointsPill").addEventListener("click", function(e){ e.stopPropagation(); toggleClassPointsDropdown(); });
   $("freezeAllBtn").addEventListener("click", function(){ toggleAllFreezes(); });
   $("undoLast").addEventListener("click", function(){ undoMostRecentScan(); });
   // The dashboard and seating-chart undos are the SAME action, not a second
@@ -15237,7 +15304,7 @@ function setupRoster() {
       data.scores[entry.sid]=score(entry.sid)+newDelta;    // apply new
     }
     var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Edit: "+entry.label, delta:diff, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false, mcId:entry.mcId||undefined, mcMerged:entry.mcMerged||undefined});
-    save(); renderRecent(); renderScanBoard(); renderClassPointsBar();
+    save(); renderRecent(); renderScanBoard(); renderClassPoints();
     if($("view-standings").classList.contains("active")) renderStandings();
     renderHistoryTab();
     var s=subjectById(entry.sid);
@@ -19568,7 +19635,7 @@ function setupRoster() {
     // refreshStudentTiles() is a no-op for a class pool (there is no tile with
     // that data-sid), which is exactly right — the pool's total lives in the
     // class-points bar instead, so that is refreshed alongside.
-    renderStore(); renderScanBoard(); refreshStudentTiles(sid, -it.cost); refreshLiveViews(); renderClassPointsBar();
+    renderStore(); renderScanBoard(); refreshStudentTiles(sid, -it.cost); refreshLiveViews(); renderClassPoints();
   }
   function refundPurchase(idx){
     var p=data.store.log[idx]; if(!p) return;
@@ -19589,7 +19656,7 @@ function setupRoster() {
     }
     addLogEntry({ts:Date.now(), sid:p.sid, label:"Store refund: "+p.itemName, delta:p.cost, kind:"refund"});
     data.store.log.splice(idx,1);
-    save(); renderStore(); renderScanBoard(); refreshStudentTiles(p.sid); refreshLiveViews(); renderClassPointsBar();
+    save(); renderStore(); renderScanBoard(); refreshStudentTiles(p.sid); refreshLiveViews(); renderClassPoints();
   }
   function renderStoreHistory(){
     var h=$("storeHistory"); h.innerHTML="";
@@ -23725,7 +23792,7 @@ nameLine
     data.currentClass=this.value; save();
     // The bar shows the selected class's pool (and the 🏆 button is hidden on
     // "All classes"), so both have to follow the class picker.
-    renderClassPointsBar();
+    renderClassPoints();
     renderActButtons(); renderRecent();
     renderScanBoard(); renderTapPanel(); if(typeof fpOpen!=="undefined" && fpOpen) fpRenderNames();
     renderStandings(); renderPasses();
