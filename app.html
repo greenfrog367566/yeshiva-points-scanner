@@ -6999,6 +6999,19 @@ function setupRoster() {
   // that replacement behind a modal, so a synchronous stamp would be
   // written onto the old object and then thrown away.
   function applyRestoredSnapshot(obj, doneMsg, beforeSave){
+    // Hard refusal, not an assumption about callers. This replaces the whole
+    // class; there is no caller that should ever want that on a device with
+    // students on it, so the destructive operation refuses rather than trusting
+    // whoever called it to have checked (CLAUDE.md rule 1).
+    //
+    // The gate this originally leaned on — signinDetectLocalClass() — is NOT a
+    // safe substitute, and that is worth spelling out because it reads like
+    // one: it answers "is there a class worth OFFERING TO UPLOAD", and returns
+    // null when the log is empty or the last scan is over 30 days old (see its
+    // three-signal test). A rebbi who set his class up in advance, or is back
+    // from a break, has a full roster and gets null from it. Restoring on that
+    // signal replaced a live class with an older Drive backup.
+    if (Array.isArray(data.students) && data.students.length > 0) return false;
     checkShulchaniModeOnRestore(obj, function(resolved){
       data = migrateData(resolved); load2fix();
       if (typeof beforeSave === "function") beforeSave();
@@ -25744,6 +25757,14 @@ nameLine
     // restores, tier 2 only restores (see signinAcceptDriveRestore).
     if (!data.account) return;
     if (data.firebaseClaimedBy) return;
+    // Blank devices only. Now that accepting this offer RESTORES (and not just
+    // uploads), offering it to a device that already has a roster would be
+    // offering to overwrite one class with another — and the caller's own
+    // signinDetectLocalClass() null does not mean "empty", only "no recent
+    // scans" (see applyRestoredSnapshot). Narrowing here rather than at accept
+    // time on purpose: an offer that says "your class comes back" must not
+    // appear where accepting it would do nothing, or do harm.
+    if (Array.isArray(data.students) && data.students.length > 0) return;
     if (!driveSupported()) return;
     signinDriveRestoreChecked = true;
     var chain = driveToken ? Promise.resolve() : driveWithRecovery(function(){
