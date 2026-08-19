@@ -8,6 +8,8 @@ The current working queue. Read this at the start of a session.
 
 ## Doing now
 
+**2026-08-19: #227's Gradebook write side is complete** (Tracker and Pass slices, both open as PRs — see `CHANGELOG.md`), and **Phase 8 (Chavrusa Mode) has started**, both at Ben's direction. Chavrusa's first slice — manual/automatic group-building, Past Chavrusas history, Individual point mode — is open as a PR, browser-verified. Still to come, as separate slices: the rule editor, Dashboard visual integration (confirmed NOT actually blocked by the rest of Phase 3 — see `Menchmark_Phased_Build_Plan.md`'s restamped Phase 8 status), and the Entire Group / Group Entity point-target modes.
+
 **Shipped and verified live 2026-08-09/10:** **#244** — the downloaded offline copy was destroying a rebbi's work on every reopen (found by reproduction, not by reading); **#248** — Gradebook attendance cells are now editable, which is slice 1 of #227; **#242** and **#247** — two-tier custody and universal sign-in recorded as accepted; **#243** — the Drive OAuth spike. See `CHANGELOG.md` for what each did.
 
 **#244 is why the first item under "Waiting on Ben" is the most urgent thing on this page.** The fix is in the repo and it cannot reach a copy already sitting on a rebbi's machine — a `file://` copy has no update path at all. Someone has to tell those rebbeim to re-download.

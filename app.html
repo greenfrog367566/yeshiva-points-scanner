@@ -584,6 +584,19 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      a problem, it is just work still to do, and 25 red tiles at the start of a
      period would read as 25 things wrong. */
 
+  /* ---- Chavrusa Mode: Manual builder's tile grid (Phase 8) ----
+     .chav-tile reuses .tap-btn's own look (border/radius/background) rather
+     than a fresh style, so a selection tile reads as the same visual family
+     as every other tap-to-act tile in the app. */
+  .chav-tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+  .chav-tile{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer}
+  .chav-tile.chav-selected{border-color:var(--brass);background:var(--brass-soft)}
+  .chav-tile.chav-grouped{opacity:.4;cursor:default}
+  .chav-tile.chav-grouped:hover{border-color:var(--line)}
+  .chav-group-card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .chav-group-members{font-weight:600}
+
   /* ---- Seating chart mode ---- */
   /* Brief ring on the sheet after "⚙ Rearrange seats" scrolls to it, so it is
      obvious what the button moved to. Cleared on a 1.2s timer, and explicitly
@@ -4267,6 +4280,62 @@ function setupRoster() {
     <div class="card pad"><div id="passList" class="row-list"></div></div>
   </section>
 
+  <!-- ============ CHAVRUSA MODE ============ -->
+  <section id="view-chavrusa" class="view">
+    <h2 class="view-title">Chavrusa Mode</h2>
+    <p class="view-note">Build learning pairs or small groups for this sitting — tap students to group them manually, or generate groups automatically. A session ends every sitting; past groups are saved below to reuse.</p>
+
+    <div class="toolbar" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+      <div class="seat-segmented" id="chavModeSeg">
+        <button class="seat-segbtn active" id="chavModeManualBtn" type="button">Manual</button>
+        <button class="seat-segbtn" id="chavModeAutoBtn" type="button">Automatic</button>
+      </div>
+      <span class="grow"></span>
+      <button class="btn btn-sm" id="chavSaveNewBtn" type="button">Save &amp; start new</button>
+    </div>
+
+    <div id="chavManualPanel" class="card pad" style="margin-bottom:16px">
+      <div class="view-note" style="margin:0 0 10px">Tap students to select them, then Save as group.</div>
+      <div id="chavTileGrid" class="chav-tile-grid"></div>
+      <div class="toolbar" id="chavSelectBar" style="margin-top:12px;gap:8px;display:none">
+        <span class="grow" id="chavSelectCount"></span>
+        <button class="btn btn-sm" id="chavClearSelBtn" type="button">Clear</button>
+        <button class="btn btn-sm btn-primary" id="chavSaveGroupBtn" type="button">Save as group</button>
+      </div>
+    </div>
+
+    <div id="chavAutoPanel" class="card pad" style="margin-bottom:16px;display:none">
+      <div class="toolbar" style="gap:14px;flex-wrap:wrap">
+        <label class="lbl" style="margin:0;display:flex;align-items:center;gap:6px">Group size
+          <input type="number" id="chavGroupSize" class="field" min="2" step="1" value="2" style="width:64px">
+        </label>
+        <label class="lbl" style="margin:0;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="chavAvoidPairings" checked> Avoid previous pairings
+        </label>
+        <span class="grow"></span>
+        <button class="btn btn-sm btn-primary" id="chavGenerateBtn" type="button">Generate</button>
+      </div>
+      <div class="gb-warn" id="chavFallbackWarn" style="display:none;margin-top:10px;align-items:center;gap:10px">
+        <span class="grow" id="chavFallbackWarnText"></span>
+        <button class="btn btn-sm" id="chavFallbackWarnClose" type="button">Dismiss</button>
+      </div>
+    </div>
+
+    <div class="card pad" style="margin-bottom:16px">
+      <div class="toolbar" style="margin-bottom:8px">
+        <h3 style="margin:0">This sitting's groups</h3>
+        <span class="grow"></span>
+        <button class="btn btn-sm btn-bad" id="chavClearGroupsBtn" type="button">Clear groups</button>
+      </div>
+      <div id="chavGroupsList" class="row-list"></div>
+    </div>
+
+    <details class="card pad" id="chavHistoryShelf">
+      <summary>Past Chavrusas</summary>
+      <div id="chavHistoryList" class="row-list" style="margin-top:10px"></div>
+    </details>
+  </section>
+
   <!-- ============ ATTENDANCE ============ -->
   <section id="view-attendance" class="view">
     <h2 class="view-title">Attendance</h2>
@@ -6276,7 +6345,7 @@ function setupRoster() {
     // sheet that has to be found: student codes in seat positions plus every
     // activity code, on one page — without it there is nothing to scan, and it
     // used to be reachable only via an unlabelled 🖨 button on the Dashboard.
-    manage:      { label:"Run",          icon:'<circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1.7"/><path d="M8 1.2v2.3M8 12.5v2.3M1.2 8h2.3M12.5 8h2.3M3.2 3.2l1.6 1.6M11.2 11.2l1.6 1.6M12.8 3.2l-1.6 1.6M4.8 11.2l-1.6 1.6"/>', tabs:["printSeats","students","activities","brachos","spinner","passes","attendance","tracker","homework","gradebook","backup","settings"] },
+    manage:      { label:"Run",          icon:'<circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1.7"/><path d="M8 1.2v2.3M8 12.5v2.3M1.2 8h2.3M12.5 8h2.3M3.2 3.2l1.6 1.6M11.2 11.2l1.6 1.6M12.8 3.2l-1.6 1.6M4.8 11.2l-1.6 1.6"/>', tabs:["printSeats","students","activities","brachos","spinner","passes","attendance","tracker","homework","gradebook","chavrusa","backup","settings"] },
     learn:       { label:"Review",       icon:'<path d="M2 2.5c2.4 0 4.4.5 6 1.7V14c-1.6-1.2-3.6-1.7-6-1.7V2.5z"/><path d="M14 2.5c-2.4 0-4.4.5-6 1.7V14c1.6-1.2 3.6-1.7 6-1.7V2.5z"/>', tabs:["learn-text","learn-chart","learn-pesukim","learn-mishnayos","learn-shorashim"] }
   };
   var GROUP_ORDER=["scan","standings","rewards","learn","manage"];
@@ -6290,6 +6359,7 @@ function setupRoster() {
     raffle:"Raffle", auction:"Auction", store:"Store", coinbank:"Coin Deposit",
     students:"Students", activities:"Activities", brachos:"Brachos", spinner:"Spinner",
     passes:"Passes", attendance:"Attendance", tracker:"Tracker", homework:"Homework", gradebook:"Gradebook",
+    chavrusa:"Chavrusa Mode",
     backup:"Backup & Restore", settings:"Settings",
     "learn-text":"Text", "learn-chart":"Chart", "learn-pesukim":"Pesukim", "learn-mishnayos":"Mishnayos", "learn-shorashim":"Shorashim",
     // printSeats is navigable, and its name has to carry BOTH jobs this page
@@ -7632,6 +7702,7 @@ function setupRoster() {
     if(tab==="spinner") renderSpinner();
     if(tab==="gradebook") renderGradebook();
     if(tab==="passes"){ renderPasses(); setTimeout(function(){ $("passScanInput").focus(); },50); }
+    if(tab==="chavrusa") renderChavrusa();
     renderHeaderScanContext();
   }
   // Called after a visibility checkbox changes in Settings — refreshes the nav,
@@ -7855,6 +7926,214 @@ function setupRoster() {
     if(!isFinite(n) || n<1) n=1;
     data.passCap=n; save(); renderPasses();
   });
+
+  /* ==================== CHAVRUSA MODE (Phase 8) ====================
+   * docs/Menchmark_UI_Redesign_Summary.md §6. data.chavrusaSession is the
+   * one active session for the whole app -- it ends every sitting via
+   * "Save & start new", never a timeout; data.chavrusaHistory is what that
+   * action saves into, and what the Past Chavrusas panel loads back from.
+   * Manual mode's tiles reuse avatarEl() (the same shared helper the tap
+   * panel, Students tab and floating scanner already use) rather than the
+   * full seating-chart tap-panel component itself -- that component is
+   * single-tap-to-award, built for a different interaction shape than
+   * multi-select-into-groups, and retrofitting selection state into it
+   * would be a large, risky surgical footprint on shared, heavily-used code.
+   */
+  var chavMode="manual"; // "manual" | "auto" -- session-only UI state, not persisted
+  var chavSelected=[]; // student ids currently tapped in Manual mode, not persisted
+
+  function chavGroupedIds(){
+    var ids={};
+    data.chavrusaSession.groups.forEach(function(g){ (g.studentIds||[]).forEach(function(id){ ids[id]=1; }); });
+    return ids;
+  }
+  function chavStudentName(sid){
+    var s=studentById(sid);
+    return s ? s.name : "(removed student)";
+  }
+  function renderChavrusa(){
+    $("chavModeManualBtn").classList.toggle("active", chavMode==="manual");
+    $("chavModeAutoBtn").classList.toggle("active", chavMode==="auto");
+    $("chavManualPanel").style.display = chavMode==="manual" ? "block" : "none";
+    $("chavAutoPanel").style.display = chavMode==="auto" ? "block" : "none";
+    chavRenderTiles();
+    chavRenderGroups();
+    chavRenderHistory();
+  }
+  function chavRenderTiles(){
+    var grouped=chavGroupedIds();
+    var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+    var grid=$("chavTileGrid"); grid.innerHTML="";
+    if(!studs.length){ grid.appendChild(el("div","recent-empty","Add students on the Students tab first.")); }
+    studs.forEach(function(s){
+      var isGrouped=!!grouped[s.id];
+      var isSelected=chavSelected.indexOf(s.id)>=0;
+      var tile=el("div","tap-btn chav-tile"+(isSelected?" chav-selected":"")+(isGrouped?" chav-grouped":""));
+      tile.appendChild(avatarEl(s,32));
+      tile.appendChild(el("span",null,s.name));
+      if(!isGrouped){
+        tile.addEventListener("click", function(){ chavToggleSelect(s.id); });
+      }
+      grid.appendChild(tile);
+    });
+    chavRenderSelectBar();
+  }
+  function chavToggleSelect(sid){
+    var i=chavSelected.indexOf(sid);
+    if(i>=0) chavSelected.splice(i,1); else chavSelected.push(sid);
+    chavRenderTiles();
+  }
+  function chavRenderSelectBar(){
+    var bar=$("chavSelectBar");
+    bar.style.display = chavSelected.length ? "flex" : "none";
+    $("chavSelectCount").textContent = chavSelected.length===1 ? "1 student selected" : (chavSelected.length+" students selected");
+  }
+  $("chavClearSelBtn").addEventListener("click", function(){ chavSelected=[]; chavRenderTiles(); });
+  $("chavSaveGroupBtn").addEventListener("click", function(){
+    if(!chavSelected.length) return;
+    data.chavrusaSession.groups.push({id:newId(), studentIds:chavSelected.slice()});
+    chavSelected=[];
+    save();
+    renderChavrusa();
+  });
+  function chavRenderGroups(){
+    var list=$("chavGroupsList"); list.innerHTML="";
+    var groups=data.chavrusaSession.groups;
+    if(!groups.length){ list.appendChild(el("div","recent-empty","No groups yet this sitting.")); return; }
+    groups.forEach(function(g){
+      var card=el("div","chav-group-card");
+      var names=(g.studentIds||[]).map(chavStudentName).join(", ");
+      card.appendChild(el("span","chav-group-members",names||"(empty group)"));
+      var removeBtn=el("button","btn btn-sm btn-bad","Remove group");
+      removeBtn.type="button";
+      removeBtn.addEventListener("click", function(){
+        data.chavrusaSession.groups=data.chavrusaSession.groups.filter(function(x){return x.id!==g.id;});
+        save(); renderChavrusa();
+      });
+      card.appendChild(removeBtn);
+      list.appendChild(card);
+    });
+  }
+  $("chavClearGroupsBtn").addEventListener("click", function(){
+    if(!data.chavrusaSession.groups.length) return;
+    if(!confirm("Clear all of this sitting's groups? This does not affect Past Chavrusas.")) return;
+    data.chavrusaSession.groups=[];
+    save(); renderChavrusa();
+  });
+  $("chavSaveNewBtn").addEventListener("click", function(){
+    // Only worth a history entry if there is anything to remember -- an empty
+    // sitting saved and reloaded would just be clutter in Past Chavrusas.
+    if(data.chavrusaSession.groups.length){
+      data.chavrusaHistory.unshift({id:newId(), savedAt:Date.now(), groups:data.chavrusaSession.groups});
+      if(data.chavrusaHistory.length>200) data.chavrusaHistory.length=200;
+    }
+    data.chavrusaSession={groups:[], pointTargetMode:"individual"};
+    chavSelected=[];
+    save();
+    renderChavrusa();
+  });
+  function chavRenderHistory(){
+    var list=$("chavHistoryList"); list.innerHTML="";
+    if(!data.chavrusaHistory.length){ list.appendChild(el("div","recent-empty","No past sessions saved yet.")); return; }
+    data.chavrusaHistory.forEach(function(h){
+      var card=el("div","chav-group-card");
+      var d=new Date(h.savedAt);
+      var when=d.toLocaleDateString(undefined,{month:"short",day:"numeric"})+"  "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+      var summary=h.groups.length+" group"+(h.groups.length===1?"":"s")+" — "+when;
+      card.appendChild(el("span","chav-group-members",summary));
+      var loadBtn=el("button","btn btn-sm","Load");
+      loadBtn.type="button";
+      loadBtn.title="Start this sitting's groups from this saved session";
+      loadBtn.addEventListener("click", function(){
+        if(data.chavrusaSession.groups.length && !confirm("Replace this sitting's current groups with this saved session?")) return;
+        // Fresh group ids -- editing the loaded copy must never mutate the
+        // saved history entry it came from. Deep-cloned, not referenced.
+        data.chavrusaSession.groups=h.groups.map(function(g){ return {id:newId(), studentIds:(g.studentIds||[]).slice()}; });
+        save(); renderChavrusa();
+      });
+      card.appendChild(loadBtn);
+      var delBtn=el("button","btn btn-sm btn-bad","Delete");
+      delBtn.type="button";
+      delBtn.addEventListener("click", function(){
+        if(!confirm("Delete this saved session? This can't be undone.")) return;
+        data.chavrusaHistory=data.chavrusaHistory.filter(function(x){return x.id!==h.id;});
+        save(); renderChavrusa();
+      });
+      card.appendChild(delBtn);
+      list.appendChild(card);
+    });
+  }
+  $("chavModeManualBtn").addEventListener("click", function(){ chavMode="manual"; renderChavrusa(); });
+  $("chavModeAutoBtn").addEventListener("click", function(){ chavMode="auto"; renderChavrusa(); });
+
+  // Every pair of students who have ever appeared together in a SAVED (past)
+  // group -- walked fresh from data.chavrusaHistory each time rather than
+  // kept as a standing index, so there is only one source of truth and no
+  // risk of the two drifting apart. Not derived from data.log (CLAUDE.md's
+  // Contest lesson) -- chavrusaHistory is its own deliberate record, not a
+  // capped/wipeable one, so deriving from it carries none of that risk.
+  function chavPairKey(a,b){ return a<b ? a+"|"+b : b+"|"+a; }
+  function chavSeenPairs(){
+    var seen={};
+    data.chavrusaHistory.forEach(function(h){
+      (h.groups||[]).forEach(function(g){
+        var ids=g.studentIds||[];
+        for(var i=0;i<ids.length;i++) for(var j=i+1;j<ids.length;j++) seen[chavPairKey(ids[i],ids[j])]=true;
+      });
+    });
+    return seen;
+  }
+  /* Greedy randomized partition, not an exact constraint solver -- produces a
+   * genuinely good grouping fast rather than guaranteeing zero repeats when
+   * the class is too small/constrained for that to even be possible. Falls
+   * back with a dismissible warning (per spec) instead of blocking or
+   * silently ignoring the "avoid" request. */
+  function chavGenerateGroups(size, avoidPairings){
+    var grouped=chavGroupedIds();
+    var pool=activeStudents().filter(function(s){ return !grouped[s.id]; }).map(function(s){return s.id;});
+    for(var i=pool.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=pool[i]; pool[i]=pool[j]; pool[j]=t; }
+    var seen = avoidPairings ? chavSeenPairs() : {};
+    var newGroups=[], hadRepeat=false, remaining=pool.slice();
+    while(remaining.length){
+      var group=[remaining.shift()];
+      while(group.length<size && remaining.length){
+        var bestIdx=0, bestScore=Infinity;
+        for(var k=0;k<remaining.length;k++){
+          var cand=remaining[k], score=0;
+          for(var m=0;m<group.length;m++){ if(seen[chavPairKey(cand,group[m])]) score++; }
+          if(score<bestScore){ bestScore=score; bestIdx=k; if(score===0) break; }
+        }
+        if(bestScore>0) hadRepeat=true;
+        group.push(remaining.splice(bestIdx,1)[0]);
+      }
+      newGroups.push({id:newId(), studentIds:group});
+    }
+    return {groups:newGroups, hadRepeat:hadRepeat};
+  }
+  $("chavGenerateBtn").addEventListener("click", function(){
+    var size=parseInt($("chavGroupSize").value,10);
+    if(!isFinite(size) || size<2) size=2;
+    var avoid=$("chavAvoidPairings").checked;
+    var grouped=chavGroupedIds();
+    var ungroupedCount=activeStudents().filter(function(s){ return !grouped[s.id]; }).length;
+    var warn=$("chavFallbackWarn");
+    if(!ungroupedCount){
+      $("chavFallbackWarnText").textContent="Every student already has a group this sitting.";
+      warn.style.display="flex";
+      return;
+    }
+    var result=chavGenerateGroups(size, avoid);
+    data.chavrusaSession.groups=data.chavrusaSession.groups.concat(result.groups);
+    save();
+    if(avoid && result.hadRepeat){
+      $("chavFallbackWarnText").textContent="Couldn't avoid every previous pairing for every group — the class is too small or too constrained for a fully fresh set.";
+      warn.style.display="flex";
+    } else {
+      warn.style.display="none";
+    }
+    renderChavrusa();
+  });
+  $("chavFallbackWarnClose").addEventListener("click", function(){ $("chavFallbackWarn").style.display="none"; });
 
   /* ==================== ATTENDANCE ==================== */
   function todayKey(){ return new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10); }
@@ -23289,6 +23568,7 @@ nameLine
     if(typeof pickerOpen!=="undefined" && pickerOpen) renderPicker();
     if($("view-attendance").classList.contains("active")) safeRenderTool(applyAttViewMode, "attList", "Attendance");
     if($("view-tracker").classList.contains("active")) safeRenderTool(renderTracker, "trackerActList", "Tracker");
+    if($("view-chavrusa") && $("view-chavrusa").classList.contains("active")) renderChavrusa();
     if($("view-homework").classList.contains("active")) safeRenderTool(applyHwViewMode, "hwList", "Homework");
     if($("view-history").classList.contains("active")) renderHistoryTab();
     // The Activities tab is now scoped to the selected class too (see
@@ -27715,6 +27995,19 @@ nameLine
       });
       data.mirrorBackfill=mbStats;
     }
+    // Chavrusa Mode (Phase 8, docs/Menchmark_UI_Redesign_Summary.md §6).
+    // data.chavrusaSession is the one active, in-progress session — it ends
+    // every sitting (an explicit "Save & start new" clears it into history,
+    // never a timeout), so it always exists as an object rather than being
+    // nullable, the same shape guaranteed fresh or restored. data.chavrusaHistory
+    // is the persisted, loadable record of past sessions — what "see past
+    // groups to reuse" reads from.
+    if(!data.chavrusaSession || typeof data.chavrusaSession!=="object" || Array.isArray(data.chavrusaSession)){
+      data.chavrusaSession={groups:[], pointTargetMode:"individual"};
+    }
+    if(!Array.isArray(data.chavrusaSession.groups)) data.chavrusaSession.groups=[];
+    if(typeof data.chavrusaSession.pointTargetMode!=="string") data.chavrusaSession.pointTargetMode="individual";
+    if(!Array.isArray(data.chavrusaHistory)) data.chavrusaHistory=[];
   }
   // Reached from exactly ONE place: the "Reset all scores" button in Settings.
   // The end-contest flow used to call this too, bundled onto its OK button; that
