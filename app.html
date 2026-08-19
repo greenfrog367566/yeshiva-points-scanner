@@ -8699,7 +8699,9 @@ function setupRoster() {
   // does everything a delete was reached for and loses nothing.
   //
   // Freeze is deliberately NOT on this list — it owns no tab and no record, so
-  // a rebbi who doesn't want it may still delete it outright.
+  // the "strands a whole tab" reasoning above doesn't apply to it. It is still
+  // undeletable, just for its own reason: see the freezeActivity() branch
+  // next to coreTrackedActivity()'s use in renderActivities().
   function coreTrackedActivity(a){ return homeworkActivity(a) || passActivity(a) || attendanceActivity(a); }
   // First activity that may legitimately be ARMED for point-scoring. Tracked
   // activities (Tracker, Homework Checked) write to their own stores, so the
@@ -22800,6 +22802,10 @@ nameLine
     if($("view-tracker").classList.contains("active")) safeRenderTool(renderTracker, "trackerActList", "Tracker");
     if($("view-homework").classList.contains("active")) safeRenderTool(applyHwViewMode, "hwList", "Homework");
     if($("view-history").classList.contains("active")) renderHistoryTab();
+    // The Activities tab is now scoped to the selected class too (see
+    // renderActivities()'s actVisibleInCurrentClass() filter), so switching
+    // classes has to refresh it like every other class-scoped view above.
+    if($("view-activities").classList.contains("active")) renderActivities();
   });
   function importRoster(rows){
     var added=0, updated=0;
@@ -22892,8 +22898,14 @@ nameLine
     // actVisibleOnScreen() applies to the Scan screen. Editing a Dinar's value
     // while balances are counted in points would be editing nothing a rebbi can
     // see or scan, so the rows stay out rather than sitting there inert.
-    var editable=data.activities.filter(actInCurrentMode);
-    if(!editable.length){ list.appendChild(el("div","recent-empty","No activities yet.")); }
+    // Scoped to the selected class, same as every live arming surface
+    // (actVisibleInCurrentClass() is what the Record-tab buttons/scan bar
+    // already filter with) — a rebbi looking at one class shouldn't have to
+    // wade through every other class's activities to find their own.
+    // Degrades correctly for "All classes": activeStudents() (which that
+    // check reads) returns the whole roster there, so nothing is filtered out.
+    var editable=data.activities.filter(actInCurrentMode).filter(actVisibleInCurrentClass);
+    if(!editable.length){ list.appendChild(el("div","recent-empty", data.currentClass ? "No activities for “"+data.currentClass+"”." : "No activities yet.")); }
     var allGroups=groups();
     editable.forEach(function(a){
       if(!Array.isArray(a.groups)) a.groups=[];
@@ -22913,19 +22925,38 @@ nameLine
       row.appendChild(visLbl);
       var name=el("input","field grow"); name.value=a.name; name.style.minWidth="120px";
       name.addEventListener("change", function(){ a.name=name.value.trim()||a.name; name.value=a.name; save(); renderActButtons(); refreshArmed(a); });
+      // Only shown in "All classes," where rows from every class are mixed
+      // together and it isn't otherwise obvious which one each belongs to —
+      // filtered to one class, the row's presence already says that.
+      var classBadge=null;
+      if(!data.currentClass){
+        var classBadgeText=a.groups.length ? a.groups.join(", ") : "All classes";
+        classBadge=el("span","act-class-badge",classBadgeText);
+        classBadge.style.cssText="font-size:.72rem;color:var(--muted);white-space:nowrap;border:1px solid var(--line);border-radius:999px;padding:2px 8px";
+        classBadge.title=a.groups.length ? "Only shown for: "+classBadgeText : "Shown for every class";
+      }
       if(a.tracked){
         var trkBadge=el("span",null, freezeActivity(a) ? ("❄️ Freeze — "+fmtFreezeDuration(a.freezeSeconds)) : "No points");
         trkBadge.style.cssText="font-size:.72rem;font-weight:700;color:#6b4d18;background:var(--brass-soft);border-radius:999px;padding:2px 9px;white-space:nowrap";
         row.appendChild(name); row.appendChild(trkBadge);
+        if(classBadge) row.appendChild(classBadge);
         // Homework, Attendance and Bathroom Pass are hideable, never deletable
         // — see coreTrackedActivity(). The "Show" checkbox at the head of this
         // same row is the whole replacement, so say so here rather than leaving
-        // a rebbi hunting for the missing button.
+        // a rebbi hunting for the missing button. Freeze gets the same lock,
+        // for a different reason (see freezeActivity() and its seed above):
+        // it's matched by its freezeSeconds field, not by name, so a deleted
+        // one is never reseeded and there's no way to get Freeze back.
         if(coreTrackedActivity(a)){
           var lockNote=el("span",null,"Built in — uncheck Show to hide it");
           lockNote.title="This one has its own tab and record. Deleting it would leave that tab with no way to record into it, so it can be hidden but not deleted.";
           lockNote.style.cssText="font-size:.72rem;color:var(--muted);white-space:nowrap";
           row.appendChild(lockNote);
+        } else if(freezeActivity(a)){
+          var freezeLockNote=el("span",null,"Built in — uncheck Show to hide it");
+          freezeLockNote.title="Freeze is seeded once and never reseeded — deleting the last one removes Freeze from the app for good, so it can be hidden but not deleted.";
+          freezeLockNote.style.cssText="font-size:.72rem;color:var(--muted);white-space:nowrap";
+          row.appendChild(freezeLockNote);
         } else {
           var delT=el("button","btn btn-sm btn-bad","Delete");
           delT.addEventListener("click", function(){
@@ -22960,6 +22991,7 @@ nameLine
       }
       controls.appendChild(del);
       row.appendChild(controls);
+      if(classBadge) row.appendChild(classBadge);
       // Group checklist — "All groups" (unchecked = all, checked groups = restricted)
       if(allGroups.length>0){
         var gc=el("div","act-group-checks");
@@ -22984,7 +23016,11 @@ nameLine
             // If no groups checked, revert to "all"
             if(a.groups.length===0) allBox.checked=true;
             else allBox.checked=false;
-            save(); renderActButtons();
+            // renderActivities(), not just renderActButtons(): this list is
+            // now scoped to the selected class too, so unchecking the class
+            // being viewed must drop this row (and the "All classes" badge
+            // text needs to reflect the new group list either way).
+            save(); renderActButtons(); renderActivities();
           });
           gc.appendChild(lbl);
         });
@@ -26713,9 +26749,10 @@ nameLine
     // writing a log entry: while it's running, scanning/tapping that student
     // for POSITIVE points is refused. Negative/demerit activities are
     // untouched — freeze only blocks awarding, never deducting. Same one-shot
-    // flag as the three above, so a rebbi who deletes it doesn't get it back.
-    // Countdown state lives in data.freezes (backfilled just below); this
-    // activity is a handle, not a second store.
+    // flag as the three above, and now undeletable in the UI for the same
+    // reason (renderActivities()'s freezeActivity() branch) — a rebbi can
+    // hide it but not lose it for good. Countdown state lives in data.freezes
+    // (backfilled just below); this activity is a handle, not a second store.
     if(!data.freezeActivitySeeded){
       data.activities.push({id:nextActId(), name:"❄️ Freeze 1 min", pts:0, tracked:true, freezeSeconds:60, groups:[]});
       data.freezeActivitySeeded=true;
