@@ -13445,8 +13445,15 @@ function setupRoster() {
 
   function renderRecent(){
     var box=$("recentList"); box.innerHTML="";
-    if(!data.log.length){ box.appendChild(el("div","recent-empty","Scans will appear here.")); return; }
-    data.log.slice(0,12).forEach(function(entry,i){
+    // Scoped to the selected class, like every other scan surface — a rebbi
+    // who switched to one class shouldn't see another class's scans mixed
+    // into "recent". An entry whose student no longer exists is kept rather
+    // than dropped, since there's no class to test it against.
+    var visibleLog = data.currentClass
+      ? data.log.filter(function(entry){ var s=studentById(entry.sid); return !s || studentInCurrentClass(s); })
+      : data.log;
+    if(!visibleLog.length){ box.appendChild(el("div","recent-empty","Scans will appear here.")); return; }
+    visibleLog.slice(0,12).forEach(function(entry,i){
       var s=studentById(entry.sid);
       var isCorrection = entry.kind==="correction";
       var isTracked = isTrackedEntry(entry);
@@ -22784,7 +22791,7 @@ nameLine
   }
   $("classSel").addEventListener("change", function(){
     data.currentClass=this.value; save();
-    renderActButtons();
+    renderActButtons(); renderRecent();
     renderScanBoard(); renderTapPanel(); if(typeof fpOpen!=="undefined" && fpOpen) fpRenderNames();
     renderStandings(); renderPasses();
     if($("view-trends").classList.contains("active")) renderTrends();
@@ -26184,7 +26191,19 @@ nameLine
       if(typeof n!=="number" || !isFinite(n) || n<1) data.passCount[sid]=1;
     });
     if(typeof data.fpCompact!=="boolean") data.fpCompact=false;
-    if(typeof data.currentClass!=="string") data.currentClass="";
+    // One-shot seed (the typeof guard makes this fire only the first time
+    // currentClass is ever set — same pattern as navHidden elsewhere): a
+    // roster that already has classes opens on the first one rather than
+    // "All classes", but a rebbi who later switches back to "All classes"
+    // keeps that choice on every future load. Inlined rather than calling
+    // groups() so this stays copy-pasteable into test-migration.html's
+    // standalone load2fix(), which doesn't have that helper.
+    if(typeof data.currentClass!=="string"){
+      var firstClassSeed=[], seenClassSeed={};
+      data.students.forEach(function(s){ if(s.group && !seenClassSeed[s.group]){ seenClassSeed[s.group]=1; firstClassSeed.push(s.group); } });
+      firstClassSeed.sort();
+      data.currentClass = firstClassSeed.length ? firstClassSeed[0] : "";
+    }
     if(typeof data.labelFormat!=="string") data.labelFormat="avery5160";
     if(typeof data.coinCardFormat!=="string") data.coinCardFormat="avery5911";
     if(typeof data.promptStyle!=="string") data.promptStyle="";
