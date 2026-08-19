@@ -28420,6 +28420,46 @@ nameLine
           changed = true;
         }
 
+        /* Prizes from wizard — the Prize Store's half of the setup screens.
+           MERGE BY NAME, never replace, for the same reason the activities
+           block above merges: by the time this runs load2fix() has already
+           guaranteed data.store exists, and a rebbi could in principle reach
+           here with items already in it. Skipping a name that is already there
+           means running the wizard twice cannot produce two "Pencil" rows with
+           two different prices and no way to tell which code sells which.
+
+           Nothing here seeds the printed "Prize Store" code section — that is
+           ensureStoreCodeSection()'s job, and load2fix() runs again at the end
+           of this function (changed === true), which is what picks it up. */
+        if (Array.isArray(s.prizes)) {
+          if (!data.store || typeof data.store !== "object") data.store = {items:[], log:[]};
+          if (!Array.isArray(data.store.items)) data.store.items = [];
+          var existingPrize = {};
+          data.store.items.forEach(function(it){ existingPrize[(it.name||"").toLowerCase()] = true; });
+          s.prizes.forEach(function(p, i) {
+            var pn = (p && p.name || "").trim();
+            if (!pn) return;                                   // blank row the rebbi never filled in
+            if (existingPrize[pn.toLowerCase()]) return;
+            var c = parseInt(p && p.cost, 10);
+            // A negative cost would PAY a boy for taking a prize. The wizard
+            // clamps as it is typed; this is the second, authoritative clamp,
+            // because the blob is plain localStorage and is not to be trusted
+            // just because our own screen wrote it.
+            if (isNaN(c) || c < 0) c = 0;
+            // The index is part of the id: Date.now() is identical for every
+            // item in this loop, so the store's own `it<time><rand>` shape
+            // could collide within a single wizard run.
+            data.store.items.push({
+              id: "it" + Date.now().toString(36) + i + Math.floor(Math.random()*1000),
+              name: pn,
+              cost: c,
+              emoji: (p && typeof p.emoji === "string" && p.emoji) ? p.emoji : "🎁"
+            });
+            existingPrize[pn.toLowerCase()] = true;
+          });
+          changed = true;
+        }
+
         /* Students from wizard — add any that aren't already in the roster.
            Every boy goes into the class named on the wizard's first screen:
            the rebbi named his class once, and typing it again per student was
