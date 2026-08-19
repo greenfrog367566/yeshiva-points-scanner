@@ -348,14 +348,65 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seats-fs-bar{ display:flex; align-items:center; gap:12px; margin-bottom:10px }
   .seats-fs-bar .view-note{ margin:0 }
 
-  .armed-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
-  .armed-pill{font-family:var(--serif);font-size:1.05rem;background:var(--brass-soft);color:#6b4d18;border:1px solid #e4cf9f;border-radius:999px;padding:7px 16px;font-weight:600}
-  .armed-pill.neg{background:var(--bad-soft);color:#7c2d1c;border-color:#e3bdb5}
-  /* Same "ice" tone as .av.trk / the tile-modes status chip — tracked, not
-     a point value either direction. */
-  .armed-pill.trk{background:var(--ice-soft);color:#1c4f78;border-color:#bcd6ea}
+  /* DASHBOARD SHELVES — a slide-in overlay, new to the app (checked: nothing
+     like it exists anywhere else, only centered .modal-overlay and small
+     anchored .hsb-dropdowns). Two independent instances (Activities from the
+     left, History from the right) share this CSS and the --dash-shelf-top
+     measurement, but are each their own hand-rolled open/close function —
+     matching how every existing modal in this app is built (no shared JS
+     manager), not a new convention.
+     top:var(--dash-shelf-top) is its OWN property, not a reuse of
+     --seats-fs-top: that one is measured AFTER .subtabs-row is hidden for
+     the fullscreen seat pop-out, so it reflects a shorter chrome stack than
+     the normal Dashboard has. syncShelfTop() mirrors syncSeatsFsTop()'s
+     measurement exactly, just without hiding anything first. */
+  .dash-scrim{position:fixed;inset:0;background:rgba(27,36,64,.14);opacity:0;pointer-events:none;transition:opacity .22s ease;z-index:200}
+  .dash-scrim.open{opacity:1;pointer-events:auto}
+  .dash-shelf{position:fixed;top:var(--dash-shelf-top,110px);bottom:0;width:390px;max-width:92vw;background:#fff;display:flex;flex-direction:column;transition:transform .22s ease;z-index:201}
+  .dash-shelf.left{left:0;border-right:1px solid var(--line);box-shadow:18px 0 44px rgba(27,36,64,.16);transform:translateX(-100%)}
+  .dash-shelf.right{right:0;border-left:1px solid var(--line);box-shadow:-18px 0 44px rgba(27,36,64,.16);transform:translateX(100%)}
+  .dash-shelf.open{transform:none}
+  .dash-shelf-hd{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .dash-shelf-hd b{font-family:var(--serif);font-size:1.15rem;font-weight:600}
+  .dash-shelf-hd .sub{font-size:.74rem;color:var(--muted);font-weight:600}
+  .dash-shelf-hd .x{margin-left:auto;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);display:flex;align-items:center;justify-content:center;flex:0 0 auto;cursor:pointer}
+  .dash-shelf-hd .x:hover{background:var(--paper)}
+  .dash-shelf-filt{display:flex;gap:6px;padding:10px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;flex:0 0 auto}
+  .dash-shelf-filt span{border:1px solid var(--line);border-radius:7px;padding:4px 10px;font-size:.75rem;font-weight:600;color:var(--ink);cursor:pointer}
+  .dash-shelf-filt span.on{background:var(--ink);border-color:var(--ink);color:#fff}
+  .dash-shelf-list{flex:1;overflow-y:auto;padding:6px 18px 10px}
+  .dash-shelf-go{padding:12px 18px;border-top:1px solid var(--line);background:#fbfcfe;font-size:.8rem;font-weight:700;color:var(--ice);flex:0 0 auto;cursor:pointer}
+  .dash-shelf-go:hover{color:#1c4f78}
 
-  .act-buttons{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:18px}
+  .armed-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+  /* ACTIVITY BAND, REWORKED: no more pill background — the armed activity is
+     now the tile's big serif name, split into a plain name node plus an
+     optional tone-coloured value badge (was one combined text string). */
+  .arm-block{min-width:0}
+  .arm-kicker{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:3px}
+  #armedPill{font-family:var(--serif);font-size:2rem;font-weight:700;letter-spacing:-.5px;color:var(--ink);line-height:1.1;display:inline-flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  /* No .trk variant — a tracked activity never shows a value at all
+     (reroutedActivity(a) makes armedIsHw true for every one, same "no
+     misleading +0" rule Homework Checked has always followed), so this
+     badge is only ever built for points+/points-. */
+  .arm-val{font-size:1.15rem;font-weight:700}
+  .arm-val.pos{color:var(--good)} .arm-val.neg{color:var(--bad)}
+  .act-open-btn{flex:0 0 auto;display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:10px;padding:11px 16px;font-size:.88rem;font-weight:700;cursor:pointer}
+  .act-open-btn:hover{border-color:#b9c0d0;background:var(--paper)}
+  .act-open-btn svg{flex:0 0 auto}
+  .act-shelf-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #eef1f5;cursor:pointer}
+  .act-shelf-row:last-child{border-bottom:none}
+  .act-shelf-row:hover{background:#fbfcfe}
+  .act-shelf-row.armed{background:var(--paper)}
+  .act-shelf-row .sn{flex:1;font-weight:600;font-size:.92rem}
+  /* No .sv.trk — same "tracked never shows a value" rule as .arm-val above. */
+  .act-shelf-row .sv{font-size:.82rem;font-weight:700;flex:0 0 auto}
+  .act-shelf-row .sv.pos{color:var(--good)} .act-shelf-row .sv.neg{color:var(--bad)}
+  .act-shelf-row .sg{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:999px;flex:0 0 auto}
+  .act-shelf-row .sg.pos{background:var(--good-soft);color:var(--good)}
+  .act-shelf-row .sg.neg{background:var(--bad-soft);color:var(--bad)}
+  .act-shelf-row .sg.trk{background:var(--ice-soft);color:var(--ice)}
+
   .act-btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 13px;text-align:left;min-width:120px}
   .act-btn:hover{border-color:var(--ink)}
   .act-btn.selected{border-color:var(--ink);box-shadow:0 0 0 2px var(--ink) inset}
@@ -367,17 +418,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      rather than a value — ice, the app's "neither good nor bad" tone, and
      muted weight so it doesn't read as a point total. */
   .act-btn .av.trk{color:var(--ice);font-weight:600}
-  /* ACTIVITY BAND (Phase 2): three tone-grouped clusters (Give/Take/Record)
-     inside #actButtons, each capped with a "+N more" overflow trigger. Named
-     "cluster" rather than "group" on purpose — .act-group-* below already
-     means something else entirely (the Activities tab's student-group
-     restriction checklist); reusing "group" here would collide in meaning,
-     not in CSS. */
-  .act-clusters{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
-  .act-cluster-hd{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px}
-  .act-cluster-row{display:flex;flex-wrap:wrap;gap:8px}
-  .act-cluster-more{border:1px dashed var(--line);border-radius:10px;padding:10px 13px;background:#fff;color:var(--muted);font-weight:700;font-size:.85rem;cursor:pointer;min-width:120px;text-align:left}
-  .act-cluster-more:hover{border-color:#b9c0d0;color:var(--ink)}
 
   .custom-row{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:18px}
   .custom-row .field{width:90px}
@@ -493,6 +533,22 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .recent-item.undone .rn,.recent-item.undone .rd{text-decoration:line-through}
   .recent-item.correction .rn,.recent-item.correction .rd{font-style:italic;color:var(--muted)}
   .undone-tag{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+  /* "JUST NOW" FEED, REWORKED (round 2): avatar + serif name + a subline,
+     nested inside .ri-name-wrap so .rn is no longer a direct flex child of
+     .recent-item — .ri-name-wrap takes over the flex:1 role instead. Every
+     .rd/.undone-tag rule above is untouched; only new classes added around
+     them. */
+  .recent-item .ri-name-wrap{flex:1;min-width:0}
+  .recent-item .rn{font-family:var(--serif);font-weight:600;font-size:.98rem;display:block}
+  .recent-item .ri-sub{display:block;font-size:.78rem;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .recent-item .avatar{flex:0 0 auto}
+  /* Newest row only, tinted by outcome — the same three tones the app
+     already uses for everything else (points/negative/tracked). */
+  .recent-item.newest.tone-points .avatar{background:var(--good)}
+  .recent-item.newest.tone-negative .avatar{background:var(--bad)}
+  .recent-item.newest.tone-records .avatar{background:var(--ice)}
+  .morebtn{margin-top:6px;padding:8px 0 0;border-top:1px solid var(--line);font-size:.8rem;font-weight:700;color:var(--ice);background:none;border-left:none;border-right:none;border-bottom:none;display:block;width:100%;text-align:left;cursor:pointer}
+  .morebtn:hover{color:#1c4f78}
   /* A correction row (the record created when you undo a scan) shows a neutral
      "Undo" label instead of a signed +/- number — the reversed amount reading
      as red/negative was confusing, since it isn't really a new deduction. */
@@ -593,6 +649,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 0}
   .seat-modebtn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:6px 12px;font-size:.85rem;font-weight:600}
   .seat-modebtn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  /* CONTEXT BAR (Phase 3): "Show only these" toggle, ice-toned like every
+     other tracked-arm indicator (armed pill, tile chip) rather than the
+     plain .active look, so its ON state reads as "tracked focus", not just
+     "pressed". Tile dimming: no such convention existed before this. */
+  .track-focus-btn.on{background:var(--ice);color:#fff;border-color:var(--ice)}
+  .tap-btn.dim,.seat.dim{opacity:.35}
   /* The view switch — List / Seating chart — sits in the toolbar itself,
      as a segmented pair, so it reads as one control with two states rather
      than two buttons that happen to sit together. */
@@ -2131,8 +2193,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <div class="panel-tools"><span class="panel-name">Activities</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
         <div class="panel-body">
           <div class="armed-bar">
-            <span id="armedKicker" style="font-size:.85rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Now scoring</span>
-            <span class="armed-pill" id="armedPill">—</span>
+            <!-- ACTIVITY BAND, REWORKED (round 2): no more inline chip
+                 clusters — the board shows only what's armed, big, next to
+                 the one button that reaches everything else. See
+                 openActivitiesShelf(). -->
+            <button class="act-open-btn" id="actShelfBtn" type="button" title="Browse and arm any activity">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"></rect><rect x="9" y="2" width="5" height="5" rx="1"></rect><rect x="2" y="9" width="5" height="5" rx="1"></rect><rect x="9" y="9" width="5" height="5" rx="1"></rect></svg>
+              Activities
+            </button>
+            <div class="arm-block">
+              <div id="armedKicker" class="arm-kicker">Now scoring</div>
+              <span class="armed-pill" id="armedPill">—</span>
+            </div>
             <!-- margin-left:auto, not .grow — .grow is only defined inside
                  .toolbar and .erow, and .armed-bar is neither. -->
             <button class="btn btn-sm" id="giveAllBtn" type="button" style="margin-left:auto" title="Give the armed activity to every student in the selected class">👥 Give to all</button>
@@ -2141,7 +2213,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
                  visibility and is re-run every second by tickFreezes(). -->
             <button class="btn btn-sm" id="freezeAllBtn" type="button" style="display:none"></button>
           </div>
-          <div class="act-buttons" id="actButtons"></div>
           <div class="custom-row">
             <div>
               <label class="lbl">Custom amount</label>
@@ -2205,6 +2276,36 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         </div>
       </div>
 
+    </div>
+
+    <!-- The two Dashboard shelves — deliberately OUTSIDE #scanPanelPool
+         (display:none; only .panel elements ever get moved out of it by
+         applyScanLayout()'s DOM appendChild(), so anything left behind
+         inside it never renders at all, position:fixed or not). Still
+         inside #view-scan so they're only reachable from the tab they
+         belong to. -->
+    <div class="dash-scrim" id="actShelfScrim"></div>
+    <div class="dash-shelf left" id="actShelf">
+      <div class="dash-shelf-hd">
+        <b>Activities</b>
+        <span class="sub">Tap one to arm it</span>
+        <span class="x" id="actShelfClose">✕</span>
+      </div>
+      <div class="dash-shelf-filt" id="actShelfFilt"></div>
+      <div class="dash-shelf-list" id="actShelfList"></div>
+      <div class="dash-shelf-go" id="actShelfGo">Open the Activities tab →</div>
+    </div>
+
+    <div class="dash-scrim" id="histShelfScrim"></div>
+    <div class="dash-shelf right" id="histShelf">
+      <div class="dash-shelf-hd">
+        <b>History</b>
+        <span class="sub">Today</span>
+        <span class="x" id="histShelfClose">✕</span>
+      </div>
+      <div class="dash-shelf-filt" id="histShelfFilt"></div>
+      <div class="dash-shelf-list" id="histShelfList"></div>
+      <div class="dash-shelf-go" id="histShelfGo">Open the full History tab →</div>
     </div>
   </section>
 
@@ -5888,19 +5989,27 @@ function setupRoster() {
     }
     armed = {label:label, delta:delta, actId:(act && act.id) || null, warning:isWarning};
     var pill=$("armedPill");
-    // Homework Checked earns no points, so the "Now scoring" pill shows the name
-    // alone — appending its 0 would read as "this scan is worth nothing". True
-    // of every rerouted activity, which since 2d is every tracked one, and of
-    // the warning flash, which was never a point value to begin with.
+    // Homework Checked earns no points, so the name shows alone — appending
+    // its 0 would read as "this scan is worth nothing". True of every
+    // rerouted activity, which since 2d is every tracked one, and of the
+    // warning flash, which was never a point value to begin with.
     var armedA = armedActivity();
     var armedIsHw = isWarning || reroutedActivity(armedA);
-    pill.textContent = armedIsHw ? label : (label + "  " + fmtDeltaBare(delta));
-    pill.classList.toggle("neg", delta<0 || isWarning);
-    // ACTIVITY BAND (Phase 2): pill + kicker tint/read ice ("trk") for a real
-    // tracked arm, same tone tile-modes' status chip and .av.trk already use
-    // — but never for the warning flash, which stays the existing red/neg
-    // treatment (it is tracked=false in data, opts.warn is what routes it).
     var isTracked = !isWarning && reroutedActivity(armedA);
+    // ACTIVITY BAND, REWORKED (round 2): the pill is now the big armed name,
+    // with the value (if any) split into its own tone-coloured trailing
+    // badge instead of one combined text string — built as child nodes
+    // rather than textContent so the two can be styled independently.
+    pill.innerHTML = "";
+    pill.appendChild(document.createTextNode(label));
+    if(!armedIsHw){
+      pill.appendChild(el("span", "arm-val " + (delta<0?"neg":"pos"), fmtDeltaBare(delta)));
+    }
+    // Same "ice" tone tile-modes' status chip and .av.trk already use for a
+    // real tracked arm — but never for the warning flash, which stays the
+    // existing red/neg treatment (it is tracked=false in data, opts.warn is
+    // what routes it).
+    pill.classList.toggle("neg", delta<0 || isWarning);
     pill.classList.toggle("trk", isTracked);
     var kicker=$("armedKicker");
     if(kicker){
@@ -5927,12 +6036,10 @@ function setupRoster() {
     // "✉ Email attendance" rides along, since it is only ever offered while
     // Attendance is armed — and disarming must take it away with the fill.
     if(typeof refreshAttEmailBtn==="function") refreshAttEmailBtn();
-    // ACTIVITY BAND (Phase 2): a full rebuild, unlike the in-place refreshes
-    // above — #actButtons carries no QR codes and no scroll position a
-    // rebuild could disrupt, and a rebuild is the only way "the armed item
-    // is always shown, even if it belongs to the overflow" can hold when
-    // arming happens from inside the overflow modal.
-    if(typeof renderActButtons==="function") renderActButtons();
+    // ACTIVITY BAND, REWORKED (round 2): no more renderActButtons() call
+    // here — that existed only to keep the visible chip band's promoted/
+    // highlighted item in sync, and there is no visible band any more. The
+    // armed display above is already fully updated by this function alone.
   }
   // Arms the warning flash exactly like Custom arms an amount — pick it,
   // then scan/tap the boy it's for. Delta is 0 purely as a placeholder;
@@ -7955,6 +8062,13 @@ function setupRoster() {
   // The wording both buttons use, so the tab and the chart cannot drift on which
   // way round the fill goes.
   function attFillLabel(){ return attPresenceFirst() ? "Mark the rest Absent" : "Mark the rest Present"; }
+  // CONTEXT BAR (Phase 3): same "unmarked" test attFillUnmarked() itself
+  // fills against and attRollComplete() checks — so the count on the board's
+  // button, the fill it performs, and "is the roll done" can never disagree
+  // about who still needs marking.
+  function attUnmarkedCount(dateKey){
+    return activeStudents().filter(function(s){ return !attMarkedRec(dateKey, s.id); }).length;
+  }
   function attFillTitle(){
     return attPresenceFirst()
       ? "Marks every student you haven't marked yet as absent — anyone you already marked is left alone"
@@ -8468,6 +8582,15 @@ function setupRoster() {
   // fall through to the points path any more, which is what the four hand-built
   // branches in award() used to be guarding against one name at a time.
   function reroutedActivity(a){ return !!a && a.tracked===true; }
+  // CONTEXT BAR (Phase 3): "some tracked item OTHER than attendance or
+  // freeze is armed" — the same gate trackedTileBadge() already applies via
+  // its own tracked/freeze checks, minus its ti-attendance special-case.
+  // Returns the activity itself (or null) so a caller doesn't need a second
+  // armedActivity() call.
+  function countArmed(){
+    var a=armedActivity();
+    return (reroutedActivity(a) && !attendanceActivity(a) && !freezeActivity(a)) ? a : null;
+  }
   // A coin activity is one of the seeded Shulchani denomination codes: it
   // carries a.coin = the COINS abbreviation it was minted from ("Di", "S", …).
   // The flag is what makes them mode-scoped — they only mean anything while
@@ -11254,24 +11377,11 @@ function setupRoster() {
    * anything that scores nothing). Caps are plain constants, not a setting:
    * nothing in the app has an overflow-into-a-modal convention to match yet,
    * and these are easy to retune later without a settings surface. */
-  var ACT_CLUSTERS = [
-    {tone:"pos", label:"Give",   cap:8},
-    {tone:"neg", label:"Take",   cap:4},
-    {tone:"trk", label:"Record", cap:6}
-  ];
-  function actButtonTone(a){ return a.tracked ? "trk" : (a.pts<0 ? "neg" : "pos"); }
-  function buildActButton(a){
-    var b=el("button","act-btn");
-    b.type="button";
-    b.dataset.label=a.name; b.dataset.delta=a.pts;
-    b.appendChild(el("span","an",a.name));
-    // Homework Checked earns no points, so it shows no value line at all — a
-    // "+0" would read as "scanning this gives nothing". Name only. Both .an and
-    // .av are display:block, so omitting .av just makes a shorter card.
-    if(!reroutedActivity(a)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
-    b.addEventListener("click", function(){ setArmed(a.name, a.pts, a); $("seatsScanInput").focus(); });
-    return b;
-  }
+  // ACTIVITY BAND, REWORKED (round 2): no more inline chip clusters or a
+  // "+N more" overflow modal — the board shows only the armed activity
+  // (see setArmed()); every other activity lives behind the "Activities"
+  // button, in openActivitiesShelf() below. renderActButtons() shrinks back
+  // to its original, still-needed job.
   function renderActButtons(){
     // Settings → Warning Flash. Off by default (see load2fix()); the button
     // lives in the static HTML rather than being built here, so this is just
@@ -11280,54 +11390,83 @@ function setupRoster() {
     // than needing its own separate call site.
     var warnBtn=$("warnBtn");
     if(warnBtn) warnBtn.style.display = data.warningFlashEnabled ? "" : "none";
-    var wrap=$("actButtons"); wrap.innerHTML="";
-    /* EVERY tracked activity gets a button here, Tracker ones included. That
-     * changed in 2d and this comment did not: it used to say Tracker activities
-     * "stay out: they still fall through to the points path with no backstop",
-     * which was true only while award() routed by name. Since #208 a tracked
-     * scan goes to recordTrackedScan(), so there is nothing to fall through to
-     * and nothing to keep out — armableActivities() takes the whole flag.
-     *
-     * Worth being accurate about, because a stale exclusion here is the first
-     * thing anyone would suspect when a tracked activity fails to appear. The
-     * actual cause of that, when it happened, was a caller that changed
-     * data.activities without calling this function. */
-    var visible=armableActivities().filter(actVisibleInCurrentClass).filter(actVisibleOnScreen);
-    if(!data.activities.length){ wrap.appendChild(el("span","recent-empty","No activities yet — add some on the Activities tab.")); return; }
-    if(!visible.length){ wrap.appendChild(el("span","recent-empty","No activities are set up for this group — check the Activities tab.")); return; }
-    var armedA=armedActivity();
-    var clusters=el("div","act-clusters");
-    ACT_CLUSTERS.forEach(function(def){
-      var list=visible.filter(function(a){ return actButtonTone(a)===def.tone; });
-      if(!list.length) return;
-      var shown=list, extra=0;
-      if(list.length>def.cap){
-        shown=list.slice(0, def.cap-1);
-        extra=list.length-shown.length;
-      }
-      // The armed activity is always a real, highlightable button, even if
-      // it would otherwise overflow — displaces the group's last visible
-      // slot rather than leaving the band showing something that isn't
-      // actually armed. Also required for setArmed()'s .selected loop,
-      // which can only mark a button that's in the DOM.
-      if(armedA && list.indexOf(armedA)>=0 && shown.indexOf(armedA)<0){
-        shown=shown.slice(0, shown.length-1).concat([armedA]);
-      }
-      var box=el("div");
-      box.appendChild(el("div","act-cluster-hd",def.label));
-      var row=el("div","act-cluster-row");
-      shown.forEach(function(a){ row.appendChild(buildActButton(a)); });
-      if(extra>0){
-        var overflowItems=list.filter(function(a){ return shown.indexOf(a)<0; });
-        var more=el("button","act-cluster-more","＋"+overflowItems.length+" more");
-        more.type="button";
-        more.addEventListener("click", function(){ showActivityOverflowModal(def.label, overflowItems); });
-        row.appendChild(more);
-      }
-      box.appendChild(row);
-      clusters.appendChild(box);
+  }
+  // pos/neg/trk — same tone menuLabelItems() already uses for the printed
+  // codes. Give is points+, Take is points-, Record is every tracked
+  // activity (attendance, homework, tracker items, freeze).
+  function activityTone(a){ return a.tracked ? "trk" : (a.pts<0 ? "neg" : "pos"); }
+  var ACT_TONE_LABEL = {pos:"Give", neg:"Take", trk:"Record"};
+  function buildActivityShelfRow(a, armedA){
+    var tone=activityTone(a);
+    var row=el("div","act-shelf-row"+(a===armedA?" armed":""));
+    row.appendChild(el("span","sn",a.name));
+    // Same "no misleading value" rule buildActButton() always followed —
+    // Homework Checked etc. show no line at all rather than a fake "+0".
+    if(!reroutedActivity(a)) row.appendChild(el("span","sv "+tone, fmtDelta(a.pts)));
+    row.appendChild(el("span","sg "+tone, ACT_TONE_LABEL[tone]));
+    row.addEventListener("click", function(){
+      setArmed(a.name, a.pts, a);
+      closeActivitiesShelf();
+      $("seatsScanInput").focus();
     });
-    wrap.appendChild(clusters);
+    return row;
+  }
+  var activitiesShelfState = {open:false, filter:"all"};
+  function activitiesShelfVisible(){
+    /* EVERY tracked activity is listed, Tracker ones included. That changed
+     * in 2d and this comment did not: it used to say Tracker activities
+     * "stay out: they still fall through to the points path with no
+     * backstop", which was true only while award() routed by name. Since
+     * #208 a tracked scan goes to recordTrackedScan(), so there is nothing
+     * to fall through to and nothing to keep out — armableActivities()
+     * takes the whole flag. Worth being accurate about, because a stale
+     * exclusion here is the first thing anyone would suspect when a tracked
+     * activity fails to appear. */
+    return armableActivities().filter(actVisibleInCurrentClass).filter(actVisibleOnScreen);
+  }
+  function renderActivitiesShelfList(){
+    var listEl=$("actShelfList"); if(!listEl) return;
+    listEl.innerHTML="";
+    var visible=activitiesShelfVisible();
+    if(!data.activities.length){ listEl.appendChild(el("div","recent-empty","No activities yet — add some on the Activities tab.")); return; }
+    if(!visible.length){ listEl.appendChild(el("div","recent-empty","No activities are set up for this group — check the Activities tab.")); return; }
+    var filter=activitiesShelfState.filter;
+    var rows=filter==="all" ? visible : visible.filter(function(a){ return activityTone(a)===filter; });
+    if(!rows.length){ listEl.appendChild(el("div","recent-empty","Nothing in "+ACT_TONE_LABEL[filter]+" right now.")); return; }
+    var armedA=armedActivity();
+    rows.forEach(function(a){ listEl.appendChild(buildActivityShelfRow(a, armedA)); });
+  }
+  function activitiesShelfFilters(){
+    var wrap=$("actShelfFilt"); if(!wrap) return;
+    wrap.innerHTML="";
+    [["all","All"],["pos","Give"],["neg","Take"],["trk","Record"]].forEach(function(f){
+      var span=el("span", f[0]===activitiesShelfState.filter ? "on" : "", f[1]);
+      span.addEventListener("click", function(){
+        activitiesShelfState.filter=f[0];
+        activitiesShelfFilters();
+        renderActivitiesShelfList();
+      });
+      wrap.appendChild(span);
+    });
+  }
+  function activitiesShelfKey(e){ if(e.key==="Escape") closeActivitiesShelf(); }
+  function openActivitiesShelf(){
+    if(activitiesShelfState.open) return;
+    activitiesShelfState.open=true;
+    syncShelfTop();
+    var scrim=$("actShelfScrim"), shelf=$("actShelf");
+    scrim.classList.add("open"); shelf.classList.add("open");
+    activitiesShelfFilters();
+    renderActivitiesShelfList();
+    document.addEventListener("keydown", activitiesShelfKey);
+  }
+  function closeActivitiesShelf(){
+    if(!activitiesShelfState.open) return;
+    activitiesShelfState.open=false;
+    var scrim=$("actShelfScrim"), shelf=$("actShelf");
+    if(scrim) scrim.classList.remove("open");
+    if(shelf) shelf.classList.remove("open");
+    document.removeEventListener("keydown", activitiesShelfKey);
   }
 
   // band is optional and only ever passed at a real scan/tap OUTCOME (points
@@ -11819,6 +11958,16 @@ function setupRoster() {
     var cls="tile-track-badge "+(b.tone||"todo")+(b.itemId==="ti-attendance" ? " chip" : "");
     return el("span", cls, b.text);
   }
+  // CONTEXT BAR (Phase 3): every active student whose CURRENTLY ARMED
+  // tracked item reads "never" — calls the exact same per-tile function the
+  // badge itself renders from (not a reimplementation of the "never" test),
+  // so this count and what's on the tiles can never disagree.
+  function trackedNeverList(){
+    return activeStudents().filter(function(s){
+      var b=trackedTileBadge(s);
+      return b && b.text==="never";
+    });
+  }
   /* Repaint just the badges — the refreshFreezeTile() approach, and for the same
    * reason. Arming an item changes one line on each card; a full
    * renderTapPanel() would rebuild every QR code on the chart and throw away
@@ -11843,7 +11992,22 @@ function setupRoster() {
       var ptsEl=tb.querySelector(".ts");
       if(ptsEl) ptsEl.classList.toggle("also-pts", !!b);
       if(b) tb.appendChild(b);
+      // CONTEXT BAR (Phase 3): dim a tile that already has a turn while
+      // "Show only these" is on — same boolean fillSeatLiveCard() uses on a
+      // full render (see there), kept in sync here since a scan/tap only
+      // repaints the badge, never rebuilds the card. Reuses the badge's own
+      // .chip (attendance) / .todo (never) classes rather than recomputing
+      // tone separately.
+      tb.classList.toggle("dim", trackFocusNever && !!b && !b.classList.contains("chip") && !b.classList.contains("todo"));
     });
+    refreshTrackFocusBtn();
+    // CONTEXT BAR (Phase 3): the attendance-fill button's count needs the
+    // same live update — a tap-cycle (TRACKED_LEGACY["ti-attendance"]) never
+    // called refreshAttFillBtn() itself, only attCycleFlash(), so the count
+    // went stale between "arm changed" moments. Self-gated (checks
+    // attendanceActivity() internally), so this is a safe no-op whenever
+    // something other than attendance is what changed.
+    refreshAttFillBtn();
   }
   /* "MARK THE REST PRESENT", ON THE CLASS LIST ITSELF.
    *
@@ -11868,7 +12032,7 @@ function setupRoster() {
    * morning's roll onto a day the rebbi was reading last week.
    */
   function attFillToolbarBtn(){
-    var b=el("button","seat-modebtn att-fill-btn","✓ "+attFillLabel());
+    var b=el("button","seat-modebtn att-fill-btn","✓ "+attFillLabel()+" ("+attUnmarkedCount(todayKey())+")");
     b.title=attFillTitle()+" — for today.";
     b.addEventListener("click", function(){
       var n=attFillUnmarked(todayKey());
@@ -12002,8 +12166,41 @@ function setupRoster() {
       // Before the email button when that one is already up, so the two always
       // read in the order they are used: finish the roll, then send it.
       if(!cur){ tb.insertBefore(attFillToolbarBtn(), tb.querySelector(".att-email-btn")); return; }
-      cur.textContent="✓ "+attFillLabel();
+      cur.textContent="✓ "+attFillLabel()+" ("+attUnmarkedCount(todayKey())+")";
       cur.title=attFillTitle()+" — for today.";
+    });
+  }
+
+  // CONTEXT BAR (Phase 3), count mode's half of attFillToolbarBtn()/
+  // refreshAttFillBtn() above — same shape, same .seat-toolbar-main
+  // in-place pattern, gated on countArmed() instead of attendanceActivity().
+  // Session state only, not persisted, matching the design's own "not
+  // remembered across arms" intent — mirrors ctFocus in the prototype.
+  var trackFocusNever = false;
+  function trackFocusToolbarBtn(){
+    var n=trackedNeverList().length;
+    var b=el("button","seat-modebtn track-focus-btn"+(trackFocusNever?" on":""),
+      trackFocusNever ? "↺ Show everyone" : "◍ Show only these ("+n+")");
+    b.title = trackFocusNever ? "Show every student again" : "Dim everyone who's already had a turn";
+    b.addEventListener("click", function(){
+      trackFocusNever=!trackFocusNever;
+      // A full render, unlike the count-text refreshes above: this flips
+      // dimming on every tile at once, which fillSeatLiveCard() only
+      // applies on a full build. Fine here — a rare, deliberate click, not
+      // a per-scan hot path.
+      renderTapPanel();
+    });
+    return b;
+  }
+  function refreshTrackFocusBtn(){
+    var want=countArmed();
+    document.querySelectorAll(".seat-toolbar-main").forEach(function(tb){
+      var cur=tb.querySelector(".track-focus-btn");
+      if(!want){ if(cur && cur.parentNode) cur.parentNode.removeChild(cur); return; }
+      if(!cur){ tb.appendChild(trackFocusToolbarBtn()); return; }
+      var n=trackedNeverList().length;
+      cur.textContent = trackFocusNever ? "↺ Show everyone" : "◍ Show only these ("+n+")";
+      cur.classList.toggle("on", trackFocusNever);
     });
   }
 
@@ -12810,34 +13007,130 @@ function setupRoster() {
     award(s);
   }
 
+  // "JUST NOW" FEED, REWORKED (round 2): "N seconds/minutes/hours/days ago".
+  // Nothing at this granularity existed anywhere in the app (only
+  // day-granularity trackedAgoText() and absolute fmtClockTime()) — computed
+  // at render time only, same convention every other recency text in the
+  // app already follows (trackedAgoText() doesn't live-tick either).
+  function scanFeedAgoText(ts){
+    var s=Math.max(0, Math.round((Date.now()-ts)/1000));
+    if(s<5) return "just now";
+    if(s<60) return s+" second"+(s===1?"":"s")+" ago";
+    var m=Math.floor(s/60);
+    if(m<60) return m+" minute"+(m===1?"":"s")+" ago";
+    var h=Math.floor(m/60);
+    if(h<24) return h+" hour"+(h===1?"":"s")+" ago";
+    var d=Math.floor(h/24);
+    return d+" day"+(d===1?"":"s")+" ago";
+  }
+  // History shelf's filter chips (All/Points/Records/Negative).
+  function entryCategory(entry){
+    return isTrackedEntry(entry) ? "records" : (entry.delta<0 ? "negative" : "points");
+  }
+  // ONE row builder for BOTH the collapsed single-row view and the shelf's
+  // full list, so the isCorrection/isTracked/undo gating — several branches
+  // that must not drift between the two — lives in exactly one place.
+  // Restyle only versus the row this replaces: avatar, serif name, a
+  // "<activity> · <relative time>" subline, newest-row tone-tinted avatar.
+  // Every existing gating check kept verbatim.
+  function buildRecentRow(entry, isNewest){
+    var s=studentById(entry.sid);
+    var isCorrection = entry.kind==="correction";
+    var isTracked = isTrackedEntry(entry);
+    var cat = entryCategory(entry);
+    var row=el("div","recent-item"+(entry.undone?" undone":"")+(isCorrection?" correction":"")+(isNewest?" newest tone-"+cat:""));
+    // avatarEl() assumes a real student (reads s.photo/s.name); a log entry
+    // can outlive its student (removed roster), which renderRecent() has
+    // always tolerated via the entry.sid fallback — same fallback here, on
+    // a plain initials-less circle rather than skipping the avatar.
+    row.appendChild(s ? avatarEl(s, 28) : el("div","avatar","?"));
+    var nameWrap=el("div","ri-name-wrap");
+    nameWrap.appendChild(el("span","rn", s?s.name:entry.sid));
+    nameWrap.appendChild(el("span","ri-sub", entry.label+" · "+scanFeedAgoText(entry.ts)));
+    row.appendChild(nameWrap);
+    var d = isCorrection ? el("span","rd undo","Undo")
+          : isTracked   ? el("span","rd tracked", logEntryValueText(entry))
+          : el("span","rd "+(entry.delta<0?"neg":"pos"), fmt(entry.delta));
+    row.appendChild(d);
+    // ↩ on a tracked row reverses it back at the store that wrote it — see
+    // undoTrackedLogEntry() — but only when the row carries enough to do
+    // that; see trackedEntryReversible(). Verbatim from before.
+    if(!isCorrection && !entry.undone && (!isTracked || trackedEntryReversible(entry))){
+      var u=el("button","btn btn-sm ri-undo","↩");
+      u.title="Undo this"; u.addEventListener("click", function(){ undoEntryById(entry.id); });
+      row.appendChild(u);
+    } else if(entry.undone){
+      row.appendChild(el("span","undone-tag","undone"));
+    }
+    return row;
+  }
   function renderRecent(){
     var box=$("recentList"); box.innerHTML="";
     if(!data.log.length){ box.appendChild(el("div","recent-empty","Scans will appear here.")); return; }
-    data.log.slice(0,12).forEach(function(entry,i){
-      var s=studentById(entry.sid);
-      var isCorrection = entry.kind==="correction";
-      var isTracked = isTrackedEntry(entry);
-      var row=el("div","recent-item"+(entry.undone?" undone":"")+(isCorrection?" correction":""));
-      var name=el("span","rn",(s?s.name:entry.sid)+"  ");
-      var sub=el("span",null,entry.label); sub.style.color="var(--muted)"; sub.style.fontSize=".8rem";
-      name.appendChild(sub);
-      var d = isCorrection ? el("span","rd undo","Undo")
-            : isTracked   ? el("span","rd tracked", logEntryValueText(entry))
-            : el("span","rd "+(entry.delta<0?"neg":"pos"), fmt(entry.delta));
-      row.appendChild(name); row.appendChild(d);
-      // ↩ on a tracked row reverses it back at the store that wrote it — see
-      // undoTrackedLogEntry() — but only when the row carries enough to do
-      // that; see trackedEntryReversible().
-      if(!isCorrection && !entry.undone && (!isTracked || trackedEntryReversible(entry))){
-        var u=el("button","btn btn-sm","↩");
-        u.title="Undo this"; u.addEventListener("click", function(){ undoEntryById(entry.id); });
-        row.appendChild(u);
-      } else if(entry.undone){
-        row.appendChild(el("span","undone-tag","undone"));
-      }
-      box.appendChild(row);
-    });
+    // "JUST NOW" FEED, REWORKED (round 2): only the single newest row shows
+    // inline now — "Show more" opens the fuller history in a right-side
+    // shelf (openHistoryShelf()) instead of listing rows here.
+    box.appendChild(buildRecentRow(data.log[0], true));
+    var more=el("button","morebtn","▸ Show more history");
+    more.type="button";
+    more.addEventListener("click", openHistoryShelf);
+    box.appendChild(more);
     if(typeof renderSeatsScanBar==="function") renderSeatsScanBar();
+    // Keep the shelf's own list in sync too, if it's open — same source
+    // (data.log), so a scan or an undo landing while a rebbi is browsing
+    // the shelf must not leave it showing something stale.
+    if(historyShelfState && historyShelfState.open) renderHistoryShelfList();
+  }
+  var historyShelfState = {open:false, filter:"all"};
+  // Filtered to TODAY specifically, not the History tab's own 200-at-a-time
+  // paging (renderHistoryTab(), no date scoping at all) — a different
+  // concept from a shelf explicitly labelled "Today", so this scopes by day
+  // directly rather than borrowing that tab's pagination.
+  function historyShelfEntriesToday(){
+    var tk=todayKey();
+    return data.log.filter(function(e){ return gbDateKeyForTs(e.ts)===tk; });
+  }
+  function renderHistoryShelfList(){
+    var listEl=$("histShelfList"); if(!listEl) return;
+    listEl.innerHTML="";
+    var todays=historyShelfEntriesToday();
+    if(!todays.length){ listEl.appendChild(el("div","recent-empty","Nothing yet today.")); return; }
+    var filter=historyShelfState.filter;
+    var rows=filter==="all" ? todays : todays.filter(function(e){ return entryCategory(e)===filter; });
+    if(!rows.length){ listEl.appendChild(el("div","recent-empty","Nothing in that filter today.")); return; }
+    rows.forEach(function(e){ listEl.appendChild(buildRecentRow(e, false)); });
+  }
+  function historyShelfFilters(){
+    var wrap=$("histShelfFilt"); if(!wrap) return;
+    wrap.innerHTML="";
+    [["all","All"],["points","Points"],["records","Records"],["negative","Negative"]].forEach(function(f){
+      var span=el("span", f[0]===historyShelfState.filter ? "on" : "", f[1]);
+      span.addEventListener("click", function(){
+        historyShelfState.filter=f[0];
+        historyShelfFilters();
+        renderHistoryShelfList();
+      });
+      wrap.appendChild(span);
+    });
+  }
+  function historyShelfKey(e){ if(e.key==="Escape") closeHistoryShelf(); }
+  function openHistoryShelf(){
+    if(historyShelfState.open) return;
+    historyShelfState.open=true;
+    syncShelfTop();
+    var scrim=$("histShelfScrim"), shelf=$("histShelf");
+    scrim.classList.add("open"); shelf.classList.add("open");
+    historyShelfFilters();
+    renderHistoryShelfList();
+    document.addEventListener("keydown", historyShelfKey);
+  }
+  function closeHistoryShelf(){
+    if(!historyShelfState.open) return;
+    historyShelfState.open=false;
+    var scrim=$("histShelfScrim"), shelf=$("histShelf");
+    if(scrim) scrim.classList.remove("open");
+    if(shelf) shelf.classList.remove("open");
+    document.removeEventListener("keydown", historyShelfKey);
   }
 
   /* ---------- Seats tab: compact scan bar (armed pill, sticky last scan +
@@ -13072,6 +13365,21 @@ function setupRoster() {
     var bottom = ref ? ref.getBoundingClientRect().bottom : 110;
     document.documentElement.style.setProperty("--seats-fs-top", Math.max(0, Math.round(bottom)) + "px");
   }
+  // Same measurement as syncSeatsFsTop(), deliberately NOT shared with it —
+  // that one runs after .subtabs-row is hidden for the fullscreen seat
+  // pop-out, so it reflects a shorter chrome stack than the normal
+  // Dashboard has. A shelf opened on the normal Dashboard needs the real
+  // (taller) stack's bottom edge, so this is its own property.
+  function syncShelfTop(){
+    var scanBar=$("globalScanBar");
+    var subrow=document.querySelector(".subtabs-row");
+    var ref = (scanBar && scanBar.offsetParent!==null) ? scanBar : subrow;
+    var bottom = ref ? ref.getBoundingClientRect().bottom : 110;
+    document.documentElement.style.setProperty("--dash-shelf-top", Math.max(0, Math.round(bottom)) + "px");
+  }
+  window.addEventListener("resize", function(){
+    if(document.querySelector(".dash-shelf.open")) syncShelfTop();
+  });
   var seatsPopReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   // FLIP expand: the overlay starts transformed to exactly match the Class
   // list card's on-screen rectangle, then animates to its natural full-screen
@@ -13255,6 +13563,15 @@ function setupRoster() {
       save();
       refreshLiveViews();
       refreshTrackedBadges();
+      // "JUST NOW" FEED (round 2): pre-existing gap this made more visible,
+      // not one it introduced — refreshLiveViews() only re-renders the
+      // History TAB (activeTabName==="history"), never the Dashboard's own
+      // Recent Scans panel, so an inline undo on a tracked row never showed
+      // as struck-through until something unrelated re-rendered it. Worth
+      // fixing now: the collapsed view is a single always-visible row, so
+      // the staleness is far more noticeable than it was buried in a
+      // 12-row list.
+      renderRecent();
     }
     return ok;
   }
@@ -13431,6 +13748,13 @@ function setupRoster() {
   }
   $("giveAllBtn").addEventListener("click", function(){ giveArmedToAll(); });
   $("freezeAllBtn").addEventListener("click", function(){ toggleAllFreezes(); });
+  $("actShelfBtn").addEventListener("click", function(){ openActivitiesShelf(); });
+  $("actShelfScrim").addEventListener("click", function(){ closeActivitiesShelf(); });
+  $("actShelfClose").addEventListener("click", function(){ closeActivitiesShelf(); });
+  $("actShelfGo").addEventListener("click", function(){ closeActivitiesShelf(); activateTab("activities"); });
+  $("histShelfScrim").addEventListener("click", function(){ closeHistoryShelf(); });
+  $("histShelfClose").addEventListener("click", function(){ closeHistoryShelf(); });
+  $("histShelfGo").addEventListener("click", function(){ closeHistoryShelf(); activateTab("history"); });
   $("undoLast").addEventListener("click", function(){ undoMostRecentScan(); });
   // The dashboard and seating-chart undos are the SAME action, not a second
   // implementation — all three call undoMostRecentScan(), so undo behaves
@@ -14441,6 +14765,9 @@ function setupRoster() {
       // back with it rather than waiting for the next attendance write.
       if(attRollComplete(todayKey())) toolbar.appendChild(attEmailToolbarBtn());
     }
+    // CONTEXT BAR (Phase 3): same first-paint reason as the attendance-fill
+    // button above, kept in step after that by refreshTrackFocusBtn().
+    if(countArmed()) toolbar.appendChild(trackFocusToolbarBtn());
     // Same first-paint treatment for the Pause-all toggle: present immediately
     // if anybody is frozen, then kept in step by renderFreezeAllBtn() via
     // tickFreezes() — including appearing/vanishing as freezes start and end.
@@ -14733,6 +15060,11 @@ function setupRoster() {
       card.appendChild(coinScoreEl(s.id,"ts also-pts"));
     }
     if(trkBadge) card.appendChild(trkBadge);
+    // CONTEXT BAR (Phase 3): dim a tile that already has a turn while "Show
+    // only these" is on — same boolean refreshTrackedBadges() uses on its
+    // in-place repaint (see there), so a full render and a per-scan refresh
+    // can never disagree about which tiles are dimmed.
+    card.classList.toggle("dim", trackFocusNever && !!trkBadge && !trkBadge.classList.contains("chip") && !trkBadge.classList.contains("todo"));
   }
   // The held total for one boy, already formatted, or "" when there is nothing
   // to show. Kept next to the card rather than inside coinScoreEl() because
@@ -15551,42 +15883,6 @@ function setupRoster() {
     overlay.appendChild(card);
     document.body.appendChild(overlay);
     setTimeout(function(){ amtIn.focus(); amtIn.select(); }, 50);
-  }
-  // ACTIVITY BAND (Phase 2)'s "＋N more" overflow — same hand-rolled modal
-  // skeleton as showCustomAmountModal() just above (there's no generic
-  // openModal() helper in the app to call instead). Each row is the exact
-  // same buildActButton() the visible band uses, so an overflowed activity
-  // looks identical whether it's in the band or in here — with one extra
-  // listener to close the modal after arming, since setArmed() already
-  // re-renders the band itself (see its own comment on that call).
-  function showActivityOverflowModal(groupLabel, items){
-    var overlay=el("div","modal-overlay");
-    var card=el("div","modal-card"); card.style.maxWidth="380px";
-    var head=el("div","modal-head");
-    head.appendChild(el("div","modal-title", groupLabel+" — more activities"));
-    var closeBtn=el("button","modal-close","✕"); closeBtn.type="button"; closeBtn.title="Close";
-    head.appendChild(closeBtn);
-    card.appendChild(head);
-
-    var body=el("div","act-cluster-row");
-    items.forEach(function(a){
-      var b=buildActButton(a);
-      b.addEventListener("click", function(){ close(); });
-      body.appendChild(b);
-    });
-    card.appendChild(body);
-
-    function close(){
-      if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
-      document.removeEventListener("keydown", onKey);
-    }
-    function onKey(e){ if(e.key==="Escape") close(); }
-    closeBtn.addEventListener("click", close);
-    overlay.addEventListener("click", function(e){ if(e.target===overlay) close(); });
-    document.addEventListener("keydown", onKey);
-
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
   }
   // Builds the activity list + Custom option into any dropdown element — the
   // one real implementation of "pick an activity from a dropdown" in the app.
