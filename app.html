@@ -1768,6 +1768,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
        section splitting across pages is still worse than the break falling
        between two sections. */
     body.print-seating .seat-print-code-group{break-inside:avoid;page-break-inside:avoid}
+    /* A band is one activity's whole chart. Keeping it unbreakable is what makes
+       an overflowing multi-activity sheet degrade sensibly: the third chart
+       moves to page 2 entire, rather than the page break falling through the
+       middle of it and leaving half a chart with no badge on it. */
+    body.print-seating .seat-print-band{break-inside:avoid;page-break-inside:avoid}
     .seat-print-qr{width:55%;max-width:110px;margin:0 auto 6px}
     .seat-print-qr img,.seat-print-qr canvas{width:100%;height:auto;display:block}
     .seat-print-photo{display:flex;justify-content:center;margin:0 auto 6px}
@@ -1854,6 +1859,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-print-preview .seat-print-title,#menuPrintTitle{text-align:center;font-family:var(--serif);font-size:1.15rem;font-weight:700;margin-bottom:3px}
   .seat-print-preview .seat-print-activity-badge-wrap{text-align:center;margin-bottom:10px}
   .seat-print-preview .seat-print-activity-badge{display:inline-block;padding:3px 14px;border:2px solid currentColor;border-radius:999px;font-weight:700;font-size:.9rem}
+  /* One band = one activity's chart, when several are stacked on the one sheet.
+     A band element exists ONLY in that case — a single-activity sheet keeps the
+     exact DOM it has always had, and therefore paginates exactly as it did.
+     The rule is written under .seat-print-preview, not in the print block, so
+     the mock-up and the paper agree; the divider prints too, on purpose, since
+     it is what shows a rebbi where one chart ends and the next begins. */
+  .seat-print-preview .seat-print-band+.seat-print-band{border-top:1px dashed var(--line);padding-top:12px;margin-top:14px}
   .seat-print-preview .seat-front{margin:0 0 8px;text-align:center;font-size:.7rem;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;padding-bottom:4px;border-bottom:2px solid var(--line)}
   .seat-print-preview .print-seat-grid{display:grid;gap:7px}
   .seat-print-preview .seat{border:1px solid var(--line);border-radius:8px;padding:5px 4px;text-align:center;min-height:0;min-width:0}
@@ -1984,6 +1996,23 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-print-preview .seat-print-pair .seat-print-photo .avatar{width:100%!important;height:auto!important;aspect-ratio:1;border-radius:6px;font-size:calc(19px * var(--seat-icon-scale,1))!important}
   .seat-print-preview .seat-name{font-weight:600;font-size:.82rem;display:block;overflow-wrap:break-word;word-wrap:break-word;white-space:normal;text-align:center;line-height:1.2}
   .seat-print-preview .seat-print-pts{font-size:.7rem;color:var(--muted);margin-top:2px;display:block}
+  /* TIGHTENED — put on and taken off by seatPrintAutoFit() alone, and only ever
+     on a sheet carrying several activity charts. Stacking three charts costs
+     three sets of everything that is not a card: three badges, two dividers, and
+     three grids' worth of gaps and padding. Trimming those, and the name to the
+     smallest size still comfortably read across a room, buys back most of a
+     third of a page — enough that a real class fits on one sheet at codes big
+     enough to scan, which is the whole point of the option.
+     NOTHING here touches the code itself: --seat-icon-scale is the other axis
+     and is stepped separately, so tightening never quietly makes a QR harder to
+     read. Nor does any of it apply to a single-chart sheet, which must keep
+     paginating exactly as it always has. */
+  .seat-print-preview.seat-print-compact .seat{padding:3px 3px}
+  .seat-print-preview.seat-print-compact .seat-name{font-size:.68rem;line-height:1.1}
+  .seat-print-preview.seat-print-compact .print-seat-grid{gap:5px}
+  .seat-print-preview.seat-print-compact .seat-print-activity-badge{padding:1px 10px;font-size:.78rem}
+  .seat-print-preview.seat-print-compact .seat-print-activity-badge-wrap{margin-bottom:5px}
+  .seat-print-preview.seat-print-compact .seat-print-band+.seat-print-band{padding-top:6px;margin-top:6px}
   .seat-print-preview .seat-print-activities-footer{margin-top:9px;border-top:2px solid var(--line);padding-top:6px}
   .seat-print-preview .seat-print-activities-title{font-size:.7rem;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;margin-bottom:4px}
   .seat-print-preview .seat-print-act-section-label{font-size:.65rem;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;margin:5px 0 3px}
@@ -3277,6 +3306,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <label id="seatPrintActivityRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Every seat's code becomes that one activity, pre-applied to that student — scan straight down the grid with no arming step. One sheet per activity.">Activity:
         <select id="seatPrintActivityPicker" class="field" style="width:auto"></select>
       </label>
+      <label id="seatPrintMultiActRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Stack a chart per activity on the one sheet — +1 at the top, −1 under it, Freeze at the bottom. Each band is the same seating chart with that activity's codes in it, and the sheet shrinks itself so they all fit one page."><input type="checkbox" id="seatPrintMultiAct"> Several on one page</label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem"><input type="checkbox" id="seatPrintShowPoints"> Points</label>
       <label id="seatPrintRebbiViewRow" style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Flips the chart 180° — front of room at the bottom, left/right mirrored — matching what you actually see facing the class. Names stay right-side-up and readable."><input type="checkbox" id="seatPrintRebbiView"> Rebbi's view</label>
       <label id="seatPrintShowActivitiesRow" style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Adds a compact row of activity QR codes at the bottom of the page, for a one-page classroom reference."><input type="checkbox" id="seatPrintShowActivities"> Activities footer</label>
@@ -3296,7 +3326,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
          than a page, which is exactly when a warning at the bottom would sit a
          full page-height of scrolling below the controls it tells you to
          change. -->
-    <div id="seatPrintFitWarning" class="pill-note no-print" style="display:none;margin:0 0 10px;background:var(--bad-soft);color:#7c2d1c">This may not fit on one printed page with the current settings — try making <b>Code size</b> smaller, hiding photos, turning off the activities footer, or <span id="seatPrintFitOrientHint">switching to Landscape</span>.</div>
+    <div id="seatPrintFitWarning" class="pill-note no-print" style="display:none;margin:0 0 10px;background:var(--bad-soft);color:#7c2d1c">This may not fit on one printed page with the current settings — try making <b>Code size</b> smaller, hiding photos, <span id="seatPrintFitMultiHint" style="display:none">printing fewer charts on the sheet, </span>turning off the activities footer, or <span id="seatPrintFitOrientHint">switching to Landscape</span>.</div>
+    <!-- Which activities get a chart, and in what order, when "Several on one
+         page" is on. A card rather than a row of chips in the toolbar: the
+         order is the thing being edited here (top band, middle band, bottom
+         band), and order needs somewhere to show itself. -->
+    <div class="card pad no-print" id="seatPrintMultiActCard" style="margin-bottom:12px;display:none">
+      <p class="view-note" style="margin-top:0">Tick an activity to give it its own chart on the sheet. They print <b>top to bottom in this order</b> — use ▲ / ▼ to move one. Every band is your same seating chart, so a boy sits in the same desk in all of them; only the code in his card changes. The whole sheet shrinks itself to fit one page.</p>
+      <div class="row-list" id="seatPrintMultiActList"></div>
+    </div>
     <div class="card pad no-print" id="seatPrintCodesCard" style="margin-bottom:12px;display:none">
       <p class="view-note" style="margin-top:0">Which codes you use, and how they're grouped. This one list governs all of them — the class sheet, the activity menu, and the codes under the seating chart. Drag a code to reorder it within a section, or into a different section; ✕ takes it off everywhere and it waits in the tray below. <b>The sections are yours:</b> rename one by typing in its heading, add your own with <b>+ Section</b>, or remove one with its ✕ — its codes move to the first section rather than disappearing. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
       <div class="toolbar" style="margin-bottom:8px;gap:6px">
@@ -5305,7 +5343,7 @@ function setupRoster() {
     //
     // Discoverability is fixed by putting the checkbox on a page rebbeim
     // actually reach, not by flipping a setting under them.
-    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", actGrouped:true, actCols:2, iconScale:1 },
+    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", multiActivity:false, activityIds:[], actGrouped:true, actCols:2, iconScale:1 },
     // Mini Contest — the contest whose totals are stored rather than derived.
     // See the MINI CONTEST block above award() for why that distinction is the
     // whole feature. null = nothing running; [] = no contests have closed yet.
@@ -23403,7 +23441,11 @@ nameLine
     if($("view-store").classList.contains("active")) renderStore();
     if($("view-pesukim").classList.contains("active")) applyPesukMode();
     if($("view-printStudents").classList.contains("active") || $("view-printActivities").classList.contains("active")) renderLabels();
-    if($("view-printSeats").classList.contains("active")) renderSeatChartPrint();
+    // seatPrintSyncActivityRow(), not just the redraw: which activities are
+    // armable and visible is a per-class question, so both activity pickers on
+    // that page — the single one and the several-on-one-page list — would
+    // otherwise keep offering the class he just left.
+    if($("view-printSeats").classList.contains("active")){ seatPrintSyncActivityRow(); renderSeatChartPrint(); }
     if($("view-printPoints").classList.contains("active")) renderPointsPrint();
     auctionPrizeId=null; auctionStudentId=null;
     if($("view-auction").classList.contains("active")) renderAuction();
@@ -24518,6 +24560,16 @@ nameLine
   $("seatPrintCodesAddSection").addEventListener("click", function(){ addCodeSection(); refreshCodeSurfaces(); });
   $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); seatPrintSyncActivityRow(); renderSeatChartPrint(); });
   $("seatPrintActivityPicker").addEventListener("change", function(){ data.seatPrintOpts.activityId=this.value; save(); renderSeatChartPrint(); });
+  $("seatPrintMultiAct").addEventListener("change", function(){
+    data.seatPrintOpts.multiActivity=this.checked;
+    // Ticking it for the first time carries the activity he already had into the
+    // stack, so the sheet he was looking at stays on the page and he adds to it —
+    // rather than the preview emptying out and telling him to choose something.
+    if(this.checked && !seatPrintChosenActivities().length && data.seatPrintOpts.activityId){
+      data.seatPrintOpts.activityIds=[data.seatPrintOpts.activityId];
+    }
+    save(); seatPrintSyncActivityRow(); renderSeatChartPrint();
+  });
   // Rows/Cols moved onto this toolbar when the separate seating editor above the
   // preview was removed — they were the one thing in that card with nowhere else
   // to live. Same seatResize() the chart's own ⚙ Setup calls, so a grid resized
@@ -24713,7 +24765,15 @@ nameLine
   // other arming surface uses (armableActivities() + actVisibleInCurrentClass).
   function seatPrintSyncActivityRow(){
     var isActivity = seatPrintCodeKind($("seatPrintAvatarMode").value)==="activity";
-    $("seatPrintActivityRow").style.display = isActivity ? "flex" : "none";
+    // "Several on one page" replaces the single picker rather than sitting
+    // beside it: two controls both claiming to say which activity prints is how
+    // a rebbi ends up staring at a sheet that ignores the one he just set.
+    var multi = isActivity && seatPrintMultiAct();
+    $("seatPrintActivityRow").style.display = (isActivity && !multi) ? "flex" : "none";
+    $("seatPrintMultiActRow").style.display = isActivity ? "flex" : "none";
+    $("seatPrintMultiAct").checked = seatPrintMultiAct();
+    $("seatPrintMultiActCard").style.display = multi ? "block" : "none";
+    if(multi) renderSeatPrintMultiActList();
     $("seatPrintShowActivitiesRow").style.display = isActivity ? "none" : "flex";
     var sel=$("seatPrintActivityPicker"), cur=sel.value || data.seatPrintOpts.activityId;
     var opts=armableActivities().filter(actVisibleInCurrentClass);
@@ -24975,6 +25035,107 @@ nameLine
    * seating" rule lives in one place, matching the load2fix backfill. */
   function seatPrintIsList(){ return data.seatPrintOpts.layout==="list"; }
 
+  /* SEVERAL ACTIVITY CHARTS ON ONE SHEET — "+1 at the top, −1 in the middle,
+   * Freeze at the bottom".
+   *
+   * One sheet per activity was the only shape Activity mode had, which is right
+   * for a big class and wasteful for the three or four codes a rebbi actually
+   * reaches for all day: three sheets on the clipboard, and the wrong one always
+   * on top. A band is the same seating chart drawn again with a different
+   * activity's codes in the cards, so a boy sits in the same desk in every band
+   * and the rebbi's hand learns one position.
+   *
+   * THE ORDER IS THE REBBI'S, AND IT IS STORED. `activityIds` is a list, not a
+   * set — its order is top-to-bottom on the page, which is why nothing here
+   * sorts it and why the ▲/▼ buttons write it back.
+   *
+   * Ids are pruned to what is armable and visible in THIS class at read time
+   * rather than at write time: an activity can be deleted, made class-specific,
+   * or switched to a mode this class isn't in, long after it was ticked — and a
+   * chart for an activity that no longer exists is worse than a missing one.
+   * The stored list is deliberately NOT rewritten by that pruning (see
+   * seatPrintMoveMultiAct), so switching to a class where an activity is hidden
+   * and back again does not silently forget it.
+   */
+  var SEAT_PRINT_MAX_BANDS=6;
+  function seatPrintMultiAct(){ return data.seatPrintOpts.multiActivity===true; }
+  function seatPrintChosenActivities(){
+    var byId={};
+    armableActivities().filter(actVisibleInCurrentClass).forEach(function(a){ byId[a.id]=a; });
+    var out=[], seen={};
+    (data.seatPrintOpts.activityIds||[]).forEach(function(id){
+      // seen[] because a hand-edited or restored save could carry the same id
+      // twice, and two identical bands is a wasted third of a page.
+      if(byId[id] && !seen[id]){ seen[id]=1; out.push(byId[id]); }
+    });
+    return out.slice(0, SEAT_PRINT_MAX_BANDS);
+  }
+  function seatPrintToggleMultiAct(id, on){
+    var ids=(data.seatPrintOpts.activityIds||[]).filter(function(x){ return x!==id; });
+    // Newly ticked goes to the BOTTOM of the sheet. Anywhere else would move a
+    // band the rebbi has already positioned; from the bottom, ▲ is one press.
+    if(on) ids.push(id);
+    data.seatPrintOpts.activityIds=ids;
+    save(); renderSeatPrintMultiActList(); renderSeatChartPrint();
+  }
+  function seatPrintMoveMultiAct(id, dir){
+    // Swap with the nearest VISIBLE neighbour, inside the full stored list.
+    // Rewriting the stored list to just the visible ones would drop every id
+    // belonging to a class the rebbi is not looking at right now.
+    var stored=(data.seatPrintOpts.activityIds||[]).slice();
+    var vis=seatPrintChosenActivities().map(function(a){ return a.id; });
+    var vi=vis.indexOf(id); if(vi<0) return;
+    var vj=vi+dir; if(vj<0 || vj>=vis.length) return;
+    var i=stored.indexOf(id), j=stored.indexOf(vis[vj]);
+    if(i<0 || j<0) return;
+    stored[i]=vis[vj]; stored[j]=id;
+    data.seatPrintOpts.activityIds=stored;
+    save(); renderSeatPrintMultiActList(); renderSeatChartPrint();
+  }
+  /* The picker for the above. Chosen activities sit at the top in print order,
+   * numbered, with the ▲/▼ that set that order; everything else follows. The
+   * list reads top to bottom exactly as the sheet does. */
+  function renderSeatPrintMultiActList(){
+    var box=$("seatPrintMultiActList"); if(!box) return;
+    box.innerHTML="";
+    var opts=armableActivities().filter(actVisibleInCurrentClass);
+    if(!opts.length){
+      box.appendChild(el("div","empty-state","No activities to print codes for yet — add one on the Activities tab."));
+      return;
+    }
+    var chosen=seatPrintChosenActivities(), chosenIds={};
+    chosen.forEach(function(a){ chosenIds[a.id]=1; });
+    var full = chosen.length>=SEAT_PRINT_MAX_BANDS;
+    var rows=chosen.concat(opts.filter(function(a){ return !chosenIds[a.id]; }));
+    rows.forEach(function(a){
+      var on=!!chosenIds[a.id], pos=on ? chosen.indexOf(a) : -1;
+      var row=el("div","erow");
+      var cb=el("input"); cb.type="checkbox"; cb.checked=on;
+      // A cap on the bands, not on the rebbi: every band redraws a QR code per
+      // student, so a class of 30 with a dozen ticked is thousands of codes and
+      // a visibly frozen page. Six charts is already far past what a sheet can
+      // print legibly.
+      cb.disabled = !on && full;
+      if(cb.disabled) cb.title="Six charts is the most one sheet will take — untick one first.";
+      cb.addEventListener("change", function(){ seatPrintToggleMultiAct(a.id, cb.checked); });
+      row.appendChild(cb);
+      row.appendChild(el("span","grow", (on ? (pos+1)+". " : "")+a.name));
+      row.appendChild(el("span","code", reroutedActivity(a) ? personalActionSub(a) : fmtDelta(a.pts)));
+      if(on){
+        var up=el("button","btn btn-sm","▲"); up.type="button";
+        up.title="Print this chart higher up the sheet";
+        up.disabled = pos<=0;
+        up.addEventListener("click", function(){ seatPrintMoveMultiAct(a.id,-1); });
+        var dn=el("button","btn btn-sm","▼"); dn.type="button";
+        dn.title="Print this chart lower down the sheet";
+        dn.disabled = pos>=chosen.length-1;
+        dn.addEventListener("click", function(){ seatPrintMoveMultiAct(a.id,1); });
+        row.appendChild(up); row.appendChild(dn);
+      }
+      box.appendChild(row);
+    });
+  }
+
   /* HOW BIG THE CODES AND PHOTOS PRINT — one number, multiplying every icon cap
    * on the sheet (see the note above .seat-print-qr in the stylesheet).
    *
@@ -25002,6 +25163,10 @@ nameLine
   // set. Not stored: it is a property of the sheet just drawn, and re-deriving it
   // every render is what keeps it from going stale after a roster change.
   var seatPrintFitScale=1;
+  // Whether the sheet just drawn needed the tightened spacing to reach one page.
+  // Same kind of value as seatPrintFitScale: a property of the sheet on screen,
+  // re-derived every render, never stored.
+  var seatPrintFitCompact=false;
   /* THE BIGGEST SETTING THAT STILL CHANGES THE SHEET — null when the setting is
      the only thing limiting the size. Measured, not predicted, in
      seatPrintSyncIconSize() at the end of every render; see the long note there
@@ -25050,21 +25215,48 @@ nameLine
    *
    * Returns whether the sheet fits at the size it ended on.
    */
-  function seatPrintAutoFit(wrap, pagePx, canShrink){
+  function seatPrintAutoFit(wrap, pagePx, canShrink, canCompact){
     var scale=seatPrintIconScale();
     seatPrintFitScale=scale;
+    seatPrintFitCompact=false;
     if(wrap.scrollHeight<=pagePx) return true;
     if(!canShrink) return false;
-    for(var i=SEAT_ICON_STEPS.length-1;i>=0;i--){
-      var v=SEAT_ICON_STEPS[i];
-      if(v>=scale || v<SEAT_ICON_AUTO_FLOOR) continue;
-      wrap.style.setProperty("--seat-icon-scale", v);
-      seatPrintFitScale=v;
-      if(wrap.scrollHeight<=pagePx) return true;
+    function stepDown(){
+      for(var i=SEAT_ICON_STEPS.length-1;i>=0;i--){
+        var v=SEAT_ICON_STEPS[i];
+        if(v>=scale || v<SEAT_ICON_AUTO_FLOOR) continue;
+        wrap.style.setProperty("--seat-icon-scale", v);
+        seatPrintFitScale=v;
+        if(wrap.scrollHeight<=pagePx) return true;
+      }
+      return false;
     }
+    /* TWO AXES ON A STACKED SHEET, AND TIGHTENING COMES FIRST — deliberately.
+     *
+     * The code is the one thing on the page that has to work at arm's length
+     * with a scanner; the padding around it and the size of the name do not. So
+     * a stack spends its margins before it spends a single step of code size,
+     * and only shrinks the codes once tightening alone is not enough. On a sheet
+     * that would fit either way, that trade lands on the version with the bigger
+     * codes.
+     *
+     * Only ever on a multi-chart sheet (see the caller). List already fits
+     * itself by stepping the codes down, and a rebbi whose alphabetical sheet
+     * prints the same every week must not find its names suddenly a size smaller
+     * because a stacking option he has never opened exists.
+     */
+    if(canCompact){
+      wrap.classList.add("seat-print-compact");
+      seatPrintFitCompact=true;
+      if(wrap.scrollHeight<=pagePx) return true;
+      if(stepDown()) return true;
+      wrap.classList.remove("seat-print-compact");
+      seatPrintFitCompact=false;
+    } else if(stepDown()) return true;
     // Nothing fitted. Put his own size back rather than leaving the sheet at the
     // smallest one tried: two pages at the size he asked for is honest, whereas
-    // two pages of shrunken codes is just smaller and still two pages.
+    // two pages of shrunken codes is just smaller and still two pages. Same for
+    // the tightening above — a sheet that spills anyway should spill readable.
     wrap.style.setProperty("--seat-icon-scale", scale);
     seatPrintFitScale=scale;
     return false;
@@ -25142,6 +25334,11 @@ nameLine
         : (shown<set-0.001
             ? ("The cards are full at "+Math.round(shown*100)+"% — anything larger prints the same sheet.")
             : "");
+      // Said out loud rather than left as a mystery: on a stacked sheet the
+      // names and spacing may have been tightened even though the code size
+      // readout has not moved, and a rebbi comparing it to his usual sheet
+      // deserves to know which lever did it.
+      if(seatPrintFitCompact) val.title = (val.title ? val.title+" " : "")+"Names and spacing are tightened so the charts share one page.";
     }
     var sm=$("seatPrintIconSmaller"), bg=$("seatPrintIconBigger");
     if(sm){
@@ -25241,6 +25438,11 @@ nameLine
     // preview shows — one number, both documents, same as every other measurement
     // on this page.
     wrap.style.setProperty("--seat-icon-scale", seatPrintIconScale());
+    // Cleared here rather than only in seatPrintAutoFit(), because the two
+    // early returns below never reach it — and a tightened empty state, or a
+    // sheet that keeps compact spacing after the second chart is unticked, is a
+    // sheet describing a fit decision that is no longer being made.
+    wrap.classList.remove("seat-print-compact");
     var isList=seatPrintIsList();
     /* SEAT THE UNPLACED — the net under the two entry points, because arriving
      * is not the only way this sheet gets drawn.
@@ -25290,12 +25492,28 @@ nameLine
     var avatarMode = $("seatPrintAvatarMode") ? $("seatPrintAvatarMode").value : "qr";
     var showPts = $("seatPrintShowPoints") ? $("seatPrintShowPoints").checked : false;
     var rebbiView = $("seatPrintRebbiView") ? $("seatPrintRebbiView").checked : false;
-    var act = (seatPrintCodeKind(avatarMode)==="activity") ? actById(data.seatPrintOpts.activityId) : null;
-    if(seatPrintCodeKind(avatarMode)==="activity" && !act){
+    /* WHICH CHARTS THIS SHEET CARRIES, top to bottom — one entry per band.
+     *
+     * Exactly [null] in every mode that is not Activity, which is what keeps the
+     * ordinary sheet on the single-chart path below: no band wrapper, the same
+     * DOM it has always had, and therefore the same pagination. A rebbi's
+     * working sheet does not repaginate because a mode he does not use exists.
+     */
+    var actKind=seatPrintCodeKind(avatarMode);
+    var actList=[null];
+    if(actKind==="activity"){
+      actList = seatPrintMultiAct()
+        ? seatPrintChosenActivities()
+        : [actById(data.seatPrintOpts.activityId)].filter(function(a){ return !!a; });
+    }
+    var multiBands = actList.length>1;
+    if(actKind==="activity" && !actList.length){
       wrap.appendChild(el("div","seat-print-title", seatPrintTitle()));
-      wrap.appendChild(el("div","empty-state", data.activities.length
-        ? "Pick an activity above to print its seating chart."
-        : "Add an activity first, on the Activities tab."));
+      wrap.appendChild(el("div","empty-state", !data.activities.length
+        ? "Add an activity first, on the Activities tab."
+        : (seatPrintMultiAct()
+            ? "Tick the activities you want a chart for, above."
+            : "Pick an activity above to print its seating chart.")));
       if($("seatPrintFitWarning")) $("seatPrintFitWarning").style.display="none";
       seatPrintFitScale=seatPrintIconScale();
       seatPrintSyncIconSize();
@@ -25309,19 +25527,6 @@ nameLine
     // would otherwise get absurdly tall cards) — cards stay a compact, fixed
     // size and the grid is only as tall as it needs to be, same as on screen.
     wrap.appendChild(el("div","seat-print-title", seatPrintTitle()));
-    // A colored badge so a stack of per-activity sheets can be told apart at a
-    // glance while bouncing between activities — the color is derived from the
-    // activity id/name (activityPrintColor()), not stored, since activities
-    // have no color field of their own.
-    if(act){
-      var badgeWrap=el("div","seat-print-activity-badge-wrap");
-      var badge=el("div","seat-print-activity-badge",
-        act.name+" · "+(reroutedActivity(act) ? personalActionSub(act) : fmtDelta(act.pts)));
-      var actColor=activityPrintColor(act);
-      badge.style.borderColor=actColor; badge.style.color=actColor;
-      badgeWrap.appendChild(badge);
-      wrap.appendChild(badgeWrap);
-    }
     // Redraws both charts: this one because it is what the rebbi is looking at,
     // the live one because it is the same seating and must not go stale behind
     // him. Same function the seating editor that used to sit above this page
@@ -25329,6 +25534,30 @@ nameLine
     // Declared ahead of the layout branch because the unplaced tray in the tail
     // below still needs it.
     function seatRedraw(){ renderTapPanel(); renderSeatChartPrint(); }
+
+    /* ONE PASS PER BAND — normally exactly one, and then `host` IS `wrap` and
+     * the sheet is built into the page precisely as it always was. Everything
+     * inside reads the class, the layout and the settings from the closure, so
+     * a second band is the same chart with a different activity in the cards:
+     * one seating model, drawn twice, and a boy therefore sits in the same desk
+     * in every band. Seats stay draggable in all of them — dragging in any band
+     * writes the one layout and redraws them all. */
+    actList.forEach(function(act, bandIdx){
+    var host = multiBands ? el("div","seat-print-band") : wrap;
+    // A colored badge so a stack of per-activity sheets — or now a stack of
+    // charts on one sheet — can be told apart at a glance while bouncing
+    // between activities. The color is derived from the activity id/name
+    // (activityPrintColor()), not stored, since activities have no color field
+    // of their own.
+    if(act){
+      var badgeWrap=el("div","seat-print-activity-badge-wrap");
+      var badge=el("div","seat-print-activity-badge",
+        act.name+" · "+(reroutedActivity(act) ? personalActionSub(act) : fmtDelta(act.pts)));
+      var actColor=activityPrintColor(act);
+      badge.style.borderColor=actColor; badge.style.color=actColor;
+      badgeWrap.appendChild(badge);
+      host.appendChild(badgeWrap);
+    }
 
     if(isList){
       /* LIST — the whole class alphabetically by last name, no seats at all.
@@ -25373,8 +25602,8 @@ nameLine
         fillSeatPrintCard(card, s, avatarMode, act, showPts, hasQR);
         lgrid.appendChild(card);
       });
-      wrap.appendChild(lgrid);
-      if(!listStuds.length) wrap.appendChild(el("div","empty-state","No students in this class yet."));
+      host.appendChild(lgrid);
+      if(!listStuds.length) host.appendChild(el("div","empty-state","No students in this class yet."));
     } else {
     // "Rebbi's view": standing at the front facing the class is the exact
     // opposite orientation of the normal chart (which reads like a map, front
@@ -25388,7 +25617,13 @@ nameLine
     // SEE — writing by the display position would move the wrong boy.
     var displayOrder = lay.seats.map(function(sid, trueIdx){ return {sid:sid, trueIdx:trueIdx}; });
     if(rebbiView) displayOrder = displayOrder.slice().reverse();
-    if(!rebbiView) wrap.appendChild(el("div","seat-front","Front of room"));
+    /* ONE "Front of room" PER SHEET, not per band. The bands are the same room
+     * three times over, so three identical labels are noise on a page that is
+     * already fighting for height — and the label still lands where it means
+     * something: above the topmost chart normally, and below the bottom one in
+     * Rebbi's view, where the front of the room is at the foot of every band. */
+    var showFront = !multiBands || (rebbiView ? bandIdx===actList.length-1 : bandIdx===0);
+    if(!rebbiView && showFront) host.appendChild(el("div","seat-front","Front of room"));
     var grid=el("div","seat-grid print-seat-grid arranging");
     grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
     displayOrder.forEach(function(item){
@@ -25415,9 +25650,11 @@ nameLine
       wireSeatArrange(seat, lay, trueIdx, seatRedraw);
       grid.appendChild(seat);
     });
-    wrap.appendChild(grid);
-    if(rebbiView) wrap.appendChild(el("div","seat-front","Front of room"));
+    host.appendChild(grid);
+    if(rebbiView && showFront) host.appendChild(el("div","seat-front","Front of room"));
     }
+    if(multiBands) wrap.appendChild(host);
+    });
     // The footer arms an activity code to scan-then-scan-student; a merged
     // PA: code already carries the activity, so it would be redundant here
     // (and the checkbox that controls it is hidden in Activity mode too).
@@ -25476,8 +25713,19 @@ nameLine
     // The measurement is now also what drives List's auto-fit — same reading,
     // taken at up to a few sizes instead of one. See seatPrintAutoFit().
     var pageIn = data.seatPrintOrient==="landscape" ? 8.5 : 11;
-    var fits = seatPrintAutoFit(wrap, pageIn*96, isList);
+    /* A STACK OF CHARTS SHRINKS ITSELF, like List and unlike a lone seating
+     * chart. The reason the chart normally refuses to resize behind the rebbi
+     * is that he laid that page out himself — but asking for three charts on one
+     * page IS asking for them to be made to fit, and a stack drawn at his single
+     * -chart size would simply always be three pages. It still never goes below
+     * SEAT_ICON_AUTO_FLOOR, so a band that cannot fit and stay scannable spills
+     * onto page 2 whole rather than printing codes no scanner will read. */
+    var fits = seatPrintAutoFit(wrap, pageIn*96, isList || multiBands, multiBands);
     if(warnEl) warnEl.style.display = fits ? "none" : "block";
+    // "…printing fewer charts on the sheet…" is only advice when there is more
+    // than one chart on it.
+    var multiHint=$("seatPrintFitMultiHint");
+    if(multiHint) multiHint.style.display = multiBands ? "inline" : "none";
     // The suggested orientation flips with the current one — telling a rebbi
     // already printing landscape to "switch to Landscape" is useless advice.
     var orientHint=$("seatPrintFitOrientHint");
@@ -27098,6 +27346,16 @@ nameLine
     // way, is left exactly as the rebbi set it.
     if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
     if(typeof data.seatPrintOpts.activityId!=="string") data.seatPrintOpts.activityId="";
+    // SEVERAL ACTIVITY CHARTS ON ONE SHEET. Both fields are purely additive and
+    // default to the single-chart behaviour every existing save already has, so
+    // a rebbi's Monday sheet is unchanged until he asks for the stack himself.
+    // The order of `activityIds` IS the order the bands print in — it is the
+    // rebbi's chosen top-to-bottom, not a set — so it is stored as an array and
+    // never sorted behind him. Ids that no longer name an activity are pruned at
+    // render time rather than here, because an activity can be deleted, renamed
+    // or hidden from this class long after the last load.
+    if(typeof data.seatPrintOpts.multiActivity!=="boolean") data.seatPrintOpts.multiActivity=false;
+    if(!Array.isArray(data.seatPrintOpts.activityIds)) data.seatPrintOpts.activityIds=[];
     // Layout of the printed Activity Codes block — the same two choices the
     // chart on screen offers (data.actFooterGrouped / data.actFooterCols), kept
     // as separate fields rather than shared with it on purpose: a smartboard and
