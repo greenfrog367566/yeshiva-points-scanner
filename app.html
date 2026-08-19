@@ -5157,10 +5157,25 @@ function setupRoster() {
   }
 
   /* ---------- first-run: route new users through setup wizard ---------- */
+  // Two exemptions beyond skipSetup, both for the blank-device sign-in path
+  // (setup.html's Restore screen links here with ?signin=1). A rebbi signing
+  // in to get an existing class back has no local data yet BY DEFINITION, so
+  // without these this guard bounces him to the wizard twice over:
+  //   1. on the way OUT — the ?signin=1 check at the end of init would ask
+  //      for a Google redirect in the same turn this asks for setup.html,
+  //      i.e. two competing navigations, not a working flow;
+  //   2. on the way BACK — signInRedirectUri() deliberately returns a bare
+  //      /app.html with no query string (see its comment: that hard-coding
+  //      fixes a live redirect_uri_mismatch, so it must not be changed), and
+  //      localStorage is still empty at that point.
+  // The hash check covers case 2: pendingOAuthResult is parsed above, before
+  // this runs, and is non-null exactly while an OAuth response is in flight.
   try {
     if (!localStorage.getItem(KEY) &&
         !localStorage.getItem("menchmark_setup_complete") &&
-        location.search.indexOf("skipSetup") < 0) {
+        location.search.indexOf("skipSetup") < 0 &&
+        location.search.indexOf("signin=1") < 0 &&
+        !pendingOAuthResult) {
       location.replace("setup.html");
     }
   } catch(e) {}
@@ -7005,20 +7020,101 @@ function setupRoster() {
     signinState.driveRestoreOffer = null;
     if (typeof renderAccountSection === "function") renderAccountSection();
   }
+  // Writes a restored snapshot into THIS device's local `data`, through the
+  // exact pipeline the Settings "restore from backup file" handler uses —
+  // migrateData() -> load2fix() -> save(), then the same re-render list — so
+  // a class restored by signing in is indistinguishable from the same backup
+  // restored by hand. Deliberately routed through checkShulchaniModeOnRestore
+  // for the same reason: a coin-mode class must ask the same question here
+  // that it asks there, not silently open in the wrong mode.
+  //
+  // Callers MUST have established that there is nothing here to lose — this
+  // replaces local data wholesale (CLAUDE.md rule 1). Today's only callers
+  // gate on signinDetectLocalClass() returning null.
+  //
+  // `beforeSave` runs once the restored blob IS `data` but before it is
+  // persisted, so anything stamped onto the account (claim flags and the
+  // like) lands on the restored object and rides the same single save().
+  // Stamping after this call instead would be a silent bug: the restore
+  // replaces `data` wholesale, and checkShulchaniModeOnRestore can defer
+  // that replacement behind a modal, so a synchronous stamp would be
+  // written onto the old object and then thrown away.
+  function applyRestoredSnapshot(obj, doneMsg, beforeSave){
+    // Hard refusal, not an assumption about callers. This replaces the whole
+    // class; there is no caller that should ever want that on a device with
+    // students on it, so the destructive operation refuses rather than trusting
+    // whoever called it to have checked (CLAUDE.md rule 1).
+    //
+    // The gate this originally leaned on — signinDetectLocalClass() — is NOT a
+    // safe substitute, and that is worth spelling out because it reads like
+    // one: it answers "is there a class worth OFFERING TO UPLOAD", and returns
+    // null when the log is empty or the last scan is over 30 days old (see its
+    // three-signal test). A rebbi who set his class up in advance, or is back
+    // from a break, has a full roster and gets null from it. Restoring on that
+    // signal replaced a live class with an older Drive backup.
+    if (Array.isArray(data.students) && data.students.length > 0) return false;
+    checkShulchaniModeOnRestore(obj, function(resolved){
+      data = migrateData(resolved); load2fix();
+      if (typeof beforeSave === "function") beforeSave();
+      save();
+      clearStaleTicketPools();
+      $("schoolName").textContent = data.school;
+      $("bunkName").textContent = data.className;
+      $("sheetUrl").value = data.sheetUrl || "";
+      $("autoSheet").checked = (data.autoSheet !== false);
+      renderActButtons(); renderRecent(); renderStudents(); renderActivities();
+      renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
+      showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
+      if (typeof window._refreshTimerPanel === "function") window._refreshTimerPanel();
+      renderShulchaniStatus();
+      refreshLiveViews();
+      if (typeof refreshTrackedBadges === "function") refreshTrackedBadges();
+      if (doneMsg) notice(doneMsg);
+    });
+  }
+
   function signinAcceptDriveRestore(){
     var offer = signinState.driveRestoreOffer;
     if (!offer) { signinDeclineDriveRestore(); return; }
     signinState.error = null;
+
+    // Tier 2 keeps custody of its own class (#218, and
+    // Firebase_Rebuild_Scope.md's two-tier split): the backup comes DOWN to
+    // this device and nothing goes up. Uploading it would put a tier-2
+    // rebbi's class on the server, which is exactly what that split forbids.
+    if (!(data.account && data.account.schoolId != null)) {
+      var acct = data.account;
+      applyRestoredSnapshot(offer.normalized, "Your class is back on this device.", function(){
+        // The restored blob is a backup of some OTHER device's session, so it
+        // carries that device's account field (or none at all). Keep the one
+        // this tab just signed in as.
+        data.account = acct;
+        data.driveBackupEnabled = true;
+      });
+      signinState.step = "idle";
+      signinState.driveRestoreOffer = null;
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      if (typeof renderDriveBackupCard === "function") renderDriveBackupCard();
+      return Promise.resolve();
+    }
+
     return callCloudFunction("provisionRebbi", {
       mode: "backup", self: true, normalized: offer.normalized, deviceId: "signin-drive-restore"
     }, signinState.firebaseIdToken).then(function(res){
-      data.firebaseClaimedBy = signinState.firebaseUid;
-      data.firebaseMigrated = res.runId;
-      // Listing/fetching the Drive file already proved Drive access works —
-      // stamping this here avoids immediately re-prompting the forced
-      // Drive-connect gate right after a rebbi just used Drive.
-      data.driveBackupEnabled = true;
-      save();
+      // The class went UP to Firestore above; this brings it DOWN to this
+      // device too. Both halves are the point — without the restore, a rebbi
+      // who signs in on a new machine ends up correctly claimed server-side
+      // and still staring at an empty class.
+      var acct = data.account;
+      applyRestoredSnapshot(offer.normalized, "Your class is back on this device.", function(){
+        data.account = acct; // keep THIS tab's session, not the backup's
+        data.firebaseClaimedBy = signinState.firebaseUid;
+        data.firebaseMigrated = res.runId;
+        // Listing/fetching the Drive file already proved Drive access works —
+        // stamping this here avoids immediately re-prompting the forced
+        // Drive-connect gate right after a rebbi just used Drive.
+        data.driveBackupEnabled = true;
+      });
       signinState.step = "idle";
       signinState.driveRestoreOffer = null;
       signinState.lastReceipt = res.receipt;
@@ -7056,7 +7152,23 @@ function setupRoster() {
     });
   }
 
+  // Signing out on a borrowed computer. Sign-out has always deliberately left
+  // the class alone (an account is not a class), which is right on your own
+  // machine and wrong on a colleague's — a rebbi who borrows another rebbi's
+  // computer for one shiur should not leave his boys, scores and notes sitting
+  // on it. So the choice is asked rather than assumed, and only when there is
+  // actually something on this device to leave behind.
   function signinSignOut(){
+    if (Array.isArray(data.students) && data.students.length > 0) {
+      signinState.step = "needsSignOutChoice";
+      signinState.error = null;
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      return;
+    }
+    signinSignOutKeepingData();
+  }
+
+  function signinSignOutKeepingData(){
     data.account = null;
     save();
     signinState = { step: "idle", firebaseIdToken: null, firebaseUid: null, googleIdToken: null, email: null, displayName: null, error: null,
@@ -7067,6 +7179,92 @@ function setupRoster() {
     }
     if (typeof renderAccountSection === "function") renderAccountSection();
     if (typeof renderBackupRestoreCard === "function") renderBackupRestoreCard();
+  }
+
+  function signinCancelSignOut(){
+    signinState.step = "idle";
+    signinState.error = null;
+    if (typeof renderAccountSection === "function") renderAccountSection();
+  }
+
+  // Back up FIRST, and only wipe if that provably succeeded. A rebbi choosing
+  // this is on someone else's computer, which is exactly where "it'll be in
+  // Drive" must not be an assumption — if the backup cannot be written, the
+  // class stays put and he is told why. Losing a class here would be the
+  // worst possible outcome of a button whose whole purpose is tidiness.
+  function signinSignOutAndRemove(){
+    signinState.error = null;
+    if (!(data.driveBackupEnabled && driveSupported())) {
+      signinState.error = "Google Drive isn't connected on this computer, so there's nowhere safe to put your class first. " +
+        "Download a backup file (Settings → Backup & Restore) or connect Drive, then sign out again.";
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      return;
+    }
+    signinState.error = "Backing up your class to Drive…";
+    if (typeof renderAccountSection === "function") renderAccountSection();
+    return driveWriteBackup(true).then(function(ok){
+      if (!ok) {
+        signinState.error = "Couldn't back up to Drive just now, so nothing was removed — your class is still here. " +
+          "Check your connection and try again.";
+        if (typeof renderAccountSection === "function") renderAccountSection();
+        return false;
+      }
+      wipeLocalClass();
+      signinSignOutKeepingData(); // account cleared last, after the class is gone
+      notice("Signed out. Your class was backed up and removed from this computer.");
+      return true;
+    });
+  }
+
+  // Returns the device to a clean slate WITHOUT touching the Drive backup —
+  // the copy in Drive is the whole point, and is what the next sign-in on the
+  // rebbi's own computer restores from.
+  function wipeLocalClass(){
+    data = migrateData(JSON.parse(JSON.stringify(defaults)));
+    load2fix();
+    save();
+    $("schoolName").textContent = data.school;
+    $("bunkName").textContent = data.className;
+    $("sheetUrl").value = data.sheetUrl || "";
+    $("autoSheet").checked = (data.autoSheet !== false);
+    renderActButtons(); renderRecent(); renderStudents(); renderActivities();
+    renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
+    showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
+    if (typeof window._refreshTimerPanel === "function") window._refreshTimerPanel();
+    renderShulchaniStatus();
+    refreshLiveViews();
+    if (typeof refreshTrackedBadges === "function") refreshTrackedBadges();
+  }
+
+  function renderAccountSignOutStep(box){
+    var p = el("p", "view-note");
+    p.textContent = "Leave your class on this computer?";
+    box.appendChild(p);
+
+    var detail = el("p", "view-note");
+    detail.textContent = "\"" + (data.className || "Your class") + "\" — " +
+      data.students.length + " " + (data.students.length === 1 ? "boy" : "boys") +
+      ". If this is someone else's computer, remove it: it will be backed up to your Drive first, " +
+      "and comes back the next time you sign in on your own.";
+    box.appendChild(detail);
+
+    if (signinState.error) {
+      var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
+    }
+
+    var keepBtn = el("button", "btn btn-primary", "Keep it here");
+    keepBtn.addEventListener("click", signinSignOutKeepingData);
+    box.appendChild(keepBtn);
+
+    var removeBtn = el("button", "btn btn-sm", "Back up and remove it");
+    removeBtn.style.marginLeft = "8px";
+    removeBtn.addEventListener("click", signinSignOutAndRemove);
+    box.appendChild(removeBtn);
+
+    var cancelBtn = el("button", "btn btn-sm", "Cancel");
+    cancelBtn.style.marginLeft = "8px";
+    cancelBtn.addEventListener("click", signinCancelSignOut);
+    box.appendChild(cancelBtn);
   }
 
   // ---------- Step 3b: self-serve backup-upload restore ----------
@@ -10737,6 +10935,7 @@ function setupRoster() {
     if (signinState.step === "needsConflictChoice") { renderAccountConflictStep(box); return; }
     if (signinState.step === "needsDriveRestore") { renderAccountDriveRestoreStep(box); return; }
     if (signinState.step === "needsRoster") { renderAccountRosterStep(box); return; }
+    if (signinState.step === "needsSignOutChoice") { renderAccountSignOutStep(box); return; }
 
     if (data.account) {
       // Forced Drive connect: every rebbi, either tier, must connect Google
@@ -10873,7 +11072,15 @@ function setupRoster() {
   // and the button ready to retry.
   function renderAccountForceDriveStep(box){
     var p = el("p", "view-note");
-    p.textContent = "Connect Google Drive to back up your class before continuing — this only happens once.";
+    // A rebbi on a NEW computer has no class here to "back up" — he is trying
+    // to get one back, and asking him to connect Drive so it can be backed up
+    // describes the opposite of what he came to do. Same button, same one-time
+    // grant; only the reason changes, because on an empty device this consent
+    // is the step that finds his class rather than the step that protects it.
+    var emptyDevice = !(Array.isArray(data.students) && data.students.length > 0);
+    p.textContent = emptyDevice
+      ? "Looking for your class. Menchmark needs your permission to open the backup file it saved in your Google Drive — that is where your class is. This only happens once on this computer."
+      : "Connect Google Drive to back up your class before continuing — this only happens once.";
     box.appendChild(p);
     if (signinState.error) {
       var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
@@ -10889,14 +11096,17 @@ function setupRoster() {
   function renderAccountDriveRestoreStep(box){
     var offer = signinState.driveRestoreOffer;
     var p = el("p", "view-note");
-    p.textContent = "Found a backup in your Drive from " + signinRelativeDayText(offer.modifiedTs) + " — " +
-      offer.studentCount + " " + (offer.studentCount === 1 ? "student" : "students") +
-      (offer.className ? (", \"" + offer.className + "\"") : "") + ". Restore it?";
+    // Named as the thing he lost, not as a file operation: on a new computer
+    // this is the answer to "where is my class", and it should read that way.
+    p.textContent = "Found your class" +
+      (offer.className ? (" — \"" + offer.className + "\"" ) : "") + ", " +
+      offer.studentCount + " " + (offer.studentCount === 1 ? "boy" : "boys") +
+      ", backed up " + signinRelativeDayText(offer.modifiedTs) + ".";
     box.appendChild(p);
     if (signinState.error) {
       var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
     }
-    var restoreBtn = el("button", "btn btn-primary", "Restore this backup");
+    var restoreBtn = el("button", "btn btn-primary", "Bring it back");
     restoreBtn.addEventListener("click", signinAcceptDriveRestore);
     box.appendChild(restoreBtn);
     var skipBtn = el("button", "btn btn-sm", "Not now");
@@ -26056,8 +26266,22 @@ nameLine
   // backup at all is the overwhelmingly common case here, not an error.
   function signinMaybeOfferDriveRestore(){
     if (signinDriveRestoreChecked) return;
-    if (!(data.account && data.account.schoolId != null)) return;
+    // Deliberately NOT gated on tier any more. This began as step 3b's
+    // tier-1 existing-cohort upload, but the identical situation — signed in,
+    // no local class, a Drive backup sitting there — is if anything more
+    // common for tier 2, whose class lives in Drive and nowhere else. The
+    // two tiers diverge at accept time, not here: tier 1 uploads and
+    // restores, tier 2 only restores (see signinAcceptDriveRestore).
+    if (!data.account) return;
     if (data.firebaseClaimedBy) return;
+    // Blank devices only. Now that accepting this offer RESTORES (and not just
+    // uploads), offering it to a device that already has a roster would be
+    // offering to overwrite one class with another — and the caller's own
+    // signinDetectLocalClass() null does not mean "empty", only "no recent
+    // scans" (see applyRestoredSnapshot). Narrowing here rather than at accept
+    // time on purpose: an offer that says "your class comes back" must not
+    // appear where accepting it would do nothing, or do harm.
+    if (Array.isArray(data.students) && data.students.length > 0) return;
     if (!driveSupported()) return;
     signinDriveRestoreChecked = true;
     var chain = driveToken ? Promise.resolve() : driveWithRecovery(function(){
@@ -26189,6 +26413,27 @@ nameLine
     renderDriveBackupCard();
     signinState.error = null;
     if (typeof renderAccountSection === "function") renderAccountSection();
+
+    // A device with no roster must never write here. This is the first moment
+    // Drive access exists, and on a new device the very next thing that used
+    // to happen was writing the empty local class straight over the rebbi's
+    // real backup — the one thing he signed in to get back. Found live: it is
+    // how the backup file ended up holding an empty class.
+    //
+    // It is also the only moment the restore CAN be offered on a new device.
+    // Sign-in asks for openid/email/profile only; Drive is a separate consent,
+    // so signinMaybeOfferDriveRestore() at sign-in time always 401s on a
+    // device that has never connected Drive, and its catch is silent — the
+    // rebbi is told nothing and the feature looks dead. Running it here, once
+    // the token exists, is what makes "sign in on a new computer and get your
+    // class back" actually reachable.
+    if (!(Array.isArray(data.students) && data.students.length > 0)) {
+      if (data.account && !data.firebaseClaimedBy && typeof signinMaybeOfferDriveRestore === "function") {
+        signinDriveRestoreChecked = false; // this is a fresh, post-redirect look
+        signinMaybeOfferDriveRestore();
+      }
+      return;
+    }
     driveWriteBackup(false);
   }
 
@@ -26230,6 +26475,16 @@ nameLine
   function driveMaybeAutoWrite(){
     if (driveAutoWriteTriedThisSession) return;
     if (!data.driveBackupEnabled || !driveSupported()) return;
+    // Never let an empty device overwrite a real backup. This write PATCHes
+    // the one backup file in place, so a device with no roster on it silently
+    // replaces a good backup with nothing — once per page load, with no
+    // prompt and no status line, because this write is deliberately silent.
+    // Found live: a signed-in blank device rewrote the Drive backup to an
+    // empty class on every single load. An empty roster is never worth
+    // preserving, so there is nothing to weigh against the risk.
+    // Deliberately only the AUTOMATIC write: "Back up now" is an explicit
+    // instruction from the rebbi and still does exactly what he asked.
+    if (!(Array.isArray(data.students) && data.students.length > 0)) return;
     driveAutoWriteTriedThisSession = true;
     driveWriteBackup(true);
   }
