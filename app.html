@@ -1714,7 +1714,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     body{background:#fff}
     main{max-width:none;padding:0}
     .view{display:none!important}
-    #view-printSeats.active,#view-printStudents.active,#view-printActivities.active{display:block!important}
+    #view-printSeats.active,#view-printStudents.active,#view-printActivities.active,#view-printPrizes.active{display:block!important}
     .labels-grid{grid-template-columns:repeat(3,1fr);gap:8px;padding:0.4in 0.3in}
     .label{border:1px solid #bbb}
     h2.view-title{display:none}
@@ -4167,7 +4167,8 @@ function setupRoster() {
     <!-- ============ PRIZE STORE ============ -->
   <section id="view-store" class="view">
     <h2 class="view-title">Prize Store</h2>
-    <p class="view-note">Students spend their points to buy prizes. Set up prizes and their point cost, then pick a student (or scan) and tap what they want. Every prize also gets its own scan code on <b>Print: Activities</b> (the 🖨 on the Activities tab) — scan a prize, then scan or tap students, and the cost comes off each one's balance. Prizes are armed from the seating chart the same way activities are. <button class="btn btn-sm" id="coinGuideBtnStore" style="display:none">🪙 Coin Guide</button></p>
+    <p class="view-note">Students spend their points to buy prizes. Set up prizes and their point cost, then pick a student (or scan) and tap what they want. Every prize also gets its own scan code — scan a prize, then scan or tap students, and the cost comes off each one's balance. Prizes are armed from the seating chart the same way activities are. <button class="btn btn-sm" id="coinGuideBtnStore" style="display:none">🪙 Coin Guide</button></p>
+    <p class="view-note no-print" style="margin-top:-12px"><button class="btn btn-sm" id="printPrizesBtn">🖨 Print prize labels</button></p>
 
     <div class="card pad" style="margin-bottom:16px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Prizes for sale</h3>
@@ -4201,6 +4202,36 @@ function setupRoster() {
         Auto-mark new purchases as received (prize handed over at time of purchase)
       </label>
       <div id="storeHistory" class="row-list" style="padding:10px 14px"></div>
+    </div>
+  </section>
+
+  <!-- ============ PRINT: PRIZES (prize codes, from the Store tab) ============
+       Its own page rather than a section of Print: Activities. The two sheets
+       are used at different moments and get cut up differently: the activity
+       menu lives on a clipboard and is scanned all period, while prize cards
+       get taped to the prize box or the shelf the prize sits on. Prize codes
+       still print on the activity menu as well — this page is an addition, not
+       a move, so nothing a rebbi already prints changes.
+
+       Reads data.store.items DIRECTLY, not menuLabelItems(). That is the whole
+       point of it being the Store's own page: what prints here is what is in
+       the store, full stop. Routing it through the code picker's data.printExcluded
+       would mean a prize could go missing from this sheet because of a checkbox
+       on the Activities tab, with nothing here to explain it. ============ -->
+  <section id="view-printPrizes" class="view">
+    <h2 class="view-title">Print: Prizes</h2>
+    <div id="prizeLabelsBlock">
+      <p class="view-note no-print">One card per prize in your Store, with its cost and its own scan code. Scanning one <b>arms that prize</b> — the next student you scan or tap buys it, and the cost comes off his balance. Tape them to the prize box, or keep the sheet with the prizes themselves.</p>
+      <div class="toolbar no-print">
+        <select id="prizeLabelFormat" class="field" style="width:auto"></select>
+        <select id="prizeWhich" class="field" style="width:auto"><option value="">All prizes</option></select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.9rem;color:var(--muted)">Copies each <input id="prizeCopies" type="number" min="1" value="1" class="field" style="width:64px"></label>
+        <button class="btn btn-sm" id="prizeFillSheet" title="Fill one whole sheet with the selected prize">Fill a sheet (1 prize)</button>
+        <button class="btn btn-primary" id="printPrizes">🖨 Print prize labels</button>
+      </div>
+      <div id="prizePrintTitle" class="seat-print-title" style="display:none"></div>
+      <div class="labels-grid" id="prizeGrid"></div>
+      <div id="prizeAverySheet" class="avery-wrap"></div>
     </div>
   </section>
 
@@ -6306,7 +6337,10 @@ function setupRoster() {
     printSeats:"Seating chart & print",
     // The other three print views are not navigable — reached via 🖨 buttons on
     // their data-owner tabs.
-    printStudents:"Students", printActivities:"Activities", printPoints:"Points"
+    printStudents:"Students", printActivities:"Activities", printPoints:"Points",
+    // Reached by the 🖨 on the Store tab, the same way the three above are
+    // reached from theirs.
+    printPrizes:"Prizes"
   };
   var lastTabInGroup = {}; // remembers which subtab was last open per group
   var activeGroupName="scan", activeTabName="scan";
@@ -6316,7 +6350,7 @@ function setupRoster() {
     for(var g in TAB_GROUPS){ if(TAB_GROUPS[g].tabs.indexOf(tab)>=0) return g; }
     // Print tabs are no longer in any group but their views still exist
     // (accessed via buttons on data-owner tabs). Return the data-owner group.
-    var printOwner={"printStudents":"manage","printActivities":"manage","printSeats":"scan","printPoints":"standings"};
+    var printOwner={"printStudents":"manage","printActivities":"manage","printSeats":"scan","printPoints":"standings","printPrizes":"rewards"};
     if(printOwner[tab]) return printOwner[tab];
     return "scan";
   }
@@ -7486,7 +7520,7 @@ function setupRoster() {
   // Print group (which is about generating printable output, not live
   // interaction). Visible everywhere else, including Students/Activities
   // management, since scanning to double-check a QR code there is reasonable.
-  var GLOBAL_SCAN_BAR_HIDDEN_TABS=["settings","backup","students","activities","printStudents","printActivities","printSeats","printPoints","learn-text"];
+  var GLOBAL_SCAN_BAR_HIDDEN_TABS=["settings","backup","students","activities","printStudents","printActivities","printSeats","printPoints","printPrizes","learn-text"];
   function applyGlobalScanBarVisibility(tab){
     var bar=$("globalScanBar"); if(!bar) return;
     bar.classList.toggle("hidden-on-tab", GLOBAL_SCAN_BAR_HIDDEN_TABS.indexOf(tab)>=0);
@@ -7587,6 +7621,7 @@ function setupRoster() {
     if(tab==="students") renderStudents();
     if(tab==="activities") renderActivities();
     if(tab==="printStudents" || tab==="printActivities") renderLabels();
+    if(tab==="printPrizes") renderPrizeLabels();
     if(tab==="printSeats"){
       $("seatPrintAvatarMode").value = data.seatPrintOpts.avatarMode;
       $("seatPrintShowPoints").checked = data.seatPrintOpts.showPoints;
@@ -23293,6 +23328,9 @@ nameLine
     if($("view-printStudents").classList.contains("active") || $("view-printActivities").classList.contains("active")) renderLabels();
     if($("view-printSeats").classList.contains("active")) renderSeatChartPrint();
     if($("view-printPoints").classList.contains("active")) renderPointsPrint();
+    // The prize sheet's own title names the class, so it has to follow the
+    // picker even though the prizes themselves are shared across classes.
+    if($("view-printPrizes").classList.contains("active")) renderPrizeLabels();
     auctionPrizeId=null; auctionStudentId=null;
     if($("view-auction").classList.contains("active")) renderAuction();
     if(typeof pickerOpen!=="undefined" && pickerOpen) renderPicker();
@@ -24032,6 +24070,110 @@ nameLine
       mg.appendChild(card);
     });
   }
+  /* ---------- PRINT: PRIZES ----------
+   * The Store's own sheet. Deliberately simpler than renderMenuLabels(): there
+   * are no sections here and no Choose-codes step, because a prize list is
+   * already flat and already curated — it IS the store. Format, which one, and
+   * how many, which is the same trio every other label page offers.
+   */
+  function prizeLabelItems(){
+    var list=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    return list.map(function(it){
+      return {
+        qrText: "PRZ:"+it.id,
+        name: (it.emoji||"🎁")+" "+it.name,
+        // fmtVal() so a Shulchani class reads coins and a points class reads
+        // points, exactly as the same cost is written everywhere else.
+        sub: "costs "+fmtVal(it.cost)
+      };
+    });
+  }
+  function renderPrizeLabels(hasQR){
+    if(typeof hasQR==="undefined") hasQR=(typeof QRCode!=="undefined");
+    var fsel=$("prizeLabelFormat");
+    if(fsel.options.length!==LABEL_ORDER.length){
+      fsel.innerHTML="";
+      LABEL_ORDER.forEach(function(k){ var o=el("option",null, k==="tiles"?"Tiles (screen / cut-out)":LABEL_SPECS[k].name); o.value=k; fsel.appendChild(o); });
+    }
+    fsel.value=data.prizeLabelFormat||"tiles";
+    var avery=(data.prizeLabelFormat||"tiles")!=="tiles";
+    var pg=$("prizeGrid"), sheet=$("prizeAverySheet");
+    pg.style.display = avery?"none":"grid";
+    sheet.style.display = avery?"block":"none";
+    pg.innerHTML=""; sheet.innerHTML="";
+
+    var items=prizeLabelItems();
+
+    // Named for the class like every other printed sheet, so a rebbi with two
+    // shiurim can tell two printouts apart. Tiles only — an extra element above
+    // an Avery sheet pushes every die-cut label out of position.
+    var pt=$("prizePrintTitle");
+    if(pt){ pt.textContent=(data.currentClass||"All Classes")+" · Prize Store"; pt.style.display=(avery||!items.length)?"none":"block"; }
+
+    // An empty store is the ordinary state for a rebbi who has not set one up,
+    // so this says where to go rather than reading as a broken page.
+    if(!items.length){
+      (avery?sheet:pg).appendChild(el("div","empty-state","No prizes yet — add some on the Store tab and they'll print here."));
+      var wsel0=$("prizeWhich"); wsel0.innerHTML='<option value="">All prizes</option>';
+      return;
+    }
+
+    /* ONE PRIZE, AND HOW MANY — same pair the student labels and the activity
+     * menu carry. A prize box wants several copies of one card far more often
+     * than it wants one of each, which is exactly what "Fill a sheet" is for. */
+    var wsel=$("prizeWhich"), wcur=wsel.value;
+    wsel.innerHTML='<option value="">All prizes</option>';
+    items.forEach(function(it){ var o=el("option",null,it.name); o.value=it.qrText; wsel.appendChild(o); });
+    if(items.some(function(it){ return it.qrText===wcur; })) wsel.value=wcur; else wsel.value="";
+    var which=wsel.value;
+    if(which) items=items.filter(function(it){ return it.qrText===which; });
+
+    // Same clamp the other two label pages use, for the same reason: this
+    // multiplies straight into a QR-generating loop, so a pasted 99999 would
+    // hang the tab rather than print anything.
+    var copies=Math.max(1, Math.min(400, parseInt($("prizeCopies").value,10)||1));
+    if(copies>1){
+      var expanded=[];
+      items.forEach(function(it){ for(var k=0;k<copies;k++) expanded.push(it); });
+      items=expanded;
+    }
+
+    if(avery){
+      var averyItems=items.map(function(it){ return {qrText:it.qrText, line1:it.name, line2:it.sub}; });
+      renderAverySheetGeneric(averyItems, sheet, data.prizeLabelFormat, hasQR);
+      return;
+    }
+    items.forEach(function(it){
+      var card=el("div","label");
+      var qrw=el("div","qrwrap");
+      if(hasQR){
+        var holder=el("div"); qrw.appendChild(holder);
+        try{ new QRCode(holder,{text:it.qrText,width:104,height:104,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ qrw.appendChild(el("div","lc","(QR error)")); }
+      } else {
+        qrw.appendChild(el("div","lc","Connect to internet to show QR"));
+      }
+      card.appendChild(qrw);
+      card.appendChild(el("div","ln",it.name));
+      card.appendChild(el("div","lg",it.sub));
+      pg.appendChild(card);
+    });
+  }
+  $("printPrizesBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "printPrizes" }); });
+  // Format is the one choice here that IS remembered, same rule the other label
+  // pages follow: it is a property of the paper in the tray, not of what the
+  // rebbi happens to be printing this minute. "Which prize" and "copies" are
+  // deliberately not persisted.
+  $("prizeLabelFormat").addEventListener("change", function(){ data.prizeLabelFormat=this.value; save(); renderPrizeLabels(); });
+  $("prizeWhich").addEventListener("change", function(){ renderPrizeLabels(); });
+  $("prizeCopies").addEventListener("input", function(){ renderPrizeLabels(); });
+  $("prizeFillSheet").addEventListener("click", function(){
+    var fmt=data.prizeLabelFormat||"tiles";
+    var per = (fmt==="tiles") ? 12 : (LABEL_SPECS[fmt] ? LABEL_SPECS[fmt].cols*LABEL_SPECS[fmt].rows : 12);
+    if(!$("prizeWhich").value){ notice("Pick one prize in the “All prizes” dropdown first — then this fills a whole sheet with just that one."); return; }
+    $("prizeCopies").value=per; renderPrizeLabels();
+  });
+  $("printPrizes").addEventListener("click", function(){ window.print(); });
   function addPersonalQrCard(grid, qrText, title, pointText, hint, negative, hasQR){
     var card=el("div","personal-qr-card");
     card.appendChild(el("div","personal-label",title));
@@ -27164,6 +27306,11 @@ nameLine
     if(typeof data.teachFlipKeys!=="boolean") data.teachFlipKeys=false;
     if(typeof data.teachFlipCols!=="boolean") data.teachFlipCols=false;
     if(typeof data.menuLabelFormat!=="string") data.menuLabelFormat="tiles";
+    // Print: Prizes' own paper choice. Additive and independent of
+    // menuLabelFormat on purpose — the two sheets are cut up differently, so a
+    // rebbi printing his activity menu on Avery labels may well want the prize
+    // cards as big cut-out tiles.
+    if(typeof data.prizeLabelFormat!=="string") data.prizeLabelFormat="tiles";
     if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages";
     if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
     // Scannable seating chart (#scannable-screen). Stored so a rebbi who turns
