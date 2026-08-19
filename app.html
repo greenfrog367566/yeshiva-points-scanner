@@ -7111,7 +7111,23 @@ function setupRoster() {
     });
   }
 
+  // Signing out on a borrowed computer. Sign-out has always deliberately left
+  // the class alone (an account is not a class), which is right on your own
+  // machine and wrong on a colleague's — a rebbi who borrows another rebbi's
+  // computer for one shiur should not leave his boys, scores and notes sitting
+  // on it. So the choice is asked rather than assumed, and only when there is
+  // actually something on this device to leave behind.
   function signinSignOut(){
+    if (Array.isArray(data.students) && data.students.length > 0) {
+      signinState.step = "needsSignOutChoice";
+      signinState.error = null;
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      return;
+    }
+    signinSignOutKeepingData();
+  }
+
+  function signinSignOutKeepingData(){
     data.account = null;
     save();
     signinState = { step: "idle", firebaseIdToken: null, firebaseUid: null, googleIdToken: null, email: null, displayName: null, error: null,
@@ -7122,6 +7138,92 @@ function setupRoster() {
     }
     if (typeof renderAccountSection === "function") renderAccountSection();
     if (typeof renderBackupRestoreCard === "function") renderBackupRestoreCard();
+  }
+
+  function signinCancelSignOut(){
+    signinState.step = "idle";
+    signinState.error = null;
+    if (typeof renderAccountSection === "function") renderAccountSection();
+  }
+
+  // Back up FIRST, and only wipe if that provably succeeded. A rebbi choosing
+  // this is on someone else's computer, which is exactly where "it'll be in
+  // Drive" must not be an assumption — if the backup cannot be written, the
+  // class stays put and he is told why. Losing a class here would be the
+  // worst possible outcome of a button whose whole purpose is tidiness.
+  function signinSignOutAndRemove(){
+    signinState.error = null;
+    if (!(data.driveBackupEnabled && driveSupported())) {
+      signinState.error = "Google Drive isn't connected on this computer, so there's nowhere safe to put your class first. " +
+        "Download a backup file (Settings → Backup & Restore) or connect Drive, then sign out again.";
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      return;
+    }
+    signinState.error = "Backing up your class to Drive…";
+    if (typeof renderAccountSection === "function") renderAccountSection();
+    return driveWriteBackup(true).then(function(ok){
+      if (!ok) {
+        signinState.error = "Couldn't back up to Drive just now, so nothing was removed — your class is still here. " +
+          "Check your connection and try again.";
+        if (typeof renderAccountSection === "function") renderAccountSection();
+        return false;
+      }
+      wipeLocalClass();
+      signinSignOutKeepingData(); // account cleared last, after the class is gone
+      notice("Signed out. Your class was backed up and removed from this computer.");
+      return true;
+    });
+  }
+
+  // Returns the device to a clean slate WITHOUT touching the Drive backup —
+  // the copy in Drive is the whole point, and is what the next sign-in on the
+  // rebbi's own computer restores from.
+  function wipeLocalClass(){
+    data = migrateData(JSON.parse(JSON.stringify(defaults)));
+    load2fix();
+    save();
+    $("schoolName").textContent = data.school;
+    $("bunkName").textContent = data.className;
+    $("sheetUrl").value = data.sheetUrl || "";
+    $("autoSheet").checked = (data.autoSheet !== false);
+    renderActButtons(); renderRecent(); renderStudents(); renderActivities();
+    renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
+    showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
+    if (typeof window._refreshTimerPanel === "function") window._refreshTimerPanel();
+    renderShulchaniStatus();
+    refreshLiveViews();
+    if (typeof refreshTrackedBadges === "function") refreshTrackedBadges();
+  }
+
+  function renderAccountSignOutStep(box){
+    var p = el("p", "view-note");
+    p.textContent = "Leave your class on this computer?";
+    box.appendChild(p);
+
+    var detail = el("p", "view-note");
+    detail.textContent = "\"" + (data.className || "Your class") + "\" — " +
+      data.students.length + " " + (data.students.length === 1 ? "boy" : "boys") +
+      ". If this is someone else's computer, remove it: it will be backed up to your Drive first, " +
+      "and comes back the next time you sign in on your own.";
+    box.appendChild(detail);
+
+    if (signinState.error) {
+      var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
+    }
+
+    var keepBtn = el("button", "btn btn-primary", "Keep it here");
+    keepBtn.addEventListener("click", signinSignOutKeepingData);
+    box.appendChild(keepBtn);
+
+    var removeBtn = el("button", "btn btn-sm", "Back up and remove it");
+    removeBtn.style.marginLeft = "8px";
+    removeBtn.addEventListener("click", signinSignOutAndRemove);
+    box.appendChild(removeBtn);
+
+    var cancelBtn = el("button", "btn btn-sm", "Cancel");
+    cancelBtn.style.marginLeft = "8px";
+    cancelBtn.addEventListener("click", signinCancelSignOut);
+    box.appendChild(cancelBtn);
   }
 
   // ---------- Step 3b: self-serve backup-upload restore ----------
@@ -10786,6 +10888,7 @@ function setupRoster() {
     if (signinState.step === "needsConflictChoice") { renderAccountConflictStep(box); return; }
     if (signinState.step === "needsDriveRestore") { renderAccountDriveRestoreStep(box); return; }
     if (signinState.step === "needsRoster") { renderAccountRosterStep(box); return; }
+    if (signinState.step === "needsSignOutChoice") { renderAccountSignOutStep(box); return; }
 
     if (data.account) {
       // Forced Drive connect: every rebbi, either tier, must connect Google
@@ -10922,7 +11025,15 @@ function setupRoster() {
   // and the button ready to retry.
   function renderAccountForceDriveStep(box){
     var p = el("p", "view-note");
-    p.textContent = "Connect Google Drive to back up your class before continuing — this only happens once.";
+    // A rebbi on a NEW computer has no class here to "back up" — he is trying
+    // to get one back, and asking him to connect Drive so it can be backed up
+    // describes the opposite of what he came to do. Same button, same one-time
+    // grant; only the reason changes, because on an empty device this consent
+    // is the step that finds his class rather than the step that protects it.
+    var emptyDevice = !(Array.isArray(data.students) && data.students.length > 0);
+    p.textContent = emptyDevice
+      ? "Looking for your class. Menchmark needs your permission to open the backup file it saved in your Google Drive — that is where your class is. This only happens once on this computer."
+      : "Connect Google Drive to back up your class before continuing — this only happens once.";
     box.appendChild(p);
     if (signinState.error) {
       var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
@@ -10938,14 +11049,17 @@ function setupRoster() {
   function renderAccountDriveRestoreStep(box){
     var offer = signinState.driveRestoreOffer;
     var p = el("p", "view-note");
-    p.textContent = "Found a backup in your Drive from " + signinRelativeDayText(offer.modifiedTs) + " — " +
-      offer.studentCount + " " + (offer.studentCount === 1 ? "student" : "students") +
-      (offer.className ? (", \"" + offer.className + "\"") : "") + ". Restore it?";
+    // Named as the thing he lost, not as a file operation: on a new computer
+    // this is the answer to "where is my class", and it should read that way.
+    p.textContent = "Found your class" +
+      (offer.className ? (" — \"" + offer.className + "\"" ) : "") + ", " +
+      offer.studentCount + " " + (offer.studentCount === 1 ? "boy" : "boys") +
+      ", backed up " + signinRelativeDayText(offer.modifiedTs) + ".";
     box.appendChild(p);
     if (signinState.error) {
       var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
     }
-    var restoreBtn = el("button", "btn btn-primary", "Restore this backup");
+    var restoreBtn = el("button", "btn btn-primary", "Bring it back");
     restoreBtn.addEventListener("click", signinAcceptDriveRestore);
     box.appendChild(restoreBtn);
     var skipBtn = el("button", "btn btn-sm", "Not now");
