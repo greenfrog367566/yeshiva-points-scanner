@@ -5156,10 +5156,25 @@ function setupRoster() {
   }
 
   /* ---------- first-run: route new users through setup wizard ---------- */
+  // Two exemptions beyond skipSetup, both for the blank-device sign-in path
+  // (setup.html's Restore screen links here with ?signin=1). A rebbi signing
+  // in to get an existing class back has no local data yet BY DEFINITION, so
+  // without these this guard bounces him to the wizard twice over:
+  //   1. on the way OUT — the ?signin=1 check at the end of init would ask
+  //      for a Google redirect in the same turn this asks for setup.html,
+  //      i.e. two competing navigations, not a working flow;
+  //   2. on the way BACK — signInRedirectUri() deliberately returns a bare
+  //      /app.html with no query string (see its comment: that hard-coding
+  //      fixes a live redirect_uri_mismatch, so it must not be changed), and
+  //      localStorage is still empty at that point.
+  // The hash check covers case 2: pendingOAuthResult is parsed above, before
+  // this runs, and is non-null exactly while an OAuth response is in flight.
   try {
     if (!localStorage.getItem(KEY) &&
         !localStorage.getItem("menchmark_setup_complete") &&
-        location.search.indexOf("skipSetup") < 0) {
+        location.search.indexOf("skipSetup") < 0 &&
+        location.search.indexOf("signin=1") < 0 &&
+        !pendingOAuthResult) {
       location.replace("setup.html");
     }
   } catch(e) {}
@@ -6964,20 +6979,88 @@ function setupRoster() {
     signinState.driveRestoreOffer = null;
     if (typeof renderAccountSection === "function") renderAccountSection();
   }
+  // Writes a restored snapshot into THIS device's local `data`, through the
+  // exact pipeline the Settings "restore from backup file" handler uses —
+  // migrateData() -> load2fix() -> save(), then the same re-render list — so
+  // a class restored by signing in is indistinguishable from the same backup
+  // restored by hand. Deliberately routed through checkShulchaniModeOnRestore
+  // for the same reason: a coin-mode class must ask the same question here
+  // that it asks there, not silently open in the wrong mode.
+  //
+  // Callers MUST have established that there is nothing here to lose — this
+  // replaces local data wholesale (CLAUDE.md rule 1). Today's only callers
+  // gate on signinDetectLocalClass() returning null.
+  //
+  // `beforeSave` runs once the restored blob IS `data` but before it is
+  // persisted, so anything stamped onto the account (claim flags and the
+  // like) lands on the restored object and rides the same single save().
+  // Stamping after this call instead would be a silent bug: the restore
+  // replaces `data` wholesale, and checkShulchaniModeOnRestore can defer
+  // that replacement behind a modal, so a synchronous stamp would be
+  // written onto the old object and then thrown away.
+  function applyRestoredSnapshot(obj, doneMsg, beforeSave){
+    checkShulchaniModeOnRestore(obj, function(resolved){
+      data = migrateData(resolved); load2fix();
+      if (typeof beforeSave === "function") beforeSave();
+      save();
+      clearStaleTicketPools();
+      $("schoolName").textContent = data.school;
+      $("bunkName").textContent = data.className;
+      $("sheetUrl").value = data.sheetUrl || "";
+      $("autoSheet").checked = (data.autoSheet !== false);
+      renderActButtons(); renderRecent(); renderStudents(); renderActivities();
+      renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
+      showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
+      if (typeof window._refreshTimerPanel === "function") window._refreshTimerPanel();
+      renderShulchaniStatus();
+      refreshLiveViews();
+      if (typeof refreshTrackedBadges === "function") refreshTrackedBadges();
+      if (doneMsg) notice(doneMsg);
+    });
+  }
+
   function signinAcceptDriveRestore(){
     var offer = signinState.driveRestoreOffer;
     if (!offer) { signinDeclineDriveRestore(); return; }
     signinState.error = null;
+
+    // Tier 2 keeps custody of its own class (#218, and
+    // Firebase_Rebuild_Scope.md's two-tier split): the backup comes DOWN to
+    // this device and nothing goes up. Uploading it would put a tier-2
+    // rebbi's class on the server, which is exactly what that split forbids.
+    if (!(data.account && data.account.schoolId != null)) {
+      var acct = data.account;
+      applyRestoredSnapshot(offer.normalized, "Your class is back on this device.", function(){
+        // The restored blob is a backup of some OTHER device's session, so it
+        // carries that device's account field (or none at all). Keep the one
+        // this tab just signed in as.
+        data.account = acct;
+        data.driveBackupEnabled = true;
+      });
+      signinState.step = "idle";
+      signinState.driveRestoreOffer = null;
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      if (typeof renderDriveBackupCard === "function") renderDriveBackupCard();
+      return Promise.resolve();
+    }
+
     return callCloudFunction("provisionRebbi", {
       mode: "backup", self: true, normalized: offer.normalized, deviceId: "signin-drive-restore"
     }, signinState.firebaseIdToken).then(function(res){
-      data.firebaseClaimedBy = signinState.firebaseUid;
-      data.firebaseMigrated = res.runId;
-      // Listing/fetching the Drive file already proved Drive access works —
-      // stamping this here avoids immediately re-prompting the forced
-      // Drive-connect gate right after a rebbi just used Drive.
-      data.driveBackupEnabled = true;
-      save();
+      // The class went UP to Firestore above; this brings it DOWN to this
+      // device too. Both halves are the point — without the restore, a rebbi
+      // who signs in on a new machine ends up correctly claimed server-side
+      // and still staring at an empty class.
+      var acct = data.account;
+      applyRestoredSnapshot(offer.normalized, "Your class is back on this device.", function(){
+        data.account = acct; // keep THIS tab's session, not the backup's
+        data.firebaseClaimedBy = signinState.firebaseUid;
+        data.firebaseMigrated = res.runId;
+        // Listing/fetching the Drive file already proved Drive access works —
+        // stamping this here avoids immediately re-prompting the forced
+        // Drive-connect gate right after a rebbi just used Drive.
+        data.driveBackupEnabled = true;
+      });
       signinState.step = "idle";
       signinState.driveRestoreOffer = null;
       signinState.lastReceipt = res.receipt;
@@ -25653,7 +25736,13 @@ nameLine
   // backup at all is the overwhelmingly common case here, not an error.
   function signinMaybeOfferDriveRestore(){
     if (signinDriveRestoreChecked) return;
-    if (!(data.account && data.account.schoolId != null)) return;
+    // Deliberately NOT gated on tier any more. This began as step 3b's
+    // tier-1 existing-cohort upload, but the identical situation — signed in,
+    // no local class, a Drive backup sitting there — is if anything more
+    // common for tier 2, whose class lives in Drive and nowhere else. The
+    // two tiers diverge at accept time, not here: tier 1 uploads and
+    // restores, tier 2 only restores (see signinAcceptDriveRestore).
+    if (!data.account) return;
     if (data.firebaseClaimedBy) return;
     if (!driveSupported()) return;
     signinDriveRestoreChecked = true;
