@@ -1087,18 +1087,248 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .drop-row.sel{outline:3px solid var(--ink);background:var(--brass-soft)}
   .drop-row.shake{animation:shake .32s}
   @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
-  /* Floating launcher buttons (Points, Timer, Picker) — fixed regardless of
-     scroll, draggable to anywhere on screen, position remembered per teacher
-     in data.fabPos. Stay below the panels they open (z-index 200/201) so an
-     open panel always sits on top of its own launcher. Default stack is
-     bottom-right; a saved position overrides it via inline left/top (see
-     makeFabDraggable). */
-  .fab-btn{position:fixed;right:16px;z-index:190;width:52px;height:52px;border-radius:50%;border:1px solid #41507f;background:var(--ink);color:#fff;font-size:1.3rem;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 8px 24px rgba(20,26,46,.32);cursor:grab;touch-action:none;user-select:none}
-  .fab-btn:active{cursor:grabbing}
+  /* Floating tool buttons (Points, Timer, Picker, Board) — locked to the
+     bottom-right stack, always. Stay below the panels they open (z-index
+     200/201) so an open panel always sits on top of its own launcher.
+     #fabLauncher is the one always-visible trigger; the four tools
+     (.fab-tool) are hidden until body.fab-tray-open, then stack above it —
+     collapseFabTray() closes the tray again once a tool is tapped, same as
+     any speed-dial menu. data.fabPos (the old per-teacher dropped position)
+     is unused now but stays in the data model — an existing field, never
+     removed, per rule 1. */
+  .fab-btn{position:fixed;right:16px;z-index:190;width:52px;height:52px;border-radius:50%;border:1px solid #41507f;background:var(--ink);color:#fff;font-size:1.3rem;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 8px 24px rgba(20,26,46,.32);cursor:pointer;user-select:none}
   .fab-btn:hover{background:#26315a}
-  #fsBtn.fab-btn{bottom:16px}
-  #timerBtn.fab-btn{bottom:80px}
-  #pickerBtn.fab-btn{bottom:144px}
+  #fabLauncher.fab-btn{bottom:16px;font-size:1.7rem;font-weight:600;line-height:1;transition:transform 160ms ease}
+  #fabLauncher.fab-btn.open{transform:rotate(45deg)}
+  .fab-tool{display:none}
+  body.fab-tray-open .fab-tool{display:flex}
+  #fsBtn.fab-btn{bottom:80px}
+  #timerBtn.fab-btn{bottom:144px}
+  #pickerBtn.fab-btn{bottom:208px}
+  #boardBtn.fab-btn{bottom:272px}
+  @media (prefers-reduced-motion:reduce){ #fabLauncher.fab-btn{ transition:none } }
+
+  /* Board (4th FAB): fullscreen auto-fit big-text display for homework/
+     announcements. Unlike the other three FABs this opens a full-viewport
+     takeover, not a small docked panel — the point is a screen the class
+     reads from across the room. Every control lives INSIDE #boardOverlay so
+     the --board-* tokens below (swapped per data.boardSkin) reach them
+     through normal inheritance; keep new controls nested here rather than
+     siblings, or they won't see the tokens. */
+  /* Tokens live on body, not #boardOverlay — #boardBtn (the close pill while
+     the board is open) is a SIBLING of #boardOverlay, not a descendant, so a
+     custom property scoped to the overlay never reaches it. Same class of
+     bug as the standalone prototype had; fixed there by scoping to body,
+     fixed here the same way. data-skin is set on body to match (see
+     boardOpen()/boardClose()/skinBtn's handler). */
+  body{
+    --board-ink:#F2EFE4; --board-accent:#D9A62E; --board-divider:rgba(242,239,228,.14);
+    --board-placeholder:rgba(242,239,228,.32); --board-chip-bg:rgba(15,23,18,.82);
+    --board-chip-border:rgba(242,239,228,.22); --board-grip:rgba(242,239,228,.55);
+    --board-btn-bg:rgba(242,239,228,.06); --board-btn-border:rgba(242,239,228,.25);
+    --board-btn-fg:rgba(242,239,228,.55); --board-drop-hi:rgba(217,166,46,.55);
+    --board-text-shadow:0 1px 0 rgba(0,0,0,.25);
+  }
+  body[data-skin="light"]{
+    --board-ink:#14171C; --board-accent:#1B57C7; --board-divider:rgba(20,23,28,.15);
+    --board-placeholder:rgba(20,23,28,.32); --board-chip-bg:rgba(255,255,255,.92);
+    --board-chip-border:rgba(20,23,28,.16); --board-grip:rgba(20,23,28,.5);
+    --board-btn-bg:rgba(20,23,28,.05); --board-btn-border:rgba(20,23,28,.18);
+    --board-btn-fg:rgba(20,23,28,.55); --board-drop-hi:rgba(27,87,199,.55);
+    --board-text-shadow:none;
+  }
+  #boardOverlay{
+    display:none; position:fixed; inset:0; z-index:400;
+    font-family:var(--sans);
+  }
+  #boardStage{
+    position:absolute; inset:0; display:grid;
+    grid-gap:clamp(.6rem,1.8vw,1.6rem);
+    padding:clamp(.4rem,1.2vw,.9rem);
+    transition:background 180ms ease, transform 200ms ease, opacity 200ms ease;
+    background:radial-gradient(ellipse at 18% -10%,#24382C 0%,transparent 55%),radial-gradient(ellipse at 100% 110%,#1B2E22 0%,transparent 60%),#16241C;
+  }
+  body[data-skin="light"] #boardStage{
+    background:linear-gradient(115deg,rgba(214,227,238,.5) 0%,rgba(214,227,238,0) 24%,rgba(214,227,238,0) 76%,rgba(214,227,238,.4) 100%),radial-gradient(ellipse at 12% -18%,rgba(255,255,255,.95) 0%,transparent 55%),#FBFCFB;
+  }
+  .board-cell{
+    position:relative; border-radius:6px; display:flex; flex-direction:column;
+    padding:clamp(.1rem,.35vw,.2rem) clamp(.5rem,2vw,1.4rem) clamp(.5rem,2vw,1.4rem);
+    gap:clamp(.08rem,.3vw,.15rem); min-height:0; min-width:0;
+    transition:outline-color 120ms ease; outline:2px dashed transparent; outline-offset:-2px;
+  }
+  .board-textwrap{ flex:1; min-height:0; min-width:0; display:flex; align-items:center; justify-content:center; }
+  .board-cell.drag-over{ outline-color:var(--board-drop-hi) }
+  .board-cell.dragging{ opacity:.45 }
+  #boardStage[data-count="2"] .board-cell:first-child,
+  #boardStage[data-count="4"] .board-cell:nth-child(-n+2){ border-bottom:2px dashed var(--board-divider) }
+  #boardStage[data-count="3"] .board-cell:nth-child(2){ border-right:2px dashed var(--board-divider) }
+  #boardStage[data-count="4"] .board-cell:nth-child(odd){ border-right:2px dashed var(--board-divider) }
+  .board-controls{
+    align-self:flex-start; flex-shrink:0; display:flex; flex-direction:row; align-items:center; gap:.4rem;
+    background:var(--board-chip-bg); border:1px solid var(--board-chip-border); border-radius:7px; padding:.12rem .32rem;
+  }
+  .board-grip{ color:var(--board-grip); font-size:.85rem; letter-spacing:-1px; cursor:grab; user-select:none; padding:0 .1rem; line-height:1 }
+  .board-grip:active{ cursor:grabbing }
+  .board-swatch{
+    width:.95rem; height:.95rem; border-radius:50%; border:1px solid var(--board-chip-border);
+    background:var(--sw); padding:0; cursor:pointer; transition:transform 100ms ease, box-shadow 100ms ease;
+  }
+  .board-swatch:hover{ transform:scale(1.15) }
+  .board-swatch.active{ box-shadow:0 0 0 2px var(--board-chip-bg), 0 0 0 3.5px var(--board-accent) }
+  .board-swatch:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px }
+  .board-save{
+    display:flex; align-items:center; justify-content:center; color:var(--board-grip);
+    background:transparent; border:none; padding:0 .2rem; cursor:pointer; line-height:1;
+    transition:color 120ms ease, transform 100ms ease;
+  }
+  .board-save:hover{ color:var(--board-accent) }
+  .board-save:active{ transform:scale(.9) }
+  .board-save:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px }
+  .board-save svg{ display:block }
+  .board-save.saved{ color:var(--board-accent) }
+  .board-save.saved svg path{ fill:currentColor }
+  .board-celltext{
+    width:100%; text-align:center; color:var(--board-ink); font-weight:800; line-height:1.08;
+    letter-spacing:-.01em; white-space:pre-wrap; overflow-wrap:normal; word-break:normal;
+    outline:none; text-shadow:var(--board-text-shadow); cursor:text;
+  }
+  .board-celltext:empty::before{
+    content:attr(data-placeholder); color:var(--board-placeholder); font-weight:600;
+    font-size:clamp(1.15rem,3.1vw,2.1rem); line-height:1.35;
+  }
+  .board-remove{
+    position:absolute; top:clamp(.15rem,.6vw,.35rem); right:clamp(.2rem,.8vw,.5rem);
+    width:1.7rem; height:1.7rem; border-radius:50%; border:1px solid var(--board-btn-border);
+    background:var(--board-btn-bg); color:var(--board-btn-fg); font-size:.9rem; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    transition:background 120ms ease, color 120ms ease;
+  }
+  .board-remove:hover{ background:rgba(178,59,46,.35); color:#F2EFE4; border-color:rgba(178,59,46,.5) }
+  .board-remove:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px }
+  /* Top-center, in line with .board-controls (left) and .board-remove
+     (right) — safe uniformly now that #boardCloseBtn lives at
+     bottom-center instead of sharing this row. */
+  .board-clear{
+    position:absolute; top:clamp(.15rem,.6vw,.35rem); left:50%; transform:translateX(-50%);
+    border-radius:999px; padding:.3rem .8rem; border:1px solid var(--board-chip-border);
+    background:var(--board-chip-bg); color:var(--board-ink); font-family:var(--sans);
+    font-size:.8rem; font-weight:700; letter-spacing:.02em; cursor:pointer;
+    transition:background 120ms ease, color 120ms ease;
+  }
+  .board-clear:hover{ background:rgba(178,59,46,.35); color:#F2EFE4; border-color:rgba(178,59,46,.5) }
+  .board-clear:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px; opacity:1 }
+  #boardAdd,#boardSkinBtn{
+    position:fixed; z-index:5; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 3px 12px rgba(0,0,0,.35); transition:transform 120ms ease, filter 120ms ease, opacity 120ms ease;
+  }
+  #boardAdd{
+    right:clamp(.9rem,2.6vw,1.8rem); bottom:clamp(.9rem,2.6vw,1.8rem); width:3.1rem; height:3.1rem;
+    border-radius:50%; background:#D9A62E; color:#241A08; font-size:1.6rem; font-weight:700; line-height:1;
+  }
+  #boardAdd:hover{ filter:brightness(1.08); transform:translateY(-1px) }
+  #boardAdd:focus-visible{ outline:2px solid #F2EFE4; outline-offset:3px }
+  #boardSkinBtn{
+    left:clamp(.9rem,2.6vw,1.8rem); bottom:clamp(.9rem,2.6vw,1.8rem); width:2.5rem; height:2.5rem;
+    border-radius:50%; background:var(--board-btn-bg); border:1px solid var(--board-btn-border);
+  }
+  #boardSkinBtn:hover{ filter:brightness(1.15) }
+  #boardSkinBtn:focus-visible{ outline:2px solid var(--board-accent); outline-offset:3px }
+  #boardSkinBtn .board-skin-dot{
+    width:1.15rem; height:1.15rem; border-radius:50%;
+    background:conic-gradient(#F2EFE4 0deg 180deg,#16241C 180deg 360deg); border:1px solid var(--board-btn-border);
+  }
+  /* A dedicated close pill, independent of #boardBtn — the FAB that opens
+     Board is now part of the locked bottom-right tool tray and never
+     changes appearance or position while Board is open (matches how the
+     other 3 tools behave). Top-CENTER, not top-right: top-right is the
+     fullscreen-close convention, but it's also where a top-right-filling
+     cell's own .board-remove lives, and sharing that corner between a
+     sizable labeled pill and a per-box control stayed cramped no matter how
+     the two were tuned. Top-center is clear of every per-cell control
+     (.board-controls sits at each cell's own top-LEFT, .board-remove at its
+     top-right) in any layout, and its own top offset matches
+     #boardStage's padding + .board-cell's padding-top — the same height the
+     color-picker chip sits at, just centered instead of left-aligned. */
+  #boardCloseBtn{
+    position:fixed; bottom:clamp(2.3rem,4.2vw,3.1rem); left:50%; transform:translateX(-50%); top:auto; right:auto;
+    border-radius:999px; padding:.4rem .85rem;
+    font-family:var(--sans); font-size:.82rem; font-weight:700; letter-spacing:.02em;
+    z-index:401; background:var(--board-chip-bg); border:1px solid var(--board-chip-border); color:var(--board-ink);
+    cursor:pointer;
+  }
+  #boardCloseBtn:hover{ background:rgba(178,59,46,.35); border-color:rgba(178,59,46,.5); color:#F2EFE4; }
+  #boardCloseBtn:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px; }
+  #boardDots{
+    position:fixed; left:50%; bottom:clamp(.9rem,2.8vw,1.9rem); transform:translateX(-50%);
+    z-index:5; display:flex; align-items:center; gap:.3rem;
+  }
+  .board-dot-wrap{ position:relative; display:flex; align-items:center; justify-content:center; padding:.3rem }
+  .board-dot-btn{
+    width:.55rem; height:.55rem; padding:0; border-radius:50%; border:1px solid transparent;
+    background:var(--board-placeholder); cursor:pointer; transition:background 120ms ease, transform 120ms ease;
+  }
+  .board-dot-btn:hover{ background:var(--board-grip) }
+  .board-dot-btn.active{ background:var(--board-ink); transform:scale(1.3) }
+  .board-dot-btn:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px }
+  .board-dot-x{
+    position:absolute; top:-.15rem; right:-.15rem; width:.85rem; height:.85rem; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; background:var(--board-btn-bg);
+    border:1px solid var(--board-btn-border); color:var(--board-btn-fg); font-size:.5rem; line-height:1;
+    padding:0; cursor:pointer; transition:background 120ms ease, color 120ms ease;
+  }
+  .board-dot-x:hover{ background:rgba(178,59,46,.35); color:#F2EFE4; border-color:rgba(178,59,46,.5) }
+  .board-dot-x:focus-visible{ outline:2px solid var(--board-accent); outline-offset:1px }
+  #boardShelfTab{
+    position:fixed; right:0; top:50%; transform:translateY(-50%); z-index:6;
+    writing-mode:vertical-rl; text-orientation:mixed; background:var(--board-chip-bg);
+    border:1px solid var(--board-chip-border); border-right:none; border-radius:8px 0 0 8px;
+    padding:.7rem .4rem; color:var(--board-ink); font-family:var(--sans); font-size:.78rem;
+    font-weight:600; letter-spacing:.03em; cursor:pointer;
+  }
+  #boardShelfTab:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px }
+  #boardShelfBackdrop{
+    position:fixed; inset:0; z-index:6; background:rgba(0,0,0,.25); opacity:0;
+    pointer-events:none; transition:opacity 200ms ease;
+  }
+  #boardShelfBackdrop.open{ opacity:1; pointer-events:auto }
+  #boardShelfPanel{
+    position:fixed; top:0; right:0; bottom:0; width:min(320px,84vw); z-index:7;
+    background:var(--board-chip-bg); border-left:1px solid var(--board-chip-border);
+    display:flex; flex-direction:column; padding:1.1rem 1rem; gap:.7rem;
+    transform:translateX(100%); transition:transform 220ms ease; overflow-y:auto;
+  }
+  #boardShelfPanel.open{ transform:translateX(0) }
+  .board-shelf-head{ display:flex; align-items:center; justify-content:space-between; flex-shrink:0 }
+  .board-shelf-head h2{ font-size:1.15rem; font-weight:800; color:var(--board-accent); margin:0 }
+  #boardShelfClose{
+    width:1.8rem; height:1.8rem; border-radius:50%; border:1px solid var(--board-btn-border);
+    background:var(--board-btn-bg); color:var(--board-btn-fg); cursor:pointer;
+  }
+  #boardShelfClose:hover{ background:rgba(178,59,46,.35); color:#F2EFE4 }
+  .board-shelf-empty{ color:var(--board-placeholder); font-size:.88rem; line-height:1.55; margin:.4rem 0 0 }
+  .board-shelf-item{
+    display:flex; align-items:center; gap:.55rem; background:var(--board-btn-bg);
+    border:1px solid var(--board-chip-border); border-radius:8px; padding:.55rem .55rem .55rem .7rem;
+    cursor:pointer; text-align:left;
+  }
+  .board-shelf-item:hover{ border-color:var(--board-accent) }
+  .board-shelf-item .board-shelf-dot{ width:.6rem; height:.6rem; border-radius:50%; flex-shrink:0 }
+  .board-shelf-item .board-shelf-txt{
+    flex:1; min-width:0; color:var(--board-ink); font-weight:700; font-size:.88rem;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .board-shelf-item .board-shelf-del{
+    flex-shrink:0; width:1.4rem; height:1.4rem; display:inline-flex; align-items:center; justify-content:center;
+    border-radius:50%; border:none; background:transparent; color:var(--board-btn-fg); cursor:pointer;
+    font-size:.75rem; line-height:1;
+  }
+  .board-shelf-item .board-shelf-del:hover{ background:rgba(178,59,46,.35); color:#F2EFE4 }
+  .board-shelf-item .board-shelf-del:focus-visible{ outline:2px solid var(--board-accent); outline-offset:1px }
+  @media (prefers-reduced-motion:reduce){
+    #boardAdd,#boardSkinBtn,#boardStage,.board-dot-btn,#boardShelfPanel,#boardShelfBackdrop{ transition:none }
+  }
+
   .float-timer{position:fixed;top:12px;right:12px;z-index:200;width:236px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(20,26,46,.28);overflow:hidden;user-select:none;touch-action:none}
   .ft-grip{display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--ink);color:#fff;cursor:grab}
   .ft-grip:active{cursor:grabbing}
@@ -1871,9 +2101,28 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </head>
 <body>
 
-<button class="fab-btn" id="fsBtn" title="Floating points scanner (with activity buttons and a tap-to-score name list) — drag to move">🎯</button>
-<button class="fab-btn" id="timerBtn" title="Floating timer — drag to move">⏱</button>
-<button class="fab-btn" id="pickerBtn" title="Floating picker wheel — drag to move">🎡</button>
+<button class="fab-btn" id="fabLauncher" type="button" aria-expanded="false" aria-label="Tools" title="Tools">+</button>
+<button class="fab-btn fab-tool" id="fsBtn" title="Floating points scanner (with activity buttons and a tap-to-score name list)">🎯</button>
+<button class="fab-btn fab-tool" id="timerBtn" title="Floating timer">⏱</button>
+<button class="fab-btn fab-tool" id="pickerBtn" title="Floating picker wheel">🎡</button>
+<button class="fab-btn fab-tool" id="boardBtn" title="Board — a fullscreen display for homework or a reminder">📋</button>
+
+<div id="boardOverlay" style="display:none">
+  <div id="boardStage" data-count="1"></div>
+  <div id="boardDots" role="tablist" aria-label="Board screens"></div>
+  <button id="boardCloseBtn" type="button" aria-label="Close board" title="Close board">Close board</button>
+  <button id="boardAdd" type="button" aria-label="Add box" title="Add box">+</button>
+  <button id="boardSkinBtn" type="button" aria-label="Switch black/white" title="Switch black-on-white / white-on-black"><span class="board-skin-dot"></span></button>
+  <button id="boardShelfTab" type="button" aria-label="Saved messages" title="Saved messages">Saved</button>
+  <div id="boardShelfBackdrop"></div>
+  <div id="boardShelfPanel" aria-label="Saved messages">
+    <div class="board-shelf-head">
+      <h2>Saved</h2>
+      <button id="boardShelfClose" type="button" aria-label="Close saved messages">✕</button>
+    </div>
+    <div id="boardShelfList"></div>
+  </div>
+</div>
 
 <div id="floatTimer" class="float-timer" style="display:none">
   <div class="ft-grip" id="ftGrip">
@@ -2017,7 +2266,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </div>
 
 <!-- ============ GLOBAL SCAN BAR (bar 3) — always on, pinned, on every tab
-     except a few purely administrative ones (Settings, Backup & Sheets, and
+     except a few purely administrative ones (Settings, Backup & Restore, and
      the Print sub-tabs) where scanning isn't the point. This is the same bar
      that used to live embedded in the Seats tab — promoted here so it's the
      one persistent way to scan and see recent activity, everywhere. ============ -->
@@ -2302,7 +2551,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div id="standWeekLbl" class="pill-note" style="display:none;margin-bottom:10px"></div>
     <div id="standActivitySummary" class="pill-note" style="margin-bottom:10px"></div>
     <div id="standingsBody"></div>
-    <!-- Phase 1: "Reset points now" moved to Manage → Backup & Sheets (danger zone) -->
+    <!-- Phase 1: "Reset points now" moved to Manage → Backup & Restore (danger zone) -->
   </section>
 
 
@@ -4474,8 +4723,8 @@ function setupRoster() {
 
     <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Header Shortcuts</h3>
-      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHeaderShortcuts"> Show the Points / Timer / Picker floating buttons</label>
-      <p class="view-note" style="margin:8px 0 0">On by default. These three float on top of the screen wherever you scroll, and can be dragged anywhere — drop one wherever it's out of your way. Turn this off to hide all three if you don't use the floating points scanner, timer, or picker wheel — the class dropdown and sound button stay either way, and you can always turn this back on here.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHeaderShortcuts"> Show the floating tools button</label>
+      <p class="view-note" style="margin:8px 0 0">On by default. A single + sits in the bottom-right corner of every screen — tap it to reveal the floating points scanner, timer, picker wheel, and Board, then tap one to open it. Turn this off to hide it if you don't use any of the four — the class dropdown and sound button stay either way, and you can always turn this back on here.</p>
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
@@ -4985,10 +5234,18 @@ function setupRoster() {
     // modes (wheel + seating chart). Defaults ON so the seating chart keeps
     // the skip-until-everyone-has-had-a-turn rotation it has always had.
     pickerSkip: true,
-    // Per-teacher dropped position for each floating launcher FAB (Points/
-    // Timer/Picker), keyed "scan"/"timer"/"picker". Empty means "use the
-    // CSS-stacked bottom-right default" — see applyFabPositions().
+    // Unused since the FAB tray locked into a fixed bottom-right stack
+    // behind #fabLauncher — kept in the data model rather than removed
+    // (rule 1: never remove an existing field), even though nothing reads
+    // or writes it anymore.
     fabPos: {},
+    // Board (4th FAB): a fullscreen auto-fit display, screens split into
+    // pages of up to 4 boxes each. boardPages is an array of pages, each a
+    // list of {id,color,text}; boardShelf holds reusable saved messages
+    // (text+color) shown in the shelf drawer, independent of any one page.
+    boardPages: [[{ id: 1, color: "", text: "" }]],
+    boardShelf: [],
+    boardSkin: "dark",
     // Backup staleness tracking. Nothing in the app ever recorded that a backup
     // happened, so it could not tell a rebbi he was weeks stale.
     //
@@ -5302,7 +5559,7 @@ function setupRoster() {
       $("autoSheet").checked=(data.autoSheet!==false);
       renderActButtons(); renderRecent(); renderStudents(); renderActivities();
       renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-      showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
+      showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
       if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
       renderShulchaniStatus();
       refreshLiveViews();
@@ -5967,7 +6224,7 @@ function setupRoster() {
     raffle:"Raffle", auction:"Auction", store:"Store", coinbank:"Coin Deposit",
     students:"Students", activities:"Activities", brachos:"Brachos", spinner:"Spinner",
     passes:"Passes", attendance:"Attendance", tracker:"Tracker", homework:"Homework", gradebook:"Gradebook",
-    backup:"Backup & Sheets", settings:"Settings",
+    backup:"Backup & Restore", settings:"Settings",
     "learn-text":"Text", "learn-chart":"Chart", "learn-pesukim":"Pesukim", "learn-mishnayos":"Mishnayos", "learn-shorashim":"Shorashim",
     // printSeats is navigable, and its name has to carry BOTH jobs this page
     // does. It was called "Print class sheet" alone, on the reasoning that
@@ -6973,7 +7230,7 @@ function setupRoster() {
   // The single entry point for switching to any leaf tab — used by direct
   // clicks, subtab clicks, and any code elsewhere that needs to jump screens.
   // Hides the global scan bar on a short list of purely administrative tabs
-  // where scanning isn't the point — Settings, Backup & Sheets, and the whole
+  // where scanning isn't the point — Settings, Backup & Restore, and the whole
   // Print group (which is about generating printable output, not live
   // interaction). Visible everywhere else, including Students/Activities
   // management, since scanning to double-check a QR code there is reasonable.
@@ -7624,7 +7881,7 @@ function setupRoster() {
   // auto-synced on its own (see setAttendance above).
   function sendAttendance(){
     var url=(data.sheetUrl||"").trim();
-    if(!url){ $("attSendStatus").textContent="No Google Sheet connected \u2014 add one on Backup & Sheets first, or use \u201cEmail this day\u201d instead."; return; }
+    if(!url){ $("attSendStatus").textContent="No Google Sheet connected \u2014 add one on Backup & Restore first, or use \u201cEmail this day\u201d instead."; return; }
     var day=attDayRecord(attDate);
     var studs=activeStudents();
     /* A DAY NOBODY MARKED IS NOT A FULL PRESENT ROLL, and this is the gate that
@@ -7727,7 +7984,7 @@ function setupRoster() {
   // a decision only he can make.
   function resendAttendanceDay(){
     var url=(data.sheetUrl||"").trim();
-    if(!url){ $("attSendStatus").textContent="No Google Sheet connected — add one on Backup & Sheets first, or use “Email this day” instead."; return; }
+    if(!url){ $("attSendStatus").textContent="No Google Sheet connected — add one on Backup & Restore first, or use “Email this day” instead."; return; }
     var day=attDayRecord(attDate);
     var studs=activeStudents();
     var rows=[];
@@ -9359,7 +9616,8 @@ function setupRoster() {
     $("ftSetRow").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; addTime(parseInt(b.dataset.add,10)||0); });
     function renderSnackBtn(){ var s=(data&&data.snackSeconds)||420; $("ftSnack").textContent="🍪 Snack — "+fmtTime(s); }
     // This IIFE runs at script-eval time, before load() has populated data —
-    // the same ordering trap makeFabDraggable documents. So the saved default
+    // the same script-eval-vs-load() ordering trap that shows up anywhere a
+    // panel wires itself before boot has run. So the saved default
     // length is applied later, from the post-load call site.
     function applyDefaultLength(){
       if(running) return;                 // never yank a length out from under a running timer
@@ -9395,7 +9653,7 @@ function setupRoster() {
         }});
     });
     if(!pipSupported()) $("ftPip").style.display="none";
-    makeFabDraggable($("timerBtn"), "timer", function(){
+    wireFabTool($("timerBtn"), function(){
       // Popped out, the panel isn't on this page — toggling its display would
       // empty the pop-out window instead of hiding anything. Raise it instead.
       if(pipWin && pipPanelId==="floatTimer"){ pipWin.focus(); return; }
@@ -9425,61 +9683,20 @@ function setupRoster() {
     function up(){ d=null; document.removeEventListener("pointermove",mv,true); document.removeEventListener("pointerup",up,true); document.removeEventListener("pointercancel",up,true); }
     grip.addEventListener("pointerdown", function(e){ if(e.target.closest(".ft-btn")) return; var r=panel.getBoundingClientRect(); d={dx:e.clientX-r.left, dy:e.clientY-r.top}; panel.style.right="auto"; panel.style.left=r.left+"px"; panel.style.top=r.top+"px"; document.addEventListener("pointermove",mv,true); document.addEventListener("pointerup",up,true); document.addEventListener("pointercancel",up,true); e.preventDefault(); });
   }
-  // Floating launcher buttons (Points/Timer/Picker FABs). Unlike makeDraggable
-  // above, the button itself is BOTH the grip and the tap target — there's no
-  // separate handle — so a drag and a tap have to be told apart by movement,
-  // not by which element was pressed. A pointerdown starts tracking; if the
-  // pointer moves past a small threshold before release, it's a drag (reposition
-  // and save, no tap fires); if it never moves, it's a tap (onTap fires, no
-  // position change).
-  // Deliberately does NOT read data.fabPos here to restore position — this
-  // runs at page-script-eval time, before load() (called much later, see
-  // applyFabPositions()) has populated data from localStorage, so data isn't
-  // ready yet. Restoring position is applyFabPositions()'s job, run after load().
-  function makeFabDraggable(btn, posKey, onTap){
-    var d=null, dragged=false;
-    function mv(e){
-      if(!d) return;
-      if(!dragged && (Math.abs(e.clientX-d.sx)>4 || Math.abs(e.clientY-d.sy)>4)) dragged=true;
-      if(!dragged) return;
-      var x=e.clientX-d.dx, y=e.clientY-d.dy, w=btn.offsetWidth, h=btn.offsetHeight;
-      x=Math.max(2,Math.min(window.innerWidth-w-2,x)); y=Math.max(2,Math.min(window.innerHeight-h-2,y));
-      btn.style.left=x+"px"; btn.style.top=y+"px"; btn.style.right="auto"; btn.style.bottom="auto";
-    }
-    function up(){
-      document.removeEventListener("pointermove",mv,true);
-      document.removeEventListener("pointerup",up,true);
-      document.removeEventListener("pointercancel",up,true);
-      d=null;
-      if(dragged){
-        var r=btn.getBoundingClientRect();
-        data.fabPos[posKey]={left:r.left, top:r.top};
-        save();
-      } else {
-        onTap();
-      }
-    }
-    btn.addEventListener("pointerdown", function(e){
-      var r=btn.getBoundingClientRect();
-      d={dx:e.clientX-r.left, dy:e.clientY-r.top, sx:e.clientX, sy:e.clientY};
-      dragged=false;
-      document.addEventListener("pointermove",mv,true);
-      document.addEventListener("pointerup",up,true);
-      document.addEventListener("pointercancel",up,true);
-      e.preventDefault();
-    });
+  // Floating tool tray (Points/Timer/Picker/Board FABs). Locked to the
+  // bottom-right stack — #fabLauncher toggles body.fab-tray-open (CSS above
+  // shows/hides the four .fab-tool buttons); tapping a tool collapses the
+  // tray again before firing onTap, same close-on-select behavior any
+  // speed-dial menu has. data.fabPos (the old per-teacher dropped position)
+  // is unused now — an existing field, kept in the data model per rule 1,
+  // just nothing reads or writes it anymore.
+  function collapseFabTray(){
+    document.body.classList.remove("fab-tray-open");
+    var l=$("fabLauncher");
+    if(l){ l.classList.remove("open"); l.setAttribute("aria-expanded","false"); }
   }
-  // Restores each FAB's saved drop spot (data.fabPos) over the CSS default
-  // bottom-right stack. Must run AFTER load() — see makeFabDraggable's note —
-  // so it's called from the same post-load init spots as
-  // applyHeaderShortcutsVisibility()/applyFullWidth(), which have the same requirement.
-  function applyFabPositions(){
-    [["fsBtn","scan"],["timerBtn","timer"],["pickerBtn","picker"]].forEach(function(pair){
-      var btn=$(pair[0]), saved=data.fabPos[pair[1]];
-      if(saved && typeof saved.left==="number" && typeof saved.top==="number"){
-        btn.style.left=saved.left+"px"; btn.style.top=saved.top+"px"; btn.style.right="auto"; btn.style.bottom="auto";
-      }
-    });
+  function wireFabTool(btn, onTap){
+    btn.addEventListener("click", function(){ collapseFabTray(); onTap(); });
   }
   var fpOpen=false, fpActId=null, fpLastLogId=null, fpCustomAct=null;
   function fpFlash(ok,msg){ var f=$("fsFlash"); f.className="fs-flash "+(ok?"good":"bad"); f.textContent=msg; clearTimeout(f._t); f._t=setTimeout(function(){ f.textContent=""; f.className="fs-flash"; },1600); }
@@ -9635,7 +9852,7 @@ function setupRoster() {
     else { fpSetQrMode(false); }
     renderHeaderScanContext();
   }
-  makeFabDraggable($("fsBtn"), "scan", function(){ fpToggle(); });
+  wireFabTool($("fsBtn"), function(){ fpToggle(); });
   // Same scoping: a bare pipWin test would close the TIMER's pop-out window
   // when the rebbi clicked the scanner's own ✕ on the page.
   $("fsClose").addEventListener("click", function(){ if(pipWin && pipPanelId==="floatScan"){ pipWin.close(); } else { fpToggle(false); } });
@@ -9786,7 +10003,358 @@ function setupRoster() {
     // re-opening mid-session repaints whichever mode the rebbi last chose.
     if(pickerOpen){ $("floatPicker").classList.remove("min"); setPickMode(pickViewMode); }
   }
-  makeFabDraggable($("pickerBtn"), "picker", function(){ pickerToggle(); });
+  /* ---------- BOARD (4th FAB): fullscreen auto-fit big-text display ----------
+     data.boardPages: array of pages, each an array of {id,color,text} boxes
+     (max 4 boxes/page — hit that and Add opens a new page instead).
+     data.boardShelf: reusable saved messages {text,color}, independent of
+     any one page — the "Saved" drawer on the right.
+     data.boardSkin: "dark"|"light" — chalkboard vs dry-erase whiteboard.
+     pageIndex itself is NOT persisted — the board always opens on page 0. */
+  (function(){
+    var overlay=$("boardOverlay"), stage=$("boardStage"), dotsEl=$("boardDots");
+    var addBtn=$("boardAdd"), skinBtn=$("boardSkinBtn"), closeBtn=$("boardCloseBtn");
+    var shelfTab=$("boardShelfTab"), shelfPanel=$("boardShelfPanel"), shelfBackdrop=$("boardShelfBackdrop");
+    var shelfCloseBtn=$("boardShelfClose"), shelfListEl=$("boardShelfList");
+    var MAX_BOXES=4, pageIndex=0, draggingId=null;
+    var REDUCE_MOTION = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var SWATCHES=[
+      { key:"", label:"Default color" },
+      { key:"blue", label:"Blue", hex:"#2F6FED" },
+      { key:"green", label:"Green", hex:"#22B04C" },
+      { key:"red", label:"Red", hex:"#E0433A" }
+    ];
+    var BOOKMARK_SVG='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4V3z"/></svg>';
+    var resizeObserver = new ResizeObserver(function(entries){
+      entries.forEach(function(entry){
+        var textEl = entry.target.querySelector("[data-role=text]");
+        if(textEl) fitText(entry.target, textEl);
+      });
+    });
+
+    function pages(){ return data.boardPages; }
+    function nextBoxId(){
+      var max=0;
+      pages().forEach(function(p){ p.forEach(function(b){ if(b.id>max) max=b.id; }); });
+      return max+1;
+    }
+    function escapeHtml(s){
+      return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; });
+    }
+    function swatchHex(key){
+      var s=SWATCHES.filter(function(sw){ return sw.key===key; })[0];
+      return (s && s.hex) || "var(--board-ink)";
+    }
+
+    function fitText(wrap, textEl){
+      var maxH=wrap.clientHeight, maxW=wrap.clientWidth;
+      if(!maxH || !maxW) return;
+      if(!textEl.textContent || !textEl.textContent.trim()){ textEl.style.fontSize=""; return; }
+      var lo=10, hi=Math.max(lo+1, Math.min(480, maxH*1.6));
+      for(var i=0;i<12;i++){
+        var mid=(lo+hi)/2;
+        textEl.style.fontSize=mid+"px";
+        var fits = textEl.scrollHeight<=maxH+0.5 && textEl.scrollWidth<=maxW+0.5;
+        if(fits) lo=mid; else hi=mid;
+      }
+      textEl.style.fontSize=lo+"px";
+    }
+
+    function applyLayout(n){
+      stage.setAttribute("data-count", String(n));
+      var EQ="minmax(0, 1fr)";
+      if(n===1){ stage.style.gridTemplateColumns=EQ; stage.style.gridTemplateRows=EQ; }
+      else if(n===2){ stage.style.gridTemplateColumns=EQ; stage.style.gridTemplateRows=EQ+" "+EQ; }
+      else { stage.style.gridTemplateColumns=EQ+" "+EQ; stage.style.gridTemplateRows=EQ+" "+EQ; }
+    }
+    function cellSpan(index, n){ return (n===3 && index===0) ? "grid-column: 1 / 3;" : ""; }
+
+    function shelfIndexOf(box){
+      return data.boardShelf.findIndex(function(s){ return s.text===box.text && s.color===box.color; });
+    }
+    function toggleSaved(box){
+      var idx=shelfIndexOf(box);
+      if(idx>=0){ data.boardShelf.splice(idx,1); }
+      else {
+        if(!(box.text||"").trim()) return;
+        data.boardShelf.unshift({ text:box.text, color:box.color });
+        if(data.boardShelf.length>24) data.boardShelf.length=24;
+      }
+      save(); renderShelf(); render();
+    }
+    function insertFromShelf(item){
+      var boxes=pages()[pageIndex];
+      var newBox={ id:nextBoxId(), color:item.color||"", text:item.text };
+      if(boxes.length<MAX_BOXES){ boxes.push(newBox); render(); }
+      else { pages().push([newBox]); goToPage(pages().length-1, 1); }
+      save(); closeShelf();
+    }
+    function removeFromShelf(i){ data.boardShelf.splice(i,1); save(); renderShelf(); }
+
+    function renderShelf(){
+      if(!data.boardShelf.length){
+        shelfListEl.innerHTML='<p class="board-shelf-empty">Nothing saved yet — tap the bookmark on a box to keep it here for next time.</p>';
+        return;
+      }
+      shelfListEl.innerHTML = data.boardShelf.map(function(item, i){
+        var preview = item.text.replace(/\s+/g," ").trim();
+        return '<button class="board-shelf-item" type="button" data-i="'+i+'">'+
+          '<span class="board-shelf-dot" style="background:'+swatchHex(item.color)+'"></span>'+
+          '<span class="board-shelf-txt">'+escapeHtml(preview)+'</span>'+
+          '<span class="board-shelf-del" role="button" tabindex="0" data-i="'+i+'" aria-label="Remove saved message">✕</span>'+
+        '</button>';
+      }).join("");
+      Array.prototype.forEach.call(shelfListEl.querySelectorAll(".board-shelf-item"), function(el){
+        var i=Number(el.getAttribute("data-i"));
+        el.addEventListener("click", function(e){
+          if(e.target.closest(".board-shelf-del")) return;
+          insertFromShelf(data.boardShelf[i]);
+        });
+      });
+      Array.prototype.forEach.call(shelfListEl.querySelectorAll(".board-shelf-del"), function(el){
+        var i=Number(el.getAttribute("data-i"));
+        el.addEventListener("click", function(e){ e.stopPropagation(); removeFromShelf(i); });
+        el.addEventListener("keydown", function(e){
+          if(e.key==="Enter" || e.key===" "){ e.preventDefault(); e.stopPropagation(); removeFromShelf(i); }
+        });
+      });
+    }
+    function openShelf(){ shelfPanel.classList.add("open"); shelfBackdrop.classList.add("open"); }
+    function closeShelf(){ shelfPanel.classList.remove("open"); shelfBackdrop.classList.remove("open"); }
+
+    function removeBox(box){
+      var boxes=pages()[pageIndex];
+      // Solo box, solo page: nothing left to fall back to, so ✕ here means
+      // the same thing "Close board" does — leave the board entirely, not
+      // clear the box (that's what the top-center Clear button is for).
+      if(boxes.length===1 && pages().length===1){
+        boardClose(); return;
+      }
+      var kept=boxes.filter(function(b){ return b.id!==box.id; });
+      if(kept.length){ pages()[pageIndex]=kept; }
+      else { pages().splice(pageIndex,1); pageIndex=Math.min(pageIndex, pages().length-1); }
+      save(); render();
+    }
+    function clearBox(box, cell){
+      box.text="";
+      save();
+      var textwrap=cell.querySelector(".board-textwrap");
+      var textEl=cell.querySelector("[data-role=text]");
+      if(textEl) textEl.textContent="";
+      if(textwrap && textEl) fitText(textwrap, textEl);
+    }
+    function deletePage(i){
+      if(pages().length<2 || i<0 || i>=pages().length) return;
+      pages().splice(i,1);
+      if(i<pageIndex) pageIndex--;
+      else if(i===pageIndex) pageIndex=Math.min(pageIndex, pages().length-1);
+      save(); render();
+    }
+    function reorder(fromId, toId){
+      if(fromId===toId) return;
+      var boxes=pages()[pageIndex];
+      var fromIdx=boxes.findIndex(function(b){ return b.id===fromId; });
+      var toIdx=boxes.findIndex(function(b){ return b.id===toId; });
+      if(fromIdx<0 || toIdx<0) return;
+      var item=boxes.splice(fromIdx,1)[0];
+      boxes.splice(toIdx,0,item);
+      save(); render();
+    }
+
+    function renderDots(){
+      if(pages().length<2){ dotsEl.innerHTML=""; return; }
+      dotsEl.innerHTML = pages().map(function(_, i){
+        return '<span class="board-dot-wrap">'+
+          '<button class="board-dot-btn'+(i===pageIndex?" active":"")+'" type="button" role="tab" aria-label="Screen '+(i+1)+' of '+pages().length+'" aria-selected="'+(i===pageIndex)+'"></button>'+
+          '<button class="board-dot-x" type="button" data-i="'+i+'" aria-label="Delete screen '+(i+1)+'" title="Delete screen">✕</button>'+
+        '</span>';
+      }).join("");
+      Array.prototype.forEach.call(dotsEl.querySelectorAll(".board-dot-btn"), function(btn,i){
+        btn.addEventListener("click", function(){ goToPage(i); });
+      });
+      Array.prototype.forEach.call(dotsEl.querySelectorAll(".board-dot-x"), function(btn){
+        var i=Number(btn.getAttribute("data-i"));
+        btn.addEventListener("click", function(e){ e.stopPropagation(); deletePage(i); });
+      });
+    }
+
+    function render(){
+      var boxes=pages()[pageIndex];
+      applyLayout(boxes.length);
+      resizeObserver.disconnect();
+      stage.innerHTML="";
+      boxes.forEach(function(box, i){
+        var cell=document.createElement("div");
+        cell.className="board-cell";
+        cell.setAttribute("data-id", box.id);
+        cell.style.cssText=cellSpan(i, boxes.length);
+        var swatchHtml=SWATCHES.map(function(s){
+          var sw=s.hex || "var(--board-ink)";
+          var active=box.color===s.key ? " active" : "";
+          return '<button class="board-swatch'+active+'" type="button" data-color="'+s.key+'" title="'+s.label+'" aria-label="'+s.label+'" style="--sw:'+sw+'"></button>';
+        }).join("");
+        var saved=shelfIndexOf(box)>=0;
+        cell.innerHTML=
+          '<div class="board-controls">'+
+            (boxes.length>1 ? '<span class="board-grip" draggable="true" title="Drag to reorder">⠿</span>' : "")+
+            swatchHtml+
+            '<button class="board-save'+(saved?" saved":"")+'" type="button" title="'+(saved?"Remove from shelf":"Save to shelf")+'" aria-label="'+(saved?"Remove from shelf":"Save to shelf")+'" aria-pressed="'+saved+'">'+BOOKMARK_SVG+'</button>'+
+          '</div>'+
+          '<button class="board-clear" type="button" aria-label="Clear text">Clear</button>'+
+          '<button class="board-remove" type="button" aria-label="Remove box">✕</button>'+
+          '<div class="board-textwrap"><div class="board-celltext" data-role="text" contenteditable="true" data-placeholder="Tap here and start typing — homework, a reminder, anything the class needs to see."></div></div>';
+
+        var removeBtn=cell.querySelector(".board-remove");
+        var clearBtn=cell.querySelector(".board-clear");
+        var grip=cell.querySelector(".board-grip");
+        var textwrap=cell.querySelector(".board-textwrap");
+        var textEl=cell.querySelector("[data-role=text]");
+        textEl.textContent=box.text;
+        var chosen=SWATCHES.filter(function(s){ return s.key===box.color; })[0];
+        textEl.style.color=(chosen && chosen.hex) ? chosen.hex : "";
+
+        cell.querySelectorAll(".board-swatch").forEach(function(btn){
+          btn.addEventListener("click", function(){ box.color=btn.getAttribute("data-color"); save(); render(); });
+        });
+        cell.querySelector(".board-save").addEventListener("click", function(){ toggleSaved(box); });
+        clearBtn.addEventListener("click", function(){ clearBox(box, cell); });
+        removeBtn.addEventListener("click", function(){ removeBox(box); });
+        if(grip){
+          grip.addEventListener("dragstart", function(e){
+            draggingId=box.id; cell.classList.add("dragging");
+            e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain", String(box.id));
+          });
+          grip.addEventListener("dragend", function(){ draggingId=null; cell.classList.remove("dragging"); });
+        }
+        cell.addEventListener("dragover", function(e){ if(draggingId===null) return; e.preventDefault(); cell.classList.add("drag-over"); });
+        cell.addEventListener("dragleave", function(){ cell.classList.remove("drag-over"); });
+        cell.addEventListener("drop", function(e){
+          e.preventDefault(); cell.classList.remove("drag-over");
+          if(draggingId!==null) reorder(draggingId, box.id);
+        });
+
+        var onEdit=debounce(function(){ box.text=textEl.textContent; fitText(textwrap, textEl); save(); }, 100);
+        textEl.addEventListener("input", onEdit);
+
+        stage.appendChild(cell);
+        resizeObserver.observe(textwrap);
+        requestAnimationFrame(function(){ fitText(textwrap, textEl); });
+      });
+      // Solo box, solo page: that box's own ✕ already closes the board
+      // (see removeBox()) — showing this pill too would just be the same
+      // action offered twice. Every other state still needs it: it's the
+      // only way to exit once there's more than one box or page.
+      closeBtn.style.display = (boxes.length===1 && pages().length===1) ? "none" : "";
+      renderDots();
+    }
+
+    function debounce(fn, ms){
+      var t;
+      return function(){
+        var args=arguments, ctx=this;
+        clearTimeout(t);
+        t=setTimeout(function(){ fn.apply(ctx,args); }, ms);
+      };
+    }
+
+    function animateEntrance(dir){
+      if(REDUCE_MOTION || !dir) return;
+      stage.style.transition="none"; stage.style.opacity="0";
+      stage.style.transform="translateX("+(dir>0?"26px":"-26px")+")";
+      requestAnimationFrame(function(){
+        requestAnimationFrame(function(){
+          stage.style.transition=""; stage.style.opacity="1"; stage.style.transform="translateX(0)";
+        });
+      });
+    }
+    function goToPage(newIndex, dir){
+      newIndex=Math.max(0, Math.min(pages().length-1, newIndex));
+      if(newIndex===pageIndex) return;
+      if(dir===undefined) dir = newIndex>pageIndex ? 1 : -1;
+      pageIndex=newIndex; render(); animateEntrance(dir);
+    }
+
+    addBtn.addEventListener("click", function(){
+      var boxes=pages()[pageIndex];
+      if(boxes.length<MAX_BOXES){ boxes.push({ id:nextBoxId(), color:"", text:"" }); save(); render(); }
+      else { pages().push([{ id:nextBoxId(), color:"", text:"" }]); save(); goToPage(pages().length-1, 1); }
+    });
+    skinBtn.addEventListener("click", function(){
+      data.boardSkin = data.boardSkin==="light" ? "dark" : "light";
+      document.body.setAttribute("data-skin", data.boardSkin);
+      save();
+    });
+
+    function isControl(el){
+      return !!(el && el.closest && el.closest(".board-celltext, .board-swatch, .board-remove, .board-grip, .board-save, #boardAdd, #boardSkinBtn, .board-dot-wrap, #boardShelfTab, #boardShelfPanel, #boardShelfBackdrop"));
+    }
+    var touchX=null, touchY=null, touchActive=false;
+    overlay.addEventListener("touchstart", function(e){
+      if(e.touches.length!==1 || isControl(e.target)){ touchActive=false; return; }
+      touchX=e.touches[0].clientX; touchY=e.touches[0].clientY; touchActive=true;
+    }, { passive:true });
+    overlay.addEventListener("touchend", function(e){
+      if(!touchActive || touchX===null) return;
+      touchActive=false;
+      var t=e.changedTouches[0];
+      var dx=t.clientX-touchX, dy=t.clientY-touchY;
+      touchX=null;
+      if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.4){
+        if(dx<0) goToPage(pageIndex+1, 1); else goToPage(pageIndex-1, -1);
+      }
+    }, { passive:true });
+
+    function onBoardKeydown(e){
+      if(overlay.style.display==="none") return;
+      if(e.key==="Escape"){
+        if(shelfPanel.classList.contains("open")) closeShelf(); else boardClose();
+        return;
+      }
+      var ae=document.activeElement;
+      if(ae && (ae.isContentEditable || ae.tagName==="INPUT")) return;
+      if(e.key==="ArrowRight") goToPage(pageIndex+1, 1);
+      if(e.key==="ArrowLeft") goToPage(pageIndex-1, -1);
+    }
+    document.addEventListener("keydown", onBoardKeydown);
+
+    shelfTab.addEventListener("click", openShelf);
+    shelfCloseBtn.addEventListener("click", closeShelf);
+    shelfBackdrop.addEventListener("click", closeShelf);
+    closeBtn.addEventListener("click", boardClose);
+
+    function boardOpen(){
+      document.body.setAttribute("data-skin", data.boardSkin==="light" ? "light" : "dark");
+      pageIndex=0;
+      overlay.style.display="block";
+      document.body.style.overflow="hidden";
+      // #boardOverlay's z-index (400) sits above the whole FAB tray (190),
+      // and #boardStage's own background is opaque across its full box —
+      // the FAB tray (already collapsed behind #fabLauncher by the time this
+      // runs; see collapseFabTray() in the tool-tap handler) needs no
+      // special hiding here. boardBtn itself never changes appearance or
+      // position — #boardCloseBtn is a wholly separate control.
+      render(); renderShelf();
+      var first=stage.querySelector(".board-celltext");
+      if(first) setTimeout(function(){ first.focus(); }, 30);
+    }
+    function boardClose(){
+      overlay.style.display="none";
+      document.body.style.overflow="";
+      closeShelf();
+    }
+    window.boardToggle = function(){
+      if(overlay.style.display==="none" || !overlay.style.display) boardOpen();
+      else boardClose();
+    };
+  })();
+
+  wireFabTool($("boardBtn"), function(){ boardToggle(); });
+  wireFabTool($("pickerBtn"), function(){ pickerToggle(); });
+  $("fabLauncher").addEventListener("click", function(){
+    var open=document.body.classList.toggle("fab-tray-open");
+    this.classList.toggle("open", open);
+    this.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+
   $("pkClose").addEventListener("click", function(){ pickerToggle(false); });
   $("pkMin").addEventListener("click", function(){ $("floatPicker").classList.toggle("min"); });
   makeDraggable($("floatPicker"), $("pkGrip"));
@@ -10893,7 +11461,7 @@ function setupRoster() {
       if (confirmText !== "CLEAR") return; // any other input (including Cancel) aborts the wipe entirely
       // Safety net: always drop a backup file right before any full
       // data/log wipe triggered by a Shulchani mode switch, so an
-      // accidental confirmation is recoverable via Backup & Sheets →
+      // accidental confirmation is recoverable via Backup & Restore →
       // Restore from a backup. Reuses the exact same export logic as the
       // manual "Download backup file" button.
       download("points-backup-before-shulchani-switch-" + stamp() + ".json", JSON.stringify(data, null, 2), "application/json");
@@ -24260,7 +24828,7 @@ nameLine
       var reason = (e && e.message) || String(e);
       if(pushToSheetWarned[reason]) return;
       pushToSheetWarned[reason] = true;
-      console.warn("Sheet sync failed ("+reason+") — scans are safe locally; check the sheet link under Backup & Sheets. Further identical failures won't be logged this session.");
+      console.warn("Sheet sync failed ("+reason+") — scans are safe locally; check the sheet link under Backup & Restore. Further identical failures won't be logged this session.");
     });
     return p;
   }
@@ -24416,7 +24984,7 @@ nameLine
         $("autoSheet").checked = (data.autoSheet !== false);
         renderActButtons(); renderRecent(); renderStudents(); renderActivities();
         renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-        showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
+        showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
         if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
         if (statusEl) statusEl.textContent = "";
         notice("Restored from Google Sheet.");
@@ -25348,7 +25916,7 @@ nameLine
           $("autoSheet").checked=(data.autoSheet!==false);
           renderActButtons(); renderRecent(); renderStudents(); renderActivities();
           renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-          showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
+          showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
           if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
           renderShulchaniStatus();
           notice("Backup restored.");
@@ -25626,6 +26194,16 @@ nameLine
     // Dropped position per floating launcher FAB. Additive/empty-safe — an
     // existing save without it just keeps every FAB at its default corner spot.
     if(!data.fabPos || typeof data.fabPos!=="object" || Array.isArray(data.fabPos)) data.fabPos={};
+    // Board (4th FAB). boardPages must always hold at least one page with at
+    // least one box — the UI clears a box's text rather than deleting it when
+    // it's the very last one, so nothing but a corrupted/missing save should
+    // ever fail this check. Additive/empty-safe: an existing save without it
+    // just starts the board with one blank box.
+    if(!Array.isArray(data.boardPages) || !data.boardPages.length || !Array.isArray(data.boardPages[0]) || !data.boardPages[0].length){
+      data.boardPages = [[{ id:1, color:"", text:"" }]];
+    }
+    if(!Array.isArray(data.boardShelf)) data.boardShelf = [];
+    if(data.boardSkin!=="light" && data.boardSkin!=="dark") data.boardSkin = "dark";
     // Backup staleness. Both purely additive — no DATA_VERSION bump, nothing
     // converted, nothing read destructively. See the `defaults` entry for why
     // there are two fields rather than one.
@@ -26498,10 +27076,13 @@ nameLine
   // Header Points/Timer/Picker shortcuts can be hidden from Settings to keep the
   // header simpler; the class dropdown and sound button are unaffected either way.
   function applyHeaderShortcutsVisibility(){
+    // Only the launcher's own visibility toggles here — the four tools are
+    // shown/hidden by body.fab-tray-open (see wireFabTool/collapseFabTray),
+    // and setting inline display on them here would fight that class rule.
     var show = data.showHeaderShortcuts!==false;
-    ["fsBtn","timerBtn","pickerBtn"].forEach(function(id){
-      var b=$(id); if(b) b.style.display = show ? "" : "none";
-    });
+    var l=$("fabLauncher");
+    if(l) l.style.display = show ? "" : "none";
+    if(!show) collapseFabTray();
   }
   // Full-width display mode (Settings tab, off by default) — removes the
   // centered-column width cap on <main> so every tab stretches to fill the
@@ -26831,7 +27412,6 @@ nameLine
   applyHeaderShortcutsVisibility();
   applyVoiceNotes();
   applyFullWidth();
-  applyFabPositions();
   renderHeaderScanContext();
   renderActButtons();
   syncCustomButtons();
@@ -26891,7 +27471,7 @@ nameLine
   if(typeof serialTryAutoReconnect==="function") serialTryAutoReconnect();
   // Runs after load(), which is when data.timerDefaultSeconds and
   // data.snackSeconds actually exist — the timer IIFE itself is evaluated
-  // long before that (same ordering trap as applyFabPositions).
+  // long before that.
   if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
   else if(typeof window._refreshSnackBtn==="function") window._refreshSnackBtn();
   // Auto-generate text set from wizard learning selection — runs once, async,
@@ -27260,7 +27840,7 @@ Then tap "Add all."
 If your roster already lives in a Google Sheet, you can pull it in directly instead of retyping everything:
 
 
-- Set up the Google Sheet connection once on the Backup & Sheets tab (Chapter 20).
+- Set up the Google Sheet connection once on the Backup & Restore tab (Chapter 20).
 
 
 - In your sheet, add a tab named Roster with columns Name, Class, and optionally Photo URL (a direct, publicly-viewable image link).
@@ -27710,13 +28290,13 @@ Tools → Brachos is a quick-reference screen for after snack — Al Hamichya fo
 # 20. Syncing to Google Sheets
 
 
-This is optional, but very useful if you want a permanent record you can view from any device, or share with an administrator. Setup now lives on the combined Backup & Sheets tab.
+This is optional, but very useful if you want a permanent record you can view from any device, or share with an administrator. Setup now lives on the combined Backup & Restore tab.
 
 
 Once connected, every scan and the live standings are automatically sent to your own Google Sheet.
 
 
-- Go to Backup & Sheets and follow the setup instructions there — it involves pasting a small script into a blank Google Sheet (a one-time setup).
+- Go to Backup & Restore and follow the setup instructions there — it involves pasting a small script into a blank Google Sheet (a one-time setup).
 
 
 - Once set up, you can also use the same sheet for your Roster tab (see Chapter 4.3).
@@ -27731,7 +28311,7 @@ Once connected, every scan and the live standings are automatically sent to your
 > **TIP**  Ask a tech-comfortable colleague to help with the one-time Google Sheets setup if this section looks unfamiliar — after that first setup, everything else happens automatically.
 
 
-*The Backup & Sheets tab, with setup instructions.*
+*The Backup & Restore tab, with setup instructions.*
 
 
 # 21. Backup, Data Safety & Offline Use
@@ -27743,7 +28323,7 @@ Your scores and settings save automatically to the computer/browser you're using
 ## 21.1  Making a Backup
 
 
-On the Backup & Sheets tab, tap the button to download a backup file. This saves a copy of everything — students, activities, scores, and settings — as a file you can keep safe (for example, in an email to yourself or a shared drive).
+On the Backup & Restore tab, tap the button to download a backup file. This saves a copy of everything — students, activities, scores, and settings — as a file you can keep safe (for example, in an email to yourself or a shared drive).
 
 
 ## 21.2  Restoring a Backup
@@ -27770,7 +28350,7 @@ If you need to move to a new computer, or something went wrong, use "Restore fro
 > **NOTE**  This downloaded copy is a snapshot, not a live mirror — changes made inside it later won't sync back to your regular online version, or vice versa. Treat it as a point-in-time backup that happens to also work offline, and keep track of which copy is the "real" one if you ever use it during an actual outage.
 
 
-*The Backup & Sheets tab — download a backup, restore one, or download an offline copy.*
+*The Backup & Restore tab — download a backup, restore one, or download an offline copy.*
 
 
 # 22. Settings
@@ -28029,7 +28609,7 @@ Two different resets, matching the two sections of the scanner's manual — try 
   }
 
   // 2) Persistent storage — ask the browser to keep our data durable, then
-  //    report the result in Backup & Sheets. Granted readily to installed PWAs
+  //    report the result in Backup & Restore. Granted readily to installed PWAs
   //    / engaged sites; it stops automatic eviction but does NOT override an
   //    admin clear-on-exit or Guest wipe (which is why the Google Sheet backup
   //    stays the ultimate safety net).
