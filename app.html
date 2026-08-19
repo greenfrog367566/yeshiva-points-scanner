@@ -1098,7 +1098,17 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      removed, per rule 1. */
   .fab-btn{position:fixed;right:16px;z-index:190;width:52px;height:52px;border-radius:50%;border:1px solid #41507f;background:var(--ink);color:#fff;font-size:1.3rem;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 8px 24px rgba(20,26,46,.32);cursor:pointer;user-select:none}
   .fab-btn:hover{background:#26315a}
-  #fabLauncher.fab-btn{bottom:16px;font-size:1.7rem;font-weight:600;line-height:1;transition:transform 160ms ease}
+  /* Drawn with two CSS bars rather than a text "+" — a glyph's own side
+     bearings and vertical metrics vary by font/platform and never quite
+     land dead-center inside a flex-centered circle; two explicitly-sized,
+     explicitly-centered bars are centered by construction instead. */
+  #fabLauncher.fab-btn{bottom:16px;transition:transform 160ms ease}
+  #fabLauncher.fab-btn::before,
+  #fabLauncher.fab-btn::after{
+    content:""; position:absolute; top:50%; left:50%; background:#fff; border-radius:1px;
+  }
+  #fabLauncher.fab-btn::before{ width:18px; height:2.5px; transform:translate(-50%,-50%); }
+  #fabLauncher.fab-btn::after{ width:2.5px; height:18px; transform:translate(-50%,-50%); }
   #fabLauncher.fab-btn.open{transform:rotate(45deg)}
   .fab-tool{display:none}
   body.fab-tray-open .fab-tool{display:flex}
@@ -1241,17 +1251,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* A dedicated close pill, independent of #boardBtn — the FAB that opens
      Board is now part of the locked bottom-right tool tray and never
      changes appearance or position while Board is open (matches how the
-     other 3 tools behave). Top-CENTER, not top-right: top-right is the
-     fullscreen-close convention, but it's also where a top-right-filling
-     cell's own .board-remove lives, and sharing that corner between a
-     sizable labeled pill and a per-box control stayed cramped no matter how
-     the two were tuned. Top-center is clear of every per-cell control
-     (.board-controls sits at each cell's own top-LEFT, .board-remove at its
-     top-right) in any layout, and its own top offset matches
-     #boardStage's padding + .board-cell's padding-top — the same height the
-     color-picker chip sits at, just centered instead of left-aligned. */
+     other 3 tools behave). Bottom-center, same row as the skin toggle and
+     add button — top-center/top-right were both tried and both ended up
+     sharing space with a per-box control (.board-remove, .board-clear) on
+     some layout or other; bottom-center is the one spot nothing per-box
+     ever reaches. Its own bottom offset has to clear #boardDots below it —
+     specifically each dot's .board-dot-x badge, which sits ABOVE its own
+     dot (top:-.15rem), not just the dot itself; measured overlapping by
+     ~2px at the old, smaller gap before this offset was widened. */
   #boardCloseBtn{
-    position:fixed; bottom:clamp(2.3rem,4.2vw,3.1rem); left:50%; transform:translateX(-50%); top:auto; right:auto;
+    position:fixed; bottom:clamp(2.8rem,4.6vw,3.6rem); left:50%; transform:translateX(-50%); top:auto; right:auto;
     border-radius:999px; padding:.4rem .85rem;
     font-family:var(--sans); font-size:.82rem; font-weight:700; letter-spacing:.02em;
     z-index:401; background:var(--board-chip-bg); border:1px solid var(--board-chip-border); color:var(--board-ink);
@@ -2101,7 +2110,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </head>
 <body>
 
-<button class="fab-btn" id="fabLauncher" type="button" aria-expanded="false" aria-label="Tools" title="Tools">+</button>
+<button class="fab-btn" id="fabLauncher" type="button" aria-expanded="false" aria-label="Tools" title="Tools"></button>
 <button class="fab-btn fab-tool" id="fsBtn" title="Floating points scanner (with activity buttons and a tap-to-score name list)">🎯</button>
 <button class="fab-btn fab-tool" id="timerBtn" title="Floating timer">⏱</button>
 <button class="fab-btn fab-tool" id="pickerBtn" title="Floating picker wheel">🎡</button>
@@ -3178,6 +3187,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <span class="grow"></span>
       <button class="btn btn-sm" id="studBatchClass" disabled>Assign to class…</button>
       <button class="btn btn-sm btn-primary" id="studBatchPoints" disabled>Give points…</button>
+      <button class="btn btn-sm btn-bad" id="studBatchDelete" disabled>Delete selected…</button>
       <button class="btn btn-sm" id="studSelClear" disabled>Clear</button>
     </div>
     <div class="card pad"><div class="row-list" id="studentList"></div></div>
@@ -22281,7 +22291,7 @@ nameLine
   function renderStudBatchBar(){
     var sel=studSelectedList(), n=sel.length;
     $("studSelCount").textContent = n ? (n+" selected") : "";
-    ["studBatchClass","studBatchPoints","studSelClear"].forEach(function(id){ $(id).disabled = !n; });
+    ["studBatchClass","studBatchPoints","studBatchDelete","studSelClear"].forEach(function(id){ $(id).disabled = !n; });
     var shownSel=studShown.filter(function(s){ return studSelected[s.id]; }).length;
     var all=$("studSelectAll");
     all.checked = studShown.length>0 && shownSel===studShown.length;
@@ -22664,6 +22674,26 @@ nameLine
          + "\n\nEnd or wait out the freeze (tap the student’s tile) and give it again.";
     }
     notice(msg);
+  });
+  // Deletes every selected student outright — same mechanics as a row's own
+  // Delete button, just batched. Classes aren't a stored entity here, only a
+  // label on each student (see groups()), so "delete a class" is: filter to
+  // it with studGroupFilter, "Select all shown", then this.
+  $("studBatchDelete").addEventListener("click", function(){
+    var sel=studSelectedList(); if(!sel.length) return;
+    var classesInSel={};
+    sel.forEach(function(s){ if(s.group) classesInSel[s.group]=true; });
+    var classList=Object.keys(classesInSel);
+    var totalPts=0; sel.forEach(function(s){ totalPts+=score(s.id); });
+    var msg="Delete "+sel.length+" student"+(sel.length===1?"":"s")
+      + (classList.length ? " from "+classList.join(", ") : "")
+      + "? "+fmt(totalPts)+" total points will be removed.\n\nThis cannot be undone.";
+    if(!confirm(msg)) return;
+    var ids={}; sel.forEach(function(s){ ids[s.id]=true; });
+    data.students=data.students.filter(function(x){ return !ids[x.id]; });
+    sel.forEach(function(s){ delete data.scores[s.id]; delete studentBreakdownOpen[s.id]; delete studSelected[s.id]; });
+    save(); renderStudents(); renderClassSel(); renderScanBoard(); renderTapPanel(); renderStandings();
+    notice(sel.length+" student"+(sel.length===1?"":"s")+" deleted.");
   });
   $("breakdownPeriod").addEventListener("change", function(){
     $("studCustomRangeRow").style.display = this.value==="custom" ? "flex" : "none";
