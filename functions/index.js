@@ -50,6 +50,13 @@ async function getAccount(uid) {
  * the exact same place, per docs/Firebase_DataModel_Design_Proposal.md's
  * signup-code mechanics: "A blank code and a beta PIN land in the exact
  * same place — never a free-text school name field."
+ *
+ * Also handles backfill: called again with a code on an EXISTING
+ * schoolId:null account (the header account menu's "Connect to school"),
+ * this applies a "school" code after the fact instead of creating a second
+ * account. Refuses outright (already-exists) if the account already has a
+ * schoolId — connecting to a school is a one-way door here, never a silent
+ * reassignment.
  */
 exports.redeemCode = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
@@ -57,6 +64,34 @@ exports.redeemCode = onCall(async (request) => {
 
   const existing = await getAccount(uid);
   if (existing) {
+    const backfillCode = ((request.data && request.data.code) || "").trim();
+    // Backfill: an account that skipped the code screen (or was created
+    // before this existed) can connect to a school afterward — the header
+    // account menu's "Connect to school" action. Never a silent reassignment
+    // of an account that already belongs to one; that would be exactly the
+    // kind of overwrite this codebase's data-safety rules exist to prevent.
+    if (backfillCode && existing.schoolId == null) {
+      const codeRef = db.collection("codes").doc(backfillCode);
+      const accountRef = db.collection("accounts").doc(uid);
+      existing.schoolId = await db.runTransaction(async (tx) => {
+        const codeSnap = await tx.get(codeRef);
+        if (!codeSnap.exists) throw new HttpsError("not-found", "That code isn't recognized.");
+        const c = codeSnap.data();
+        if (c.revoked) throw new HttpsError("failed-precondition", "That code has been revoked.");
+        if (c.type !== "school") throw new HttpsError("invalid-argument", "That code doesn't connect to a school.");
+        const usedBy = c.usedBy || [];
+        if (!usedBy.includes(uid)) {
+          if (typeof c.maxUses === "number" && usedBy.length >= c.maxUses) {
+            throw new HttpsError("resource-exhausted", "That code has reached its use limit.");
+          }
+          tx.update(codeRef, { usedBy: FieldValue.arrayUnion(uid) });
+        }
+        tx.update(accountRef, { schoolId: c.schoolId });
+        return c.schoolId;
+      });
+    } else if (backfillCode && existing.schoolId != null) {
+      throw new HttpsError("already-exists", "Your account is already connected to a school.");
+    }
     // Step 5 (docs/Firebase_Step5_Superadmin_Tools_Design_Proposal.md,
     // "activitySummary: what populates it", trigger 1 — "every successful
     // sign-in updates lastActive and lastSignIn"): the client already calls

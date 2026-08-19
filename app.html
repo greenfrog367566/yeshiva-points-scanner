@@ -1984,6 +1984,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <select id="classSel" class="mute-btn" title="Which class you're working with"></select>
     <span class="header-date" id="todayDate"></span>
     <span class="header-date" id="todayDateHebrew"></span>
+    <!-- Header account menu: a persistent, always-visible sign-in state and
+         entry point, independent of Settings -> Account (which still owns
+         the full sign-in flow — code entry, same-device adoption, the
+         forced Drive-connect gate). This is just "who am I, sign out, or
+         connect to a school" from anywhere in the app. -->
+    <span class="header-account-wrap" style="position:relative">
+      <button class="mute-btn" id="headerAccountBtn" title="Account"></button>
+      <div class="hsb-dropdown" id="headerAccountDropdown" style="display:none;left:auto;right:0"></div>
+    </span>
   </div>
 </header>
 
@@ -6495,30 +6504,53 @@ function setupRoster() {
   }
 
   function signinContinueAfterAccount(account){
-    signinState.step = "idle";
-    signinState.error = null;
-    data.account = {
-      uid: signinState.firebaseUid,
-      email: account.email || signinState.email,
-      displayName: account.displayName || signinState.displayName,
-      role: account.role || "rebbi",
-      schoolId: (typeof account.schoolId !== "undefined") ? account.schoolId : null
-    };
-    save();
-    var afterTierReady = (data.account.schoolId != null)
-      ? adoptCredentialIntoSdk(signinState.googleIdToken)
-      : Promise.resolve();
-    return afterTierReady.then(function(){
-      var offer = signinDetectLocalClass();
-      if (offer) { signinState.step = "needsAdoptionChoice"; signinState.adoptionOffer = offer; }
-      else { signinState.step = "idle"; }
-      if (typeof renderAccountSection === "function") renderAccountSection();
-      if (typeof renderBackupRestoreCard === "function") renderBackupRestoreCard();
-      // Drive restore (docs/Firebase_Step3b_..., "Drive-restore flow"): only
-      // ever checked when same-device adoption found NO local match at all
-      // — a genuine second scenario, not a fallback from a declined offer.
-      if (!offer && typeof signinMaybeOfferDriveRestore === "function") signinMaybeOfferDriveRestore();
-    });
+    function proceed(acct){
+      signinState.step = "idle";
+      signinState.error = null;
+      data.account = {
+        uid: signinState.firebaseUid,
+        email: acct.email || signinState.email,
+        displayName: acct.displayName || signinState.displayName,
+        role: acct.role || "rebbi",
+        schoolId: (typeof acct.schoolId !== "undefined") ? acct.schoolId : null
+      };
+      save();
+      var afterTierReady = (data.account.schoolId != null)
+        ? adoptCredentialIntoSdk(signinState.googleIdToken)
+        : Promise.resolve();
+      return afterTierReady.then(function(){
+        var offer = signinDetectLocalClass();
+        if (offer) { signinState.step = "needsAdoptionChoice"; signinState.adoptionOffer = offer; }
+        else { signinState.step = "idle"; }
+        if (typeof renderAccountSection === "function") renderAccountSection();
+        if (typeof renderBackupRestoreCard === "function") renderBackupRestoreCard();
+        // Drive restore (docs/Firebase_Step3b_..., "Drive-restore flow"): only
+        // ever checked when same-device adoption found NO local match at all
+        // — a genuine second scenario, not a fallback from a declined offer.
+        if (!offer && typeof signinMaybeOfferDriveRestore === "function") signinMaybeOfferDriveRestore();
+      });
+    }
+
+    // Header account menu's "Connect to school" (headerConnectToSchool()):
+    // it stashes this flag before a fresh OAuth redirect, since signinState's
+    // own Firebase ID token is never persisted and a returning visit has none
+    // to call redeemCode with. Only acts if still applicable — an account
+    // that already has a schoolId by the time this runs (backfilled some
+    // other way, or a stale flag) just proceeds normally.
+    var connectPending = false;
+    try { connectPending = sessionStorage.getItem("menchmarkConnectSchoolPending") === "1"; } catch (e) {}
+    if (connectPending) { try { sessionStorage.removeItem("menchmarkConnectSchoolPending"); } catch (e) {} }
+    if (connectPending && account.schoolId == null) {
+      var code = (prompt("Enter your school's code:") || "").trim();
+      if (!code) return proceed(account);
+      return callCloudFunction("redeemCode", { code: code }, signinState.firebaseIdToken).then(function(updated){
+        return proceed(updated);
+      }).catch(function(err){
+        alert("Could not connect: " + (err.message || String(err)));
+        return proceed(account);
+      });
+    }
+    return proceed(account);
   }
 
   // Called once at boot, after load() — see the init block below. This is
@@ -6526,6 +6558,7 @@ function setupRoster() {
   function signinCompleteFromRedirect(){
     if (!pendingOAuthResult) return;
     if (pendingOAuthResult.error) {
+      try { sessionStorage.removeItem("menchmarkConnectSchoolPending"); } catch (e) {}
       signinState.step = "error";
       signinState.error = pendingOAuthResult.errorDescription || pendingOAuthResult.error;
       if (typeof renderAccountSection === "function") renderAccountSection();
@@ -6540,9 +6573,11 @@ function setupRoster() {
       return firestoreGetAccount(fb.localId, fb.idToken);
     }).then(function(account){
       if (account) return signinContinueAfterAccount(account);
+      try { sessionStorage.removeItem("menchmarkConnectSchoolPending"); } catch (e) {}
       signinState.step = "needsCode";
       if (typeof renderAccountSection === "function") renderAccountSection();
     }).catch(function(err){
+      try { sessionStorage.removeItem("menchmarkConnectSchoolPending"); } catch (e) {}
       signinState.step = "error";
       signinState.error = err.message || String(err);
       if (typeof renderAccountSection === "function") renderAccountSection();
@@ -9946,7 +9981,80 @@ function setupRoster() {
   // called both from renderSettings() and from every signin*() function
   // above as their step transitions, so this is always in sync without a
   // separate "did anything change" check.
+  // The header account menu is a separate, always-visible surface from
+  // Settings -> Account (which owns the full sign-in flow) — kept in sync
+  // by calling it here, as the very first line, so it updates on every path
+  // that already calls renderAccountSection() regardless of which early
+  // return fires below.
+  function renderHeaderAccountMenu(){
+    var btn = $("headerAccountBtn"); if (!btn) return;
+    if (data.account) {
+      var label = data.account.displayName || (data.account.email || "").split("@")[0] || "Account";
+      btn.textContent = "👤 " + label;
+    } else {
+      btn.textContent = "👤 Sign in";
+    }
+  }
+  function renderHeaderAccountDropdown(){
+    var box = $("headerAccountDropdown"); if (!box) return;
+    box.innerHTML = "";
+    if (!data.account) {
+      var signInBtn = el("button", "btn btn-primary btn-sm", "Sign in with Google");
+      signInBtn.style.width = "100%";
+      signInBtn.addEventListener("click", function(){ box.style.display = "none"; beginGoogleSignIn(); });
+      box.appendChild(signInBtn);
+      return;
+    }
+    var line = el("div", null, data.account.email);
+    line.style.cssText = "font-size:.85rem;color:var(--muted);padding:4px 6px 8px;word-break:break-all";
+    box.appendChild(line);
+    if (data.account.schoolId == null) {
+      var connectBtn = el("button", "btn btn-sm", "Connect to school");
+      connectBtn.style.cssText = "width:100%;margin-bottom:6px";
+      connectBtn.addEventListener("click", function(){ box.style.display = "none"; headerConnectToSchool(); });
+      box.appendChild(connectBtn);
+    }
+    var outBtn = el("button", "btn btn-sm", "Sign out");
+    outBtn.style.width = "100%";
+    outBtn.addEventListener("click", function(){ box.style.display = "none"; signinSignOut(); });
+    box.appendChild(outBtn);
+  }
+  if ($("headerAccountBtn")) $("headerAccountBtn").addEventListener("click", function(){
+    var box = $("headerAccountDropdown"); if (!box) return;
+    var showing = box.style.display === "none";
+    if (showing) renderHeaderAccountDropdown();
+    box.style.display = showing ? "" : "none";
+  });
+  // "Connect to school", from the header menu — the backfill path for an
+  // account that skipped the code screen (or predates this feature). The
+  // Firebase ID token in signinState is never persisted (by design — see
+  // its own comment), so a normal returning visit has none to call
+  // redeemCode with; this re-runs the same OAuth redirect the original
+  // sign-in used to get a fresh one, then resumes here via the pending-flag
+  // check at the top of signinContinueAfterAccount(). A full visible
+  // redirect on purpose, not a silent prompt=none one like Drive's re-auth —
+  // this is a deliberate "connect my account" action, not a background
+  // token refresh, so seeing Google's own confirmation is the right amount
+  // of ceremony, not a surprise.
+  function headerConnectToSchool(){
+    if (signinState.firebaseIdToken) { headerConnectToSchoolWithToken(); return; }
+    try { sessionStorage.setItem("menchmarkConnectSchoolPending", "1"); } catch (e) {}
+    beginGoogleSignIn();
+  }
+  function headerConnectToSchoolWithToken(){
+    var code = (prompt("Enter your school's code:") || "").trim();
+    if (!code) return;
+    callCloudFunction("redeemCode", { code: code }, signinState.firebaseIdToken).then(function(account){
+      return signinContinueAfterAccount(account);
+    }).then(function(){
+      alert("Connected to your school.");
+    }).catch(function(err){
+      alert("Could not connect: " + (err.message || String(err)));
+    });
+  }
+
   function renderAccountSection(){
+    renderHeaderAccountMenu();
     var box = $("accountBox"); if(!box) return;
     box.innerHTML = "";
 
@@ -12924,6 +13032,8 @@ function setupRoster() {
     if(dd && dd.style.display!=="none" && !e.target.closest("#seatsHistoryDropdown") && !e.target.closest("#seatsHistoryBtn")) dd.style.display="none";
     var ad=$("seatsActivityDropdown");
     if(ad && ad.style.display!=="none" && !e.target.closest(".seats-pill-wrap")) hideSeatsActivityDropdown();
+    var had=$("headerAccountDropdown");
+    if(had && had.style.display!=="none" && !e.target.closest(".header-account-wrap")) had.style.display="none";
   });
   // Phase 1: Seating chart pop-out (seats folded into Dashboard). Instead of
   // a fixed overlay, this shows view-seats the same way the old Seats tab did
@@ -26529,6 +26639,10 @@ nameLine
   // redirect lands. Does nothing at all if pendingOAuthResult is null —
   // the overwhelming majority of boots, tier-2 or never-signed-in included.
   signinCompleteFromRedirect();
+  // Header account menu is independent of Settings ever rendering — most
+  // boots never open Settings at all, so this can't rely on
+  // renderAccountSection()'s own call to stay in sync on a plain load.
+  renderHeaderAccountMenu();
   // Step 7's Drive integration: does nothing unless driveConnect()'s redirect
   // just landed (pendingDriveOAuthResult null the overwhelming majority of
   // boots). renderDriveBackupCard()/driveMaybeAutoWrite() below cover the
