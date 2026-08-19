@@ -93,6 +93,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .hsb-dropdown .hd-pts{font-weight:800;color:var(--good);flex:0 0 auto}
   .hsb-dropdown .hd-pts.neg{color:var(--bad)}
   .hsb-dropdown .hd-empty{padding:8px 10px;font-size:.85rem;color:var(--muted)}
+  .hsb-dropdown .hd-head{padding:7px 10px 3px;font-size:.7rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
   .hd-divider{height:1px;background:var(--line);margin:4px 2px}
   .hsb-dropdown .hd-custom-btn{font-weight:700;color:var(--brass)}
 
@@ -4170,7 +4171,7 @@ function setupRoster() {
     <!-- ============ PRIZE STORE ============ -->
   <section id="view-store" class="view">
     <h2 class="view-title">Prize Store</h2>
-    <p class="view-note">Students spend their points to buy prizes. Set up prizes and their point cost, then pick a student (or scan) and tap what they want. <button class="btn btn-sm" id="coinGuideBtnStore" style="display:none">🪙 Coin Guide</button></p>
+    <p class="view-note">Students spend their points to buy prizes. Set up prizes and their point cost, then pick a student (or scan) and tap what they want. Every prize also gets its own scan code on <b>Print: Activities</b> (the 🖨 on the Activities tab) — scan a prize, then scan or tap students, and the cost comes off each one's balance. Prizes are armed from the seating chart the same way activities are. <button class="btn btn-sm" id="coinGuideBtnStore" style="display:none">🪙 Coin Guide</button></p>
 
     <div class="card pad" style="margin-bottom:16px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Prizes for sale</h3>
@@ -6134,12 +6135,47 @@ function setupRoster() {
   // required — a null actId means "not an activity", not "look harder".
   function armedActivity(){
     if(!armed) return null;
+    // A PRIZE IS NOT AN ACTIVITY. Without this the name+points fallback below
+    // could match a real activity that happens to share an armed prize's label
+    // and cost, and every reroutedActivity()/tracked branch downstream would
+    // then treat a purchase as that activity's scan.
+    if(armed.storeId) return null;
     if(armed.actId){
       for(var i=0;i<data.activities.length;i++){ if(data.activities[i].id===armed.actId) return data.activities[i]; }
       return null;
     }
     return data.activities.filter(function(a){ return a.name===armed.label && a.pts===armed.delta; })[0] || null;
   }
+  /* THE ARMED PRIZE (Prize Store scan codes).
+   *
+   * Resolved by identity at USE time, never held as an object reference — a
+   * prize whose price is edited between arming and the next scan must charge
+   * the new price, and a deleted one must refuse rather than charge a ghost.
+   * Same reason armed.actId is stored rather than the activity itself.
+   */
+  function storeItemById(id){
+    var list=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    for(var i=0;i<list.length;i++){ if(list[i].id===id) return list[i]; }
+    return null;
+  }
+  function armedPrize(){ return (armed && armed.storeId) ? storeItemById(armed.storeId) : null; }
+  /* Arms a prize through the SAME setArmed() every activity uses, so the Record
+   * pill, the seating-chart pill, the scan strip and tapPassesFreeze() all keep
+   * working with no prize-shaped special case of their own. Two details carry
+   * the whole thing:
+   *   - the cost is armed NEGATIVE, because that is what it does to the boy's
+   *     balance, so every surface that colours by sign colours it right; and
+   *   - opts.store is the one extra bit, which is what award() branches on.
+   */
+  function armPrize(it){
+    if(!it) return;
+    setArmed((it.emoji||"🎁")+" "+it.name, -Math.max(0, parseInt(it.cost,10)||0), null, {store:it});
+  }
+  // Keeps the armed pill honest when the prize behind it is edited on the Store
+  // tab — the job refreshArmed() already does for an activity. A DELETED prize
+  // is deliberately left armed: awardPrize() refuses it by name, which tells the
+  // rebbi more than a silently blank pill would.
+  function refreshArmedPrize(){ var it=armedPrize(); if(it) armPrize(it); }
   function setArmed(label, delta, act, opts){
     // warning (NOW.md item 4): not an activity, not a delta -- award() reads
     // this flag and short-circuits before any of its recording branches. See
@@ -6153,7 +6189,8 @@ function setupRoster() {
         id:'act-'+(stripActLogNextId++), ts:Date.now()});
       if(stripActLog.length > 20) stripActLog.length = 20;
     }
-    armed = {label:label, delta:delta, actId:(act && act.id) || null, warning:isWarning};
+    armed = {label:label, delta:delta, actId:(act && act.id) || null, warning:isWarning,
+             storeId:(opts && opts.store && opts.store.id) || null};
     var pill=$("armedPill");
     // Homework Checked earns no points, so the "Now scoring" pill shows the name
     // alone — appending its 0 would read as "this scan is worth nothing". True
@@ -6175,13 +6212,17 @@ function setupRoster() {
       // plain line — reused here so the two phases agree on what "status"
       // means, instead of inventing a second classification.
       var trkItem = isTracked ? trackedItemForActivity(armedA) : null;
-      kicker.textContent = !isTracked ? "Now scoring"
+      kicker.textContent = armed.storeId ? "Now selling"
+        : !isTracked ? "Now scoring"
         : (trkItem && trkItem.id==="ti-attendance") ? "Now marking"
         : "Now recording";
     }
-    // highlight matching activity button
+    // highlight matching activity button — never while a prize is armed. A
+    // prize has no activity behind it, so an activity button that happened to
+    // share its name and cost would light up as though IT were what the next
+    // scan does.
     document.querySelectorAll(".act-btn").forEach(function(b){
-      b.classList.toggle("selected", b.dataset.label===label && Number(b.dataset.delta)===delta);
+      b.classList.toggle("selected", !armed.storeId && b.dataset.label===label && Number(b.dataset.delta)===delta);
     });
     if(typeof renderHeaderScanContext==="function") renderHeaderScanContext();
     if(typeof renderSeatsScanBar==="function") renderSeatsScanBar();
@@ -9833,6 +9874,17 @@ function setupRoster() {
       beep(true);
       return;
     }
+    // A PRIZE CODE IS REFUSED HERE, out loud. This panel awards through
+    // fpAward() -> awardPointsSilent(), which has no prize branch — a prize
+    // armed into fpActId would write a plain point deduction and no purchase
+    // record at all, so the boy would be charged and never owed the prize.
+    // Same treatment, and the same reason, as the tracked-activity refusal
+    // above; left as a refusal rather than built out because selling is a
+    // deliberate, one-boy action and this panel is the fast-scoring surface.
+    if(/^PRZ:/i.test(code)){
+      fpFlash(false,"Prizes can't be sold from this panel — use the scan bar or the seating chart");
+      beep(false); return;
+    }
     var s=studentById(code);
     if(!s){ fpFlash(false,"Unknown: \u201C"+code+"\u201D"); beep(false); return; }
     if(!studentInCurrentClass(s)){ fpFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D"); beep(false); return; }
@@ -11319,6 +11371,29 @@ function setupRoster() {
   // a fixed fourth group. Empty (in points mode) it prints nothing: every
   // section renderer already skips or greys a section with no codes in it.
   var COIN_SECTION_KEY="coin";
+  /* The section the printed PRIZE codes land in — the same idea as
+   * COIN_SECTION_KEY above, and deliberately built the same way: pushed into
+   * the rebbi's OWN data.codeSections the first time he actually has a prize to
+   * print, so it renames, reorders and deletes exactly like the sections he
+   * already has. A starting point, not a fixed fourth group.
+   *
+   * Seeded ONCE (data.storeCodeSectionSeeded) rather than on every load, so a
+   * rebbi who deletes the section keeps it deleted. Deleting a section moves
+   * whatever was in it to his first one; re-adding it on the next load would
+   * drag his prize codes back out and overrule him. Nothing is lost either way
+   * — printCodeSectionOf() falls back to the first section that still exists,
+   * so a prize code whose section is gone still prints.
+   */
+  var STORE_SECTION_KEY="store";
+  function ensureStoreCodeSection(){
+    if(data.storeCodeSectionSeeded) return;
+    if(!data.store || !Array.isArray(data.store.items) || !data.store.items.length) return;
+    var list=codeSections();
+    if(!list.some(function(s){ return s.key===STORE_SECTION_KEY; })){
+      list.push({key:STORE_SECTION_KEY, label:"Prize Store"});
+    }
+    data.storeCodeSectionSeeded=true;
+  }
   // What the three shipped starter activities are worth once balances are
   // counted in Prutot. Left at 1 they are worth one PRUTAH each — the smallest
   // coin in the system — which puts a Darkon (1536 prutot) 1536 scans away and
@@ -12722,6 +12797,12 @@ function setupRoster() {
     // and become exactly the kind of accidental 0-point log entry a stray
     // Custom-0 arm already has to guard against elsewhere.
     if(armed.warning) return applyWarning(s);
+    // PRIZE STORE. Armed like an activity, but it SPENDS rather than scores, so
+    // it branches out here — above everything below, none of which has a prize
+    // to find (armedActivity() returns null for a prize by design). Placed after
+    // the not-in-this-class check above for the same reason a point scan is: a
+    // boy the rebbi cannot score is a boy he cannot charge either.
+    if(armed.storeId) return awardPrize(s);
     // If the armed activity has group restrictions, check this student belongs.
     var armedAct=armedActivity();
     if(armedAct && Array.isArray(armedAct.groups) && armedAct.groups.length>0){
@@ -12786,6 +12867,51 @@ function setupRoster() {
       tb.classList.add("awarded-bad");
       setTimeout(function(){ tb.classList.remove("awarded-bad"); }, 700);
     });
+  }
+  /* A PRIZE, SOLD BY SCAN OR TAP. The Store tab's own buy path with the scan
+   * surface's feedback instead of the tab's — both go through the one
+   * storePurchase() underneath, so a prize bought by scanning a boy at his desk
+   * and a prize bought by picking him from the Store tab's dropdown write
+   * exactly the same two records. That is the whole reason storePurchase() was
+   * extracted rather than this path reimplementing the arithmetic, which is how
+   * the two would come to disagree about what a purchase is.
+   *
+   * FREEZE DOES NOT BLOCK A PURCHASE, and that is deliberate. Freeze has only
+   * ever blocked GIVING — award()'s own check is `armed.delta>0` — so blocking
+   * a purchase would turn a freeze into a confiscation of points the boy had
+   * already earned, rather than a pause on earning more. tapPassesFreeze() says
+   * the same thing for the tap gesture; the two have to agree or a frozen boy
+   * would be refused by one surface and served by the other.
+   *
+   * The toast carries NO band. A purchase is neither a merit nor a demerit, so
+   * a rebbi who has switched the negative banners off must still see the prize
+   * he just sold — and must always see a refusal, or he will think it worked.
+   */
+  function awardPrize(s){
+    var it=armedPrize();
+    // Deleted between arming and this scan. Refused by name rather than
+    // silently, because "nothing happened" on a scan reads as a bad scan.
+    if(!it){
+      flash(false, "Prize no longer in the store", armed.label, "It was deleted after you armed it — arm another");
+      beep(false); return false;
+    }
+    if(score(s.id) < it.cost){
+      flash(false, s.name, isShulchani()?"Not enough coins":"Not enough points",
+            "has "+fmtScore(s.id)+" — "+it.name+" costs "+fmtVal(it.cost));
+      beep(false); flashWarningTile(s.id); return false;
+    }
+    storePurchase(s.id, it);
+    flash(true, s.name, (it.emoji||"🎁")+" "+it.name,
+          fmtDeltaBare(-it.cost)+" · now "+fmtScore(s.id));
+    beep(true);
+    renderRecent(); renderScanBoard();
+    refreshStudentTiles(s.id, -it.cost);
+    refreshLiveViews();
+    // The Store tab is where the "not picked up yet" list lives, so it has to
+    // show a scanned purchase the moment it happens if it is the tab on screen.
+    // Only then: rebuilding a hidden tab on every scan buys nothing.
+    if($("view-store") && $("view-store").classList.contains("active")) renderStore();
+    return true;
   }
   // THE ONE PATH EVERY POINT IN THE APP TRAVELS THROUGH. Extracted verbatim
   // from award() so a second caller can score a student without setting and
@@ -12929,6 +13055,12 @@ function setupRoster() {
    */
   function tapPassesFreeze(){
     if(!armed) return false;
+    // Spending is not giving — see awardPrize(). A frozen boy may still buy a
+    // prize with points he already earned, so the tap must reach award() rather
+    // than the freeze modal. Checked before armedActivity(), which returns null
+    // for a prize and would otherwise fall through to the delta<0 test — right
+    // by accident for a priced prize, wrong for a free one.
+    if(armed.storeId) return true;
     var a=armedActivity();
     if(a && freezeActivity(a)) return false;
     if(a && a.tracked) return true;
@@ -13252,6 +13384,15 @@ function setupRoster() {
   function giveArmedToAll(){
     if(!armed || !armed.label){
       flash(false, "Nothing armed", "", "Pick an activity first, then give it to the class"); beep(false); return;
+    }
+    /* A PRIZE IS REFUSED, and this one matters: awardWith() is the POINTS path,
+     * so a prize let through here would charge every boy in the class its cost
+     * and record no purchase for any of them — every balance down, nobody owed
+     * anything. CTRL:GIVEALL is a printed code, so this is reachable by a single
+     * mis-aimed scan while a prize happens to be armed.
+     */
+    if(armed.storeId){
+      flash(false, "Not for prizes", armed.label, "A prize is sold to one student at a time"); beep(false); return;
     }
     if(reroutedActivity(armedActivity())){
       flash(false, "Not for tracked items", armed.label, "This records a mark, not points — mark the class on its own tab"); beep(false); return;
@@ -13922,6 +14063,24 @@ function setupRoster() {
     // it just cannot rewrite history that a rebbi already acted on.
     if(entry.mcId) mcRevert(entry.sid, entry.delta, entry.mcId);
     if(affectedMain) data.scores[entry.sid]=score(entry.sid)-entry.delta;
+    /* A STORE PURCHASE IS TWO RECORDS, SO UNDO REVERSES BOTH. The points come
+     * back on the line above; this takes the prize back off the "not picked up
+     * yet" list. Without it, undoing a purchase refunded the boy AND left him
+     * still owed the prize — the rebbi's pickup list insisting he had bought
+     * something he had just been refunded for. This is the same pair
+     * refundPurchase() reverses from the other end.
+     *
+     * Matched on purchaseId, never on name or timestamp, so it is exact and so
+     * an entry with no purchase behind it (every scan that is not a prize) costs
+     * one falsy test. Nothing is invented for old purchases: they carry no pid,
+     * so they never match and never lose a row.
+     */
+    if(entry.purchaseId && data.store && Array.isArray(data.store.log)){
+      for(var pi=0; pi<data.store.log.length; pi++){
+        if(data.store.log[pi].pid===entry.purchaseId){ data.store.log.splice(pi,1); break; }
+      }
+      if($("view-store") && $("view-store").classList.contains("active")) renderStore();
+    }
     var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Undo: "+entry.label, delta:-entry.delta, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false, mcId:entry.mcId||undefined, mcMerged:entry.mcMerged||undefined});
     save(); renderRecent(); renderScanBoard();
     // The boy's own tile, on both surfaces. Without this an undo corrected the
@@ -16060,6 +16219,12 @@ function setupRoster() {
     if(c==="CTRL:NOTE"){ startVoiceNote(); return; }
     if(fpOpen){ fpScan(c); return; }
     if(/^ACT:/i.test(c)){ armActivityByCode(c); return; }
+    // PRZ:<prize id> — the Prize Store's own printed code, and the exact
+    // counterpart of ACT: above: it arms a prize, and the next student scan
+    // sells it to him. Routed HERE rather than in processScan() for the reason
+    // spelled out just below about CTRL: codes — the printed card has to work
+    // from across the room without knowing which tab happens to be open.
+    if(/^PRZ:/i.test(c)){ armPrizeByCode(c); return; }
     // CTRL: codes are universal controls, not tied to any one tab or mode — they
     // used to live inside processScan(), which is ONLY ever reached from the
     // final fallback below, meaning they silently never fired on any tab that
@@ -16289,6 +16454,35 @@ function setupRoster() {
         dd.appendChild(b);
       });
     }
+    /* PRIZES, in the same dropdown as the activities — which is the whole point
+     * of them being armable at all. The seating chart is where the rebbi is
+     * standing when a boy asks to spend, so arming the prize and tapping the boy
+     * is the shortest path there is: the cost comes off that boy's own balance
+     * and the prize lands on his pickup list.
+     *
+     * The cost is shown as the DEDUCTION it is (negative, red), so the row reads
+     * the same way a demerit row does — nothing here has to explain that buying
+     * costs something.
+     *
+     * Not filtered by class or by actVisibleOnScreen: prizes are one shared
+     * store for every class, not per-class activities, so there is nothing to
+     * narrow to. An empty store simply prints no section.
+     */
+    var prizes=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    if(prizes.length){
+      dd.appendChild(el("div","hd-divider"));
+      dd.appendChild(el("div","hd-head","Prize Store"));
+      prizes.forEach(function(it){
+        var pb=el("button"); pb.type="button";
+        pb.appendChild(el("span",null,(it.emoji||"🎁")+" "+it.name));
+        pb.appendChild(el("span","hd-pts neg", fmtDeltaBare(-it.cost)));
+        pb.addEventListener("click", function(){
+          armPrize(it); closeFn();
+          var f=$(focusInputId); if(f) f.focus();
+        });
+        dd.appendChild(pb);
+      });
+    }
     dd.appendChild(el("div","hd-divider"));
     var customBtn=el("button","hd-custom-btn"); customBtn.type="button";
     customBtn.appendChild(el("span",null,"✏️ Custom…"));
@@ -16298,6 +16492,21 @@ function setupRoster() {
   $("seatsScanInput").addEventListener("keydown", function(e){
     if(e.key==="Enter"){ e.preventDefault(); var v=this.value; this.value=""; handleScannedCode(v); }
   });
+  /* The prize half of armActivityByCode(). Deliberately shorter, because a
+   * prize has none of the things that make an activity code refusable: no
+   * tracked item to be missing, no Shulchani-only value to be meaningless in
+   * points mode (a cost is a cost either way), and no group restriction. The
+   * only refusal is a code for a prize that no longer exists.
+   */
+  function armPrizeByCode(c){
+    var id=c.slice(4).trim();
+    var it=null, list=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    for(var i=0;i<list.length;i++){ if(String(list[i].id).toUpperCase()===id.toUpperCase()){ it=list[i]; break; } }
+    if(!it){ flash(false,"Unknown prize code","","\u201C"+c+"\u201D — it may have been deleted from the Store"); beep(false); return; }
+    armPrize(it);
+    flash(true, "Now selling", (it.emoji||"🎁")+" "+it.name+"  "+fmtVal(it.cost), "Scan a student to buy it for him");
+    beep(true);
+  }
   function armActivityByCode(c){
     var id=c.slice(4).trim();
     var a=null;
@@ -16376,7 +16585,7 @@ function setupRoster() {
     subBtn.dataset.label="Custom"; subBtn.dataset.delta=-n;
     $("customAddVal").textContent=isShulchani()?"+"+n+" prutot":"+"+n+" pts";
     $("customSubVal").textContent=isShulchani()?"−"+n+" prutot":"−"+n+" pts";
-    if(armed && armed.label==="Custom"){
+    if(armed && !armed.storeId && armed.label==="Custom"){
       addBtn.classList.toggle("selected", armed.delta===n);
       subBtn.classList.toggle("selected", armed.delta===-n);
     } else {
@@ -16401,7 +16610,7 @@ function setupRoster() {
     // the pill arms another is exactly the disagreement this function exists to
     // prevent.
     f.value=n;
-    if(armed && armed.label==="Custom") setArmed("Custom", armed.delta<0 ? -n : n);
+    if(armed && !armed.storeId && armed.label==="Custom") setArmed("Custom", armed.delta<0 ? -n : n);
     syncCustomButtons();
   }
   $("customAmt").addEventListener("input", function(){
@@ -18641,7 +18850,7 @@ function setupRoster() {
       var emo=makeEmojiSelect(it.emoji||"🎁"); emo.addEventListener("change",function(){ it.emoji=emo.value; save(); renderStore(); });
       var nm=el("span","grow"); nm.textContent=it.name;
       nm.appendChild(document.createTextNode("  ")); nm.appendChild(el("span","grp-tag", fmtVal(it.cost)));
-      var ren=el("button","btn btn-sm","Edit"); ren.addEventListener("click",function(){ var nn=prompt("Prize name:",it.name); if(nn===null) return; var nc=prompt(isShulchani()?"Cost (prutot):":"Cost (points):", String(it.cost)); if(nc===null) return; it.name=nn.trim()||it.name; it.cost=Math.max(0,parseInt(nc,10)||0); save(); renderStore(); });
+      var ren=el("button","btn btn-sm","Edit"); ren.addEventListener("click",function(){ var nn=prompt("Prize name:",it.name); if(nn===null) return; var nc=prompt(isShulchani()?"Cost (prutot):":"Cost (points):", String(it.cost)); if(nc===null) return; it.name=nn.trim()||it.name; it.cost=Math.max(0,parseInt(nc,10)||0); save(); refreshArmedPrize(); renderStore(); });
       var del=el("button","btn btn-sm btn-bad","✕"); del.addEventListener("click",function(){ if(!confirm("Delete \""+it.name+"\"?")) return; data.store.items=data.store.items.filter(function(x){return x.id!==it.id;}); save(); renderStore(); });
       row.appendChild(emo); row.appendChild(nm); row.appendChild(ren); row.appendChild(del);
       list.appendChild(row);
@@ -18671,23 +18880,64 @@ function setupRoster() {
     });
     renderStoreHistory();
   }
+  /* THE ONE PATH EVERY PURCHASE TRAVELS THROUGH. Extracted verbatim out of
+   * storeBuy() so the scan path can sell a prize without borrowing this tab's
+   * flash and re-render — the same reason applyScore() was extracted out of
+   * award(), and the same guarantee: there is one definition of what buying a
+   * prize DOES, and two surfaces that report it differently.
+   *
+   * Affordability is the CALLER's check, not this function's, because the two
+   * surfaces word the refusal differently (the tab names the balance, the scan
+   * flash names the boy). Reaching here means the check has passed.
+   *
+   * pid IS THE LINK BETWEEN THE TWO RECORDS a purchase writes: the
+   * data.store.log row (the prize the boy is owed) and the data.log spend entry
+   * (what it cost him). Undo and Refund each reverse both by matching on it.
+   * Before it existed, undoing a purchase handed the points back and left the
+   * prize still sitting on the pickup list.
+   *
+   * Deliberately NOT pushed to the Google Sheet, matching what this path has
+   * always done — spends have never reached the Sheet's Log tab from the Store
+   * tab either, and making the scan path the one exception would have left the
+   * two surfaces disagreeing about what gets recorded where.
+   */
+  function storePurchase(sid, it){
+    var s=studentById(sid); if(!s) return null;
+    var pid=newId(), ts=Date.now();
+    data.scores[sid]=score(sid)-it.cost;
+    data.store.log.unshift({pid:pid, sid:sid, name:s.name, itemName:it.name, emoji:it.emoji||"🎁", cost:it.cost, ts:ts, received:data.store.autoReceived===true});
+    if(data.store.log.length>300) data.store.log.length=300;
+    var entry=addLogEntry({ts:ts, sid:sid, label:"Store: "+it.name, delta:-it.cost, kind:"spend", purchaseId:pid});
+    save();
+    return entry;
+  }
   function storeBuy(sid, it){
     var s=studentById(sid); if(!s) return;
     if(score(sid) < it.cost){ storeFlash(false, isShulchani()?"Not enough coins":"Not enough points", s.name+" has "+fmtScore(sid)+", needs "+fmtVal(it.cost)); beep(false); return; }
-    data.scores[sid]=score(sid)-it.cost;
-    data.store.log.unshift({sid:sid, name:s.name, itemName:it.name, emoji:it.emoji||"🎁", cost:it.cost, ts:Date.now(), received:data.store.autoReceived===true});
-    if(data.store.log.length>300) data.store.log.length=300;
-    addLogEntry({ts:Date.now(), sid:sid, label:"Store: "+it.name, delta:-it.cost, kind:"spend"});
-    save(); beep(true); storeFlash(true, s.name+" bought "+(it.emoji||"")+" "+it.name, (isShulchani()?formatCoins(it.cost,{signed:false})+" → ":"-"+it.cost+" → ")+fmtScore(sid));
-    renderStore(); renderScanBoard();
+    storePurchase(sid, it);
+    beep(true); storeFlash(true, s.name+" bought "+(it.emoji||"")+" "+it.name, (isShulchani()?formatCoins(it.cost,{signed:false})+" → ":"-"+it.cost+" → ")+fmtScore(sid));
+    renderStore(); renderScanBoard(); refreshStudentTiles(sid, -it.cost); refreshLiveViews();
   }
   function refundPurchase(idx){
     var p=data.store.log[idx]; if(!p) return;
     if(!confirm("Refund "+p.name+"'s "+p.itemName+" ("+fmtVal(p.cost)+")?")) return;
     data.scores[p.sid]=score(p.sid)+p.cost;
+    /* CLOSE THE DOOR ON A SECOND REFUND. The purchase's own data.log spend entry
+     * is still standing here, un-undone, and ↩ Undo / History would happily
+     * reverse it as well — handing the cost back twice for one prize. Marking it
+     * undone is what makes the app's two reversal paths agree: whichever one the
+     * rebbi reaches for, the other can no longer double it. Matched on pid, so a
+     * purchase made before prizes were scannable (no pid, no linked entry)
+     * simply skips this and behaves exactly as it always has.
+     */
+    if(p.pid){
+      for(var li=0; li<data.log.length; li++){
+        if(data.log[li].purchaseId===p.pid && !data.log[li].undone){ data.log[li].undone=true; break; }
+      }
+    }
     addLogEntry({ts:Date.now(), sid:p.sid, label:"Store refund: "+p.itemName, delta:p.cost, kind:"refund"});
     data.store.log.splice(idx,1);
-    save(); renderStore(); renderScanBoard();
+    save(); renderStore(); renderScanBoard(); refreshStudentTiles(p.sid); refreshLiveViews();
   }
   function renderStoreHistory(){
     var h=$("storeHistory"); h.innerHTML="";
@@ -18715,6 +18965,9 @@ function setupRoster() {
     var name=$("storeName").value.trim(); if(!name){ $("storeName").focus(); return; }
     var cost=Math.max(0,parseInt($("storeCost").value,10)||0), emoji=$("storeEmoji").value||"🎁";
     data.store.items.push({id:"it"+Date.now().toString(36)+Math.floor(Math.random()*1000), name:name, cost:cost, emoji:emoji});
+    // The rebbi who adds his first prize AFTER this loaded gets the section too,
+    // not only the one who already had prizes when load2fix() last ran.
+    ensureStoreCodeSection();
     $("storeName").value=""; $("storeCost").value=""; save(); renderStore(); $("storeName").focus();
   });
   $("storeName").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); $("storeAdd").click(); } });
@@ -23056,7 +23309,9 @@ nameLine
     });
   }
   // if the activity being edited is the one currently armed, keep the armed pill in sync
-  function refreshArmed(a){ if(armed && armed.label===a.name){ setArmed(a.name, a.pts, a); } }
+  // The !armed.storeId guard stops an activity edit from silently re-arming
+  // over a prize that happens to share its name.
+  function refreshArmed(a){ if(armed && !armed.storeId && armed.label===a.name){ setArmed(a.name, a.pts, a); } }
   $("addActivity").addEventListener("click", function(){
     var name=$("newActName").value.trim(); if(!name){ $("newActName").focus(); return; }
     // In Shulchani the field is a COUNT of the coin picked beside it, so the
@@ -23273,6 +23528,21 @@ nameLine
     items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
+    /* PRIZE STORE CODES. Printed alongside the activity codes because that is
+     * exactly how they are used: scan the prize, then scan the boy. They earn
+     * their place on this sheet rather than a sheet of their own — a rebbi
+     * carrying one clipboard should not need a second one to sell a pencil.
+     *
+     * The sub-line quotes the cost through fmtVal(), so a Shulchani class reads
+     * it in coins and a points class in points, and the tone is "neg" because
+     * that is what it does to a balance. Same reasoning as the coin codes: the
+     * printed line says what the code DOES, never what it is called.
+     */
+    (data.store && Array.isArray(data.store.items) ? data.store.items : []).forEach(function(it){
+      items.push({qrText:"PRZ:"+it.id, name:(it.emoji||"🎁")+" "+it.name,
+                  sub:"costs "+fmtVal(it.cost), tone:"neg",
+                  defaultSection:STORE_SECTION_KEY});
+    });
     // #117: drop the codes this rebbi has turned off. Filtered HERE, once,
     // because this function is the single source for the tile view, the Avery
     // sheets and the class sheet's footer alike — filtering in each renderer is
@@ -26264,6 +26534,14 @@ nameLine
     // old, already-resolved purchases as newly "pending."
     if(typeof data.store.autoReceived!=="boolean") data.store.autoReceived=false;
     data.store.log.forEach(function(p){ if(typeof p.received!=="boolean") p.received=true; });
+    /* pid — the link between a purchase row and its data.log spend entry (see
+     * storePurchase()). Purely additive, so no DATA_VERSION bump: a purchase
+     * made before prizes were scannable has no pid and no linked entry to find,
+     * and both reversal paths test the pid for truth before matching on it. It
+     * is normalised to null rather than left undefined only so the field's shape
+     * is the same on every row, which is what the guards below it read.
+     */
+    data.store.log.forEach(function(p){ if(typeof p.pid!=="string" || !p.pid) p.pid=null; });
     if(!data.earned) data.earned={};
     if(!data.weekly) data.weekly={};
     if(typeof data.standingsActivity!=="string") data.standingsActivity="";
@@ -26531,6 +26809,11 @@ nameLine
     if(!Array.isArray(data.codeSections) || !data.codeSections.length){
       data.codeSections = DEFAULT_CODE_SECTIONS.map(function(s){ return {key:s.key, label:s.label}; });
     }
+    // Printed prize codes need a section to land in. One-shot, and only for a
+    // rebbi who actually has prizes — see ensureStoreCodeSection(). Runs after
+    // the guard above, which is what guarantees there is a list to push onto.
+    if(typeof data.storeCodeSectionSeeded!=="boolean") data.storeCodeSectionSeeded=false;
+    ensureStoreCodeSection();
     // Replaced by each section's own label in v5. Deleted rather than left to
     // rot, so nothing can read a stale name back later.
     delete data.codeSectionNames;
