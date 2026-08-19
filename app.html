@@ -7572,10 +7572,13 @@ function setupRoster() {
   // The single entry point for switching to any leaf tab — used by direct
   // clicks, subtab clicks, and any code elsewhere that needs to jump screens.
   // Hides the global scan bar on a short list of purely administrative tabs
-  // where scanning isn't the point — Settings, Backup & Restore, and the whole
+  // where scanning isn't the point — Settings, Backup & Restore, the whole
   // Print group (which is about generating printable output, not live
-  // interaction). Visible everywhere else, including Students/Activities
-  // management, since scanning to double-check a QR code there is reasonable.
+  // interaction), the Students and Activities management screens, and the
+  // Review group's Text tab (a setup/paste screen, not a live one). Visible
+  // on every other tab. Keep this comment and the array below in agreement —
+  // they disagreed for months about Students/Activities, which is what the
+  // tab audit's item 23 was.
   var GLOBAL_SCAN_BAR_HIDDEN_TABS=["settings","backup","students","activities","printStudents","printActivities","printSeats","printPoints","learn-text"];
   function applyGlobalScanBarVisibility(tab){
     var bar=$("globalScanBar"); if(!bar) return;
@@ -22491,8 +22494,18 @@ nameLine
   var GB_EDIT_ITEMS = {"ti-attendance":1, "ti-homework":1};
   // Count items (#227 slice 3) are gated on method, not id — unlike
   // Attendance/Homework there is one item per tracked activity, so there is
-  // no fixed id to list here.
-  function gbCanEdit(item){ return !!item && (Object.prototype.hasOwnProperty.call(GB_EDIT_ITEMS, item.id) || item.method==="count"); }
+  // no fixed id to list here. Pass (#227 slice 4) is edited today-only, not
+  // by this list — setPass() always acts on "right now" (Date.now(), no
+  // dateKey concept at all), the same as the tab's own Mark used/Give back
+  // buttons, so a past day's cell can never be correctly written to and
+  // stays read-only. `dateKey` is optional so every other caller of
+  // gbCanEdit(item) is unaffected.
+  function gbCanEdit(item, dateKey){
+    if(!item) return false;
+    if(Object.prototype.hasOwnProperty.call(GB_EDIT_ITEMS, item.id) || item.method==="count") return true;
+    if(item.id==="ti-pass") return dateKey===todayKey();
+    return false;
+  }
   // Only ever ONE picker on screen, and it is torn down before another opens.
   var gbPickEl=null;
   function gbClosePicker(){
@@ -22560,8 +22573,8 @@ nameLine
   /* Opens the status picker for one boy on one day and writes the choice.
    * `td` is only used to position the menu and to take focus back afterwards.
    * `item` decides which legacy store this writes through — see the WRITE-SIDE
-   * doc block above for why only these two enum items and count items are
-   * wired up yet (Pass and its current-week-only editing are next). */
+   * doc block above for why only these two enum items, count items, and
+   * Pass (today-only) are wired up. */
   function gbOpenPicker(td, item, sid, dateKey){
     gbClosePicker();
     var s=studentById(sid);
@@ -22570,6 +22583,53 @@ nameLine
     box.setAttribute("role","menu");
     var head=el("div","gb-pick-head",(s.name||"")+" · "+gbDateLabel(dateKey)+" "+gbDowLabel(dateKey));
     box.appendChild(head);
+    // Pass (#227 slice 4) is two independent actions, not a mutually
+    // exclusive enum — the exact same "Mark used"/"Give back" buttons the
+    // Passes tab's own row already offers, calling the exact same setPass().
+    // Only ever reachable for today's cell — see gbCanEdit().
+    if(item.id==="ti-pass"){
+      var used=passCount(sid), done=passExhausted(sid);
+      if(!done){
+        var useBtn=document.createElement("button");
+        useBtn.type="button";
+        useBtn.textContent="Mark used";
+        useBtn.addEventListener("click", function(){
+          gbClosePicker();
+          setPass(sid, true);
+          flash(true, s.name, "Bathroom Pass", "Marked used — corrected from the Gradebook", "tracked");
+          if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
+          refreshLiveViews();
+          renderGbTable();
+        });
+        box.appendChild(useBtn);
+      }
+      if(used>0){
+        var backBtn=document.createElement("button");
+        backBtn.type="button";
+        backBtn.textContent="Give back";
+        backBtn.addEventListener("click", function(){
+          gbClosePicker();
+          setPass(sid, false);
+          flash(false, s.name, "Bathroom Pass", "Given back — corrected from the Gradebook", "tracked");
+          if($("view-passes") && $("view-passes").classList.contains("active")) renderPasses();
+          refreshLiveViews();
+          renderGbTable();
+        });
+        box.appendChild(backBtn);
+      }
+      document.body.appendChild(box);
+      var pr=td.getBoundingClientRect(), pbw=box.offsetWidth, pbh=box.offsetHeight;
+      var pleft=Math.min(pr.left, window.innerWidth-pbw-8);
+      var ptop=(pr.bottom+pbh+8>window.innerHeight) ? Math.max(8, pr.top-pbh-4) : pr.bottom+4;
+      box.style.left=Math.max(8,pleft)+"px";
+      box.style.top=ptop+"px";
+      gbPickEl=box;
+      var pfirst=box.querySelector("button");
+      if(pfirst) pfirst.focus();
+      document.addEventListener("mousedown", gbPickAway, true);
+      document.addEventListener("keydown", gbPickKey, true);
+      return;
+    }
     // Count items (#227 slice 3) are a target-count input, not an enum choice
     // — a different shape entirely, so they get their own small builder and
     // skip the picker-button rendering below.
@@ -22840,11 +22900,11 @@ nameLine
           // has to be carried explicitly.
           td.setAttribute("aria-label", spoken);
           if(has) td.title=spoken;
-          // The write side (#227). Screen only, attendance and homework only —
-          // see gbOpenPicker for why those are the limits today. A cell with NO
+          // The write side (#227). Screen only. Pass is today's cell only —
+          // see gbOpenPicker/gbCanEdit for why. A cell with NO
           // record is editable too: "he was missed on Monday" is the correction
           // a rebbi most often comes to the Gradebook to make.
-          if(editable && gbCanEdit(it)){
+          if(editable && gbCanEdit(it, k)){
             td.classList.add("gb-edit");
             td.tabIndex=0;
             td.setAttribute("role","button");
@@ -28510,11 +28570,16 @@ nameLine
           // this bridge runs — load() happens first — so setting it back here
           // is what actually makes it start hidden for a new rebbi; it isn't
           // fighting anything live. None of this touches an existing rebbi's
-          // saved navHidden, and no group here ever drops below 2 visible
-          // tabs, so the Lean-mode empty-subtab-row bug (#121) cannot recur.
+          // saved navHidden.
+          //
+          // "standings" does drop to a single visible tab here (Trends and
+          // Contest are both seeded hidden), which is fine and NOT the
+          // Lean-mode bug (#121): renderSubTabs() returns early below 2
+          // visible tabs, so the row is omitted rather than rendered empty.
+          // Lean's failure was a wasted second header row, not this.
           if (!restoring) {
             data.navHidden.groups.learn = true;
-            ["trends","contest","auction","spinner","passes","attendance","tracker","homework","gradebook"]
+            ["trends","contest","auction","brachos","spinner","passes","attendance","tracker","homework","gradebook"]
               .forEach(function(t){ data.navHidden.tabs[t] = true; });
             changed = true;
           }
@@ -28545,6 +28610,46 @@ nameLine
           // Re-id only the wizard's entries, after the merge, so a generated id
           // can't collide with one a tracked activity already holds.
           data.activities.forEach(function(a){ if (!a.id) a.id = nextActId(); });
+          changed = true;
+        }
+
+        /* Prizes from wizard — the Prize Store's half of the setup screens.
+           MERGE BY NAME, never replace, for the same reason the activities
+           block above merges: by the time this runs load2fix() has already
+           guaranteed data.store exists, and a rebbi could in principle reach
+           here with items already in it. Skipping a name that is already there
+           means running the wizard twice cannot produce two "Pencil" rows with
+           two different prices and no way to tell which code sells which.
+
+           Nothing here seeds the printed "Prize Store" code section — that is
+           ensureStoreCodeSection()'s job, and load2fix() runs again at the end
+           of this function (changed === true), which is what picks it up. */
+        if (Array.isArray(s.prizes)) {
+          if (!data.store || typeof data.store !== "object") data.store = {items:[], log:[]};
+          if (!Array.isArray(data.store.items)) data.store.items = [];
+          var existingPrize = {};
+          data.store.items.forEach(function(it){ existingPrize[(it.name||"").toLowerCase()] = true; });
+          s.prizes.forEach(function(p, i) {
+            var pn = (p && p.name || "").trim();
+            if (!pn) return;                                   // blank row the rebbi never filled in
+            if (existingPrize[pn.toLowerCase()]) return;
+            var c = parseInt(p && p.cost, 10);
+            // A negative cost would PAY a boy for taking a prize. The wizard
+            // clamps as it is typed; this is the second, authoritative clamp,
+            // because the blob is plain localStorage and is not to be trusted
+            // just because our own screen wrote it.
+            if (isNaN(c) || c < 0) c = 0;
+            // The index is part of the id: Date.now() is identical for every
+            // item in this loop, so the store's own `it<time><rand>` shape
+            // could collide within a single wizard run.
+            data.store.items.push({
+              id: "it" + Date.now().toString(36) + i + Math.floor(Math.random()*1000),
+              name: pn,
+              cost: c,
+              emoji: (p && typeof p.emoji === "string" && p.emoji) ? p.emoji : "🎁"
+            });
+            existingPrize[pn.toLowerCase()] = true;
+          });
           changed = true;
         }
 
