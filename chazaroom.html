@@ -967,6 +967,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
         ptzhttp.err = ptzUsable(j) ? "" : ((j && j.error) || "unplug it and plug it back in, or close any app using it (the bridge is running, the camera isn't answering).");
         ptzhttp.ok = ptzUsable(j);
         if(!ptzhttp.ok) return false;
+        ptzhttp.device=(j&&j.device)||"";
         if(j.panRange) ptzhttp.pan=j.panRange; if(j.tiltRange) ptzhttp.tilt=j.tiltRange; if(j.zoomRange) ptzhttp.zoom=j.zoomRange;
         ptzRemember(j); return true;
       })
@@ -982,8 +983,41 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
   function ptzSettled(){ return (Date.now()-(ptzhttp.movedAt||0))>PIPE_LAG; }
   function ptzSet(p){ var qs=Object.keys(p).map(function(k){ return k+"="+Math.round(p[k]); }).join("&");
     ptzhttp.movedAt=Date.now();
-    return fetch(ptzhttp.url+"/set?"+qs,{cache:"no-store"}).then(function(r){ return r.json(); }).then(function(j){ ptzhttp.movedAt=Date.now(); return ptzRemember(j); }); }
-  function showSweepSetup(){ if(ptzhttp.ok){ $("sweepSetup").hidden=false; $("sweepDetected").textContent="PTZ bridge found ✓"; $("sweepGameWrap").hidden=false; $("ptzPad").hidden=false; updateSetupHint(); renderRoomState(); } }
+    return fetch(ptzhttp.url+"/set?"+qs,{cache:"no-store"}).then(function(r){ return r.json(); })
+      .then(function(j){ ptzhttp.movedAt=Date.now(); return ptzRemember(j); })
+      .catch(function(e){ ptzDown(); throw e; }); }   /* a command that cannot be delivered downgrades the UI at once */
+  function showSweepSetup(){ if(ptzhttp.ok){
+      $("sweepSetup").hidden=false;
+      /* name the device: a simulated bridge answering on the same port used to
+         read as a healthy camera, and the tick alone could not tell them apart */
+      $("sweepDetected").textContent="PTZ bridge found ✓"+(ptzhttp.device? (" — "+ptzhttp.device) : "");
+      $("sweepOn").disabled=false;
+      $("sweepGameWrap").hidden=false; $("ptzPad").hidden=false; updateSetupHint(); renderRoomState();
+    } }
+  /* The bridge was there and has stopped answering. This is the state that used
+     to be invisible: the app probed once at load, so a bridge that died (or a
+     camera unplugged) left a green tick on screen while every command silently
+     failed — "it says live but nothing moves". */
+  function showBridgeGone(){
+    if($("sweepSetup").hidden) return;          /* never had one: stay quiet */
+    $("sweepDetected").innerHTML='<strong style="color:var(--bad)">PTZ bridge stopped answering</strong> — start ptz-bridge.ps1 again; this checks every few seconds and will come back on its own.';
+    $("sweepOn").checked=false; $("sweepOn").disabled=true;
+    $("sweepGameWrap").hidden=true; $("ptzPad").hidden=true;
+    sweep.on=false; sweep.stops=[];
+  }
+  function ptzApply(){
+    if(ptzhttp.ok) showSweepSetup();
+    else if(ptzhttp.err) showBridgeProblem();
+    else showBridgeGone();
+  }
+  function ptzDown(){ if(ptzhttp.ok){ ptzhttp.ok=false; ptzhttp.err=""; ptzApply(); } }
+  /* Liveness is continuous, not a one-shot at boot. Cheap (one tiny GET), and it
+     recovers by itself the moment the bridge is restarted. */
+  function ptzHeartbeat(){
+    var was=ptzhttp.ok;
+    return probePtzHttp().then(function(now){ if(now!==was) ptzApply(); });
+  }
+  setInterval(ptzHeartbeat, 5000);
   /* Bridge answering but camera unreachable — say so rather than going quiet,
      because a silent missing panel looks identical to "no bridge installed". */
   function showBridgeProblem(){
@@ -1001,7 +1035,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
     if(sweep.on){ sweep.on=false; sweep.stops=[]; $("sweepStatusLine").textContent="Sweep paused while you aim — Back to the lobby resumes it."; }
     var r=ptzhttp[axis], p={};
     p[axis]=Math.max(r[0],Math.min(r[1],ptzhttp.cur[axis]+delta));
-    ptzSet(p).catch(function(){});
+    ptzSet(p).catch(function(){});   /* ptzSet already downgrades the UI on failure */
   }
   (function(){
     var rep=null;
@@ -1782,7 +1816,7 @@ var BarcodeDetectionAPI=(function(e){Object.defineProperty(e,Symbol.toStringTag,
   listCams();
   renderQList();
   updateSetupHint();
-  probePtzHttp().then(function(ok){ if(ok) showSweepSetup(); else if(ptzhttp.err) showBridgeProblem(); });
+  probePtzHttp().then(function(){ ptzApply(); });
 })();
 </script>
 </body>
