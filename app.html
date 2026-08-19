@@ -618,6 +618,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 0}
   .seat-modebtn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:6px 12px;font-size:.85rem;font-weight:600}
   .seat-modebtn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  /* 🏆 Class, in the chart's toolbar. Brass on purpose: every other button in
+     that row changes what you are LOOKING at and can be pressed freely, while
+     this one moves a score. It deliberately never takes .active — it is an
+     action, not a state, and a toggle-looking button in a row of real toggles
+     would read as "class mode is on". */
+  .seat-classbtn{background:var(--brass-soft);border-color:#e0d2b4;color:#6b4d18;font-weight:800}
+  .seat-classbtn:hover{background:var(--brass);color:#fff;border-color:var(--brass)}
   /* The view switch — List / Seating chart — sits in the toolbar itself,
      as a segmented pair, so it reads as one control with two states rather
      than two buttons that happen to sit together. */
@@ -4862,7 +4869,7 @@ function setupRoster() {
     <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Class Points</h3>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setClassPoints"> Give the class its own points, counted separately from the boys'</label>
-      <p class="view-note" style="margin:8px 0 0">Off by default. When on, each class gets its own pool of points that works like an extra "student" — arm an activity and scan the class's own QR card (print it from <b>Run → QR Labels → Activity Menu</b>), or tap <b>🏆 Class</b> on the Record tab. The running total sits in a 🏆 pill in the top bar, right beside the class picker — click it to see every class's total at once. The class pool never appears in the Leader Board, the raffle, the picker, attendance or the Gradebook — it is a separate count, not a boy.</p>
+      <p class="view-note" style="margin:8px 0 0">Off by default. When on, each class gets its own pool of points that works like an extra "student" — arm an activity and scan the class's own QR card (print it from <b>Run → QR Labels → Activity Menu</b>), or tap <b>🏆 Class</b> on the Record tab or on the seating chart. The running total sits in a 🏆 pill in the top bar, right beside the class picker — click it to see every class's total at once. The class pool never appears in the Leader Board, the raffle, the picker, attendance or the Gradebook — it is a separate count, not a boy.</p>
       <p class="view-note" style="margin:8px 0 0">Class points are spent in the <b>Prize Store</b>, where a prize can be marked <b>for the whole class</b> (a pizza party, a trip) instead of for one student. A class scan can be undone and shows in History exactly like any other scan.</p>
       <p class="view-note" style="margin:8px 0 0">Turning this off later hides the pill, the button and the class prizes — it never deletes a pool's points. Turn it back on and the totals are exactly where they were.</p>
     </div>
@@ -15767,6 +15774,29 @@ function setupRoster() {
         seg.appendChild(seatBtn);
       }
       toolbar.appendChild(seg);
+    }
+    /* 🏆 Class — give the armed activity to the class pool, from the chart the
+     * rebbi is already looking at. The seating chart is where he scores boys by
+     * tapping, so "and one for the whole class" belongs on the same surface
+     * rather than only on the Record tab.
+     *
+     * Placed BEFORE ⚙ Display rather than after it, for the reason the comment
+     * below gives about the switch: the drawer's contents flow into this same
+     * row (display:contents), so anything appended after the ⚙ button gets
+     * pushed along when the drawer opens. In front of it, this button holds
+     * still whether the drawer is open or shut.
+     *
+     * Brass, not a plain seat-modebtn, because everything else in this row
+     * changes what you are LOOKING at and this one changes a score. Same
+     * visibility rule as the Record tab's copy — hidden on "All classes" when
+     * there is more than one class, since there would be no single pool to
+     * charge and guessing would put points on the wrong class's board.
+     */
+    if(classPointsOn() && (data.currentClass || !groups().length)){
+      var cpBtn=el("button","seat-modebtn seat-classbtn","🏆 Class");
+      cpBtn.title="Give the armed activity to "+classPoolLabel(data.currentClass)+"'s class pool — one award to the class, not one to each boy";
+      cpBtn.addEventListener("click", function(){ awardArmedToClass(data.currentClass); });
+      toolbar.appendChild(cpBtn);
     }
     // ⚙ Display comes AFTER the List/Seating chart switch (not before it) so
     // that opening its drawer never shifts the switch — the drawer's content
