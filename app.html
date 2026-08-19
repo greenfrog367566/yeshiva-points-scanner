@@ -70,11 +70,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     flex:0 0 auto;user-select:none;
   }
   .brand .name{font-family:var(--serif);font-size:1.35rem;font-weight:600;letter-spacing:.2px}
-  .brand .sub{font-size:.78rem;color:#aeb6d2;letter-spacing:.4px;text-transform:uppercase;margin-top:2px}
   .brand .name[contenteditable]{outline:none;border-bottom:1px dashed transparent;padding-bottom:1px}
   .brand .name[contenteditable]:hover,.brand .name[contenteditable]:focus{border-bottom-color:#6b76a6}
-  .brand .sub[contenteditable]{outline:none;border-bottom:1px dashed transparent;padding-bottom:1px;cursor:text}
-  .brand .sub[contenteditable]:hover,.brand .sub[contenteditable]:focus{border-bottom-color:#6b76a6}
   .header-right{margin-left:auto;display:flex;align-items:center;gap:14px}
   .header-date{font-size:.85rem;color:#aeb6d2;white-space:nowrap}
   .mute-btn{background:transparent;border:1px solid #41507f;color:#cfd5ea;border-radius:8px;padding:6px 10px;font-size:.85rem}
@@ -2245,7 +2242,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <span class="brand-logo" title="Menchmark">M</span>
   <div class="brand">
     <span class="name" id="schoolName" contenteditable="true" spellcheck="false">Sample School</span>
-    <span class="sub" id="bunkName" contenteditable="true" spellcheck="false">Sample Class 1</span>
   </div>
   <nav class="tabs" id="groupTabs"></nav>
   <div class="header-right">
@@ -4644,6 +4640,13 @@ function setupRoster() {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">Class name</h3>
+      <p class="view-note" style="margin:0 0 10px">The name of the class this app was set up for. It heads your printed Gradebook, and stands in on printed attendance and seating sheets when no particular class is picked in the dropdown at the top right. Your school name is edited by tapping it in the top left.</p>
+      <input type="text" id="setClassName" class="field" maxlength="60" placeholder="Sample Class 1" style="max-width:320px">
+      <p class="view-note" style="margin:8px 0 0">If you teach several classes, this is not the one you are working with right now — that is the dropdown at the top right of every screen. This is the one name behind it all, used wherever no single class has been chosen.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 8px">Barcode/QR Scanner — connect directly (Serial/COM)</h3>
       <p class="view-note" style="margin:0 0 10px">Most cheap USB scanners need <b>no setup</b> — they act like a keyboard, and just work on the Scan tab already. Use this only if your scanner connects as an actual <b>serial/COM port</b> device instead (common with some industrial, handheld, or Bluetooth-SPP scanners) — connecting it here reads scans straight from the port, everywhere in the app, instead of through the keyboard.</p>
       <div id="serialUnsupported" class="pill-note" style="display:none">Direct serial connection isn't supported in this browser/device. It needs <b>Chrome or Edge on a computer</b>, over HTTPS. Regular keyboard-style scanning still works everywhere, including here.</div>
@@ -5579,7 +5582,7 @@ function setupRoster() {
       data=migrateData(incoming); load2fix();
       // The restore-from-backup re-render list, minus its save().
       $("schoolName").textContent=data.school;
-      $("bunkName").textContent=data.className;
+      syncClassNameField();
       $("sheetUrl").value=data.sheetUrl||"";
       $("autoSheet").checked=(data.autoSheet!==false);
       renderActButtons(); renderRecent(); renderStudents(); renderActivities();
@@ -7018,7 +7021,7 @@ function setupRoster() {
       save();
       clearStaleTicketPools();
       $("schoolName").textContent = data.school;
-      $("bunkName").textContent = data.className;
+      syncClassNameField();
       $("sheetUrl").value = data.sheetUrl || "";
       $("autoSheet").checked = (data.autoSheet !== false);
       renderActButtons(); renderRecent(); renderStudents(); renderActivities();
@@ -7183,7 +7186,7 @@ function setupRoster() {
     load2fix();
     save();
     $("schoolName").textContent = data.school;
-    $("bunkName").textContent = data.className;
+    syncClassNameField();
     $("sheetUrl").value = data.sheetUrl || "";
     $("autoSheet").checked = (data.autoSheet !== false);
     renderActButtons(); renderRecent(); renderStudents(); renderActivities();
@@ -10762,6 +10765,7 @@ function setupRoster() {
   });
   function renderSettings(){
     renderAccountSection();
+    $("setClassName").value = data.className || "";
     $("setSound").checked = !data.muted;
     $("setVoiceNotes").checked = data.voiceNotes!==false;
     $("setShulchani").checked = !!data.shulchaniMode;
@@ -11128,6 +11132,11 @@ function setupRoster() {
     data.muted = !this.checked; save();
     var mb=$("muteBtn"); if(mb) mb.textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
   });
+  /* Saved on blur, not on every keystroke: data.className heads printed sheets,
+   * and a half-typed name has no business reaching a Gradebook header or a
+   * save() on every character. Empty falls back to the default rather than
+   * leaving printouts with a blank title. */
+  $("setClassName").addEventListener("change", function(){ data.className=this.value.trim()||"Sample Class 1"; this.value=data.className; save(); });
   $("setTapBreakdown").addEventListener("change", function(){ data.tapShowsBreakdown=this.checked; save(); });
   $("setBannerPositive").addEventListener("change", function(){ data.bannerPositive=this.checked; save(); });
   $("setBannerNegative").addEventListener("change", function(){ data.bannerNegative=this.checked; save(); });
@@ -25352,7 +25361,7 @@ nameLine
         save();
         // Refresh all views (same as JSON restore)
         $("schoolName").textContent = data.school;
-        $("bunkName").textContent = data.className;
+        syncClassNameField();
         $("sheetUrl").value = data.sheetUrl || "";
         $("autoSheet").checked = (data.autoSheet !== false);
         renderActButtons(); renderRecent(); renderStudents(); renderActivities();
@@ -26329,7 +26338,7 @@ nameLine
           data=migrateData(resolvedObj); load2fix(); save();
           clearStaleTicketPools();
           $("schoolName").textContent=data.school;
-          $("bunkName").textContent=data.className;
+          syncClassNameField();
           $("sheetUrl").value=data.sheetUrl||"";
           $("autoSheet").checked=(data.autoSheet!==false);
           renderActButtons(); renderRecent(); renderStudents(); renderActivities();
@@ -26413,7 +26422,7 @@ nameLine
         // rebuild earned/weekly trend history from the full entry list (positive points only)
         entries.forEach(function(e){ if(e.delta>0){ var s=byName[e.name.toLowerCase()]; if(s) recordEarn(s.id, e.label, e.delta, e.ts); } });
         save();
-        $("schoolName").textContent=data.school; $("bunkName").textContent=data.className;
+        $("schoolName").textContent=data.school; syncClassNameField();
         $("sheetUrl").value=data.sheetUrl||""; $("autoSheet").checked=(data.autoSheet!==false);
         renderActButtons(); renderRecent(); renderStudents(); renderActivities(); renderClassSel();
         $("logCsvStatus").textContent="Restored "+fresh.students.length+" students, "+fresh.activities.length+" activities, and "+entries.length+" log entries.";
@@ -27489,8 +27498,15 @@ nameLine
   /* ---------- school name + mute + date ---------- */
   $("schoolName").addEventListener("blur", function(){ data.school=this.textContent.trim()||"My School"; this.textContent=data.school; save(); });
   $("schoolName").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); this.blur(); } });
-  $("bunkName").addEventListener("blur", function(){ data.className=this.textContent.trim()||"Sample Class 1"; this.textContent=data.className; save(); });
-  $("bunkName").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); this.blur(); } });
+  /* The class name is edited on the Settings tab now — the header line that
+   * used to show it was removed: it displayed data.className, which is the
+   * single-class fallback name, and it never changed when the class dropdown
+   * on the right did, so it read as "the class I am in" while being nothing
+   * of the sort. Every path that swaps `data` wholesale (restore, wipe,
+   * cross-tab adopt) calls this the way it used to rewrite that span, so the
+   * Settings field is right even when the restore happens while it is open.
+   * renderSettings() also sets it on every visit to the tab. */
+  function syncClassNameField(){ var ci=$("setClassName"); if(ci) ci.value=data.className||""; }
   $("muteBtn").addEventListener("click", function(){ data.muted=!data.muted; this.textContent=data.muted?"🔇 Sound off":"🔊 Sound on"; var ss=$("setSound"); if(ss) ss.checked=!data.muted; save(); });
   function showDate(){
     var d=new Date();
@@ -27835,7 +27851,7 @@ nameLine
   })();
   applySetupWizard();
   $("schoolName").textContent=data.school;
-  $("bunkName").textContent=data.className;
+  syncClassNameField();
   $("sheetUrl").value=data.sheetUrl||"";
   $("autoSheet").checked=(data.autoSheet!==false);
   $("muteBtn").textContent=data.muted?"🔇 Sound off":"🔊 Sound on";
@@ -28094,7 +28110,7 @@ This program runs entirely in a web browser (like Chrome or Safari) — there is
 Every screen in the program now shares a three-part header:
 
 
-- A top bar with your school/class name on the left, the main section tabs in the middle (Scan, Rewards, Learn, Tools, Print, Setup), and the class dropdown on the right — tap the school/class name to rename it.
+- A top bar with your school name on the left, the main section tabs in the middle (Scan, Rewards, Learn, Tools, Print, Setup), and the class dropdown on the right — tap the school name to rename it, and set your class name on the Settings tab.
 
 
 - A second row just below it with the sub-tabs for whichever section you're in (for example, under Scan you'll see Dashboard, Seats, History, Leader Board, Trends, Contest), plus a row of quick icons.
@@ -29158,7 +29174,7 @@ Two different resets, matching the two sections of the scanner's manual — try 
     bar.id = "mmUpdateBanner";
     bar.setAttribute("role", "status");
     // Sticky and IN THE FLOW, not fixed. A fixed bar sat on top of the app
-    // header and hid the class name behind it; in-flow means the page simply
+    // header and hid the school name behind it; in-flow means the page simply
     // starts lower, with no padding compensation to keep in sync and nothing
     // to undo when it is dismissed. `body` is a plain block box that scrolls
     // with the document, so sticky pins it correctly here.
