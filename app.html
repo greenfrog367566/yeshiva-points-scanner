@@ -117,7 +117,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   }
   nav.subtabs button:hover{color:var(--ink)}
   nav.subtabs button.active{color:var(--ink);border-bottom-color:var(--brass)}
-  .subtabs-icons{display:flex;align-items:center;gap:8px;padding:6px 12px;flex:0 0 auto}
+  /* margin-left:auto keeps these pinned right even when nav.subtabs is
+     :empty and collapses out of flow (single visible subtab in the group) —
+     without it, .subtabs-icons is the only flex child left and slides left. */
+  .subtabs-icons{display:flex;align-items:center;gap:8px;padding:6px 12px;flex:0 0 auto;margin-left:auto}
   .subtabs-icons .icon-btn{border-color:var(--line);color:var(--muted)}
   .subtabs-icons .icon-btn:hover{background:#e8eaf1}
   .subtabs-icons .mute-btn{border-color:var(--line);color:var(--muted)}
@@ -890,13 +893,29 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .pill-note{font-size:.85rem;color:var(--muted);background:#f7f8fb;border:1px solid var(--line);border-radius:10px;padding:10px 13px;margin-bottom:14px}
 
   /* ======= BACKUP ======= */
-  .backup-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-  @media(max-width:620px){.backup-grid{grid-template-columns:1fr}}
+  /* One column — every card is collapsed by default (bk-card is a details
+     element), and a 2-col grid of collapsed cards looked mismatched the
+     moment only one side got expanded. */
+  .backup-grid{display:grid;grid-template-columns:1fr;gap:14px}
   .bk-card h3{font-family:var(--serif);margin:0 0 6px;font-size:1.1rem}
   .bk-card p{margin:0 0 12px;font-size:.88rem;color:var(--muted)}
+  /* Every bk-card is a details-element now — click any title to expand. summary
+     carries the same look the old always-visible h3 had; body content gets
+     its own top margin since it's no longer directly under a heading. */
+  .bk-card>summary{cursor:pointer;font-family:var(--serif);font-size:1.1rem;font-weight:600;list-style:revert}
+  .bk-card[open]>summary{margin-bottom:10px}
+  .bk-card>summary::-webkit-details-marker{margin-right:2px}
 
   .danger-zone{border-color:#e3bdb5;background:var(--bad-soft)}
-  .danger-zone h3{color:var(--bad)}
+  .danger-zone h3, .danger-zone>summary{color:var(--bad)}
+
+  /* Backup & Restore's grouped sections (docs/Menchmark_UI_Redesign_Summary.md) */
+  .bk-section-title{font-family:var(--serif);font-size:1.05rem;font-weight:600;color:var(--ink-soft);margin:26px 0 12px;padding-top:18px;border-top:1px solid var(--line)}
+  .bk-section-title:first-of-type{margin-top:0;padding-top:0;border-top:none}
+  .bk-shelf{margin-bottom:14px}
+  .bk-shelf>summary{cursor:pointer;font-family:var(--serif);font-size:1.05rem;font-weight:600;display:flex;align-items:center;gap:9px}
+  .bk-legacy-pill{font-size:.68rem;font-weight:700;color:var(--muted);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:2px 9px;letter-spacing:.3px;text-transform:uppercase}
+  .bk-legacy-note{background:var(--amber-soft);border:1px solid #e4cf9f;border-radius:10px;padding:10px 14px;font-size:.85rem;color:#6b4d18;margin:14px 0 0}
 
   /* ======= RAFFLE ======= */
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-bottom:14px}
@@ -2225,6 +2244,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <select id="classSel" class="mute-btn" title="Which class you're working with"></select>
     <span class="header-date" id="todayDate"></span>
     <span class="header-date" id="todayDateHebrew"></span>
+    <!-- Header account menu: a persistent, always-visible sign-in state and
+         entry point, independent of Settings -> Account (which still owns
+         the full sign-in flow — code entry, same-device adoption, the
+         forced Drive-connect gate). This is just "who am I, sign out, or
+         connect to a school" from anywhere in the app. -->
+    <span class="header-account-wrap" style="position:relative">
+      <button class="mute-btn" id="headerAccountBtn" title="Account"></button>
+      <div class="hsb-dropdown" id="headerAccountDropdown" style="display:none;left:auto;right:0"></div>
+    </span>
   </div>
 </header>
 
@@ -3369,31 +3397,42 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   </section>
 
   <!-- ============ GOOGLE SHEET ============ -->
-  <!-- ============ BACKUP & SHEETS (merged) ============ -->
+  <!-- ============ BACKUP & RESTORE ============ -->
+  <!-- Redesigned per docs/Menchmark_UI_Redesign_Summary.md's settled "Backup
+       & Sheets -> simplified to Backup & Restore" spec (approved, never
+       implemented until now), grouped into Automatic / Manual / Other
+       exports / two collapsed "shelves" (a details-element pattern already
+       used 3x in this file, for Emergency recovery and — new — Google
+       Sheets, now marked legacy) / Danger zone. Every element id below is
+       unchanged from the flat layout this replaces — only the grouping and
+       headings are new; no JS wiring needed to change. -->
   <section id="view-backup" class="view">
-    <h2 class="view-title">Backup &amp; Sheets</h2>
-    <p class="view-note">Your scores save automatically on this computer. Back up regularly so nothing is ever lost — and optionally sync to your own Google Sheet below for a permanent, view-anywhere record.</p>
+    <h2 class="view-title">Backup &amp; Restore</h2>
+    <p class="view-note">Your scores save automatically on this computer. Back up regularly so nothing is ever lost.</p>
+
+    <h3 class="bk-section-title">Automatic — set up once, runs by itself</h3>
     <div class="backup-grid">
-      <div class="card pad bk-card" style="border-left:4px solid var(--brass)">
-        <h3>☁ Save everything to your Google Sheet</h3>
-        <p>Pushes a full snapshot of your data — students, activities, scores, settings, passes, pesukim, <i>everything</i> — to a "Snapshot" tab on your connected Google Sheet. This also happens automatically in the background every 30 seconds.</p>
-        <button class="btn btn-primary" id="pushSnapshotBtn">Save to Sheet now</button>
-        <div id="snapshotStatus" style="margin-top:8px;font-size:.85rem;color:var(--muted)"></div>
-      </div>
-      <div class="card pad bk-card" style="border-left:4px solid var(--brass)">
-        <h3>☁ Restore everything from your Google Sheet</h3>
-        <p>Lost your data? Switched devices? Pull back the latest snapshot saved on your Google Sheet. This replaces everything currently here.</p>
-        <button class="btn" id="pullSnapshotBtn">Restore from Sheet</button>
-      </div>
-      <div class="card pad bk-card">
-        <h3>Back up everything</h3>
-        <p>Save a file with your full roster, activities, and scores. Keep it somewhere safe.</p>
-        <button class="btn btn-primary" id="exportJson">Download backup file</button>
-      </div>
+      <!-- Step 7 (docs/Firebase_Step7_Fragile_Storage_Warning_Design_Proposal.md)
+           + the Drive integration it needed built. Hidden by default —
+           renderDriveBackupCard() only shows it once a signed-in account
+           exists (data.account.email), same "nothing to configure until
+           there's someone to configure it for" pattern as the sign-in
+           nudge elsewhere in this file. -->
+      <details class="card pad bk-card" id="driveBackupCard" style="display:none;border-left:4px solid var(--good)">
+        <summary>Back up to Google Drive automatically</summary>
+        <p>Connect your Google account once, and Menchmark saves a backup to a "Menchmark Backup" folder in your Drive by itself — once each time you open the app. Works on any device, not just this one, as long as you're signed in.</p>
+        <div id="driveBackupStatus" style="margin:10px 0 0;font-size:.88rem;font-weight:600"></div>
+        <div style="margin-top:10px">
+          <button class="btn btn-primary" id="driveBackupConnect">Connect Google Drive</button>
+          <button class="btn" id="driveBackupNow" style="display:none">Back up now</button>
+          <button class="btn" id="driveBackupStop" style="display:none">Disconnect</button>
+        </div>
+        <p style="margin:10px 0 0;font-size:.82rem;color:var(--muted)">Needs an internet connection to run. If you're offline when it's due, Menchmark tells you here and falls back to reminding you to back up by hand.</p>
+      </details>
       <!-- Hidden entirely unless the browser can actually do it (Chrome/Edge).
            Offering a button that cannot work is worse than not offering it. -->
-      <div class="card pad bk-card" id="folderBackupCard" style="display:none;border-left:4px solid var(--good)">
-        <h3>Back up to a folder automatically <span style="font-size:.72rem;font-weight:700;color:var(--good);background:var(--good-soft);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px">No internet needed</span></h3>
+      <details class="card pad bk-card" id="folderBackupCard" style="display:none;border-left:4px solid var(--good)">
+        <summary>Back up to a folder automatically <span style="font-size:.72rem;font-weight:700;color:var(--good);background:var(--good-soft);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px">No internet needed</span></summary>
         <p>Choose a folder <b>once</b> — on this computer, or on a USB stick you leave plugged in — and Menchmark saves a backup into it by itself: every time you open the app, and again when you switch away from it. <b>No internet, no Google account, nothing to remember.</b></p>
         <p style="margin:8px 0 0;font-size:.86rem">Each day gets its own file, so you keep a history rather than one file that overwrites itself. A week of backups is about the size of one photo.</p>
         <div id="folderBackupStatus" style="margin:10px 0 0;font-size:.88rem;font-weight:600"></div>
@@ -3403,119 +3442,127 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <button class="btn" id="folderBackupStop" style="display:none">Stop using this folder</button>
         </div>
         <p style="margin:10px 0 0;font-size:.82rem;color:var(--muted)">If the folder is on a USB stick that is unplugged, or your school's Chromebook blocks it, Menchmark tells you here and goes back to reminding you to save a backup by hand. It never fails silently.</p>
-      </div>
-      <!-- Step 7 (docs/Firebase_Step7_Fragile_Storage_Warning_Design_Proposal.md)
-           + the Drive integration it needed built. Hidden by default —
-           renderDriveBackupCard() only shows it once a signed-in account
-           exists (data.account.email), same "nothing to configure until
-           there's someone to configure it for" pattern as the sign-in
-           nudge elsewhere in this file. -->
-      <div class="card pad bk-card" id="driveBackupCard" style="display:none;border-left:4px solid var(--good)">
-        <h3>Back up to Google Drive automatically</h3>
-        <p>Connect your Google account once, and Menchmark saves a backup to a "Menchmark Backup" folder in your Drive by itself — once each time you open the app. Works on any device, not just this one, as long as you're signed in.</p>
-        <div id="driveBackupStatus" style="margin:10px 0 0;font-size:.88rem;font-weight:600"></div>
-        <div style="margin-top:10px">
-          <button class="btn btn-primary" id="driveBackupConnect">Connect Google Drive</button>
-          <button class="btn" id="driveBackupNow" style="display:none">Back up now</button>
-          <button class="btn" id="driveBackupStop" style="display:none">Disconnect</button>
-        </div>
-        <p style="margin:10px 0 0;font-size:.82rem;color:var(--muted)">Needs an internet connection to run. If you're offline when it's due, Menchmark tells you here and falls back to reminding you to back up by hand.</p>
-      </div>
-      <!-- Step 3b (docs/Firebase_Step3b_Existing_Cohort_Upload_Design_Proposal.md):
-           self-serve own-account restore — a new device, recovery, or the
-           file:// cohort with no local class for same-device adoption to
-           detect. Hidden until a tier-1 signed-in account exists —
-           renderBackupRestoreCard() controls visibility, same pattern as
-           the Drive card above. -->
-      <div class="card pad bk-card" id="backupRestoreCard" style="display:none;border-left:4px solid var(--brass)">
-        <h3>Restore a class from a backup file</h3>
-        <p>New device, or recovering from a lost one? Choose a backup file — the JSON download from "Back up everything" above — and Menchmark restores it into your signed-in account.</p>
-        <div id="backupRestoreStatus" style="margin:10px 0 0;font-size:.88rem;font-weight:600"></div>
-        <div id="backupRestorePreview" style="margin-top:8px"></div>
-        <div style="margin-top:10px">
-          <input type="file" id="backupRestoreFile" accept="application/json,.json" style="display:none">
-          <button class="btn btn-primary" id="backupRestoreChoose">Choose backup file…</button>
-          <button class="btn btn-primary" id="backupRestoreConfirm" style="display:none">Restore this backup</button>
-        </div>
-        <div id="backupRestoreConflict" style="margin-top:10px;display:none">
-          <p class="pill-note">Your account already has a class saved. Nothing is overwritten until you choose.</p>
-          <button class="btn" id="backupRestoreOverwrite">Overwrite it</button>
-          <button class="btn" id="backupRestoreSeparate" style="margin-left:8px">Add as a separate class instead</button>
-          <button class="btn btn-sm" id="backupRestoreCancel" style="margin-left:8px">Cancel</button>
-        </div>
-        <div id="backupRestoreReceipt" style="margin-top:10px"></div>
-      </div>
-      <div class="card pad bk-card">
-        <h3>Install Menchmark as an app <span style="font-size:.72rem;font-weight:700;color:var(--good);background:var(--good-soft);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px">Best way to work offline</span></h3>
-        <p>Install Menchmark from your browser (look for <b>Install</b> in the menu, or the ⊕ / install icon in the address bar) to run it like a real app — its own window, an icon on your device, and <b>persistent storage</b> that resists the browser clearing your data. Works fully offline once installed, <b>and it stays the same Menchmark</b> — the same students, the same scores, whether you are online or not.</p>
+      </details>
+      <details class="card pad bk-card">
+        <summary>Install Menchmark as an app <span style="font-size:.72rem;font-weight:700;color:var(--good);background:var(--good-soft);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px">Best way to work offline</span></summary>
+        <p>Install Menchmark from your browser (look for <b>Install</b> in the menu, or the install icon — a small monitor with a download arrow — in the address bar) to run it like a real app — its own window, an icon on your device, and <b>persistent storage</b> that resists the browser clearing your data. Works fully offline once installed, <b>and it stays the same Menchmark</b> — the same students, the same scores, whether you are online or not.</p>
         <div id="pwaStorageStatus" style="margin-top:6px;font-size:.85rem;font-weight:600"></div>
-        <p style="margin:8px 0 0;font-size:.82rem;color:var(--muted)">Installing helps a lot, but on locked-down or shared school Chromebooks an administrator can still clear data on sign-out — so keep your <b>Google Sheet backup</b> connected as your ultimate safety net.</p>
-      </div>
-      <div class="card pad bk-card">
-        <h3>Download a separate copy — for a computer with no internet at all</h3>
-        <p>Saves a single HTML file with your <b>current students, activities, and scores already loaded in</b> — plus the QR scanner built right in. For a classroom computer that never goes online, or a spare machine you want a self-contained copy on. Needs internet once, to prepare the file; after that, just open it in any browser like any other file.</p>
-        <p style="margin:8px 0 0;font-size:.86rem;color:var(--bad);font-weight:600">The downloaded copy keeps its own separate data. Points you enter in it stay in it — they will not appear here, and points entered here will not appear there.</p>
-        <p style="margin:6px 0 0;font-size:.82rem;color:var(--muted)">If you just want Menchmark to work without internet, <b>install it as an app</b> above instead — that keeps one set of data. Use this download only when you need a copy that lives entirely on its own.</p>
-        <button class="btn" id="offlineDownloadBtn" style="margin-top:10px">⬇ Download separate offline copy</button>
-        <div id="offlineDownloadStatus" style="margin-top:8px;font-size:.85rem;color:var(--muted)"></div>
-      </div>
-      <div class="card pad bk-card">
-        <h3>Restore from a backup</h3>
+        <p style="margin:8px 0 0;font-size:.82rem;color:var(--muted)">Installing helps a lot, but on locked-down or shared school Chromebooks an administrator can still clear data on sign-out — so keep Drive or folder backup connected above as your ultimate safety net.</p>
+      </details>
+    </div>
+
+    <h3 class="bk-section-title">Manual backup &amp; restore</h3>
+    <!-- Only these two ever pair — always exactly 2 items, so the grid
+         always fills cleanly. The two cards below (one conditionally
+         hidden) are each full-width instead of sharing this grid: a 3rd
+         item here would leave the same dangling half-empty row Other
+         exports had, and would reappear differently once backupRestoreCard
+         shows itself after sign-in — full-width sidesteps that regardless
+         of which cards happen to be visible. -->
+    <div class="backup-grid">
+      <details class="card pad bk-card">
+        <summary>Back up everything</summary>
+        <p>Save a file with your full roster, activities, and scores. Keep it somewhere safe.</p>
+        <button class="btn btn-primary" id="exportJson">Download backup file</button>
+      </details>
+      <details class="card pad bk-card">
+        <summary>Restore from a backup</summary>
         <p>Load a backup file. This replaces everything currently here.</p>
         <input type="file" id="importFile" accept="application/json" style="display:none">
         <button class="btn" id="importBtn">Choose backup file…</button>
+      </details>
+    </div>
+
+    <!-- Step 3b (docs/Firebase_Step3b_Existing_Cohort_Upload_Design_Proposal.md):
+         self-serve own-account restore — a new device, recovery, or the
+         file:// cohort with no local class for same-device adoption to
+         detect. Hidden until a tier-1 signed-in account exists —
+         renderBackupRestoreCard() controls visibility, same pattern as
+         the Drive card above. Distinct from "Restore from a backup" above:
+         that one replaces THIS device's local copy; this one restores
+         into your signed-in cloud account. -->
+    <details class="card pad bk-card" id="backupRestoreCard" style="display:none;border-left:4px solid var(--brass);margin-bottom:14px">
+      <summary>Restore a class into your account</summary>
+      <p>New device, or recovering from a lost one? Choose a backup file — the JSON download from "Back up everything" above — and Menchmark restores it into your signed-in account.</p>
+      <div id="backupRestoreStatus" style="margin:10px 0 0;font-size:.88rem;font-weight:600"></div>
+      <div id="backupRestorePreview" style="margin-top:8px"></div>
+      <div style="margin-top:10px">
+        <input type="file" id="backupRestoreFile" accept="application/json,.json" style="display:none">
+        <button class="btn btn-primary" id="backupRestoreChoose">Choose backup file…</button>
+        <button class="btn btn-primary" id="backupRestoreConfirm" style="display:none">Restore this backup</button>
       </div>
-      <div class="card pad bk-card">
-        <h3>Restore from a Log CSV</h3>
-        <p>No backup file? If you synced to Google Sheets, download the <b>Log</b> tab as CSV (File → Download → .csv) and load it here. Rebuilds your students, current scores, and full points history from the scan log — activities, students, and points are all reconstructed.</p>
-        <input type="file" id="importLogCsv" accept=".csv,text/csv" style="display:none">
-        <button class="btn" id="importLogCsvBtn">Choose Log CSV…</button>
-        <div id="logCsvStatus" style="margin-top:8px;font-size:.88rem;color:var(--muted)"></div>
+      <div id="backupRestoreConflict" style="margin-top:10px;display:none">
+        <p class="pill-note">Your account already has a class saved. Nothing is overwritten until you choose.</p>
+        <button class="btn" id="backupRestoreOverwrite">Overwrite it</button>
+        <button class="btn" id="backupRestoreSeparate" style="margin-left:8px">Add as a separate class instead</button>
+        <button class="btn btn-sm" id="backupRestoreCancel" style="margin-left:8px">Cancel</button>
       </div>
-      <div class="card pad bk-card">
-        <h3>Export standings</h3>
-        <p>A spreadsheet (CSV) of every student and their current score.</p>
-        <button class="btn" id="exportCsv">Download standings (CSV)</button>
-      </div>
-      <div class="card pad bk-card danger-zone">
-        <h3>Reset spendable points</h3>
-        <p>Zeroes current point balances (e.g. to start a fresh week) for the current class or one group. Lifetime Trends history is kept.</p>
-        <div class="toolbar" style="margin:0">
-          <select id="resetPointsGroup" class="field" style="width:auto"><option value="">Whole class</option></select>
-          <button class="btn btn-bad" id="resetPointsScoped">Reset points now…</button>
+      <div id="backupRestoreReceipt" style="margin-top:10px"></div>
+    </details>
+    <details class="card pad bk-card" style="margin-bottom:14px">
+      <summary>Download a separate copy — for a computer with no internet at all</summary>
+      <p>Saves a single HTML file with your <b>current students, activities, and scores already loaded in</b> — plus the QR scanner built right in. For a classroom computer that never goes online, or a spare machine you want a self-contained copy on. Needs internet once, to prepare the file; after that, just open it in any browser like any other file.</p>
+      <p style="margin:8px 0 0;font-size:.86rem;color:var(--bad);font-weight:600">The downloaded copy keeps its own separate data. Points you enter in it stay in it — they will not appear here, and points entered here will not appear there.</p>
+      <p style="margin:6px 0 0;font-size:.82rem;color:var(--muted)">If you just want Menchmark to work without internet, <b>install it as an app</b> above instead — that keeps one set of data. Use this download only when you need a copy that lives entirely on its own.</p>
+      <button class="btn" id="offlineDownloadBtn" style="margin-top:10px">⬇ Download separate offline copy</button>
+      <div id="offlineDownloadStatus" style="margin-top:8px;font-size:.85rem;color:var(--muted)"></div>
+    </details>
+
+    <h3 class="bk-section-title">Other exports</h3>
+    <!-- Full-width, not .backup-grid — a single card in a 2-column grid left
+         an odd, half-width card with dead space beside it. Full width also
+         matches the shelves right below it, so the section doesn't look
+         narrower than its neighbors just because it only has one card today. -->
+    <details class="card pad bk-card" style="margin-bottom:14px">
+      <summary>Export standings</summary>
+      <p>A spreadsheet (CSV) of every student and their current score. Not a backup — just a snapshot to view or share.</p>
+      <button class="btn" id="exportCsv">Download standings (CSV)</button>
+    </details>
+
+    <details class="card pad bk-shelf">
+      <summary>Emergency recovery — restore from a Log CSV</summary>
+      <p style="margin:12px 0 0;font-size:.88rem;color:var(--muted)">No backup file? If you synced to Google Sheets, download the <b>Log</b> tab as CSV (File → Download → .csv) and load it here. Rebuilds your students, current scores, and full points history from the scan log — activities, students, and points are all reconstructed.</p>
+      <input type="file" id="importLogCsv" accept=".csv,text/csv" style="display:none">
+      <button class="btn" id="importLogCsvBtn" style="margin-top:10px">Choose Log CSV…</button>
+      <div id="logCsvStatus" style="margin-top:8px;font-size:.88rem;color:var(--muted)"></div>
+    </details>
+
+    <details class="card pad bk-shelf bk-legacy">
+      <summary>Google Sheets sync <span class="bk-legacy-pill">Legacy</span></summary>
+      <div class="bk-legacy-note"><b>Being retired.</b> Google Sheets sync still works today, but it's no longer where Menchmark is headed — use <b>Download backup file</b> or <b>Export standings (CSV)</b> above instead. Keep this connected if you already rely on it; there's no need to set it up fresh.</div>
+      <div class="backup-grid" style="margin-top:14px">
+        <div class="card pad bk-card" style="border-left:4px solid var(--brass)">
+          <h3>☁ Save everything to your Google Sheet</h3>
+          <p>Pushes a full snapshot of your data — students, activities, scores, settings, passes, pesukim, <i>everything</i> — to a "Snapshot" tab on your connected Google Sheet. This also happens automatically in the background every 30 seconds.</p>
+          <button class="btn btn-primary" id="pushSnapshotBtn">Save to Sheet now</button>
+          <div id="snapshotStatus" style="margin-top:8px;font-size:.85rem;color:var(--muted)"></div>
+        </div>
+        <div class="card pad bk-card" style="border-left:4px solid var(--brass)">
+          <h3>☁ Restore everything from your Google Sheet</h3>
+          <p>Lost your data? Switched devices? Pull back the latest snapshot saved on your Google Sheet. This replaces everything currently here.</p>
+          <button class="btn" id="pullSnapshotBtn">Restore from Sheet</button>
         </div>
       </div>
-      <div class="card pad bk-card danger-zone">
-        <h3>Start a new period</h3>
-        <p>Reset all scores to zero but keep your students and activities.</p>
-        <button class="btn btn-bad" id="resetScores">Reset all scores</button>
-      </div>
-      <div class="card pad bk-card danger-zone">
-        <h3>Clear ALL data</h3>
-        <p>Wipes everything — institution &amp; class name, students, activities, scores, scan log, raffle history, and the saved Google Sheet link. Use this to start completely fresh (a new class, a new year). Download a backup first if you're not sure.</p>
-        <button class="btn btn-bad" id="clearAllData">Clear ALL data…</button>
-      </div>
-    </div>
 
-    <h3 style="font-family:var(--serif);font-size:1.2rem;margin:30px 0 6px;padding-top:20px;border-top:1px solid var(--line)">Sync to Google Sheets</h3>
-    <p class="view-note">Send every scan and the live standings to your own Google Sheet, so you can see totals anywhere and keep a permanent record.</p>
+      <h4 style="font-family:var(--serif);font-size:1.05rem;margin:20px 0 6px">Sync to Google Sheets</h4>
+      <p class="view-note" style="margin:0 0 12px">Send every scan and the live standings to your own Google Sheet, so you can see totals anywhere and keep a permanent record.</p>
 
-    <div class="card pad" style="margin-bottom:18px">
-      <label class="lbl">Your Google Sheet web app link</label>
-      <input id="sheetUrl" class="field" placeholder="https://script.google.com/macros/s/…/exec" data-scan-ignore="1">
-      <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:10px;align-items:center">
-        <button class="btn btn-primary" id="saveSheetUrl">Save link</button>
-        <button class="btn" id="pushStandings">Send standings now</button>
-        <button class="btn" id="resyncAll" title="Resend every scan in this device's history — your sheet skips ones it already has">Resync all scans</button>
-        <label style="display:flex;align-items:center;gap:7px;font-size:.9rem;color:var(--muted);margin-left:4px">
-          <input type="checkbox" id="autoSheet"> Send each scan automatically
-        </label>
+      <div class="card pad" style="margin-bottom:14px">
+        <label class="lbl">Your Google Sheet web app link</label>
+        <input id="sheetUrl" class="field" placeholder="https://script.google.com/macros/s/…/exec" data-scan-ignore="1">
+        <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:10px;align-items:center">
+          <button class="btn btn-primary" id="saveSheetUrl">Save link</button>
+          <button class="btn" id="pushStandings">Send standings now</button>
+          <button class="btn" id="resyncAll" title="Resend every scan in this device's history — your sheet skips ones it already has">Resync all scans</button>
+          <label style="display:flex;align-items:center;gap:7px;font-size:.9rem;color:var(--muted);margin-left:4px">
+            <input type="checkbox" id="autoSheet"> Send each scan automatically
+          </label>
+        </div>
+        <div id="sheetStatus" style="margin-top:10px;font-size:.88rem;color:var(--muted)"></div>
       </div>
-      <div id="sheetStatus" style="margin-top:10px;font-size:.88rem;color:var(--muted)"></div>
-    </div>
 
-    <details class="card pad" id="sheetHelp">
-      <summary style="cursor:pointer;font-family:var(--serif);font-size:1.1rem;font-weight:600">First-time setup — do this once (about 5 minutes)</summary>
+      <details class="card pad" id="sheetHelp">
+        <summary style="cursor:pointer;font-family:var(--serif);font-size:1.1rem;font-weight:600">First-time setup — do this once (about 5 minutes)</summary>
       <ol style="font-size:.92rem;line-height:1.75;padding-left:20px;margin-top:14px">
         <li>Open <b>sheets.google.com</b> and make a <b>new blank sheet</b>. Name it (e.g. "Sample Class 1 Points").<br>
           <span style="display:block;margin-top:8px;padding:8px 12px;background:var(--brass-soft);border-radius:8px;font-size:.85rem;line-height:1.6">
@@ -3929,7 +3976,30 @@ function setupRoster() {
       <p style="font-size:.85rem;color:var(--muted);margin:8px 0 0">
         Heads up: the page sends data without waiting for a reply, so a wrong link won't show an error here. After saving, do one scan and check that a row appears in your sheet's <b>Log</b> tab — if it does, you're set.
       </p>
+      </details>
     </details>
+
+    <h3 class="bk-section-title" style="color:var(--bad)">Danger zone</h3>
+    <div class="backup-grid">
+      <details class="card pad bk-card danger-zone">
+        <summary>Reset spendable points</summary>
+        <p>Zeroes current point balances (e.g. to start a fresh week) for the current class or one group. Lifetime Trends history is kept.</p>
+        <div class="toolbar" style="margin:0">
+          <select id="resetPointsGroup" class="field" style="width:auto"><option value="">Whole class</option></select>
+          <button class="btn btn-bad" id="resetPointsScoped">Reset points now…</button>
+        </div>
+      </details>
+      <details class="card pad bk-card danger-zone">
+        <summary>Start a new period</summary>
+        <p>Reset all scores to zero but keep your students and activities.</p>
+        <button class="btn btn-bad" id="resetScores">Reset all scores</button>
+      </details>
+      <details class="card pad bk-card danger-zone">
+        <summary>Clear ALL data</summary>
+        <p>Wipes everything — institution &amp; class name, students, activities, scores, scan log, raffle history, and the saved Google Sheet link. Use this to start completely fresh (a new class, a new year). Download a backup first if you're not sure.</p>
+        <button class="btn btn-bad" id="clearAllData">Clear ALL data…</button>
+      </details>
+    </div>
   </section>
 
   <!-- ============ BRACHOS ACHRONOS ============ -->
@@ -6712,37 +6782,70 @@ function setupRoster() {
   }
 
   function signinContinueAfterAccount(account){
-    signinState.step = "idle";
-    signinState.error = null;
-    data.account = {
-      uid: signinState.firebaseUid,
-      email: account.email || signinState.email,
-      displayName: account.displayName || signinState.displayName,
-      role: account.role || "rebbi",
-      schoolId: (typeof account.schoolId !== "undefined") ? account.schoolId : null
-    };
-    save();
-    var afterTierReady = (data.account.schoolId != null)
-      ? adoptCredentialIntoSdk(signinState.googleIdToken)
-      : Promise.resolve();
-    return afterTierReady.then(function(){
-      var offer = signinDetectLocalClass();
-      if (offer) { signinState.step = "needsAdoptionChoice"; signinState.adoptionOffer = offer; }
-      else { signinState.step = "idle"; }
-      if (typeof renderAccountSection === "function") renderAccountSection();
-      if (typeof renderBackupRestoreCard === "function") renderBackupRestoreCard();
-      // Drive restore (docs/Firebase_Step3b_..., "Drive-restore flow"): only
-      // ever checked when same-device adoption found NO local match at all
-      // — a genuine second scenario, not a fallback from a declined offer.
-      if (!offer && typeof signinMaybeOfferDriveRestore === "function") signinMaybeOfferDriveRestore();
-    });
+    function proceed(acct){
+      signinState.step = "idle";
+      signinState.error = null;
+      data.account = {
+        uid: signinState.firebaseUid,
+        email: acct.email || signinState.email,
+        displayName: acct.displayName || signinState.displayName,
+        role: acct.role || "rebbi",
+        schoolId: (typeof acct.schoolId !== "undefined") ? acct.schoolId : null
+      };
+      save();
+      var afterTierReady = (data.account.schoolId != null)
+        ? adoptCredentialIntoSdk(signinState.googleIdToken)
+        : Promise.resolve();
+      return afterTierReady.then(function(){
+        var offer = signinDetectLocalClass();
+        if (offer) { signinState.step = "needsAdoptionChoice"; signinState.adoptionOffer = offer; }
+        else { signinState.step = "idle"; }
+        if (typeof renderAccountSection === "function") renderAccountSection();
+        if (typeof renderBackupRestoreCard === "function") renderBackupRestoreCard();
+        // Drive restore (docs/Firebase_Step3b_..., "Drive-restore flow"): only
+        // ever checked when same-device adoption found NO local match at all
+        // — a genuine second scenario, not a fallback from a declined offer.
+        if (!offer && typeof signinMaybeOfferDriveRestore === "function") signinMaybeOfferDriveRestore();
+      });
+    }
+
+    // Header account menu's "Connect to school" (headerConnectToSchool()):
+    // it stashes this flag before a fresh OAuth redirect, since signinState's
+    // own Firebase ID token is never persisted and a returning visit has none
+    // to call redeemCode with. Only acts if still applicable — an account
+    // that already has a schoolId by the time this runs (backfilled some
+    // other way, or a stale flag) just proceeds normally.
+    var connectPending = false;
+    try { connectPending = sessionStorage.getItem("menchmarkConnectSchoolPending") === "1"; } catch (e) {}
+    if (connectPending) { try { sessionStorage.removeItem("menchmarkConnectSchoolPending"); } catch (e) {} }
+    if (connectPending && account.schoolId == null) {
+      var code = (prompt("Enter your school's code:") || "").trim();
+      if (!code) return proceed(account);
+      return callCloudFunction("redeemCode", { code: code }, signinState.firebaseIdToken).then(function(updated){
+        return proceed(updated);
+      }).catch(function(err){
+        alert("Could not connect: " + (err.message || String(err)));
+        return proceed(account);
+      });
+    }
+    return proceed(account);
   }
 
   // Called once at boot, after load() — see the init block below. This is
   // the ONLY place pendingOAuthResult is consumed.
   function signinCompleteFromRedirect(){
     if (!pendingOAuthResult) return;
+    // Land on Settings -> Account immediately, not wherever the tab happened
+    // to be before the redirect — the whole rest of this flow (code entry,
+    // same-device adoption, the forced Drive-connect gate below) renders
+    // into #accountBox, which only exists inside the Settings tab. Fires for
+    // both the success and error paths, since an error also belongs here,
+    // not silently on the Scan dashboard.
+    if (typeof router !== "undefined" && router && typeof router.go === "function") {
+      router.go({ classId: LOCAL_CLASS_ID, tab: "settings" });
+    }
     if (pendingOAuthResult.error) {
+      try { sessionStorage.removeItem("menchmarkConnectSchoolPending"); } catch (e) {}
       signinState.step = "error";
       signinState.error = pendingOAuthResult.errorDescription || pendingOAuthResult.error;
       if (typeof renderAccountSection === "function") renderAccountSection();
@@ -6757,9 +6860,11 @@ function setupRoster() {
       return firestoreGetAccount(fb.localId, fb.idToken);
     }).then(function(account){
       if (account) return signinContinueAfterAccount(account);
+      try { sessionStorage.removeItem("menchmarkConnectSchoolPending"); } catch (e) {}
       signinState.step = "needsCode";
       if (typeof renderAccountSection === "function") renderAccountSection();
     }).catch(function(err){
+      try { sessionStorage.removeItem("menchmarkConnectSchoolPending"); } catch (e) {}
       signinState.step = "error";
       signinState.error = err.message || String(err);
       if (typeof renderAccountSection === "function") renderAccountSection();
@@ -6858,11 +6963,16 @@ function setupRoster() {
     }, signinState.firebaseIdToken).then(function(res){
       data.firebaseClaimedBy = signinState.firebaseUid;
       data.firebaseMigrated = res.runId;
+      // Listing/fetching the Drive file already proved Drive access works —
+      // stamping this here avoids immediately re-prompting the forced
+      // Drive-connect gate right after a rebbi just used Drive.
+      data.driveBackupEnabled = true;
       save();
       signinState.step = "idle";
       signinState.driveRestoreOffer = null;
       signinState.lastReceipt = res.receipt;
       if (typeof renderAccountSection === "function") renderAccountSection();
+      if (typeof renderDriveBackupCard === "function") renderDriveBackupCard();
       return res;
     }).catch(function(err){
       // No dedicated conflict handling here on purpose — the gate this
@@ -10474,7 +10584,80 @@ function setupRoster() {
   // called both from renderSettings() and from every signin*() function
   // above as their step transitions, so this is always in sync without a
   // separate "did anything change" check.
+  // The header account menu is a separate, always-visible surface from
+  // Settings -> Account (which owns the full sign-in flow) — kept in sync
+  // by calling it here, as the very first line, so it updates on every path
+  // that already calls renderAccountSection() regardless of which early
+  // return fires below.
+  function renderHeaderAccountMenu(){
+    var btn = $("headerAccountBtn"); if (!btn) return;
+    if (data.account) {
+      var label = data.account.displayName || (data.account.email || "").split("@")[0] || "Account";
+      btn.textContent = "👤 " + label;
+    } else {
+      btn.textContent = "👤 Sign in";
+    }
+  }
+  function renderHeaderAccountDropdown(){
+    var box = $("headerAccountDropdown"); if (!box) return;
+    box.innerHTML = "";
+    if (!data.account) {
+      var signInBtn = el("button", "btn btn-primary btn-sm", "Sign in with Google");
+      signInBtn.style.width = "100%";
+      signInBtn.addEventListener("click", function(){ box.style.display = "none"; beginGoogleSignIn(); });
+      box.appendChild(signInBtn);
+      return;
+    }
+    var line = el("div", null, data.account.email);
+    line.style.cssText = "font-size:.85rem;color:var(--muted);padding:4px 6px 8px;word-break:break-all";
+    box.appendChild(line);
+    if (data.account.schoolId == null) {
+      var connectBtn = el("button", "btn btn-sm", "Connect to school");
+      connectBtn.style.cssText = "width:100%;margin-bottom:6px";
+      connectBtn.addEventListener("click", function(){ box.style.display = "none"; headerConnectToSchool(); });
+      box.appendChild(connectBtn);
+    }
+    var outBtn = el("button", "btn btn-sm", "Sign out");
+    outBtn.style.width = "100%";
+    outBtn.addEventListener("click", function(){ box.style.display = "none"; signinSignOut(); });
+    box.appendChild(outBtn);
+  }
+  if ($("headerAccountBtn")) $("headerAccountBtn").addEventListener("click", function(){
+    var box = $("headerAccountDropdown"); if (!box) return;
+    var showing = box.style.display === "none";
+    if (showing) renderHeaderAccountDropdown();
+    box.style.display = showing ? "" : "none";
+  });
+  // "Connect to school", from the header menu — the backfill path for an
+  // account that skipped the code screen (or predates this feature). The
+  // Firebase ID token in signinState is never persisted (by design — see
+  // its own comment), so a normal returning visit has none to call
+  // redeemCode with; this re-runs the same OAuth redirect the original
+  // sign-in used to get a fresh one, then resumes here via the pending-flag
+  // check at the top of signinContinueAfterAccount(). A full visible
+  // redirect on purpose, not a silent prompt=none one like Drive's re-auth —
+  // this is a deliberate "connect my account" action, not a background
+  // token refresh, so seeing Google's own confirmation is the right amount
+  // of ceremony, not a surprise.
+  function headerConnectToSchool(){
+    if (signinState.firebaseIdToken) { headerConnectToSchoolWithToken(); return; }
+    try { sessionStorage.setItem("menchmarkConnectSchoolPending", "1"); } catch (e) {}
+    beginGoogleSignIn();
+  }
+  function headerConnectToSchoolWithToken(){
+    var code = (prompt("Enter your school's code:") || "").trim();
+    if (!code) return;
+    callCloudFunction("redeemCode", { code: code }, signinState.firebaseIdToken).then(function(account){
+      return signinContinueAfterAccount(account);
+    }).then(function(){
+      alert("Connected to your school.");
+    }).catch(function(err){
+      alert("Could not connect: " + (err.message || String(err)));
+    });
+  }
+
   function renderAccountSection(){
+    renderHeaderAccountMenu();
     var box = $("accountBox"); if(!box) return;
     box.innerHTML = "";
 
@@ -10485,6 +10668,17 @@ function setupRoster() {
     if (signinState.step === "needsRoster") { renderAccountRosterStep(box); return; }
 
     if (data.account) {
+      // Forced Drive connect: every rebbi, either tier, must connect Google
+      // Drive before Settings -> Account shows anything else — checked here
+      // rather than as a one-shot signinState step, so it applies every time
+      // this box renders while unconnected, not just the moment sign-in
+      // finished. Not an app-wide block (a rebbi who never opens Settings
+      // isn't stopped) — that's a deliberately smaller scope than a true
+      // full-app gate would be.
+      if (!data.driveBackupEnabled && driveSupported()) {
+        renderAccountForceDriveStep(box);
+        return;
+      }
       var line = el("p", null);
       var label = data.account.schoolId != null
         ? (data.account.email + (data.account.schoolId ? " · a school account" : ""))
@@ -10598,6 +10792,24 @@ function setupRoster() {
     addBtn.style.marginLeft = "8px";
     addBtn.addEventListener("click", function(){ signinResolveConflict("addSeparate"); });
     box.appendChild(addBtn);
+  }
+  // Every signed-in account, either tier, must connect Google Drive before
+  // Settings -> Account shows anything else (renderAccountSection()'s own
+  // gate, above). No skip — driveConnect() is a full-page redirect, same
+  // mechanism the Settings card's own "Connect Google Drive" button uses;
+  // driveCompleteFromRedirect() re-renders this box on both the success and
+  // error path, so a failed attempt lands back here with the error visible
+  // and the button ready to retry.
+  function renderAccountForceDriveStep(box){
+    var p = el("p", "view-note");
+    p.textContent = "Connect Google Drive to back up your class before continuing — this only happens once.";
+    box.appendChild(p);
+    if (signinState.error) {
+      var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
+    }
+    var connectBtn = el("button", "btn btn-primary", "Connect Google Drive");
+    connectBtn.addEventListener("click", driveConnect);
+    box.appendChild(connectBtn);
   }
   // Step 3b's Drive-restore offer — only ever shown after same-device
   // adoption found no local match at all (signinMaybeOfferDriveRestore()'s
@@ -13452,6 +13664,8 @@ function setupRoster() {
     if(dd && dd.style.display!=="none" && !e.target.closest("#seatsHistoryDropdown") && !e.target.closest("#seatsHistoryBtn")) dd.style.display="none";
     var ad=$("seatsActivityDropdown");
     if(ad && ad.style.display!=="none" && !e.target.closest(".seats-pill-wrap")) hideSeatsActivityDropdown();
+    var had=$("headerAccountDropdown");
+    if(had && had.style.display!=="none" && !e.target.closest(".header-account-wrap")) had.style.display="none";
   });
   // Phase 1: Seating chart pop-out (seats folded into Dashboard). Instead of
   // a fixed overlay, this shows view-seats the same way the old Seats tab did
@@ -22842,7 +23056,11 @@ nameLine
     avery5162:{name:"Avery 5162 — 1⅓\"×4\" — 14/sheet", cols:2, rows:7, w:4, h:1.333, padT:0.833, padS:0.15625, colGap:0.1875, rowGap:0},
     avery5163:{name:"Avery 5163 / 8163 — 2\"×4\" — 10/sheet", cols:2, rows:5, w:4, h:2, padT:0.5, padS:0.15625, colGap:0.1875, rowGap:0},
     avery5167:{name:"Avery 5167 / 8167 — ½\"×1¾\" — 80/sheet", cols:4, rows:20, w:1.75, h:0.5, padT:0.5, padS:0.3, colGap:0.3, rowGap:0},
-    avery5911:{name:"Avery 5911 — Business Cards 2\"×3½\" — 10/sheet", cols:2, rows:5, w:3.5, h:2, padT:0.5, padS:0.5, colGap:0.5, rowGap:0}
+    // Real Avery 5911 stock has NO gap between the two columns — the cards sit
+    // flush against each other at the sheet's horizontal center, same as the
+    // rows (rowGap:0 below) — with a 0.75in margin on each side, not the
+    // invented 0.5in+0.5in-gap split this used to render with.
+    avery5911:{name:"Avery 5911 — Business Cards 2\"×3½\" — 10/sheet", cols:2, rows:5, w:3.5, h:2, padT:0.5, padS:0.75, colGap:0, rowGap:0}
   };
   var LABEL_ORDER=["avery5160","avery5161","avery5162","avery5163","avery5167","avery5911","tiles"];
   // Generic Avery-sheet renderer — takes flat {qrText, line1, line2, line3} items and
@@ -25511,12 +25729,21 @@ nameLine
     if (!pendingDriveOAuthResult) return;
     if (pendingDriveOAuthResult.error) {
       driveStatus("Could not connect Google Drive (" + pendingDriveOAuthResult.error + ").", "bad");
+      // Also surfaces on the forced Drive-connect gate (Settings -> Account),
+      // not just the Settings card's own status line — driveConnect() can be
+      // reached from either, and a failed attempt from the forced gate must
+      // land back on the forced gate with the error visible, not silently
+      // on the Drive card a rebbi may never have seen.
+      signinState.error = "Could not connect Google Drive (" + pendingDriveOAuthResult.error + "). Try again.";
+      if (typeof renderAccountSection === "function") renderAccountSection();
       return;
     }
     driveAdoptToken(pendingDriveOAuthResult);
     data.driveBackupEnabled = true;
     save();
     renderDriveBackupCard();
+    signinState.error = null;
+    if (typeof renderAccountSection === "function") renderAccountSection();
     driveWriteBackup(false);
   }
 
@@ -27070,6 +27297,10 @@ nameLine
   // redirect lands. Does nothing at all if pendingOAuthResult is null —
   // the overwhelming majority of boots, tier-2 or never-signed-in included.
   signinCompleteFromRedirect();
+  // Header account menu is independent of Settings ever rendering — most
+  // boots never open Settings at all, so this can't rely on
+  // renderAccountSection()'s own call to stay in sync on a plain load.
+  renderHeaderAccountMenu();
   // Step 7's Drive integration: does nothing unless driveConnect()'s redirect
   // just landed (pendingDriveOAuthResult null the overwhelming majority of
   // boots). renderDriveBackupCard()/driveMaybeAutoWrite() below cover the

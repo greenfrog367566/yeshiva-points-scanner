@@ -132,6 +132,36 @@ async function main() {
     assert(summary.lastSignIn != null, "expected lastSignIn to be stamped");
   });
 
+  await check("redeemCode backfill: an existing schoolId:null account can connect to a school afterward", async () => {
+    await db.collection("codes").doc("AA_BACKFILL1").set({ type: "school", schoolId: "aa_school1", maxUses: 5, usedBy: [], revoked: false });
+    const before = await redeemCode.run({ data: {}, auth: { uid: "aa_backfill1", token: { email: "bf1@example.com", name: "Backfill One" } } });
+    assert(before.schoolId === null, "expected the fresh account to start tier-2 (schoolId:null)");
+    const after = await redeemCode.run({ data: { code: "AA_BACKFILL1" }, auth: { uid: "aa_backfill1", token: { email: "bf1@example.com", name: "Backfill One" } } });
+    assert(after.schoolId === "aa_school1", "expected the backfill to apply the code's schoolId");
+    const doc = (await db.collection("accounts").doc("aa_backfill1").get()).data();
+    assert(doc.schoolId === "aa_school1", "expected the change to actually persist, not just be returned");
+    const code = (await db.collection("codes").doc("AA_BACKFILL1").get()).data();
+    assert((code.usedBy || []).includes("aa_backfill1"), "expected the code's usedBy to record this uid");
+  });
+
+  await check("redeemCode backfill: an account already connected to a school refuses a second code (already-exists)", async () => {
+    await db.collection("codes").doc("AA_BACKFILL2").set({ type: "school", schoolId: "aa_school2", maxUses: 5, usedBy: [], revoked: false });
+    await redeemCode.run({ data: { code: "AA_BACKFILL2" }, auth: { uid: "aa_backfill2", token: { email: "bf2@example.com", name: "Backfill Two" } } });
+    await assertThrows(
+      redeemCode.run({ data: { code: "AA_BACKFILL2" }, auth: { uid: "aa_backfill2", token: { email: "bf2@example.com", name: "Backfill Two" } } }),
+      "already-exists"
+    );
+  });
+
+  await check("redeemCode backfill: a non-school code is rejected (invalid-argument), never silently no-op'd", async () => {
+    await db.collection("codes").doc("AA_BACKFILL3").set({ type: "beta", maxUses: 5, usedBy: [], revoked: false });
+    await redeemCode.run({ data: {}, auth: { uid: "aa_backfill3", token: { email: "bf3@example.com", name: "Backfill Three" } } });
+    await assertThrows(
+      redeemCode.run({ data: { code: "AA_BACKFILL3" }, auth: { uid: "aa_backfill3", token: { email: "bf3@example.com", name: "Backfill Three" } } }),
+      "invalid-argument"
+    );
+  });
+
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);
 }
