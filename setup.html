@@ -319,9 +319,9 @@ tailwind.config = {
         <i data-lucide="arrow-left" class="w-5 h-5"></i>
       </button>
       <div class="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
-        <div class="progress-fill bg-gold-400 h-full rounded-full" style="width:100%"></div>
+        <div class="progress-fill bg-gold-400 h-full rounded-full" style="width:80%"></div>
       </div>
-      <span class="text-xs font-semibold text-slate-400">4 / 4</span>
+      <span class="text-xs font-semibold text-slate-400">4 / 5</span>
     </div>
 
     <div class="flex-1 flex flex-col items-center justify-center px-6 py-8 overflow-y-auto">
@@ -339,6 +339,50 @@ tailwind.config = {
 
         <div class="mt-8 flex gap-3">
           <button onclick="goTo('screen-step2','back')" class="px-5 py-3.5 rounded-xl border-2 border-slate-200 text-slate-500 font-semibold text-sm hover:bg-slate-50 transition-colors">
+            Back
+          </button>
+          <button onclick="goToPrizes()" class="flex-1 bg-navy-700 hover:bg-navy-600 text-white font-bold rounded-xl px-6 py-3.5 text-sm transition-colors">
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- SCREEN: QUICK SETUP — Step 5: Prize Store                  -->
+  <!-- The other half of step 4: that screen sets what EARNS points,
+       this one sets what they can be SPENT on. Shown filled in for the
+       same reason the activities screen is — a rebbi who changes nothing
+       still finishes with a working store and printable prize codes. -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div id="screen-step-prizes" class="screen right">
+    <div class="shrink-0 bg-slate-100 px-5 py-3 flex items-center gap-3">
+      <button onclick="goTo('screen-step-activities','back')" class="text-slate-400 hover:text-navy-600 transition-colors p-1">
+        <i data-lucide="arrow-left" class="w-5 h-5"></i>
+      </button>
+      <div class="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
+        <div class="progress-fill bg-gold-400 h-full rounded-full" style="width:100%"></div>
+      </div>
+      <span class="text-xs font-semibold text-slate-400">5 / 5</span>
+    </div>
+
+    <div class="flex-1 flex flex-col items-center justify-center px-6 py-8 overflow-y-auto">
+      <div class="w-full max-w-md">
+        <p class="text-xs font-bold text-gold-500 uppercase tracking-widest mb-2">Step 5</p>
+        <h2 class="font-display text-2xl sm:text-3xl text-navy-700 mb-1">What can they spend on?</h2>
+        <p class="text-slate-400 text-sm mb-6">Your Prize Store. Set what each prize costs in <span id="prize-unit-word">points</span> — every one gets its own scan code, so you can scan a prize and then a student to sell it. Change anything here, or later in Reward → Store.</p>
+
+        <div id="prize-rows" class="space-y-2 mb-3"></div>
+
+        <button onclick="addPrizeRow()" class="w-full border-2 border-dashed border-slate-300 hover:border-gold-400 hover:bg-gold-50/50 text-slate-500 rounded-xl px-4 py-3 text-sm font-semibold transition-colors">
+          + Add a prize
+        </button>
+        <p id="prize-warn" class="text-xs text-amber-600 mt-2 hidden"></p>
+
+        <div class="mt-8 flex gap-3">
+          <button onclick="goTo('screen-step-activities','back')" class="px-5 py-3.5 rounded-xl border-2 border-slate-200 text-slate-500 font-semibold text-sm hover:bg-slate-50 transition-colors">
             Back
           </button>
           <button onclick="finishSetup()" class="flex-1 bg-navy-700 hover:bg-navy-600 text-white font-bold rounded-xl px-6 py-3.5 text-sm transition-colors">
@@ -537,6 +581,8 @@ var setup = {
   // can tell "not seen yet" (seed the defaults) from "seen, and every row was
   // deliberately removed" (leave it empty). See renderActivityRows().
   activities: undefined,
+  // Same absent-vs-empty rule, for the same reason. See renderPrizeRows().
+  prizes: undefined,
   students: []  // [{name}] — the class comes from `className`, not per-student
 };
 
@@ -578,6 +624,8 @@ function restoreUI() {
   // Restore activity rows if the rebbi already got that far. Guarded on the
   // array existing so an untouched resume still seeds the defaults later.
   if (Array.isArray(setup.activities)) renderActivityRows();
+  // Same for the prize rows — same guard, same reason.
+  if (Array.isArray(setup.prizes)) renderPrizeRows();
 }
 
 /* ── Navigation ── */
@@ -731,6 +779,103 @@ function addActivityRow() {
   renderActivityRows();
 }
 
+/* ── Step 5: Prize Store ──
+   The spending half of step 4. Costs are seeded at two different scales
+   because the wizard already knows, by the time this screen opens, which
+   currency the class is counting in: 10 points is a meaningful price, but
+   10 PRUTOT is barely more than an Isar and would put every prize within
+   reach of a single scan. The Shulchani column uses round coin amounts
+   (1 Maah, 3 Maah, 1 Dinar) rather than converted point values, so the
+   printed prices read as real coins to a rebbi running that mode.
+
+   Duplicated from app.html rather than shared, for the same reason
+   DEFAULT_ACTIVITIES above is: setup.html never loads app.html's script. */
+var DEFAULT_PRIZES = [
+  { name: 'Pencil',                  pts: 10, prutot: 32  },  // 1 Maah
+  { name: 'Snack',                   pts: 25, prutot: 96  },  // 3 Maah
+  { name: 'Pick from the prize box', pts: 50, prutot: 192 }   // 1 Dinar
+];
+
+function goToPrizes() {
+  saveProgress();
+  renderPrizeRows();
+  goTo('screen-step-prizes');
+}
+
+function renderPrizeRows() {
+  // Seeded the first time this screen is opened, keyed on the array being
+  // ABSENT rather than empty — a rebbi who deliberately cleared every row
+  // must not have them silently grow back. Same rule as renderActivityRows().
+  if (!Array.isArray(setup.prizes)) {
+    var coins = !!(setup.features && setup.features.shulchani);
+    setup.prizes = DEFAULT_PRIZES.map(function (p) {
+      return { name: p.name, cost: coins ? p.prutot : p.pts };
+    });
+  }
+  var unit = document.getElementById('prize-unit-word');
+  if (unit) unit.textContent = (setup.features && setup.features.shulchani) ? 'prutot' : 'points';
+
+  var box = document.getElementById('prize-rows');
+  if (!box) return;
+  box.innerHTML = '';
+  setup.prizes.forEach(function (prize, i) {
+    var row = document.createElement('div');
+    row.className = 'flex items-center gap-2';
+
+    var name = document.createElement('input');
+    name.type = 'text';
+    name.value = prize.name;
+    name.placeholder = 'What they can buy';
+    name.className = 'flex-1 min-w-0 border-2 border-slate-200 focus:border-gold-400 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors';
+    name.addEventListener('input', function () { setup.prizes[i].name = name.value; saveProgress(); });
+
+    var cost = document.createElement('input');
+    cost.type = 'number';
+    cost.min = '0';
+    cost.value = prize.cost;
+    cost.setAttribute('aria-label', 'Cost');
+    cost.className = 'w-20 shrink-0 border-2 border-slate-200 focus:border-gold-400 rounded-xl px-3 py-2.5 text-sm text-center outline-none transition-colors';
+    cost.addEventListener('input', function () {
+      // Clamped at 0 here, not just on the way into app.html: a negative cost
+      // would PAY a boy for taking a prize, and the number he is shown on this
+      // screen has to be the number that actually gets saved.
+      var c = parseInt(cost.value, 10);
+      setup.prizes[i].cost = (isNaN(c) || c < 0) ? 0 : c;
+      saveProgress();
+    });
+
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = '×';
+    del.title = 'Remove';
+    del.className = 'shrink-0 w-9 h-9 rounded-xl border-2 border-slate-200 text-slate-400 hover:border-red-300 hover:text-red-500 text-lg leading-none transition-colors';
+    del.addEventListener('click', function () {
+      setup.prizes.splice(i, 1);
+      saveProgress();
+      renderPrizeRows();
+    });
+
+    row.appendChild(name); row.appendChild(cost); row.appendChild(del);
+    box.appendChild(row);
+  });
+
+  // Clearing every prize is allowed — plenty of rebbeim run points without a
+  // store at all — but it means an empty Store tab and no prize codes on the
+  // printed sheet. Say so here rather than let him find out later.
+  var warn = document.getElementById('prize-warn');
+  if (warn) {
+    warn.textContent = 'No prizes yet — your Prize Store will start empty and no prize codes will print. You can add them later in Reward → Store.';
+    warn.classList.toggle('hidden', setup.prizes.length > 0);
+  }
+}
+
+function addPrizeRow() {
+  if (!Array.isArray(setup.prizes)) setup.prizes = [];
+  setup.prizes.push({ name: '', cost: 0 });
+  saveProgress();
+  renderPrizeRows();
+}
+
 /* ── Step 2: Students ──
    One student per line. A comma no longer means "Name, Group" — the class now
    comes from step 1, so the only thing a comma can reasonably mean is
@@ -808,6 +953,10 @@ function finishSetup() {
     ? setup.activities.filter(function (a) { return (a.name || '').trim(); })
     : [];
   if (acts.length) parts.push(acts.length + ' activit' + (acts.length === 1 ? 'y' : 'ies'));
+  var przs = Array.isArray(setup.prizes)
+    ? setup.prizes.filter(function (p) { return (p.name || '').trim(); })
+    : [];
+  if (przs.length) parts.push(przs.length + ' prize' + (przs.length === 1 ? '' : 's'));
   if (setup.features.shulchani) parts.push('Shulchani Mode');
   document.getElementById('done-summary').textContent = parts.join(' · ') + '.';
 
