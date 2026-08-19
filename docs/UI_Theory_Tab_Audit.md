@@ -7,13 +7,21 @@ this branch's `app.html` and drift as the file changes — grep the named
 function, don't trust the number.*
 
 > 📌 **Tracked as one line in `docs/NOW.md`'s "Next, in order"** (a 27-item
-> ranked punch list, unstarted, this doc for the detail) rather than 27
+> ranked punch list, this doc for the detail) rather than 27
 > individual entries — NOW.md is deliberately terse and this doc is the
 > backing reference. This is a **dated snapshot** — findings #25 and #26 are
 > individually cited from `Onboarding_Starter_Tabs_Proposal.md` and
 > `Left_Rail_Nav_Decision.md`/`UI_Design_Theory.md` respectively, which is why
 > the file stays in place rather than folding into either of those. Re-verify
 > any item against the real code before acting; line numbers are not durable.
+>
+> ✅ **Status as of 2026-08-19: 23 of 27 done.** Items 1–22 and 27 all shipped
+> — items 1–6 in commit `0bf9778` (2026-08-14, though its own message
+> over-claimed item 5, which PR #301 actually delivered), items 7–22 in
+> **PR #301** (merged 2026-08-18), and item 27 (double-scan detection)
+> separately in **PR #287** (merged 2026-08-16). Each closed item below is
+> marked ✅ **DONE** with its PR/commit. **Only 23, 24, 25, 26 remain open** —
+> see "Ranked shortlist" section E and the tail of section D.
 
 **Status: everything here is a finding, not a commitment.** Items are marked:
 
@@ -26,112 +34,115 @@ function, don't trust the number.*
 
 ## The headline
 
-**The theory is already substantially shipped.** The global scan bar is the
-cockpit model built literally: armed pill, live strip with inline undo, sticky
-on every working tab, hidden on admin tabs. Auto-arm on load, never-truncated
-tiles, collapsed setup drawers, navHidden with locked escape hatches, the
-wizard's four steps, contest fear-answering copy — the audit's "matches" lists
-are long everywhere. What remains is a short list of cheap fixes, two bugs,
-and a few known big items that are already queued elsewhere.
+**The theory is already substantially shipped, and the punch list is now
+mostly closed too.** The global scan bar is the cockpit model built
+literally: armed pill, live strip with inline undo, sticky on every working
+tab, hidden on admin tabs. Auto-arm on load, never-truncated tiles, collapsed
+setup drawers, navHidden with locked escape hatches, the wizard's four steps,
+contest fear-answering copy — the audit's "matches" lists are long
+everywhere. Of the 27 findings this audit itself produced, 23 have since
+shipped (see the status callout above); **what remains is items 23–26** —
+one small comment/array inconsistency and three sequenced bigger items, one
+of which (26) is explicitly blocked on #227.
 
 ## Ranked shortlist
 
 ### A. Bugs found along the way 🐛
 
-1. **Mishnayos tab silently teaches Pesukim content.** With zero mishna sets,
+1. ✅ **DONE (commit `0bf9778`, 2026-08-14) — Mishnayos tab silently teaches Pesukim content.** With zero mishna sets,
    `applyPesukMode` empties the dropdown but never switches the active set, so
    `pmNumbers()` still reads the active *pesukim* set — the Mishnayos tab
-   shows pesukim phrases under an empty selector. Fix: when
-   `filteredSets(kindFilter)` is empty, hide the teach panel and show "No
-   Mishnayos sets yet — add one on the Text tab." *(small)*
-2. **Store's pending count goes stale when the log empties.**
-   `renderStoreHistory()` early-returns on an empty `data.store.log` before
+   shows pesukim phrases under an empty selector. Fixed: when
+   `filteredSets(kindFilter)` is empty, the teach panel now hides and shows "No
+   Mishnayos sets yet — add one on the Text tab."
+2. ✅ **DONE (commit `0bf9778`, 2026-08-14) — Store's pending count goes stale when the log empties.**
+   `renderStoreHistory()` early-returned on an empty `data.store.log` before
    updating `#storePendingCount`, so after Clear history or refunding the last
-   purchase, the old "N prizes not yet picked up" stays on screen. Move the
-   count assignment above the early return. *(tiny)*
+   purchase, the old "N prizes not yet picked up" stuck on screen. Fixed: the
+   count assignment now runs before the early return.
 
 ### B. Already-decided spec items the code never got ✅ settled-spec
 
-3. **Remove the Trends "Send totals to Sheet" button** (`#trSendSheet` + its
+3. ✅ **DONE (commit `0bf9778`, 2026-08-14) — Remove the Trends "Send totals to Sheet" button** (`#trSendSheet` + its
    handler). The redesign summary §4 already ruled it actively harmful (pushes
-   to a second, manually-triggered sheet tab that silently goes stale); it
-   shipped anyway and is still there.
-4. **Shorashim emoji toggle: default OFF.** Spec decision (summary §7); the
-   shipped default is still ON (`shorEmoji=true`, `checked` on the toggle).
-   Session-only variable, no migration. *(tiny)*
-5. **Collapse the Text tab's setup card once real text sets exist** — the
-   exact "same fix applied to Students" the summary §7 endorsed; Students got
-   it, Text didn't. *(small)*
-6. **Auction draws write nothing to the permanent log.** The spec'd audit fix
-   (summary §5): `auFinishSpin()` records the winner only in mutable auction
-   state — auction spending is invisible in History, never reaches the Sheet,
-   and fails CLAUDE.md's "is there a way back — a log entry" test. Fix at the
-   draw moment, per spec. *(medium; touches the log — show the diff first)*
+   to a second, manually-triggered sheet tab that silently goes stale); it had
+   shipped anyway and stuck around until this fix.
+4. ✅ **DONE (commit `0bf9778`, 2026-08-14) — Shorashim emoji toggle: default OFF.** Spec decision (summary §7); the
+   shipped default was ON (`shorEmoji=true`, `checked` on the toggle) until this
+   fix. Session-only variable, no migration.
+5. ✅ **DONE (PR #301, merged 2026-08-18) — Collapse the Text tab's setup card once real text sets exist** — the
+   exact "same fix applied to Students" the summary §7 endorsed; Students had
+   it, Text didn't. **Note:** `0bf9778`'s own commit message claimed this one too, but its diff never actually implemented it — PR #301 is what really shipped it.
+6. ✅ **DONE (commit `0bf9778`, 2026-08-14) — Auction draws write nothing to the permanent log.** The spec'd audit fix
+   (summary §5): `auFinishSpin()` recorded the winner only in mutable auction
+   state — auction spending was invisible in History, never reached the Sheet,
+   and failed CLAUDE.md's "is there a way back — a log entry" test. Fixed at the
+   draw moment, per spec.
 
-### C. Copy fixes — the "Tracked Items" leak, located 🟡 propose (tiny each)
+### C. Copy fixes — the "Tracked Items" leak, located ✅ DONE (PR #301, merged 2026-08-18)
 
-Open item 2 of `UI_Design_Theory.md`, now with exact locations. The engine
-term reaches rebbeim in exactly four strings:
+Open item 2 of `UI_Design_Theory.md`. The engine term reached rebbeim in four
+strings; all four, plus one positioning leak, are reworded now:
 
 7. Gradebook view-note ("Columns come straight from your tracked items…" —
-   uses the term three times)
-8. Gradebook empty state: "No tracked items yet."
-9. Gradebook empty-range note: "Tracked items are the new shared record…"
-10. Activities tab pill badge: **"Tracked (non-point)"** → something like
-    "Records only, no points"
+   used the term three times) — reworded in plain rebbi language.
+8. Gradebook empty state: "No tracked items yet." — reworded.
+9. Gradebook empty-range note: "Tracked items are the new shared record…" — reworded.
+10. Activities tab pill badge: **"Tracked (non-point)"** → **"No points"**.
 
-Plus one positioning leak: setup.html's restore screen says "Every **teacher**
+Plus one positioning leak: setup.html's restore screen said "Every **teacher**
 needs their own sheet" — the one "teacher" in a file that otherwise says
-rebbi. *(tiny)*
+rebbi. Fixed.
 
-### D. Small disclosure/cockpit fixes 🟡 propose
+### D. Small disclosure/cockpit fixes — 11–22 ✅ DONE (PR #301, merged 2026-08-18), 23 🟡 propose, still open
 
-11. **Cap the Dashboard's live Leaderboard panel at ~8 rows** with a "Full
-    leader board →" link to Standings. Today `renderScanBoard` renders every
+11. ✅ **DONE — Cap the Dashboard's live Leaderboard panel at ~8 rows** with a "See
+    all in Standings →" link. Previously `renderScanBoard` rendered every
     student, open by default — half the cockpit spent on a twice-a-class
-    glance. *(small)*
-12. **Hide the Leader Board's empty-contest card.** When no contest runs,
-    "🏆 No contest running right now — Start a contest…" is the *first
-    element* on the most-projected page, above the leader line. Keep the
-    active-contest banner; drop or demote the inactive state. *(tiny)*
-13. **Mark the in-progress week honestly in Trends.** The current partial week
-    renders a "▼ −N" arrow against last completed week — the exact "Dovid is
-    DOWN 50% on a Tuesday" trust-destroyer. Cheap version: render the current
-    week as neutral "+N so far" instead of an arrow. (The full Option C fix is
-    blocked on per-day data; this isn't that.) *(tiny)*
-14. **Cap History's initial render** (~200 rows + "Show older") — today every
-    keystroke re-renders up to 5000 rows with 3–4 buttons each. *(small)*
-15. **Make History's search match activity labels and notes** — today it
-    matches only the student name, duplicating the dropdown beside it.
-    *(tiny)*
-16. **Land Review-group first click on practice, not setup** — first-ever
-    click lands on the Text (setup) tab; fall back to Pesukim when real sets
-    exist. Similarly, **Shorashim lands on Words (setup) every session** even
-    with a full word list — default to Match when words exist. *(small each)*
-17. **Seed the floating points panel's armed activity from the global one on
-    open** — today `fpActId` is independent, so the panel can silently award a
-    different activity than the rebbi just armed on the scan bar. Seed on
-    open, stay independent after. *(small)*
-18. **Give the floating points FAB a legible glyph** — "↗" says nothing;
-    its siblings ⏱ and 🎡 pass the three-second test, this one doesn't.
-    *(tiny)*
-19. **Store's Clear-history confirm should mention pending prizes** — clearing
-    destroys the only record of who is still owed a prize, and the confirm
-    doesn't say so when pending > 0. *(tiny)*
-20. **Raffle: fold the two set-once checkboxes** (spread tickets / instant
-    draw) into a collapsed details block, matching the existing
-    "Who's in this draw" pattern, so the class-facing screen is mode → wheel →
-    Spin. *(small)*
-21. **Settings: move the Serial/COM scanner card off the top.** The first
-    thing every rebbi sees on Settings is baud rates — a card whose own copy
-    says most scanners need no setup. Markup reorder only. *(small)*
-22. **Backup tab label vs page title disagree** — subtab says "Backup &
-    Restore", the page h2 says "Backup & Sheets". Pick one. *(tiny)*
+    glance.
+12. ✅ **DONE — Hide the Leader Board's empty-contest card.** When no contest ran,
+    "🏆 No contest running right now — Start a contest…" was the *first
+    element* on the most-projected page, above the leader line. Now the
+    card only shows once a contest is actually running.
+13. ✅ **DONE — Mark the in-progress week honestly in Trends.** The current partial week
+    used to render a "▼ −N" arrow against last completed week — the exact "Dovid is
+    DOWN 50% on a Tuesday" trust-destroyer. Now renders as neutral "+N so far".
+    (The full Option C fix is still blocked on per-day data; this isn't that.)
+14. ✅ **DONE — Cap History's initial render** (~200 rows + "Show older") — previously every
+    keystroke re-rendered up to 5000 rows with 3–4 buttons each.
+15. ✅ **DONE — History's search now matches activity labels and notes**, not just the
+    student name.
+16. ✅ **DONE — Review group's first click now lands on Pesukim instead of Text**
+    (tab order unchanged — Text still reads first); **Shorashim now opens on
+    Match instead of Words.**
+17. ✅ **DONE — The floating points panel now seeds from the globally-armed
+    activity on open**, instead of defaulting to the first activity in its own
+    list.
+18. ✅ **DONE — The floating-points glyph is now 🎯** (button, panel header, scan-context
+    label) — previously a bare "↗" that conveyed nothing next to ⏱/🎡's
+    self-explanatory pictographs.
+19. ✅ **DONE — Store's Clear-history confirm now mentions pending prizes** when
+    pending > 0.
+20. ✅ **DONE — Raffle: the two set-once checkboxes** (spread tickets / instant
+    draw) are now folded into a collapsed "Wheel options" block, matching the
+    existing "Who's in this draw" pattern.
+21. ✅ **DONE — Settings: the Serial/COM scanner card moved off the top** (to the
+    bottom; markup reorder only).
+22. ✅ **DONE — Backup tab label vs page title disagreement fixed** — both read
+    "Backup & Sheets" as of PR #301. **Note:** as of `feat/backup-sheets-redesign`
+    (PR #320, in review), the page is being renamed again to "Backup & Restore" —
+    that PR updates `TAB_LABELS.backup` to match, so the two stay in agreement;
+    watch for this item resurfacing if a future change touches one side without
+    the other.
 23. **Scan-bar hidden-tabs comment contradicts its array** — the comment says
     the bar stays on Students/Activities; the array hides it there. Fix the
-    comment (or the array, if the old rationale stands). *(tiny)*
+    comment (or the array, if the old rationale stands). *(tiny)* **Still open —
+    verified 2026-08-19: `GLOBAL_SCAN_BAR_HIDDEN_TABS` (app.html ~line 6870)
+    still includes `"students"` and `"activities"`, while the comment above it
+    still says the bar is "Visible everywhere else, including Students/Activities
+    management."**
 
-### E. Bigger items, sequenced 🟡 propose
+### E. Bigger items, sequenced — 24–26 🟡 propose, still open; 27 ✅ DONE
 
 24. **Dashboard default layout still ships the two panels the spec cut.** The
     default includes a second scan input (panel-scanbar) and a Recent-scans
@@ -150,11 +161,11 @@ rebbi. *(tiny)*
     in `renderSubTabs()` gives Class/Classroom/System separators with no
     reorder and no persisted state. Sequence it after #227 so we don't style a
     row about to lose four members.
-27. **Double-scan detection (open item 1) — implementation note.** The natural
-    hook exists: `renderSeatsScanBar()` already detects new scans via
-    `lastSeatsScanId`, and `award()` has sid+ts — a same-sid-within-2s check
-    before the flash gives the soft "was just scanned — again?" with no new
-    state model and no modal.
+27. ✅ **DONE (PR #287, merged 2026-08-16) — Double-scan detection (open item
+    1).** Built via the natural hook this note anticipated: `isDoubleScan()`
+    checks same-sid-within-~2s and shows a soft, non-blocking "scanned a
+    moment ago — again?" toast. No new state model, no modal, records
+    nothing, blocks nothing.
 
 ## Explicitly not doing (and why)
 
