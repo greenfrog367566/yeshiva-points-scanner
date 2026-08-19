@@ -6118,6 +6118,36 @@ function setupRoster() {
   // only applies once a teacher has actually picked a specific class.
   function studentInCurrentClass(s){ return !data.currentClass || (s.group||"")===data.currentClass; }
 
+  /* ---------- CLASS-SCOPED SCAN HISTORY ----------
+   *
+   * data.log is ONE list for every class a rebbi keeps. Every surface that
+   * shows scans, and every surface that reverses one, has to narrow it to the
+   * selected class or Rebbi A's morning shows up in Rebbi B's scan bar — and,
+   * worse, "Undo last scan" in class B silently reverses a scan that belongs
+   * to class A. These two helpers are the single place that rule lives; call
+   * them rather than writing the filter inline again.
+   *
+   * "All classes" (no class selected) deliberately passes everything, which is
+   * exactly what that mode is for.
+   *
+   * An entry whose student no longer exists has no class to test against, so
+   * it is KEPT rather than dropped. That is deliberate and it is why display
+   * and undo share one predicate: if undo skipped orphans while the scan bar
+   * showed them, "Undo last scan" would reverse something other than the row
+   * sitting at the front of the bar.
+   */
+  function logEntryInCurrentClass(entry){
+    if(!data.currentClass) return true;
+    if(!entry) return false;
+    var s=studentById(entry.sid);
+    return !s || studentInCurrentClass(s);
+  }
+  // The log as the selected class sees it. Returns data.log itself under
+  // "All classes" so the common case allocates nothing.
+  function visibleLog(){
+    return data.currentClass ? data.log.filter(logEntryInCurrentClass) : data.log;
+  }
+
   /* ---------- sound ---------- */
   var audioCtx=null;
   function beep(ok){
@@ -13793,15 +13823,11 @@ function setupRoster() {
 
   function renderRecent(){
     var box=$("recentList"); box.innerHTML="";
-    // Scoped to the selected class, like every other scan surface — a rebbi
-    // who switched to one class shouldn't see another class's scans mixed
-    // into "recent". An entry whose student no longer exists is kept rather
-    // than dropped, since there's no class to test it against.
-    var visibleLog = data.currentClass
-      ? data.log.filter(function(entry){ var s=studentById(entry.sid); return !s || studentInCurrentClass(s); })
-      : data.log;
-    if(!visibleLog.length){ box.appendChild(el("div","recent-empty","Scans will appear here.")); return; }
-    visibleLog.slice(0,12).forEach(function(entry,i){
+    // Scoped to the selected class, like every other scan surface — see
+    // visibleLog().
+    var shownLog = visibleLog();
+    if(!shownLog.length){ box.appendChild(el("div","recent-empty","Scans will appear here.")); return; }
+    shownLog.slice(0,12).forEach(function(entry,i){
       var s=studentById(entry.sid);
       var isCorrection = entry.kind==="correction";
       var isTracked = isTrackedEntry(entry);
@@ -13883,21 +13909,26 @@ function setupRoster() {
     // Most recent is full-opacity; each subsequent entry fades to 0.3 min.
     var strip=$("scanStrip");
     if(strip){
+      // Class-scoped, like Recent scans — see visibleLog(). The flash
+      // detection reads the scoped list too, so a scan in another class no
+      // longer flashes this bar for a row it will never show.
+      var stripLog=visibleLog();
       // Detect new scan for flash animation
-      var newestId=data.log[0]?data.log[0].id:null;
+      var newestId=stripLog[0]?stripLog[0].id:null;
       var isNew=newestId && newestId!==lastSeatsScanId;
       if(isNew) lastSeatsScanId=newestId;
 
-      // Merge scan log entries (with their log index) and activity changes,
-      // sorting by timestamp descending so newest is always first.
+      // Merge scan log entries and activity changes, sorting by timestamp
+      // descending so newest is always first.
       var merged=[];
-      // Scan entries: use log index as-is; timestamp = ts field or 0.
-      for(var li=0;li<data.log.length;li++){
-        merged.push({kind:'scan', entry:data.log[li], logIdx:li, ts:data.log[li].ts||0});
+      for(var li=0;li<stripLog.length;li++){
+        // No log index is carried: undo here goes through undoEntryById(), and
+        // a position in the SCOPED list would not be a data.log index anyway.
+        merged.push({kind:'scan', entry:stripLog[li], ts:stripLog[li].ts||0});
       }
       // Activity-change entries from stripActLog
       for(var ai=0;ai<stripActLog.length;ai++){
-        merged.push({kind:'activity', entry:stripActLog[ai], logIdx:-1, ts:stripActLog[ai].ts||0});
+        merged.push({kind:'activity', entry:stripActLog[ai], ts:stripActLog[ai].ts||0});
       }
       merged.sort(function(a,b){ return b.ts-a.ts; });
       // Cap candidate pool; we'll trim to what fits below
@@ -13977,8 +14008,10 @@ function setupRoster() {
   function renderSeatsHistoryDropdown(){
     var wrap=$("seatsHistoryDropdown"); if(!wrap) return;
     wrap.innerHTML="";
-    if(!data.log.length){ wrap.appendChild(el("div","seats-hist-empty","Scans will appear here.")); return; }
-    data.log.slice(0,10).forEach(function(entry,i){
+    // Class-scoped, like the bar it drops out of — see visibleLog().
+    var histLog=visibleLog();
+    if(!histLog.length){ wrap.appendChild(el("div","seats-hist-empty","Scans will appear here.")); return; }
+    histLog.slice(0,10).forEach(function(entry,i){
       var s=studentById(entry.sid);
       var isCorrection=entry.kind==="correction";
       var shTracked=isTrackedEntry(entry);
@@ -14407,15 +14440,27 @@ function setupRoster() {
   // lastTrackedScan (something else already changed that record — see
   // reverseTrackedWrite()'s guards) is simply discarded and the log walk
   // proceeds as if it had never been there.
+  //
+  // CLASS-SCOPED. Both candidates are narrowed to the selected class, because
+  // this is the one undo the rebbi does not pick a row for — he presses a
+  // button (or scans CTRL:UNDO) and takes whatever it finds. Unscoped, pressing
+  // it in class B reversed the last scan made in class A, with nothing on
+  // screen to show it had happened. The index is still resolved against
+  // data.log itself, since undoEntry() indexes the real list.
   function undoMostRecentScan(){
     if(vnPopNote()) return "note";
     var candidateIdx=-1, candidate=null;
     for(var i=0;i<data.log.length;i++){
       var e=data.log[i];
+      if(!logEntryInCurrentClass(e)) continue;
       if(!e.undone && e.kind!=="correction" && (!isTrackedEntry(e) || trackedEntryReversible(e))){
         candidateIdx=i; candidate=e; break;
       }
     }
+    // A tracked scan made in another class is not this class's to reverse
+    // either — and it is dropped rather than held, since holding it would let
+    // it surface later when the rebbi switches back.
+    if(lastTrackedScan && !logEntryInCurrentClass(lastTrackedScan)) lastTrackedScan=null;
     if(lastTrackedScan && (!candidate || lastTrackedScan.ts>=candidate.ts)){
       var pending=lastTrackedScan;
       lastTrackedScan=null;
@@ -14472,9 +14517,13 @@ function setupRoster() {
   // The scan a note would attach to: newest real, non-undone entry — and only
   // if it is recent. Without this window, scanning the mic card after lunch
   // would silently annotate something from an hour ago.
+  // Class-scoped for the same reason undoMostRecentScan() is: nothing is
+  // pointed at, so an unscoped walk would staple a note onto another class's
+  // scan where the rebbi who made it would never see it.
   function vnTargetEntry(){
     for(var i=0;i<data.log.length;i++){
       var e=data.log[i];
+      if(!logEntryInCurrentClass(e)) continue;
       if(e.undone || e.kind==="correction") continue;
       if(Date.now()-(e.ts||0) > VN_STALE_MS) return null;
       return e;
@@ -14643,7 +14692,9 @@ function setupRoster() {
     var seen={}, labels=[];
     allEarnedLabels().forEach(function(l){ if(!seen[l]){ seen[l]=1; labels.push(l); } });
     var trkLabels=[];
-    data.log.forEach(function(e){
+    // Class-scoped, so the dropdown can't offer an activity that has no rows
+    // in this class to narrow to.
+    visibleLog().forEach(function(e){
       if(!e || !e.label || seen[e.label]) return;
       seen[e.label]=1;
       (isTrackedEntry(e) ? trkLabels : labels).push(e.label);
@@ -14681,7 +14732,11 @@ function setupRoster() {
     // Base filter (student + text search + activity) — shared by both the
     // row view's sorts and the ranked view's per-student totals, so all
     // three filters narrow the same underlying set together (AND'd).
-    var filtered = data.log.filter(function(entry){
+    // Class-scoped first, like every other scan surface — the student dropdown
+    // above is already built from activeStudents(), so without this the rows
+    // and the filter that narrows them disagreed about which class this tab is
+    // showing. See visibleLog().
+    var filtered = visibleLog().filter(function(entry){
       var s=studentById(entry.sid);
       var name = s ? s.name : entry.sid;
       if(studentFilter && entry.sid!==studentFilter) return false;
@@ -14794,7 +14849,10 @@ function setupRoster() {
         list.appendChild(noteRow);
       }
     });
-    if(!shown) list.appendChild(el("div","recent-empty", data.log.length ? "No scans match your search." : "Scans will appear here."));
+    // Counts the SCOPED log: a class with no scans of its own should read
+    // "Scans will appear here", not "No scans match your search" just because
+    // another class has scans.
+    if(!shown) list.appendChild(el("div","recent-empty", visibleLog().length ? "No scans match your search." : "Scans will appear here."));
     else if(overflowCount>0){
       var moreBtn=el("button","btn btn-sm","Show older ("+overflowCount+" more)");
       moreBtn.style.cssText="display:block;margin:10px auto 0";
@@ -17592,11 +17650,18 @@ function setupRoster() {
     });
   }
 
-  // "History": every scan for this contest, flat and chronological, no filter.
+  // "History": every scan for this contest, flat and chronological, no student
+  // filter — but class-scoped, like the Class List and By Student views beside
+  // it. Both of those iterate activeStudents() and so were already narrowed;
+  // this one walked the whole log, so it was the single view on the tab that
+  // showed another class's contest scans, each with a working undo arrow.
+  // Only the DISPLAY is scoped: contestTotalsById() and the saved snapshots it
+  // feeds are deliberately left alone, since those numbers are the contest's,
+  // not the selected class's.
   function renderContestHistoryList(){
     var c=data.contest; if(!c) return;
     var list=$("contestHistoryList"); list.innerHTML="";
-    var entries=contestEntriesFor(c.id, null);
+    var entries=contestEntriesFor(c.id, null).filter(function(pair){ return logEntryInCurrentClass(pair.e); });
     if(!entries.length){ list.appendChild(el("div","recent-empty","No scans yet for this contest.")); return; }
     entries.forEach(function(pair){
       var entry=pair.e, s3=studentById(entry.sid);
@@ -19266,7 +19331,9 @@ function setupRoster() {
   }
   function renderCoinBankHistory(){
     var h=$("cbHistory"); h.innerHTML="";
-    var entries=data.log.filter(function(e){ return e.kind==="coinBank"; }).slice(0,20);
+    // Class-scoped, like every other scan history — coin deposits are scanned
+    // per student, so another class's belong on that class's list.
+    var entries=visibleLog().filter(function(e){ return e.kind==="coinBank"; }).slice(0,20);
     if(!entries.length){ h.appendChild(el("div","recent-empty","No coin deposits or withdrawals yet.")); return; }
     entries.forEach(function(e){
       var row=el("div","erow");
@@ -23295,6 +23362,10 @@ nameLine
     // renderActivities()'s actVisibleInCurrentClass() filter), so switching
     // classes has to refresh it like every other class-scoped view above.
     if($("view-activities").classList.contains("active")) renderActivities();
+    // Coin Deposit's history is class-scoped too (see renderCoinBankHistory()),
+    // and its selected student belongs to the class that was showing — clearing
+    // it here is the same thing the auction two lines up does.
+    if($("view-coinbank").classList.contains("active")){ cbStudentId=null; renderCoinBank(); }
   });
   function importRoster(rows){
     var added=0, updated=0;
