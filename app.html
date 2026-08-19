@@ -1187,6 +1187,21 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   }
   .board-remove:hover{ background:rgba(178,59,46,.35); color:#F2EFE4; border-color:rgba(178,59,46,.5) }
   .board-remove:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px }
+  /* Top-center — but one row BELOW .board-controls/.board-remove, not
+     level with them: a box's own top-center coincides with the viewport's
+     top-center exactly when that box spans the full width (solo, or the
+     top box of a 2-stack) — precisely where #boardCloseBtn already lives.
+     Sitting a row lower clears it in every layout without needing to
+     special-case which box is "the wide one" this render. */
+  .board-clear{
+    position:absolute; top:clamp(1.5rem,3vw,2.1rem); left:50%; transform:translateX(-50%);
+    border-radius:999px; padding:.15rem .55rem; border:1px solid var(--board-chip-border);
+    background:var(--board-chip-bg); color:var(--board-ink); font-family:var(--sans);
+    font-size:.72rem; font-weight:700; letter-spacing:.02em; cursor:pointer;
+    opacity:.75; transition:opacity 120ms ease, background 120ms ease, color 120ms ease;
+  }
+  .board-clear:hover{ opacity:1; background:rgba(178,59,46,.35); color:#F2EFE4; border-color:rgba(178,59,46,.5) }
+  .board-clear:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px; opacity:1 }
   #boardAdd,#boardSkinBtn{
     position:fixed; z-index:5; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
     box-shadow:0 3px 12px rgba(0,0,0,.35); transition:transform 120ms ease, filter 120ms ease, opacity 120ms ease;
@@ -10001,13 +10016,24 @@ function setupRoster() {
 
     function removeBox(box){
       var boxes=pages()[pageIndex];
+      // Solo box, solo page: nothing left to fall back to, so ✕ here means
+      // the same thing "Close board" does — leave the board entirely, not
+      // clear the box (that's what the top-center Clear button is for).
       if(boxes.length===1 && pages().length===1){
-        box.text=""; box.color=""; save(); render(); return;
+        boardClose(); return;
       }
       var kept=boxes.filter(function(b){ return b.id!==box.id; });
       if(kept.length){ pages()[pageIndex]=kept; }
       else { pages().splice(pageIndex,1); pageIndex=Math.min(pageIndex, pages().length-1); }
       save(); render();
+    }
+    function clearBox(box, cell){
+      box.text="";
+      save();
+      var textwrap=cell.querySelector(".board-textwrap");
+      var textEl=cell.querySelector("[data-role=text]");
+      if(textEl) textEl.textContent="";
+      if(textwrap && textEl) fitText(textwrap, textEl);
     }
     function deletePage(i){
       if(pages().length<2 || i<0 || i>=pages().length) return;
@@ -10066,10 +10092,12 @@ function setupRoster() {
             swatchHtml+
             '<button class="board-save'+(saved?" saved":"")+'" type="button" title="'+(saved?"Remove from shelf":"Save to shelf")+'" aria-label="'+(saved?"Remove from shelf":"Save to shelf")+'" aria-pressed="'+saved+'">'+BOOKMARK_SVG+'</button>'+
           '</div>'+
+          '<button class="board-clear" type="button" aria-label="Clear text">Clear</button>'+
           '<button class="board-remove" type="button" aria-label="Remove box">✕</button>'+
           '<div class="board-textwrap"><div class="board-celltext" data-role="text" contenteditable="true" data-placeholder="Tap here and start typing — homework, a reminder, anything the class needs to see."></div></div>';
 
         var removeBtn=cell.querySelector(".board-remove");
+        var clearBtn=cell.querySelector(".board-clear");
         var grip=cell.querySelector(".board-grip");
         var textwrap=cell.querySelector(".board-textwrap");
         var textEl=cell.querySelector("[data-role=text]");
@@ -10081,6 +10109,7 @@ function setupRoster() {
           btn.addEventListener("click", function(){ box.color=btn.getAttribute("data-color"); save(); render(); });
         });
         cell.querySelector(".board-save").addEventListener("click", function(){ toggleSaved(box); });
+        clearBtn.addEventListener("click", function(){ clearBox(box, cell); });
         removeBtn.addEventListener("click", function(){ removeBox(box); });
         if(grip){
           grip.addEventListener("dragstart", function(e){
