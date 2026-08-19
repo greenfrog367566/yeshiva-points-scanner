@@ -30,6 +30,8 @@ The current working queue. Read this at the start of a session.
 
 **What's left in the whole rebuild is step 8** (migrating the real beta cohort) — deploy is no longer the blocker. It now waits only on **the managed-Chromebook verification sessions** step 0c and step 7 each still owe (can't be simulated, needs Ben's own hardware) and on Ben actually clicking through a real sign-in end to end.
 
+**New blocker found 2026-08-19, will hit every beta rebbi identically:** the `menchmark-backend` GCP project's OAuth consent screen is still in **Testing** publishing status. Any Google account not added as a test user gets a hard `Error 403: access_denied` ("has not completed the Google verification process") on both Google Sign-In and the Drive "Save to Drive" button — same OAuth client, `MENCHMARK_GOOGLE_CLIENT_ID` (`app.html:6189`, `DRIVE_SCOPE` at `24920`), backs both. Only Ben can fix this in Google Cloud Console → APIs & Services → OAuth consent screen: either add each beta rebbi as a test user (works immediately, caps at 100), or flip Publishing status to **In production** — the Drive scope in use (`drive.file`) is non-sensitive/per-file, so this should not require Google's manual verification review. Given ~30 beta rebbeim are about to onboard, production publishing is the better fit than hand-maintaining a test-user list, but it's Ben's call and Ben's console access.
+
 Its phase mapping was reconciled against the code on 2026-08-04. Two things were locked in that pass: **2d runs before step 1**, and Secretary Mode folds into the rebuild. Per-phase status for everything else lives in `Menchmark_Phased_Build_Plan.md`, which is the authority on what has shipped.
 
 ---
