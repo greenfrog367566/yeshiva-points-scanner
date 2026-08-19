@@ -290,6 +290,19 @@ function codeSections(){
   }
   return data.codeSections;
 }
+// The section printed prize codes land in — one-shot, and only for a rebbi who
+// actually has prizes. load2fix() calls this, so the harness needs its own copy;
+// same shape as seedShulchaniCoinCodes()'s section push below. See app.html.
+var STORE_SECTION_KEY="store";
+function ensureStoreCodeSection(){
+  if(data.storeCodeSectionSeeded) return;
+  if(!data.store || !Array.isArray(data.store.items) || !data.store.items.length) return;
+  var list=codeSections();
+  if(!list.some(function(s){ return s.key===STORE_SECTION_KEY; })){
+    list.push({key:STORE_SECTION_KEY, label:"Prize Store"});
+  }
+  data.storeCodeSectionSeeded=true;
+}
 // The starter re-value follows the mode in both directions — see app.html.
 // Not reached by load2fix() (a routine load never re-values), but kept here so
 // the harness's copy of the seeder matches app.html's shape.
@@ -460,6 +473,14 @@ if(!Array.isArray(data.store.log)) data.store.log=[];
 // old, already-resolved purchases as newly "pending."
 if(typeof data.store.autoReceived!=="boolean") data.store.autoReceived=false;
 data.store.log.forEach(function(p){ if(typeof p.received!=="boolean") p.received=true; });
+/* pid — the link between a purchase row and its data.log spend entry (see
+ * storePurchase()). Purely additive, so no DATA_VERSION bump: a purchase
+ * made before prizes were scannable has no pid and no linked entry to find,
+ * and both reversal paths test the pid for truth before matching on it. It
+ * is normalised to null rather than left undefined only so the field's shape
+ * is the same on every row, which is what the guards below it read.
+ */
+data.store.log.forEach(function(p){ if(typeof p.pid!=="string" || !p.pid) p.pid=null; });
 if(!data.earned) data.earned={};
 if(!data.weekly) data.weekly={};
 if(typeof data.standingsActivity!=="string") data.standingsActivity="";
@@ -710,6 +731,11 @@ if(Array.isArray(data.codeSections)){
 if(!Array.isArray(data.codeSections) || !data.codeSections.length){
   data.codeSections = DEFAULT_CODE_SECTIONS.map(function(s){ return {key:s.key, label:s.label}; });
 }
+// Printed prize codes need a section to land in. One-shot, and only for a
+// rebbi who actually has prizes — see ensureStoreCodeSection(). Runs after
+// the guard above, which is what guarantees there is a list to push onto.
+if(typeof data.storeCodeSectionSeeded!=="boolean") data.storeCodeSectionSeeded=false;
+ensureStoreCodeSection();
 // Replaced by each section's own label in v5. Deleted rather than left to
 // rot, so nothing can read a stale name back later.
 delete data.codeSectionNames;
