@@ -2,7 +2,28 @@
 
 ## Status
 
-**✅ APPROVED 2026-08-16 by Ben.** This doc fills a gap surfaced twice during
+**✅ APPROVED 2026-08-16 by Ben. Entry points A/B/C SHIPPED.**
+
+**AMENDED — a fourth entry point, D, added on `setup.html`'s Restore/Import
+screen.** §1's three doors all answer "how does a rebbi *start* using an
+account." None of them answer the question a rebbi actually arrives with on a
+new computer — *"where is my class?"* — which is asked on the Restore screen,
+where the only two answers on offer both required him to still be holding
+something (a `.json` file, or his Apps Script URL). Entry point D is a third
+option on that screen, deliberately placed there and **not** on setup's welcome
+screen: a rebbi who reaches Restore is already asking the question sign-in
+answers, so it reads as an answer rather than a nudge, which keeps §'s "never a
+wall" / "never imply they're missing something" constraint intact.
+
+**Also corrected here: what signing in on a new device actually does.** This
+doc's §3.3 says an existing account "skip[s] everything below, go[es] straight
+into the app on that account's class" — that was never implemented. Nothing
+read a class *down* into local `data`; every path was upload-only, including
+the misleadingly-named `signinAcceptDriveRestore()`. The restore half now
+exists, sourced from the **Drive backup** (a full `data` blob) rather than from
+Firestore (whose class doc holds only roster, scores and tracked data — not
+activities, log, rewards or settings, so it cannot reconstitute a class on its
+own). See CHANGELOG `[Unreleased]`. This doc fills a gap surfaced twice during
 step 4's implementation: `docs/Firebase_Step2_Auth_Rules_Design_Proposal.md`
 specifies the sign-in *flows* (screens, reads, writes) and
 `docs/Firebase_Step4_Routing_Design_Proposal.md` assumes sign-in UI exists
