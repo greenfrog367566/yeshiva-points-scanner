@@ -259,10 +259,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   @media(max-width:820px){.scan-layout{flex-direction:column}}
   .panel{position:relative}
   #panel-recent #recentList{max-height:280px;overflow:auto}
-  .panel-tools{display:none;align-items:center;gap:6px;background:var(--brass-soft);border:1px dashed var(--brass);border-radius:8px;padding:6px 10px;margin-bottom:8px}
+  /* Wraps on purpose: a column set to its narrowest is far too tight for ten
+     controls on one line, and without this they overflow into the next column. */
+  .panel-tools{display:none;align-items:center;flex-wrap:wrap;gap:6px;background:var(--brass-soft);border:1px dashed var(--brass);border-radius:8px;padding:6px 10px;margin-bottom:8px;min-width:0}
   .panel-name{font-weight:700;font-size:.85rem;color:#6b4d18}
   .pt-btn{background:#fff;border:1px solid var(--line);border-radius:6px;width:28px;height:28px;font-size:.8rem;cursor:pointer;padding:0}
   .pt-btn:hover{background:var(--brass-soft)}
+  .pt-btn:disabled{opacity:.35;cursor:default;background:#fff}
   #view-scan.customizing .panel{outline:2px dashed var(--brass);outline-offset:3px;border-radius:12px;cursor:grab}
   #view-scan.customizing .panel-tools{display:flex}
   #view-scan.customizing .panel-body{pointer-events:none}
@@ -270,6 +273,74 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #view-scan.customizing .scan-col{min-height:90px}
   #view-scan.customizing .scan-col:empty{border:2px dashed var(--line);border-radius:12px;align-items:center;justify-content:center}
   #view-scan.customizing .scan-col:empty::after{content:"Drop a section here";color:var(--muted);font-size:.85rem;padding:24px 12px;text-align:center}
+
+  /* --- Customize-mode extras: per-tile width, per-tile placement --- */
+  /* In customize mode EVERY tile renders in the columns, whatever its saved
+     placement, so all of them stay reachable. The badge below is what tells
+     you where a tile will actually go once you press Done. */
+  .pt-sep{width:1px;align-self:stretch;background:var(--brass);opacity:.45;margin:0 2px}
+  .pt-w{font-size:.72rem;font-weight:800;color:#6b4d18;min-width:34px;text-align:center;font-variant-numeric:tabular-nums}
+  .pt-place{display:flex;flex-wrap:wrap;gap:3px}
+  .pt-place .pt-btn{width:auto;padding:0 8px;font-size:.72rem;font-weight:700}
+  .pt-place .pt-btn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .panel-where{font-size:.72rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#6b4d18;
+    background:#fff;border:1px solid var(--brass);border-radius:999px;padding:2px 8px}
+  #view-scan.customizing .panel[draggable="false"]{cursor:default}
+  #view-scan.customizing .panel.place-hidden{opacity:.45}
+  #view-scan.customizing .panel.place-hidden .panel-body{filter:grayscale(1)}
+  @media(max-width:900px){ .pt-place .pt-btn span.ptl{display:none} }
+
+  /* --- Side shelves -------------------------------------------------------
+     Two fixed drawers that slide in from the left and right edges. They are
+     document-level (NOT inside #view-scan) on purpose: the global scan bar is
+     present on every tab and on the full-screen seating chart, and its
+     activity/history pills open these same shelves, so the shelves have to
+     outlive any one tab.
+     --shelf-top is measured from the scan bar's real bottom edge by
+     syncShelfTop() — never a guessed calc(), for the same reason
+     fitNoScrollSection() measures instead of assuming. */
+  .shelf{position:fixed;top:var(--shelf-top,110px);bottom:0;z-index:135;width:var(--shelf-w,360px);
+    max-width:88vw;background:var(--card);border:1px solid var(--line);box-shadow:0 12px 40px rgba(20,26,46,.22);
+    display:flex;flex-direction:column;transition:transform .2s ease}
+  .shelf-left{left:0;border-left:none;border-radius:0 14px 14px 0;transform:translateX(-101%)}
+  .shelf-right{right:0;border-right:none;border-radius:14px 0 0 14px;transform:translateX(101%)}
+  .shelf.open{transform:none}
+  .shelf-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .shelf-title{font-weight:800;font-size:.9rem;color:var(--ink)}
+  .shelf-body{flex:1;min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:16px}
+  /* The handle rides on the shelf's outer edge, so it pokes out of the screen
+     edge when closed and sits against the open drawer when open. */
+  .shelf-handle{position:absolute;top:18px;border:1px solid var(--line);background:var(--card);color:var(--ink);
+    cursor:pointer;padding:14px 6px;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+    writing-mode:vertical-rl;box-shadow:0 6px 18px rgba(20,26,46,.16);display:none}
+  .shelf-left .shelf-handle{left:100%;border-left:none;border-radius:0 10px 10px 0}
+  .shelf-right .shelf-handle{right:100%;border-right:none;border-radius:10px 0 0 10px;transform:rotate(180deg)}
+  .shelf-handle.on{display:block}
+  .shelf-handle:hover{background:var(--brass-soft)}
+  /* Inside a shelf a tile is just a stacked card — no outline, no grab cursor. */
+  .shelf .panel{width:auto}
+  /* Two ids, to out-specify #panel-recent #recentList above. */
+  .shelf #panel-recent #recentList{max-height:none}
+  /* The fallback lists reuse the old dropdown's button styling, minus the
+     absolute positioning and chrome that made it a floating menu. */
+  .shelf .hsb-dropdown{position:static;border:none;box-shadow:none;padding:0;max-height:none;min-width:0;background:transparent}
+  .shelf .seats-hist-row{font-size:.82rem;padding:7px 6px}
+  .shelf .seats-hist-row .btn{flex:0 0 auto}
+  /* On a wide screen an open shelf PUSHES the page instead of covering it, so
+     arming from the left shelf and tapping a name on the seating chart still
+     works without closing anything. Narrow screens overlay, where there is no
+     room to push. */
+  @media(min-width:1100px){
+    /* margin, not padding: main is `margin:0 auto` inside a max-width box, so
+       overriding one side re-centres the content in what is left instead of
+       squeezing it while the box stays put. */
+    body.shelf-l-open main{margin-left:calc(var(--shelf-w,360px) + 14px)}
+    body.shelf-r-open main{margin-right:calc(var(--shelf-w,360px) + 14px)}
+    body.shelf-l-open #view-seats.seats-fullscreen{left:calc(var(--shelf-w,360px) + 14px)}
+    body.shelf-r-open #view-seats.seats-fullscreen{right:calc(var(--shelf-w,360px) + 14px)}
+  }
+  body.no-shelves .shelf{display:none}
+  @media print{ .shelf{display:none!important} }
 
   /* --- Seats tab: a no-scroll dashboard, best-effort, for the seating chart
      alone — after a few rounds of trying to also fit other sections
@@ -2281,16 +2352,45 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      that used to live embedded in the Seats tab — promoted here so it's the
      one persistent way to scan and see recent activity, everywhere. ============ -->
 <div id="globalScanBar" class="card pad seats-scanbar">
+  <!-- Both bar pills now open a side shelf instead of a small dropdown that
+       overlaid the page: the activity pill opens the LEFT shelf, History opens
+       the RIGHT one. Same shelves the Dashboard's Customize layout can park
+       whole sections in, so there is one drawer per side and not two competing
+       overlays. -->
   <span class="seats-pill-wrap" style="position:relative">
     <span class="seats-pill" id="seatsArmedPill"></span>
-    <div class="seats-activity-dropdown hsb-dropdown" id="seatsActivityDropdown" style="display:none"></div>
   </span>
   <button class="contest-c-badge" id="contestCBadge" style="display:none" title="A contest is running — these scans count for it. Tap to pause/resume contest-counting without ending the contest.">C</button>
   <input id="seatsScanInput" autocomplete="off" placeholder="Scan a QR code here  (or type a student code + Enter)">
   <div class="scan-strip" id="scanStrip"></div>
   <button class="btn btn-sm" id="seatsUndoBtn" title="Reverse the most recent scan — same as the printed Undo card">↩ Undo</button>
   <button class="btn btn-sm seats-hist-btn" id="seatsHistoryBtn">History <span class="chev">▾</span></button>
-  <div class="seats-hist-dropdown" id="seatsHistoryDropdown" style="display:none"></div>
+</div>
+
+<!-- ============ SIDE SHELVES ============
+     Document-level on purpose (see the .shelf CSS): the scan bar above is on
+     every tab and on the full-screen seating chart, and its two pills drive
+     these, so they cannot live inside #view-scan. Bodies are filled by
+     renderShelves() — either with the real Dashboard tiles a rebbi parked
+     here in Customize layout, or, when nothing is parked, with the activity
+     picker (left) / scan history (right) the pills used to show. -->
+<div class="shelf shelf-left" id="shelfLeft">
+  <button class="shelf-handle" id="shelfLeftHandle" type="button" title="Open the left shelf">Activities</button>
+  <div class="shelf-head">
+    <span class="shelf-title" id="shelfLeftTitle">Activities</span>
+    <span class="grow" style="flex:1"></span>
+    <button class="btn btn-sm" data-shelf-close="left" title="Close this shelf">✕</button>
+  </div>
+  <div class="shelf-body" id="shelfLeftBody"></div>
+</div>
+<div class="shelf shelf-right" id="shelfRight">
+  <button class="shelf-handle" id="shelfRightHandle" type="button" title="Open the right shelf">History</button>
+  <div class="shelf-head">
+    <button class="btn btn-sm" data-shelf-close="right" title="Close this shelf">✕</button>
+    <span class="grow" style="flex:1"></span>
+    <span class="shelf-title" id="shelfRightTitle">History</span>
+  </div>
+  <div class="shelf-body" id="shelfRightBody"></div>
 </div>
 
 <!-- Scan feedback toast. Lived inside the Dashboard's scan-box panel until that
@@ -2376,7 +2476,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button class="btn btn-sm" id="scanCustomizeBtn" title="Rearrange the sections on this page">⚙ Customize layout</button>
       <button class="btn btn-sm btn-bad" id="scanLayoutReset" style="display:none">↺ Reset layout</button>
     </div>
-    <p class="view-note no-print" id="scanCustomizeHint" style="display:none">Drag a section onto another spot to move it, or use the ▲ ▼ (reorder) and ⇄ (next column) buttons. Tap "Done" when finished.</p>
+    <p class="view-note no-print" id="scanCustomizeHint" style="display:none">Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / ◧ / ◨ / 🚫 decide where it lives: on the page, in the left shelf, in the right shelf, or hidden. Everything shows here while you're customizing, whatever you've chosen. Tap "Done" when finished.</p>
 
     <div class="scan-layout" id="scanLayout">
       <div class="scan-col" id="scanCol0" data-col="0"></div>
@@ -2387,7 +2487,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div id="scanPanelPool" style="display:none">
 
       <div class="panel" id="panel-activities" data-panel="activities">
-        <div class="panel-tools"><span class="panel-name">Activities</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
+        <div class="panel-tools"><span class="panel-name">Activities</span><span class="panel-where"></span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button><span class="pt-sep"></span><button class="pt-btn" data-pt="narrow" title="Narrower">◀</button><span class="pt-w"></span><button class="pt-btn" data-pt="wide" title="Wider">▶</button><span class="pt-sep"></span><span class="pt-place"><button class="pt-btn" data-place="col" title="Keep this section on the page">▦<span class="ptl"> Page</span></button><button class="pt-btn" data-place="left" title="Park it in the left shelf">◧<span class="ptl"> Left</span></button><button class="pt-btn" data-place="right" title="Park it in the right shelf">◨<span class="ptl"> Right</span></button><button class="pt-btn" data-place="hidden" title="Hide this section">🚫<span class="ptl"> Hide</span></button></span></div>
         <div class="panel-body">
           <div class="armed-bar">
             <span id="armedKicker" style="font-size:.85rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Now scoring</span>
@@ -2423,7 +2523,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       </div>
 
       <div class="panel" id="panel-recent" data-panel="recent">
-        <div class="panel-tools"><span class="panel-name">Recent scans</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
+        <div class="panel-tools"><span class="panel-name">Recent scans</span><span class="panel-where"></span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button><span class="pt-sep"></span><button class="pt-btn" data-pt="narrow" title="Narrower">◀</button><span class="pt-w"></span><button class="pt-btn" data-pt="wide" title="Wider">▶</button><span class="pt-sep"></span><span class="pt-place"><button class="pt-btn" data-place="col" title="Keep this section on the page">▦<span class="ptl"> Page</span></button><button class="pt-btn" data-place="left" title="Park it in the left shelf">◧<span class="ptl"> Left</span></button><button class="pt-btn" data-place="right" title="Park it in the right shelf">◨<span class="ptl"> Right</span></button><button class="pt-btn" data-place="hidden" title="Hide this section">🚫<span class="ptl"> Hide</span></button></span></div>
         <div class="panel-body">
           <div class="card pad recent">
             <h3>Recent scans</h3>
@@ -2437,7 +2537,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       </div>
 
       <div class="panel" id="panel-leaderboard" data-panel="leaderboard">
-        <div class="panel-tools"><span class="panel-name">Leaderboard</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
+        <div class="panel-tools"><span class="panel-name">Leaderboard</span><span class="panel-where"></span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button><span class="pt-sep"></span><button class="pt-btn" data-pt="narrow" title="Narrower">◀</button><span class="pt-w"></span><button class="pt-btn" data-pt="wide" title="Wider">▶</button><span class="pt-sep"></span><span class="pt-place"><button class="pt-btn" data-place="col" title="Keep this section on the page">▦<span class="ptl"> Page</span></button><button class="pt-btn" data-place="left" title="Park it in the left shelf">◧<span class="ptl"> Left</span></button><button class="pt-btn" data-place="right" title="Park it in the right shelf">◨<span class="ptl"> Right</span></button><button class="pt-btn" data-place="hidden" title="Hide this section">🚫<span class="ptl"> Hide</span></button></span></div>
         <div class="panel-body">
           <div class="card" id="scanBoard">
             <div class="board-head">
@@ -2451,7 +2551,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       </div>
 
       <div class="panel" id="panel-tappanel" data-panel="tappanel">
-        <div class="panel-tools"><span class="panel-name">Class list</span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button></div>
+        <!-- No shelf buttons here: a seating chart needs the page's full width
+             to stay tappable, and a 360px drawer would make it unusable. It can
+             still be hidden (the Class list has its own full-screen view). -->
+        <div class="panel-tools"><span class="panel-name">Class list</span><span class="panel-where"></span><span class="grow"></span><button class="pt-btn" data-pt="up" title="Move up">▲</button><button class="pt-btn" data-pt="down" title="Move down">▼</button><button class="pt-btn" data-pt="swap" title="Move to other column">⇄</button><span class="pt-sep"></span><button class="pt-btn" data-pt="narrow" title="Narrower">◀</button><span class="pt-w"></span><button class="pt-btn" data-pt="wide" title="Wider">▶</button><span class="pt-sep"></span><span class="pt-place"><button class="pt-btn" data-place="col" title="Keep this section on the page">▦<span class="ptl"> Page</span></button><button class="pt-btn" data-place="hidden" title="Hide this section">🚫<span class="ptl"> Hide</span></button></span></div>
         <div class="panel-body">
           <div class="card" id="dashTapCard">
             <div class="board-head">
@@ -7486,7 +7589,19 @@ function setupRoster() {
   var GLOBAL_SCAN_BAR_HIDDEN_TABS=["settings","backup","students","activities","printStudents","printActivities","printSeats","printPoints","learn-text"];
   function applyGlobalScanBarVisibility(tab){
     var bar=$("globalScanBar"); if(!bar) return;
-    bar.classList.toggle("hidden-on-tab", GLOBAL_SCAN_BAR_HIDDEN_TABS.indexOf(tab)>=0);
+    var barHidden = GLOBAL_SCAN_BAR_HIDDEN_TABS.indexOf(tab)>=0;
+    bar.classList.toggle("hidden-on-tab", barHidden);
+    // The side shelves are scan furniture — they hold the Dashboard's own
+    // sections and are raised by this bar's pills. On a tab with no scan bar
+    // they go with it. Nothing is persisted here: the rebbi's open/closed
+    // choice is untouched and comes back the moment he returns.
+    document.body.classList.toggle("no-shelves", barHidden);
+    if(typeof applyShelfOpen==="function"){
+      var L=(typeof data==="object" && data && data.scanLayout && data.scanLayout.open) ? data.scanLayout.open : {};
+      var live = !barHidden && !scanCustomizing;
+      applyShelfOpen("left",  live && !!L.left);
+      applyShelfOpen("right", live && !!L.right);
+    }
   }
   // Runs a tool-tab renderer and, if it throws, shows the actual error message
   // directly in that tab's list box instead of leaving it silently blank —
@@ -13971,11 +14086,10 @@ function setupRoster() {
         node.style.opacity=opacity.toFixed(2);
       });
     }
-    var dd=$("seatsHistoryDropdown");
-    if(dd && dd.style.display!=="none") renderSeatsHistoryDropdown();
+    refreshShelfFallbacks();
   }
-  function renderSeatsHistoryDropdown(){
-    var wrap=$("seatsHistoryDropdown"); if(!wrap) return;
+  function renderScanHistoryList(wrap){
+    if(!wrap) return;
     wrap.innerHTML="";
     if(!data.log.length){ wrap.appendChild(el("div","seats-hist-empty","Scans will appear here.")); return; }
     data.log.slice(0,10).forEach(function(entry,i){
@@ -14001,24 +14115,26 @@ function setupRoster() {
   // hunting a per-row ↩ mid-shiur. Same code path as the Dashboard button and
   // the printed CTRL:UNDO card.
   $("seatsUndoBtn").addEventListener("click", function(){ undoMostRecentScan(); });
+  // Both pills now raise a side shelf instead of a floating dropdown: History
+  // on the right, the activity picker on the left. If the rebbi has parked the
+  // real Recent-scans / Activities sections in those shelves via Customize
+  // layout, the pill shows him those instead — same drawer either way, so
+  // there is never a menu covering a shelf.
   $("seatsHistoryBtn").addEventListener("click", function(e){
     e.stopPropagation();
-    var dd=$("seatsHistoryDropdown");
-    var isOpen=dd.style.display!=="none";
-    if(isOpen){ dd.style.display="none"; }
-    else { renderSeatsHistoryDropdown(); dd.style.display="block"; }
+    setShelfOpen("right", !isShelfOpen("right"));
   });
-  function toggleSeatsActivityDropdown(){
-    var dd=$("seatsActivityDropdown");
-    if(dd.style.display!=="none"){ hideSeatsActivityDropdown(); return; }
-    populateActivityDropdown(dd, "seatsScanInput", hideSeatsActivityDropdown);
-    dd.style.display="block";
+  // Kept as the one place that closes the activity side of the bar, so
+  // renderSeatsScanBar() below doesn't need to know about shelves.
+  function hideSeatsActivityDropdown(){
+    // Only the fallback picker is the pill's business. A shelf a rebbi
+    // deliberately parked his Activities section in stays where he put it.
+    if(isShelfOpen("left") && !shelfPanelIds("left").length) setShelfOpen("left", false);
   }
-  function hideSeatsActivityDropdown(){ var dd=$("seatsActivityDropdown"); if(dd) dd.style.display="none"; }
   $("seatsArmedPill").addEventListener("click", function(e){
     e.stopPropagation();
     if(!this.classList.contains("clickable")) return;
-    toggleSeatsActivityDropdown();
+    setShelfOpen("left", !isShelfOpen("left"));
   });
   $("contestCBadge").addEventListener("click", function(e){
     e.stopPropagation();
@@ -14033,17 +14149,23 @@ function setupRoster() {
     if($("view-contest").classList.contains("active")) renderContestTab();
   });
   document.addEventListener("click", function(e){
-    // Close-on-outside-click for the two global-scan-bar dropdowns. Clicks
-    // that land INSIDE a dropdown (e.g. an Undo row in the history list) or
-    // on its own toggle must not count as "outside" — the toggle handlers
-    // manage those themselves.
-    var dd=$("seatsHistoryDropdown");
-    if(dd && dd.style.display!=="none" && !e.target.closest("#seatsHistoryDropdown") && !e.target.closest("#seatsHistoryBtn")) dd.style.display="none";
-    var ad=$("seatsActivityDropdown");
-    if(ad && ad.style.display!=="none" && !e.target.closest(".seats-pill-wrap")) hideSeatsActivityDropdown();
+    // The two scan-bar dropdowns that used to close on any outside click are
+    // now shelves, and shelves deliberately DON'T: arming from the left shelf
+    // and then tapping a boy on the seating chart is the whole workflow, and
+    // a close-on-outside-click would eat the first tap every time. They close
+    // on their own ✕, their handle, or the pill that opened them.
     var had=$("headerAccountDropdown");
     if(had && had.style.display!=="none" && !e.target.closest(".header-account-wrap")) had.style.display="none";
   });
+  ["left","right"].forEach(function(side){
+    var h=$(side==="left"?"shelfLeftHandle":"shelfRightHandle");
+    if(h) h.addEventListener("click", function(e){ e.stopPropagation(); setShelfOpen(side, !isShelfOpen(side)); });
+  });
+  document.querySelectorAll("[data-shelf-close]").forEach(function(b){
+    b.addEventListener("click", function(e){ e.stopPropagation(); setShelfOpen(b.dataset.shelfClose, false); });
+  });
+  window.addEventListener("resize", syncShelfTop);
+  window.addEventListener("scroll", syncShelfTop, {passive:true});
   // Phase 1: Seating chart pop-out (seats folded into Dashboard). Instead of
   // a fixed overlay, this shows view-seats the same way the old Seats tab did
   // — a normal active view in <main>, header + subtabs still on top, the
@@ -16209,7 +16331,22 @@ function setupRoster() {
   // dedicated Seats tab (full-screen, with a scan box pinned above it) —
   // both stay in sync since they render from the exact same underlying data
   // and the same renderTapPanel() logic, just into two different containers.
-  function defaultScanLayout(){ return {cols:2, columns:[["activities","recent"],["leaderboard","tappanel"],[]]}; }
+  // The three sections that may be parked in a side shelf. The Class list is
+  // deliberately not one of them — see the comment on its panel-tools row.
+  var SHELVABLE=["activities","recent","leaderboard"];
+  // Column width is a flex-grow weight, not a pixel value, so a layout built on
+  // a 27" monitor still fills a laptop screen sensibly. 0.5–2.5 keeps the
+  // narrowest column readable and the widest from swallowing the page.
+  var SCAN_W_MIN=0.5, SCAN_W_MAX=2.5, SCAN_W_STEP=0.25;
+  // `columns` stays the single source of ARRANGEMENT for every panel, shelved
+  // or not, so nothing is ever stranded and un-shelving lands a section back
+  // exactly where it was. `place` is an overlay on top of that: where the
+  // section is actually drawn. `widths` is one flex-grow per column.
+  function defaultScanLayout(){
+    return {cols:2, columns:[["activities","recent"],["leaderboard","tappanel"],[]],
+            widths:[1,1,1], place:{activities:"col",recent:"col",leaderboard:"col",tappanel:"col"},
+            open:{left:false,right:false}};
+  }
   // Valid only if every known panel appears exactly once across the *active*
   // columns and none sit in a hidden column — so applyScanLayout() can never
   // lose, duplicate, or strand a panel. A corrupted pref falls back to default.
@@ -16259,19 +16396,180 @@ function setupRoster() {
       }
     }
     if(!validScanLayout(data.scanLayout)) data.scanLayout=defaultScanLayout();
+    // --- Additive fields, normalized here rather than in load2fix() for the
+    // same reason the migrations above live here: this is the one gate every
+    // reader of data.scanLayout passes through, so a layout saved by an older
+    // build gets the new fields the moment it is first used. A bad value is
+    // repaired in place and never throws the whole arrangement back to
+    // default — arrangement and presentation fail independently.
+    var L2=data.scanLayout;
+    if(!Array.isArray(L2.widths) || L2.widths.length<3) L2.widths=[1,1,1];
+    for(var wi=0;wi<3;wi++){
+      var wv=+L2.widths[wi];
+      if(!isFinite(wv) || wv<SCAN_W_MIN || wv>SCAN_W_MAX) wv=1;
+      L2.widths[wi]=Math.round(wv*100)/100;
+    }
+    if(!L2.place || typeof L2.place!=="object" || Array.isArray(L2.place)) L2.place={};
+    SCAN_PANELS.forEach(function(id){
+      var pv=L2.place[id];
+      var ok = pv==="col" || pv==="hidden" ||
+               ((pv==="left"||pv==="right") && SHELVABLE.indexOf(id)>=0);
+      if(!ok) L2.place[id]="col";
+    });
+    Object.keys(L2.place).forEach(function(k){ if(SCAN_PANELS.indexOf(k)<0) delete L2.place[k]; });
+    if(!L2.open || typeof L2.open!=="object" || Array.isArray(L2.open)) L2.open={left:false,right:false};
+    L2.open.left=!!L2.open.left; L2.open.right=!!L2.open.right;
+  }
+  function panelPlace(id){ ensureScanLayout(); return data.scanLayout.place[id] || "col"; }
+  function panelLabel(id){
+    var p=$("panel-"+id); if(!p) return id;
+    var n=p.querySelector(".panel-name");
+    return n ? n.textContent : id;
+  }
+  // Which sections a shelf shows, in the same top-to-bottom order they sit in
+  // the columns. Customize mode returns nothing on purpose: while rearranging,
+  // every section is pulled back onto the page so all of them stay reachable.
+  function shelfPanelIds(side){
+    ensureScanLayout();
+    if(scanCustomizing) return [];
+    var out=[];
+    data.scanLayout.columns.forEach(function(ids){
+      ids.forEach(function(id){ if(panelPlace(id)===side) out.push(id); });
+    });
+    return out;
   }
   function applyScanLayout(){
     ensureScanLayout();
-    var cols=data.scanLayout.cols;
+    var L=data.scanLayout, cols=L.cols;
     for(var c=0;c<3;c++){
       var colEl=$("scanCol"+c); if(!colEl) continue;
       colEl.style.display = (c<cols) ? "" : "none";
+      // flex-basis:0 so the weights alone decide the split — with the default
+      // `flex:1` shorthand's basis:0% this is what was already happening, but
+      // it has to be spelled out now that flex-grow is no longer always 1.
+      colEl.style.flexGrow = String(L.widths[c]);
+      colEl.style.flexBasis = "0";
     }
-    data.scanLayout.columns.forEach(function(ids,c){
+    L.columns.forEach(function(ids,c){
       var colEl=$("scanCol"+c); if(!colEl) return;
-      ids.forEach(function(id){ var p=$("panel-"+id); if(p) colEl.appendChild(p); });
+      ids.forEach(function(id){
+        var p=$("panel-"+id); if(!p) return;
+        // While customizing, placement is only ADVERTISED (via the badge) —
+        // every section is drawn on the page so it can be dragged and retargeted.
+        var pl = scanCustomizing ? "col" : panelPlace(id);
+        p.classList.remove("place-left","place-right","place-hidden");
+        if(panelPlace(id)!=="col") p.classList.add("place-"+panelPlace(id));
+        if(pl==="col"){ p.style.display=""; colEl.appendChild(p); }
+        else if(pl==="hidden"){ p.style.display="none"; $("scanPanelPool").appendChild(p); }
+        // left/right are placed by renderShelves() below.
+      });
     });
+    // A column whose every section went to a shelf or into hiding must give its
+    // width back rather than sit there as a wide blank margin — the whole point
+    // of shelving Activities is that the page gets that space. Customize mode
+    // keeps the empty columns visible, because that is where you drop things.
+    if(!scanCustomizing){
+      for(var c2=0;c2<cols;c2++){
+        var ce=$("scanCol"+c2); if(!ce) continue;
+        if(!ce.querySelector(".panel")) ce.style.display="none";
+      }
+    }
+    renderShelves();
+    applyShelfOpen("left",  !scanCustomizing && L.open.left);
+    applyShelfOpen("right", !scanCustomizing && L.open.right);
     updateScanColsToggle();
+    updatePanelTools();
+  }
+  /* ---------- Side shelves ---------- */
+  function shelfEl(side){ return $(side==="left" ? "shelfLeft" : "shelfRight"); }
+  function shelfBody(side){ return $(side==="left" ? "shelfLeftBody" : "shelfRightBody"); }
+  function isShelfOpen(side){ var s=shelfEl(side); return !!(s && s.classList.contains("open")); }
+  // Measured, never a guessed calc(): the scan bar wraps to two lines on narrow
+  // screens and disappears entirely on tabs that hide it, and it is sticky, so
+  // its bottom edge moves as the page scrolls.
+  function syncShelfTop(){
+    var bar=$("globalScanBar"), top=0;
+    if(bar && bar.offsetParent!==null) top=bar.getBoundingClientRect().bottom;
+    else { var hd=document.querySelector("header"); if(hd) top=hd.getBoundingClientRect().bottom; }
+    document.documentElement.style.setProperty("--shelf-top", Math.max(0,Math.round(top))+"px");
+  }
+  function applyShelfOpen(side, on){
+    var s=shelfEl(side); if(!s) return;
+    s.classList.toggle("open", !!on);
+    document.body.classList.toggle(side==="left"?"shelf-l-open":"shelf-r-open", !!on);
+    syncShelfTop();
+    if(on) refreshShelfFallbacks();
+    updateShelfHandles();
+  }
+  function setShelfOpen(side, on){
+    ensureScanLayout();
+    on=!!on;
+    if(data.scanLayout.open[side]!==on){ data.scanLayout.open[side]=on; save(); }
+    applyShelfOpen(side, on);
+  }
+  function updateShelfHandles(){
+    ["left","right"].forEach(function(side){
+      var h=$(side==="left"?"shelfLeftHandle":"shelfRightHandle"); if(!h) return;
+      // The handle is the standing way back to a shelf a rebbi has parked
+      // something in. With nothing parked, the shelf is only ever raised by
+      // the scan bar's pills, so an idle tab on the screen edge would be
+      // clutter — it appears while the shelf is open and retires with it.
+      var show = shelfPanelIds(side).length>0 || isShelfOpen(side);
+      h.classList.toggle("on", show);
+      h.title = isShelfOpen(side) ? "Close this shelf" : "Open this shelf";
+    });
+  }
+  function renderShelves(){
+    ensureScanLayout();
+    ["left","right"].forEach(function(side){
+      var body=shelfBody(side); if(!body) return;
+      // Rescue any real panels back into the pool BEFORE clearing, or emptying
+      // the shelf would destroy the section's DOM (and every listener on it).
+      Array.prototype.slice.call(body.querySelectorAll(".panel")).forEach(function(p){
+        $("scanPanelPool").appendChild(p);
+      });
+      body.innerHTML="";
+      var ids=shelfPanelIds(side);
+      var titleEl=$(side==="left"?"shelfLeftTitle":"shelfRightTitle");
+      var handle=$(side==="left"?"shelfLeftHandle":"shelfRightHandle");
+      var label;
+      if(ids.length){
+        ids.forEach(function(id){ var p=$("panel-"+id); if(p){ p.style.display=""; body.appendChild(p); } });
+        label=ids.map(panelLabel).join(" · ");
+      } else {
+        // Nothing parked here, so the shelf falls back to what the scan bar's
+        // pill used to drop down — the activity picker on the left, the scan
+        // history on the right. That is what makes the pills work the same way
+        // whether or not a rebbi has ever opened Customize layout.
+        label = (side==="left") ? "Pick an activity" : "Recent scans";
+        // hsb-dropdown only on the left: its `button{width:100%}` rule is what
+        // makes the activity picker's rows full-width, and it would squeeze the
+        // history list's names to nothing behind their ↩ button.
+        var fb=el("div","shelf-fallback"+(side==="left"?" hsb-dropdown":""));
+        body.appendChild(fb);
+        fillShelfFallback(side, fb);
+      }
+      if(titleEl) titleEl.textContent=label;
+      if(handle) handle.textContent = label.length>26 ? label.slice(0,25)+"…" : label;
+    });
+    updateShelfHandles();
+  }
+  function fillShelfFallback(side, fb){
+    fb.innerHTML="";
+    if(side==="left") populateActivityDropdown(fb, "seatsScanInput", function(){ setShelfOpen("left", false); });
+    else renderScanHistoryList(fb);
+  }
+  // Called after every scan/undo so an open shelf showing the history (or the
+  // activity picker, whose prize costs move as points are spent) stays current.
+  // A shelf holding a real panel needs nothing here — those panels are already
+  // re-rendered by their own renderers.
+  function refreshShelfFallbacks(){
+    ["left","right"].forEach(function(side){
+      if(!isShelfOpen(side)) return;
+      var body=shelfBody(side); if(!body) return;
+      var fb=body.querySelector(".shelf-fallback");
+      if(fb) fillShelfFallback(side, fb);
+    });
   }
   // Keeps --scan-bar-height in sync with the sticky scan bar's real
   // rendered height, so .scroll-clear-bar's scroll-margin-top never drifts
@@ -16282,6 +16580,7 @@ function setupRoster() {
     if(!bar) return;
     var h = (bar.offsetParent !== null) ? bar.getBoundingClientRect().height : 0;
     document.documentElement.style.setProperty("--scan-bar-height", h + "px");
+    syncShelfTop();
   }
   window.addEventListener("resize", syncScanBarHeight);
   window.addEventListener("load", syncScanBarHeight);
@@ -16318,6 +16617,58 @@ function setupRoster() {
     var arr=data.scanLayout.columns[c], i=arr.indexOf(id);
     arr.splice(i,1); data.scanLayout.columns[to].push(id);
     save(); applyScanLayout();
+  }
+  // Width lives on the COLUMN, not the panel — the columns are what divide the
+  // page. The button sits on the tile because that is where a rebbi is looking
+  // when he decides something is too narrow; its tooltip says so, and with one
+  // tile in a column (the common case once sections are shelved or hidden) the
+  // two are the same thing anyway.
+  function panelWidthStep(id, dir){
+    ensureScanLayout();
+    var c=panelColIndex(id); if(c<0 || c>=data.scanLayout.cols) return;
+    var w=data.scanLayout.widths[c] + dir*SCAN_W_STEP;
+    w=Math.max(SCAN_W_MIN, Math.min(SCAN_W_MAX, Math.round(w*100)/100));
+    if(w===data.scanLayout.widths[c]) return;
+    data.scanLayout.widths[c]=w;
+    save(); applyScanLayout();
+  }
+  function setPanelPlace(id, pl){
+    ensureScanLayout();
+    if(SCAN_PANELS.indexOf(id)<0) return;
+    if((pl==="left"||pl==="right") && SHELVABLE.indexOf(id)<0) return;
+    if(pl!=="col" && pl!=="left" && pl!=="right" && pl!=="hidden") return;
+    data.scanLayout.place[id]=pl;
+    save(); applyScanLayout();
+  }
+  function updatePanelTools(){
+    ensureScanLayout();
+    var L=data.scanLayout, tot=0;
+    for(var i=0;i<L.cols;i++) tot+=L.widths[i];
+    SCAN_PANELS.forEach(function(id){
+      var p=$("panel-"+id); if(!p) return;
+      var pl=panelPlace(id), c=panelColIndex(id);
+      var wEl=p.querySelector(".pt-w");
+      if(wEl){
+        wEl.textContent = (pl==="col" && c>=0 && c<L.cols && tot>0)
+          ? Math.round(L.widths[c]/tot*100)+"%" : "—";
+      }
+      p.querySelectorAll(".pt-place .pt-btn").forEach(function(b){
+        b.classList.toggle("active", b.dataset.place===pl);
+      });
+      var wh=p.querySelector(".panel-where");
+      // Hidden entirely when the section is staying on the page — an empty
+      // pill still draws its border and reads as a broken control.
+      if(wh) wh.style.display = (pl==="col") ? "none" : "";
+      if(wh) wh.textContent = pl==="left" ? "◧ Left shelf"
+                            : pl==="right" ? "Right shelf ◨"
+                            : pl==="hidden" ? "🚫 Hidden" : "";
+      // Move and width are about the page grid, so they say nothing about a
+      // section that is going to a shelf or nowhere at all.
+      p.querySelectorAll(".panel-tools [data-pt]").forEach(function(b){ b.disabled = (pl!=="col"); });
+      // Same reason: dragging a section that is going to a shelf would be
+      // reordering it inside a grid it isn't in.
+      p.setAttribute("draggable", (scanCustomizing && pl==="col") ? "true" : "false");
+    });
   }
   function panelPlaceBefore(dragId, targetId){
     ensureScanLayout();
@@ -16363,6 +16714,9 @@ function setupRoster() {
     $("scanColsToggle").style.display = scanCustomizing ? "" : "none";
     if(scanCustomizing) updateScanColsToggle();
     SCAN_PANELS.forEach(function(id){ var p=$("panel-"+id); if(p) p.setAttribute("draggable", scanCustomizing?"true":"false"); });
+    // Pull shelved/hidden sections back onto the page (or send them away again
+    // on Done) — applyScanLayout() reads scanCustomizing to decide.
+    applyScanLayout();
     // Drop keyboard focus so the button doesn't keep a focus ring and look
     // "still highlighted" after you finish.
     if(btn && typeof btn.blur==="function") btn.blur();
@@ -16381,6 +16735,14 @@ function setupRoster() {
     if(op==="up") panelMove(id,-1);
     else if(op==="down") panelMove(id,1);
     else if(op==="swap") panelSwapCol(id);
+    else if(op==="narrow") panelWidthStep(id,-1);
+    else if(op==="wide") panelWidthStep(id,1);
+  });
+  // Placement (page / left shelf / right shelf / hidden) — same delegation.
+  $("view-scan").addEventListener("click", function(e){
+    var b=e.target.closest(".pt-place .pt-btn"); if(!b) return;
+    var panel=b.closest(".panel"); if(!panel) return;
+    setPanelPlace(panel.dataset.panel, b.dataset.place);
   });
   // Native drag-and-drop as the primary interaction; the buttons above do the
   // exact same moves and are a guaranteed fallback if drag misbehaves anywhere.
