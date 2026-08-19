@@ -3178,6 +3178,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <span class="grow"></span>
       <button class="btn btn-sm" id="studBatchClass" disabled>Assign to class…</button>
       <button class="btn btn-sm btn-primary" id="studBatchPoints" disabled>Give points…</button>
+      <button class="btn btn-sm btn-bad" id="studBatchDelete" disabled>Delete selected…</button>
       <button class="btn btn-sm" id="studSelClear" disabled>Clear</button>
     </div>
     <div class="card pad"><div class="row-list" id="studentList"></div></div>
@@ -22269,7 +22270,7 @@ nameLine
   function renderStudBatchBar(){
     var sel=studSelectedList(), n=sel.length;
     $("studSelCount").textContent = n ? (n+" selected") : "";
-    ["studBatchClass","studBatchPoints","studSelClear"].forEach(function(id){ $(id).disabled = !n; });
+    ["studBatchClass","studBatchPoints","studBatchDelete","studSelClear"].forEach(function(id){ $(id).disabled = !n; });
     var shownSel=studShown.filter(function(s){ return studSelected[s.id]; }).length;
     var all=$("studSelectAll");
     all.checked = studShown.length>0 && shownSel===studShown.length;
@@ -22652,6 +22653,26 @@ nameLine
          + "\n\nEnd or wait out the freeze (tap the student’s tile) and give it again.";
     }
     notice(msg);
+  });
+  // Deletes every selected student outright — same mechanics as a row's own
+  // Delete button, just batched. Classes aren't a stored entity here, only a
+  // label on each student (see groups()), so "delete a class" is: filter to
+  // it with studGroupFilter, "Select all shown", then this.
+  $("studBatchDelete").addEventListener("click", function(){
+    var sel=studSelectedList(); if(!sel.length) return;
+    var classesInSel={};
+    sel.forEach(function(s){ if(s.group) classesInSel[s.group]=true; });
+    var classList=Object.keys(classesInSel);
+    var totalPts=0; sel.forEach(function(s){ totalPts+=score(s.id); });
+    var msg="Delete "+sel.length+" student"+(sel.length===1?"":"s")
+      + (classList.length ? " from "+classList.join(", ") : "")
+      + "? "+fmt(totalPts)+" total points will be removed.\n\nThis cannot be undone.";
+    if(!confirm(msg)) return;
+    var ids={}; sel.forEach(function(s){ ids[s.id]=true; });
+    data.students=data.students.filter(function(x){ return !ids[x.id]; });
+    sel.forEach(function(s){ delete data.scores[s.id]; delete studentBreakdownOpen[s.id]; delete studSelected[s.id]; });
+    save(); renderStudents(); renderClassSel(); renderScanBoard(); renderTapPanel(); renderStandings();
+    notice(sel.length+" student"+(sel.length===1?"":"s")+" deleted.");
   });
   $("breakdownPeriod").addEventListener("change", function(){
     $("studCustomRangeRow").style.display = this.value==="custom" ? "flex" : "none";
