@@ -93,6 +93,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .hsb-dropdown .hd-pts{font-weight:800;color:var(--good);flex:0 0 auto}
   .hsb-dropdown .hd-pts.neg{color:var(--bad)}
   .hsb-dropdown .hd-empty{padding:8px 10px;font-size:.85rem;color:var(--muted)}
+  .hsb-dropdown .hd-head{padding:7px 10px 3px;font-size:.7rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
   .hd-divider{height:1px;background:var(--line);margin:4px 2px}
   .hsb-dropdown .hd-custom-btn{font-weight:700;color:var(--brass)}
 
@@ -4207,7 +4208,7 @@ function setupRoster() {
     <!-- ============ PRIZE STORE ============ -->
   <section id="view-store" class="view">
     <h2 class="view-title">Prize Store</h2>
-    <p class="view-note">Students spend their points to buy prizes. Set up prizes and their point cost, then pick a student (or scan) and tap what they want. <button class="btn btn-sm" id="coinGuideBtnStore" style="display:none">🪙 Coin Guide</button></p>
+    <p class="view-note">Students spend their points to buy prizes. Set up prizes and their point cost, then pick a student (or scan) and tap what they want. Every prize also gets its own scan code on <b>Print: Activities</b> (the 🖨 on the Activities tab) — scan a prize, then scan or tap students, and the cost comes off each one's balance. Prizes are armed from the seating chart the same way activities are. <button class="btn btn-sm" id="coinGuideBtnStore" style="display:none">🪙 Coin Guide</button></p>
 
     <div class="card pad" style="margin-bottom:16px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Prizes for sale</h3>
@@ -5221,10 +5222,25 @@ function setupRoster() {
   }
 
   /* ---------- first-run: route new users through setup wizard ---------- */
+  // Two exemptions beyond skipSetup, both for the blank-device sign-in path
+  // (setup.html's Restore screen links here with ?signin=1). A rebbi signing
+  // in to get an existing class back has no local data yet BY DEFINITION, so
+  // without these this guard bounces him to the wizard twice over:
+  //   1. on the way OUT — the ?signin=1 check at the end of init would ask
+  //      for a Google redirect in the same turn this asks for setup.html,
+  //      i.e. two competing navigations, not a working flow;
+  //   2. on the way BACK — signInRedirectUri() deliberately returns a bare
+  //      /app.html with no query string (see its comment: that hard-coding
+  //      fixes a live redirect_uri_mismatch, so it must not be changed), and
+  //      localStorage is still empty at that point.
+  // The hash check covers case 2: pendingOAuthResult is parsed above, before
+  // this runs, and is non-null exactly while an OAuth response is in flight.
   try {
     if (!localStorage.getItem(KEY) &&
         !localStorage.getItem("menchmark_setup_complete") &&
-        location.search.indexOf("skipSetup") < 0) {
+        location.search.indexOf("skipSetup") < 0 &&
+        location.search.indexOf("signin=1") < 0 &&
+        !pendingOAuthResult) {
       location.replace("setup.html");
     }
   } catch(e) {}
@@ -6289,12 +6305,47 @@ function setupRoster() {
   // required — a null actId means "not an activity", not "look harder".
   function armedActivity(){
     if(!armed) return null;
+    // A PRIZE IS NOT AN ACTIVITY. Without this the name+points fallback below
+    // could match a real activity that happens to share an armed prize's label
+    // and cost, and every reroutedActivity()/tracked branch downstream would
+    // then treat a purchase as that activity's scan.
+    if(armed.storeId) return null;
     if(armed.actId){
       for(var i=0;i<data.activities.length;i++){ if(data.activities[i].id===armed.actId) return data.activities[i]; }
       return null;
     }
     return data.activities.filter(function(a){ return a.name===armed.label && a.pts===armed.delta; })[0] || null;
   }
+  /* THE ARMED PRIZE (Prize Store scan codes).
+   *
+   * Resolved by identity at USE time, never held as an object reference — a
+   * prize whose price is edited between arming and the next scan must charge
+   * the new price, and a deleted one must refuse rather than charge a ghost.
+   * Same reason armed.actId is stored rather than the activity itself.
+   */
+  function storeItemById(id){
+    var list=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    for(var i=0;i<list.length;i++){ if(list[i].id===id) return list[i]; }
+    return null;
+  }
+  function armedPrize(){ return (armed && armed.storeId) ? storeItemById(armed.storeId) : null; }
+  /* Arms a prize through the SAME setArmed() every activity uses, so the Record
+   * pill, the seating-chart pill, the scan strip and tapPassesFreeze() all keep
+   * working with no prize-shaped special case of their own. Two details carry
+   * the whole thing:
+   *   - the cost is armed NEGATIVE, because that is what it does to the boy's
+   *     balance, so every surface that colours by sign colours it right; and
+   *   - opts.store is the one extra bit, which is what award() branches on.
+   */
+  function armPrize(it){
+    if(!it) return;
+    setArmed((it.emoji||"🎁")+" "+it.name, -Math.max(0, parseInt(it.cost,10)||0), null, {store:it});
+  }
+  // Keeps the armed pill honest when the prize behind it is edited on the Store
+  // tab — the job refreshArmed() already does for an activity. A DELETED prize
+  // is deliberately left armed: awardPrize() refuses it by name, which tells the
+  // rebbi more than a silently blank pill would.
+  function refreshArmedPrize(){ var it=armedPrize(); if(it) armPrize(it); }
   function setArmed(label, delta, act, opts){
     // warning (NOW.md item 4): not an activity, not a delta -- award() reads
     // this flag and short-circuits before any of its recording branches. See
@@ -6308,7 +6359,8 @@ function setupRoster() {
         id:'act-'+(stripActLogNextId++), ts:Date.now()});
       if(stripActLog.length > 20) stripActLog.length = 20;
     }
-    armed = {label:label, delta:delta, actId:(act && act.id) || null, warning:isWarning};
+    armed = {label:label, delta:delta, actId:(act && act.id) || null, warning:isWarning,
+             storeId:(opts && opts.store && opts.store.id) || null};
     var pill=$("armedPill");
     // Homework Checked earns no points, so the "Now scoring" pill shows the name
     // alone — appending its 0 would read as "this scan is worth nothing". True
@@ -6330,13 +6382,17 @@ function setupRoster() {
       // plain line — reused here so the two phases agree on what "status"
       // means, instead of inventing a second classification.
       var trkItem = isTracked ? trackedItemForActivity(armedA) : null;
-      kicker.textContent = !isTracked ? "Now scoring"
+      kicker.textContent = armed.storeId ? "Now selling"
+        : !isTracked ? "Now scoring"
         : (trkItem && trkItem.id==="ti-attendance") ? "Now marking"
         : "Now recording";
     }
-    // highlight matching activity button
+    // highlight matching activity button — never while a prize is armed. A
+    // prize has no activity behind it, so an activity button that happened to
+    // share its name and cost would light up as though IT were what the next
+    // scan does.
     document.querySelectorAll(".act-btn").forEach(function(b){
-      b.classList.toggle("selected", b.dataset.label===label && Number(b.dataset.delta)===delta);
+      b.classList.toggle("selected", !armed.storeId && b.dataset.label===label && Number(b.dataset.delta)===delta);
     });
     if(typeof renderHeaderScanContext==="function") renderHeaderScanContext();
     if(typeof renderSeatsScanBar==="function") renderSeatsScanBar();
@@ -7119,20 +7175,101 @@ function setupRoster() {
     signinState.driveRestoreOffer = null;
     if (typeof renderAccountSection === "function") renderAccountSection();
   }
+  // Writes a restored snapshot into THIS device's local `data`, through the
+  // exact pipeline the Settings "restore from backup file" handler uses —
+  // migrateData() -> load2fix() -> save(), then the same re-render list — so
+  // a class restored by signing in is indistinguishable from the same backup
+  // restored by hand. Deliberately routed through checkShulchaniModeOnRestore
+  // for the same reason: a coin-mode class must ask the same question here
+  // that it asks there, not silently open in the wrong mode.
+  //
+  // Callers MUST have established that there is nothing here to lose — this
+  // replaces local data wholesale (CLAUDE.md rule 1). Today's only callers
+  // gate on signinDetectLocalClass() returning null.
+  //
+  // `beforeSave` runs once the restored blob IS `data` but before it is
+  // persisted, so anything stamped onto the account (claim flags and the
+  // like) lands on the restored object and rides the same single save().
+  // Stamping after this call instead would be a silent bug: the restore
+  // replaces `data` wholesale, and checkShulchaniModeOnRestore can defer
+  // that replacement behind a modal, so a synchronous stamp would be
+  // written onto the old object and then thrown away.
+  function applyRestoredSnapshot(obj, doneMsg, beforeSave){
+    // Hard refusal, not an assumption about callers. This replaces the whole
+    // class; there is no caller that should ever want that on a device with
+    // students on it, so the destructive operation refuses rather than trusting
+    // whoever called it to have checked (CLAUDE.md rule 1).
+    //
+    // The gate this originally leaned on — signinDetectLocalClass() — is NOT a
+    // safe substitute, and that is worth spelling out because it reads like
+    // one: it answers "is there a class worth OFFERING TO UPLOAD", and returns
+    // null when the log is empty or the last scan is over 30 days old (see its
+    // three-signal test). A rebbi who set his class up in advance, or is back
+    // from a break, has a full roster and gets null from it. Restoring on that
+    // signal replaced a live class with an older Drive backup.
+    if (Array.isArray(data.students) && data.students.length > 0) return false;
+    checkShulchaniModeOnRestore(obj, function(resolved){
+      data = migrateData(resolved); load2fix();
+      if (typeof beforeSave === "function") beforeSave();
+      save();
+      clearStaleTicketPools();
+      $("schoolName").textContent = data.school;
+      $("bunkName").textContent = data.className;
+      $("sheetUrl").value = data.sheetUrl || "";
+      $("autoSheet").checked = (data.autoSheet !== false);
+      renderActButtons(); renderRecent(); renderStudents(); renderActivities();
+      renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
+      showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
+      if (typeof window._refreshTimerPanel === "function") window._refreshTimerPanel();
+      renderShulchaniStatus();
+      refreshLiveViews();
+      if (typeof refreshTrackedBadges === "function") refreshTrackedBadges();
+      if (doneMsg) notice(doneMsg);
+    });
+  }
+
   function signinAcceptDriveRestore(){
     var offer = signinState.driveRestoreOffer;
     if (!offer) { signinDeclineDriveRestore(); return; }
     signinState.error = null;
+
+    // Tier 2 keeps custody of its own class (#218, and
+    // Firebase_Rebuild_Scope.md's two-tier split): the backup comes DOWN to
+    // this device and nothing goes up. Uploading it would put a tier-2
+    // rebbi's class on the server, which is exactly what that split forbids.
+    if (!(data.account && data.account.schoolId != null)) {
+      var acct = data.account;
+      applyRestoredSnapshot(offer.normalized, "Your class is back on this device.", function(){
+        // The restored blob is a backup of some OTHER device's session, so it
+        // carries that device's account field (or none at all). Keep the one
+        // this tab just signed in as.
+        data.account = acct;
+        data.driveBackupEnabled = true;
+      });
+      signinState.step = "idle";
+      signinState.driveRestoreOffer = null;
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      if (typeof renderDriveBackupCard === "function") renderDriveBackupCard();
+      return Promise.resolve();
+    }
+
     return callCloudFunction("provisionRebbi", {
       mode: "backup", self: true, normalized: offer.normalized, deviceId: "signin-drive-restore"
     }, signinState.firebaseIdToken).then(function(res){
-      data.firebaseClaimedBy = signinState.firebaseUid;
-      data.firebaseMigrated = res.runId;
-      // Listing/fetching the Drive file already proved Drive access works —
-      // stamping this here avoids immediately re-prompting the forced
-      // Drive-connect gate right after a rebbi just used Drive.
-      data.driveBackupEnabled = true;
-      save();
+      // The class went UP to Firestore above; this brings it DOWN to this
+      // device too. Both halves are the point — without the restore, a rebbi
+      // who signs in on a new machine ends up correctly claimed server-side
+      // and still staring at an empty class.
+      var acct = data.account;
+      applyRestoredSnapshot(offer.normalized, "Your class is back on this device.", function(){
+        data.account = acct; // keep THIS tab's session, not the backup's
+        data.firebaseClaimedBy = signinState.firebaseUid;
+        data.firebaseMigrated = res.runId;
+        // Listing/fetching the Drive file already proved Drive access works —
+        // stamping this here avoids immediately re-prompting the forced
+        // Drive-connect gate right after a rebbi just used Drive.
+        data.driveBackupEnabled = true;
+      });
       signinState.step = "idle";
       signinState.driveRestoreOffer = null;
       signinState.lastReceipt = res.receipt;
@@ -7170,7 +7307,23 @@ function setupRoster() {
     });
   }
 
+  // Signing out on a borrowed computer. Sign-out has always deliberately left
+  // the class alone (an account is not a class), which is right on your own
+  // machine and wrong on a colleague's — a rebbi who borrows another rebbi's
+  // computer for one shiur should not leave his boys, scores and notes sitting
+  // on it. So the choice is asked rather than assumed, and only when there is
+  // actually something on this device to leave behind.
   function signinSignOut(){
+    if (Array.isArray(data.students) && data.students.length > 0) {
+      signinState.step = "needsSignOutChoice";
+      signinState.error = null;
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      return;
+    }
+    signinSignOutKeepingData();
+  }
+
+  function signinSignOutKeepingData(){
     data.account = null;
     save();
     signinState = { step: "idle", firebaseIdToken: null, firebaseUid: null, googleIdToken: null, email: null, displayName: null, error: null,
@@ -7181,6 +7334,92 @@ function setupRoster() {
     }
     if (typeof renderAccountSection === "function") renderAccountSection();
     if (typeof renderBackupRestoreCard === "function") renderBackupRestoreCard();
+  }
+
+  function signinCancelSignOut(){
+    signinState.step = "idle";
+    signinState.error = null;
+    if (typeof renderAccountSection === "function") renderAccountSection();
+  }
+
+  // Back up FIRST, and only wipe if that provably succeeded. A rebbi choosing
+  // this is on someone else's computer, which is exactly where "it'll be in
+  // Drive" must not be an assumption — if the backup cannot be written, the
+  // class stays put and he is told why. Losing a class here would be the
+  // worst possible outcome of a button whose whole purpose is tidiness.
+  function signinSignOutAndRemove(){
+    signinState.error = null;
+    if (!(data.driveBackupEnabled && driveSupported())) {
+      signinState.error = "Google Drive isn't connected on this computer, so there's nowhere safe to put your class first. " +
+        "Download a backup file (Settings → Backup & Restore) or connect Drive, then sign out again.";
+      if (typeof renderAccountSection === "function") renderAccountSection();
+      return;
+    }
+    signinState.error = "Backing up your class to Drive…";
+    if (typeof renderAccountSection === "function") renderAccountSection();
+    return driveWriteBackup(true).then(function(ok){
+      if (!ok) {
+        signinState.error = "Couldn't back up to Drive just now, so nothing was removed — your class is still here. " +
+          "Check your connection and try again.";
+        if (typeof renderAccountSection === "function") renderAccountSection();
+        return false;
+      }
+      wipeLocalClass();
+      signinSignOutKeepingData(); // account cleared last, after the class is gone
+      notice("Signed out. Your class was backed up and removed from this computer.");
+      return true;
+    });
+  }
+
+  // Returns the device to a clean slate WITHOUT touching the Drive backup —
+  // the copy in Drive is the whole point, and is what the next sign-in on the
+  // rebbi's own computer restores from.
+  function wipeLocalClass(){
+    data = migrateData(JSON.parse(JSON.stringify(defaults)));
+    load2fix();
+    save();
+    $("schoolName").textContent = data.school;
+    $("bunkName").textContent = data.className;
+    $("sheetUrl").value = data.sheetUrl || "";
+    $("autoSheet").checked = (data.autoSheet !== false);
+    renderActButtons(); renderRecent(); renderStudents(); renderActivities();
+    renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
+    showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
+    if (typeof window._refreshTimerPanel === "function") window._refreshTimerPanel();
+    renderShulchaniStatus();
+    refreshLiveViews();
+    if (typeof refreshTrackedBadges === "function") refreshTrackedBadges();
+  }
+
+  function renderAccountSignOutStep(box){
+    var p = el("p", "view-note");
+    p.textContent = "Leave your class on this computer?";
+    box.appendChild(p);
+
+    var detail = el("p", "view-note");
+    detail.textContent = "\"" + (data.className || "Your class") + "\" — " +
+      data.students.length + " " + (data.students.length === 1 ? "boy" : "boys") +
+      ". If this is someone else's computer, remove it: it will be backed up to your Drive first, " +
+      "and comes back the next time you sign in on your own.";
+    box.appendChild(detail);
+
+    if (signinState.error) {
+      var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
+    }
+
+    var keepBtn = el("button", "btn btn-primary", "Keep it here");
+    keepBtn.addEventListener("click", signinSignOutKeepingData);
+    box.appendChild(keepBtn);
+
+    var removeBtn = el("button", "btn btn-sm", "Back up and remove it");
+    removeBtn.style.marginLeft = "8px";
+    removeBtn.addEventListener("click", signinSignOutAndRemove);
+    box.appendChild(removeBtn);
+
+    var cancelBtn = el("button", "btn btn-sm", "Cancel");
+    cancelBtn.style.marginLeft = "8px";
+    cancelBtn.addEventListener("click", signinCancelSignOut);
+    box.appendChild(cancelBtn);
   }
 
   // ---------- Step 3b: self-serve backup-upload restore ----------
@@ -9995,6 +10234,17 @@ function setupRoster() {
       beep(true);
       return;
     }
+    // A PRIZE CODE IS REFUSED HERE, out loud. This panel awards through
+    // fpAward() -> awardPointsSilent(), which has no prize branch — a prize
+    // armed into fpActId would write a plain point deduction and no purchase
+    // record at all, so the boy would be charged and never owed the prize.
+    // Same treatment, and the same reason, as the tracked-activity refusal
+    // above; left as a refusal rather than built out because selling is a
+    // deliberate, one-boy action and this panel is the fast-scoring surface.
+    if(/^PRZ:/i.test(code)){
+      fpFlash(false,"Prizes can't be sold from this panel — use the scan bar or the seating chart");
+      beep(false); return;
+    }
     var s=studentById(code);
     if(!s){ fpFlash(false,"Unknown: \u201C"+code+"\u201D"); beep(false); return; }
     if(!studentInCurrentClass(s)){ fpFlash(false, s.name+" — not in \u201C"+data.currentClass+"\u201D"); beep(false); return; }
@@ -10848,6 +11098,7 @@ function setupRoster() {
     if (signinState.step === "needsConflictChoice") { renderAccountConflictStep(box); return; }
     if (signinState.step === "needsDriveRestore") { renderAccountDriveRestoreStep(box); return; }
     if (signinState.step === "needsRoster") { renderAccountRosterStep(box); return; }
+    if (signinState.step === "needsSignOutChoice") { renderAccountSignOutStep(box); return; }
 
     if (data.account) {
       // Forced Drive connect: every rebbi, either tier, must connect Google
@@ -10984,7 +11235,15 @@ function setupRoster() {
   // and the button ready to retry.
   function renderAccountForceDriveStep(box){
     var p = el("p", "view-note");
-    p.textContent = "Connect Google Drive to back up your class before continuing — this only happens once.";
+    // A rebbi on a NEW computer has no class here to "back up" — he is trying
+    // to get one back, and asking him to connect Drive so it can be backed up
+    // describes the opposite of what he came to do. Same button, same one-time
+    // grant; only the reason changes, because on an empty device this consent
+    // is the step that finds his class rather than the step that protects it.
+    var emptyDevice = !(Array.isArray(data.students) && data.students.length > 0);
+    p.textContent = emptyDevice
+      ? "Looking for your class. Menchmark needs your permission to open the backup file it saved in your Google Drive — that is where your class is. This only happens once on this computer."
+      : "Connect Google Drive to back up your class before continuing — this only happens once.";
     box.appendChild(p);
     if (signinState.error) {
       var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
@@ -11000,14 +11259,17 @@ function setupRoster() {
   function renderAccountDriveRestoreStep(box){
     var offer = signinState.driveRestoreOffer;
     var p = el("p", "view-note");
-    p.textContent = "Found a backup in your Drive from " + signinRelativeDayText(offer.modifiedTs) + " — " +
-      offer.studentCount + " " + (offer.studentCount === 1 ? "student" : "students") +
-      (offer.className ? (", \"" + offer.className + "\"") : "") + ". Restore it?";
+    // Named as the thing he lost, not as a file operation: on a new computer
+    // this is the answer to "where is my class", and it should read that way.
+    p.textContent = "Found your class" +
+      (offer.className ? (" — \"" + offer.className + "\"" ) : "") + ", " +
+      offer.studentCount + " " + (offer.studentCount === 1 ? "boy" : "boys") +
+      ", backed up " + signinRelativeDayText(offer.modifiedTs) + ".";
     box.appendChild(p);
     if (signinState.error) {
       var errp = el("p", "pill-note"); errp.textContent = signinState.error; box.appendChild(errp);
     }
-    var restoreBtn = el("button", "btn btn-primary", "Restore this backup");
+    var restoreBtn = el("button", "btn btn-primary", "Bring it back");
     restoreBtn.addEventListener("click", signinAcceptDriveRestore);
     box.appendChild(restoreBtn);
     var skipBtn = el("button", "btn btn-sm", "Not now");
@@ -11493,6 +11755,29 @@ function setupRoster() {
   // a fixed fourth group. Empty (in points mode) it prints nothing: every
   // section renderer already skips or greys a section with no codes in it.
   var COIN_SECTION_KEY="coin";
+  /* The section the printed PRIZE codes land in — the same idea as
+   * COIN_SECTION_KEY above, and deliberately built the same way: pushed into
+   * the rebbi's OWN data.codeSections the first time he actually has a prize to
+   * print, so it renames, reorders and deletes exactly like the sections he
+   * already has. A starting point, not a fixed fourth group.
+   *
+   * Seeded ONCE (data.storeCodeSectionSeeded) rather than on every load, so a
+   * rebbi who deletes the section keeps it deleted. Deleting a section moves
+   * whatever was in it to his first one; re-adding it on the next load would
+   * drag his prize codes back out and overrule him. Nothing is lost either way
+   * — printCodeSectionOf() falls back to the first section that still exists,
+   * so a prize code whose section is gone still prints.
+   */
+  var STORE_SECTION_KEY="store";
+  function ensureStoreCodeSection(){
+    if(data.storeCodeSectionSeeded) return;
+    if(!data.store || !Array.isArray(data.store.items) || !data.store.items.length) return;
+    var list=codeSections();
+    if(!list.some(function(s){ return s.key===STORE_SECTION_KEY; })){
+      list.push({key:STORE_SECTION_KEY, label:"Prize Store"});
+    }
+    data.storeCodeSectionSeeded=true;
+  }
   // What the three shipped starter activities are worth once balances are
   // counted in Prutot. Left at 1 they are worth one PRUTAH each — the smallest
   // coin in the system — which puts a Darkon (1536 prutot) 1536 scans away and
@@ -12896,6 +13181,12 @@ function setupRoster() {
     // and become exactly the kind of accidental 0-point log entry a stray
     // Custom-0 arm already has to guard against elsewhere.
     if(armed.warning) return applyWarning(s);
+    // PRIZE STORE. Armed like an activity, but it SPENDS rather than scores, so
+    // it branches out here — above everything below, none of which has a prize
+    // to find (armedActivity() returns null for a prize by design). Placed after
+    // the not-in-this-class check above for the same reason a point scan is: a
+    // boy the rebbi cannot score is a boy he cannot charge either.
+    if(armed.storeId) return awardPrize(s);
     // If the armed activity has group restrictions, check this student belongs.
     var armedAct=armedActivity();
     if(armedAct && Array.isArray(armedAct.groups) && armedAct.groups.length>0){
@@ -12960,6 +13251,62 @@ function setupRoster() {
       tb.classList.add("awarded-bad");
       setTimeout(function(){ tb.classList.remove("awarded-bad"); }, 700);
     });
+  }
+  /* A PRIZE, SOLD BY SCAN OR TAP. The Store tab's own buy path with the scan
+   * surface's feedback instead of the tab's — both go through the one
+   * storePurchase() underneath, so a prize bought by scanning a boy at his desk
+   * and a prize bought by picking him from the Store tab's dropdown write
+   * exactly the same two records. That is the whole reason storePurchase() was
+   * extracted rather than this path reimplementing the arithmetic, which is how
+   * the two would come to disagree about what a purchase is.
+   *
+   * FREEZE DOES NOT BLOCK A PURCHASE, and that is deliberate. Freeze has only
+   * ever blocked GIVING — award()'s own check is `armed.delta>0` — so blocking
+   * a purchase would turn a freeze into a confiscation of points the boy had
+   * already earned, rather than a pause on earning more. tapPassesFreeze() says
+   * the same thing for the tap gesture; the two have to agree or a frozen boy
+   * would be refused by one surface and served by the other.
+   *
+   * The toast carries NO band. A purchase is neither a merit nor a demerit, so
+   * a rebbi who has switched the negative banners off must still see the prize
+   * he just sold — and must always see a refusal, or he will think it worked.
+   */
+  function awardPrize(s){
+    var it=armedPrize();
+    // Deleted between arming and this scan. Refused by name rather than
+    // silently, because "nothing happened" on a scan reads as a bad scan.
+    if(!it){
+      flash(false, "Prize no longer in the store", armed.label, "It was deleted after you armed it — arm another");
+      beep(false); return false;
+    }
+    /* A CLASS PRIZE MAY NOT BE CHARGED TO A BOY. The Store tab already keeps
+     * the two apart — a "for the whole class" prize is excluded from the
+     * student buy list so it can never come out of one boy's points — and now
+     * that every prize is also printable and scannable, that rule has to hold
+     * on the scan path too or the tab and the scanner disagree. Without this,
+     * arming the pizza party and scanning a boy would quietly bill him 150
+     * points for something the class was meant to buy together. */
+    if(storeItemIsClass(it)){
+      flash(false, s.name, "That's a class prize", "Scan the 🏆 "+classPoolLabel(data.currentClass)+" card to buy it with class points");
+      beep(false); return false;
+    }
+    if(score(s.id) < it.cost){
+      flash(false, s.name, isShulchani()?"Not enough coins":"Not enough points",
+            "has "+fmtScore(s.id)+" — "+it.name+" costs "+fmtVal(it.cost));
+      beep(false); flashWarningTile(s.id); return false;
+    }
+    storePurchase(s.id, it);
+    flash(true, s.name, (it.emoji||"🎁")+" "+it.name,
+          fmtDeltaBare(-it.cost)+" · now "+fmtScore(s.id));
+    beep(true);
+    renderRecent(); renderScanBoard();
+    refreshStudentTiles(s.id, -it.cost);
+    refreshLiveViews();
+    // The Store tab is where the "not picked up yet" list lives, so it has to
+    // show a scanned purchase the moment it happens if it is the tab on screen.
+    // Only then: rebuilding a hidden tab on every scan buys nothing.
+    if($("view-store") && $("view-store").classList.contains("active")) renderStore();
+    return true;
   }
   // THE ONE PATH EVERY POINT IN THE APP TRAVELS THROUGH. Extracted verbatim
   // from award() so a second caller can score a student without setting and
@@ -13103,6 +13450,12 @@ function setupRoster() {
    */
   function tapPassesFreeze(){
     if(!armed) return false;
+    // Spending is not giving — see awardPrize(). A frozen boy may still buy a
+    // prize with points he already earned, so the tap must reach award() rather
+    // than the freeze modal. Checked before armedActivity(), which returns null
+    // for a prize and would otherwise fall through to the delta<0 test — right
+    // by accident for a priced prize, wrong for a free one.
+    if(armed.storeId) return true;
     var a=armedActivity();
     if(a && freezeActivity(a)) return false;
     if(a && a.tracked) return true;
@@ -13450,6 +13803,18 @@ function setupRoster() {
     if(armed.warning){
       flash(false, "Not for the class pool", "⚠️ Warning", "A warning is for a boy, and records nothing anywhere"); beep(false); return false;
     }
+    /* AN ARMED PRIZE IS A SALE, NOT A DEDUCTION — and this branch has to come
+     * before the delta checks below, because armPrize() arms the cost as a
+     * NEGATIVE delta. Left to fall through, a class card scanned with a prize
+     * armed would take the cost off the pool as a plain point deduction and
+     * write no purchase record at all: the class charged, and nothing owed to
+     * it. That is the same failure fpScan() refuses a prize code to avoid.
+     *
+     * Here it is served rather than refused, because storePurchase() already
+     * takes a pool key (see its subjectById note) — so the class buys the
+     * prize through the one purchase path, getting the pickup-list row, the
+     * linked spend entry, Refund and Undo exactly as a boy does. */
+    if(armedPrize()) return buyArmedPrizeForClass(cls);
     var a=armedActivity();
     if(a && (a.tracked || freezeActivity(a))){
       flash(false, "Not for the class pool", armed.label, "That records a mark, not points"); beep(false); return false;
@@ -13458,6 +13823,40 @@ function setupRoster() {
       flash(false, "Nothing to give", armed.label, "That activity is worth zero"); beep(false); return false;
     }
     return awardClass(cls, armed.label, armed.delta);
+  }
+  /* Selling an armed prize to a class pool — awardPrize()'s counterpart, and
+   * deliberately shaped like it (same refusal-by-name for a deleted prize,
+   * same can't-afford refusal, same storePurchase() call).
+   *
+   * ONLY A CLASS PRIZE, refused out loud otherwise. The Store tab already
+   * keeps the two kinds strictly apart — student prizes never appear in the
+   * "For the class" section, precisely so a boy's prize is never paid out of
+   * the pool — and the scan path has to agree with the tab, or the rule holds
+   * on one surface and not the other.
+   */
+  function buyArmedPrizeForClass(cls){
+    var it=armedPrize();
+    if(!it){
+      flash(false, "Prize no longer in the store", armed.label, "It was deleted after you armed it — arm another");
+      beep(false); return false;
+    }
+    if(!storeItemIsClass(it)){
+      flash(false, "Not a class prize", armed.label, "Mark it “for the whole class” in the Prize Store to buy it with class points");
+      beep(false); return false;
+    }
+    var key=classPoolKey(cls);
+    if(score(key) < it.cost){
+      flash(false, "🏆 "+classPoolLabel(cls), isShulchani()?"Not enough coins":"Not enough points",
+            "has "+fmtScore(key)+" — "+it.name+" costs "+fmtVal(it.cost));
+      beep(false); return false;
+    }
+    storePurchase(key, it);
+    flash(true, "🏆 "+classPoolLabel(cls), (it.emoji||"🎁")+" "+it.name,
+          fmtDeltaBare(-it.cost)+" · class now "+fmtScore(key));
+    beep(true);
+    renderRecent(); renderScanBoard(); renderClassPointsBar(); refreshLiveViews();
+    if($("view-store") && $("view-store").classList.contains("active")) renderStore();
+    return true;
   }
   /* Which pools the bar shows. On a selected class that is just that one; on
    * "All classes" it is every class that has students, so the bar reads as a
@@ -13544,6 +13943,15 @@ function setupRoster() {
   function giveArmedToAll(){
     if(!armed || !armed.label){
       flash(false, "Nothing armed", "", "Pick an activity first, then give it to the class"); beep(false); return;
+    }
+    /* A PRIZE IS REFUSED, and this one matters: awardWith() is the POINTS path,
+     * so a prize let through here would charge every boy in the class its cost
+     * and record no purchase for any of them — every balance down, nobody owed
+     * anything. CTRL:GIVEALL is a printed code, so this is reachable by a single
+     * mis-aimed scan while a prize happens to be armed.
+     */
+    if(armed.storeId){
+      flash(false, "Not for prizes", armed.label, "A prize is sold to one student at a time"); beep(false); return;
     }
     if(reroutedActivity(armedActivity())){
       flash(false, "Not for tracked items", armed.label, "This records a mark, not points — mark the class on its own tab"); beep(false); return;
@@ -14214,6 +14622,24 @@ function setupRoster() {
     // it just cannot rewrite history that a rebbi already acted on.
     if(entry.mcId) mcRevert(entry.sid, entry.delta, entry.mcId);
     if(affectedMain) data.scores[entry.sid]=score(entry.sid)-entry.delta;
+    /* A STORE PURCHASE IS TWO RECORDS, SO UNDO REVERSES BOTH. The points come
+     * back on the line above; this takes the prize back off the "not picked up
+     * yet" list. Without it, undoing a purchase refunded the boy AND left him
+     * still owed the prize — the rebbi's pickup list insisting he had bought
+     * something he had just been refunded for. This is the same pair
+     * refundPurchase() reverses from the other end.
+     *
+     * Matched on purchaseId, never on name or timestamp, so it is exact and so
+     * an entry with no purchase behind it (every scan that is not a prize) costs
+     * one falsy test. Nothing is invented for old purchases: they carry no pid,
+     * so they never match and never lose a row.
+     */
+    if(entry.purchaseId && data.store && Array.isArray(data.store.log)){
+      for(var pi=0; pi<data.store.log.length; pi++){
+        if(data.store.log[pi].pid===entry.purchaseId){ data.store.log.splice(pi,1); break; }
+      }
+      if($("view-store") && $("view-store").classList.contains("active")) renderStore();
+    }
     var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Undo: "+entry.label, delta:-entry.delta, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false, mcId:entry.mcId||undefined, mcMerged:entry.mcMerged||undefined});
     // renderClassPointsBar() is here for the same reason refreshStudentTiles()
     // is below: undoing a CLASS scan corrects data.scores and would otherwise
@@ -16379,6 +16805,12 @@ function setupRoster() {
     }
     if(fpOpen){ fpScan(c); return; }
     if(/^ACT:/i.test(c)){ armActivityByCode(c); return; }
+    // PRZ:<prize id> — the Prize Store's own printed code, and the exact
+    // counterpart of ACT: above: it arms a prize, and the next student scan
+    // sells it to him. Routed HERE rather than in processScan() for the reason
+    // spelled out just below about CTRL: codes — the printed card has to work
+    // from across the room without knowing which tab happens to be open.
+    if(/^PRZ:/i.test(c)){ armPrizeByCode(c); return; }
     // CTRL: codes are universal controls, not tied to any one tab or mode — they
     // used to live inside processScan(), which is ONLY ever reached from the
     // final fallback below, meaning they silently never fired on any tab that
@@ -16608,6 +17040,35 @@ function setupRoster() {
         dd.appendChild(b);
       });
     }
+    /* PRIZES, in the same dropdown as the activities — which is the whole point
+     * of them being armable at all. The seating chart is where the rebbi is
+     * standing when a boy asks to spend, so arming the prize and tapping the boy
+     * is the shortest path there is: the cost comes off that boy's own balance
+     * and the prize lands on his pickup list.
+     *
+     * The cost is shown as the DEDUCTION it is (negative, red), so the row reads
+     * the same way a demerit row does — nothing here has to explain that buying
+     * costs something.
+     *
+     * Not filtered by class or by actVisibleOnScreen: prizes are one shared
+     * store for every class, not per-class activities, so there is nothing to
+     * narrow to. An empty store simply prints no section.
+     */
+    var prizes=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    if(prizes.length){
+      dd.appendChild(el("div","hd-divider"));
+      dd.appendChild(el("div","hd-head","Prize Store"));
+      prizes.forEach(function(it){
+        var pb=el("button"); pb.type="button";
+        pb.appendChild(el("span",null,(it.emoji||"🎁")+" "+it.name));
+        pb.appendChild(el("span","hd-pts neg", fmtDeltaBare(-it.cost)));
+        pb.addEventListener("click", function(){
+          armPrize(it); closeFn();
+          var f=$(focusInputId); if(f) f.focus();
+        });
+        dd.appendChild(pb);
+      });
+    }
     dd.appendChild(el("div","hd-divider"));
     var customBtn=el("button","hd-custom-btn"); customBtn.type="button";
     customBtn.appendChild(el("span",null,"✏️ Custom…"));
@@ -16617,6 +17078,21 @@ function setupRoster() {
   $("seatsScanInput").addEventListener("keydown", function(e){
     if(e.key==="Enter"){ e.preventDefault(); var v=this.value; this.value=""; handleScannedCode(v); }
   });
+  /* The prize half of armActivityByCode(). Deliberately shorter, because a
+   * prize has none of the things that make an activity code refusable: no
+   * tracked item to be missing, no Shulchani-only value to be meaningless in
+   * points mode (a cost is a cost either way), and no group restriction. The
+   * only refusal is a code for a prize that no longer exists.
+   */
+  function armPrizeByCode(c){
+    var id=c.slice(4).trim();
+    var it=null, list=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    for(var i=0;i<list.length;i++){ if(String(list[i].id).toUpperCase()===id.toUpperCase()){ it=list[i]; break; } }
+    if(!it){ flash(false,"Unknown prize code","","\u201C"+c+"\u201D — it may have been deleted from the Store"); beep(false); return; }
+    armPrize(it);
+    flash(true, "Now selling", (it.emoji||"🎁")+" "+it.name+"  "+fmtVal(it.cost), "Scan a student to buy it for him");
+    beep(true);
+  }
   function armActivityByCode(c){
     var id=c.slice(4).trim();
     var a=null;
@@ -16695,7 +17171,7 @@ function setupRoster() {
     subBtn.dataset.label="Custom"; subBtn.dataset.delta=-n;
     $("customAddVal").textContent=isShulchani()?"+"+n+" prutot":"+"+n+" pts";
     $("customSubVal").textContent=isShulchani()?"−"+n+" prutot":"−"+n+" pts";
-    if(armed && armed.label==="Custom"){
+    if(armed && !armed.storeId && armed.label==="Custom"){
       addBtn.classList.toggle("selected", armed.delta===n);
       subBtn.classList.toggle("selected", armed.delta===-n);
     } else {
@@ -16720,7 +17196,7 @@ function setupRoster() {
     // the pill arms another is exactly the disagreement this function exists to
     // prevent.
     f.value=n;
-    if(armed && armed.label==="Custom") setArmed("Custom", armed.delta<0 ? -n : n);
+    if(armed && !armed.storeId && armed.label==="Custom") setArmed("Custom", armed.delta<0 ? -n : n);
     syncCustomButtons();
   }
   $("customAmt").addEventListener("input", function(){
@@ -18980,7 +19456,7 @@ function setupRoster() {
         var ctag=el("span","grp-tag", classPointsOn() ? "🏆 class" : "🏆 class — Class Points is off");
         nm.appendChild(ctag);
       }
-      var ren=el("button","btn btn-sm","Edit"); ren.addEventListener("click",function(){ var nn=prompt("Prize name:",it.name); if(nn===null) return; var nc=prompt(isShulchani()?"Cost (prutot):":"Cost (points):", String(it.cost)); if(nc===null) return; it.name=nn.trim()||it.name; it.cost=Math.max(0,parseInt(nc,10)||0); save(); renderStore(); });
+      var ren=el("button","btn btn-sm","Edit"); ren.addEventListener("click",function(){ var nn=prompt("Prize name:",it.name); if(nn===null) return; var nc=prompt(isShulchani()?"Cost (prutot):":"Cost (points):", String(it.cost)); if(nc===null) return; it.name=nn.trim()||it.name; it.cost=Math.max(0,parseInt(nc,10)||0); save(); refreshArmedPrize(); renderStore(); });
       var del=el("button","btn btn-sm btn-bad","✕"); del.addEventListener("click",function(){ if(!confirm("Delete \""+it.name+"\"?")) return; data.store.items=data.store.items.filter(function(x){return x.id!==it.id;}); save(); renderStore(); });
       row.appendChild(emo); row.appendChild(nm); row.appendChild(ren); row.appendChild(del);
       list.appendChild(row);
@@ -19047,27 +19523,73 @@ function setupRoster() {
       buy.appendChild(b);
     });
   }
-  // subjectById(), not studentById() — this is the one spending path, and it
-  // takes a class pool key exactly as it takes a student id. Everything below
-  // (the balance check, data.scores, the purchase log, the log entry, and
-  // refundPurchase() reading that log back) is already id-agnostic.
+  /* THE ONE PATH EVERY PURCHASE TRAVELS THROUGH. Extracted verbatim out of
+   * storeBuy() so the scan path can sell a prize without borrowing this tab's
+   * flash and re-render — the same reason applyScore() was extracted out of
+   * award(), and the same guarantee: there is one definition of what buying a
+   * prize DOES, and two surfaces that report it differently.
+   *
+   * Affordability is the CALLER's check, not this function's, because the two
+   * surfaces word the refusal differently (the tab names the balance, the scan
+   * flash names the boy). Reaching here means the check has passed.
+   *
+   * pid IS THE LINK BETWEEN THE TWO RECORDS a purchase writes: the
+   * data.store.log row (the prize the boy is owed) and the data.log spend entry
+   * (what it cost him). Undo and Refund each reverse both by matching on it.
+   * Before it existed, undoing a purchase handed the points back and left the
+   * prize still sitting on the pickup list.
+   *
+   * Deliberately NOT pushed to the Google Sheet, matching what this path has
+   * always done — spends have never reached the Sheet's Log tab from the Store
+   * tab either, and making the scan path the one exception would have left the
+   * two surfaces disagreeing about what gets recorded where.
+   */
+  /* subjectById(), not studentById(): `sid` here is "whoever is paying", and
+   * since Class Points that can be a class pool key as well as a student id.
+   * Nothing else in this function had to change to accept one — the balance
+   * read, data.scores, the purchase-log row, the linked spend entry and
+   * refundPurchase()'s reversal of both are all already id-agnostic, which is
+   * the same property that let the pool reuse the scoring path. */
+  function storePurchase(sid, it){
+    var s=subjectById(sid); if(!s) return null;
+    var pid=newId(), ts=Date.now();
+    data.scores[sid]=score(sid)-it.cost;
+    data.store.log.unshift({pid:pid, sid:sid, name:s.name, itemName:it.name, emoji:it.emoji||"🎁", cost:it.cost, ts:ts, received:data.store.autoReceived===true});
+    if(data.store.log.length>300) data.store.log.length=300;
+    var entry=addLogEntry({ts:ts, sid:sid, label:"Store: "+it.name, delta:-it.cost, kind:"spend", purchaseId:pid});
+    save();
+    return entry;
+  }
   function storeBuy(sid, it){
     var s=subjectById(sid); if(!s) return;
     if(score(sid) < it.cost){ storeFlash(false, isShulchani()?"Not enough coins":"Not enough points", s.name+" has "+fmtScore(sid)+", needs "+fmtVal(it.cost)); beep(false); return; }
-    data.scores[sid]=score(sid)-it.cost;
-    data.store.log.unshift({sid:sid, name:s.name, itemName:it.name, emoji:it.emoji||"🎁", cost:it.cost, ts:Date.now(), received:data.store.autoReceived===true});
-    if(data.store.log.length>300) data.store.log.length=300;
-    addLogEntry({ts:Date.now(), sid:sid, label:"Store: "+it.name, delta:-it.cost, kind:"spend"});
-    save(); beep(true); storeFlash(true, s.name+" bought "+(it.emoji||"")+" "+it.name, (isShulchani()?formatCoins(it.cost,{signed:false})+" → ":"-"+it.cost+" → ")+fmtScore(sid));
-    renderStore(); renderScanBoard(); renderClassPointsBar();
+    storePurchase(sid, it);
+    beep(true); storeFlash(true, s.name+" bought "+(it.emoji||"")+" "+it.name, (isShulchani()?formatCoins(it.cost,{signed:false})+" → ":"-"+it.cost+" → ")+fmtScore(sid));
+    // refreshStudentTiles() is a no-op for a class pool (there is no tile with
+    // that data-sid), which is exactly right — the pool's total lives in the
+    // class-points bar instead, so that is refreshed alongside.
+    renderStore(); renderScanBoard(); refreshStudentTiles(sid, -it.cost); refreshLiveViews(); renderClassPointsBar();
   }
   function refundPurchase(idx){
     var p=data.store.log[idx]; if(!p) return;
     if(!confirm("Refund "+p.name+"'s "+p.itemName+" ("+fmtVal(p.cost)+")?")) return;
     data.scores[p.sid]=score(p.sid)+p.cost;
+    /* CLOSE THE DOOR ON A SECOND REFUND. The purchase's own data.log spend entry
+     * is still standing here, un-undone, and ↩ Undo / History would happily
+     * reverse it as well — handing the cost back twice for one prize. Marking it
+     * undone is what makes the app's two reversal paths agree: whichever one the
+     * rebbi reaches for, the other can no longer double it. Matched on pid, so a
+     * purchase made before prizes were scannable (no pid, no linked entry)
+     * simply skips this and behaves exactly as it always has.
+     */
+    if(p.pid){
+      for(var li=0; li<data.log.length; li++){
+        if(data.log[li].purchaseId===p.pid && !data.log[li].undone){ data.log[li].undone=true; break; }
+      }
+    }
     addLogEntry({ts:Date.now(), sid:p.sid, label:"Store refund: "+p.itemName, delta:p.cost, kind:"refund"});
     data.store.log.splice(idx,1);
-    save(); renderStore(); renderScanBoard(); renderClassPointsBar();
+    save(); renderStore(); renderScanBoard(); refreshStudentTiles(p.sid); refreshLiveViews(); renderClassPointsBar();
   }
   function renderStoreHistory(){
     var h=$("storeHistory"); h.innerHTML="";
@@ -19101,6 +19623,9 @@ function setupRoster() {
     var forSel=$("storeFor");
     if(classPointsOn() && forSel && forSel.value==="class") item.for="class";
     data.store.items.push(item);
+    // The rebbi who adds his first prize AFTER this loaded gets the section too,
+    // not only the one who already had prizes when load2fix() last ran.
+    ensureStoreCodeSection();
     $("storeName").value=""; $("storeCost").value=""; save(); renderStore(); $("storeName").focus();
   });
   $("storeName").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); $("storeAdd").click(); } });
@@ -23445,7 +23970,9 @@ nameLine
     });
   }
   // if the activity being edited is the one currently armed, keep the armed pill in sync
-  function refreshArmed(a){ if(armed && armed.label===a.name){ setArmed(a.name, a.pts, a); } }
+  // The !armed.storeId guard stops an activity edit from silently re-arming
+  // over a prize that happens to share its name.
+  function refreshArmed(a){ if(armed && !armed.storeId && armed.label===a.name){ setArmed(a.name, a.pts, a); } }
   $("addActivity").addEventListener("click", function(){
     var name=$("newActName").value.trim(); if(!name){ $("newActName").focus(); return; }
     // In Shulchani the field is a COUNT of the coin picked beside it, so the
@@ -23685,6 +24212,21 @@ nameLine
     items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
+    /* PRIZE STORE CODES. Printed alongside the activity codes because that is
+     * exactly how they are used: scan the prize, then scan the boy. They earn
+     * their place on this sheet rather than a sheet of their own — a rebbi
+     * carrying one clipboard should not need a second one to sell a pencil.
+     *
+     * The sub-line quotes the cost through fmtVal(), so a Shulchani class reads
+     * it in coins and a points class in points, and the tone is "neg" because
+     * that is what it does to a balance. Same reasoning as the coin codes: the
+     * printed line says what the code DOES, never what it is called.
+     */
+    (data.store && Array.isArray(data.store.items) ? data.store.items : []).forEach(function(it){
+      items.push({qrText:"PRZ:"+it.id, name:(it.emoji||"🎁")+" "+it.name,
+                  sub:"costs "+fmtVal(it.cost), tone:"neg",
+                  defaultSection:STORE_SECTION_KEY});
+    });
     // #117: drop the codes this rebbi has turned off. Filtered HERE, once,
     // because this function is the single source for the tile view, the Avery
     // sheets and the class sheet's footer alike — filtering in each renderer is
@@ -26198,8 +26740,22 @@ nameLine
   // backup at all is the overwhelmingly common case here, not an error.
   function signinMaybeOfferDriveRestore(){
     if (signinDriveRestoreChecked) return;
-    if (!(data.account && data.account.schoolId != null)) return;
+    // Deliberately NOT gated on tier any more. This began as step 3b's
+    // tier-1 existing-cohort upload, but the identical situation — signed in,
+    // no local class, a Drive backup sitting there — is if anything more
+    // common for tier 2, whose class lives in Drive and nowhere else. The
+    // two tiers diverge at accept time, not here: tier 1 uploads and
+    // restores, tier 2 only restores (see signinAcceptDriveRestore).
+    if (!data.account) return;
     if (data.firebaseClaimedBy) return;
+    // Blank devices only. Now that accepting this offer RESTORES (and not just
+    // uploads), offering it to a device that already has a roster would be
+    // offering to overwrite one class with another — and the caller's own
+    // signinDetectLocalClass() null does not mean "empty", only "no recent
+    // scans" (see applyRestoredSnapshot). Narrowing here rather than at accept
+    // time on purpose: an offer that says "your class comes back" must not
+    // appear where accepting it would do nothing, or do harm.
+    if (Array.isArray(data.students) && data.students.length > 0) return;
     if (!driveSupported()) return;
     signinDriveRestoreChecked = true;
     var chain = driveToken ? Promise.resolve() : driveWithRecovery(function(){
@@ -26331,6 +26887,27 @@ nameLine
     renderDriveBackupCard();
     signinState.error = null;
     if (typeof renderAccountSection === "function") renderAccountSection();
+
+    // A device with no roster must never write here. This is the first moment
+    // Drive access exists, and on a new device the very next thing that used
+    // to happen was writing the empty local class straight over the rebbi's
+    // real backup — the one thing he signed in to get back. Found live: it is
+    // how the backup file ended up holding an empty class.
+    //
+    // It is also the only moment the restore CAN be offered on a new device.
+    // Sign-in asks for openid/email/profile only; Drive is a separate consent,
+    // so signinMaybeOfferDriveRestore() at sign-in time always 401s on a
+    // device that has never connected Drive, and its catch is silent — the
+    // rebbi is told nothing and the feature looks dead. Running it here, once
+    // the token exists, is what makes "sign in on a new computer and get your
+    // class back" actually reachable.
+    if (!(Array.isArray(data.students) && data.students.length > 0)) {
+      if (data.account && !data.firebaseClaimedBy && typeof signinMaybeOfferDriveRestore === "function") {
+        signinDriveRestoreChecked = false; // this is a fresh, post-redirect look
+        signinMaybeOfferDriveRestore();
+      }
+      return;
+    }
     driveWriteBackup(false);
   }
 
@@ -26372,6 +26949,16 @@ nameLine
   function driveMaybeAutoWrite(){
     if (driveAutoWriteTriedThisSession) return;
     if (!data.driveBackupEnabled || !driveSupported()) return;
+    // Never let an empty device overwrite a real backup. This write PATCHes
+    // the one backup file in place, so a device with no roster on it silently
+    // replaces a good backup with nothing — once per page load, with no
+    // prompt and no status line, because this write is deliberately silent.
+    // Found live: a signed-in blank device rewrote the Drive backup to an
+    // empty class on every single load. An empty roster is never worth
+    // preserving, so there is nothing to weigh against the risk.
+    // Deliberately only the AUTOMATIC write: "Back up now" is an explicit
+    // instruction from the rebbi and still does exactly what he asked.
+    if (!(Array.isArray(data.students) && data.students.length > 0)) return;
     driveAutoWriteTriedThisSession = true;
     driveWriteBackup(true);
   }
@@ -26676,6 +27263,14 @@ nameLine
     // old, already-resolved purchases as newly "pending."
     if(typeof data.store.autoReceived!=="boolean") data.store.autoReceived=false;
     data.store.log.forEach(function(p){ if(typeof p.received!=="boolean") p.received=true; });
+    /* pid — the link between a purchase row and its data.log spend entry (see
+     * storePurchase()). Purely additive, so no DATA_VERSION bump: a purchase
+     * made before prizes were scannable has no pid and no linked entry to find,
+     * and both reversal paths test the pid for truth before matching on it. It
+     * is normalised to null rather than left undefined only so the field's shape
+     * is the same on every row, which is what the guards below it read.
+     */
+    data.store.log.forEach(function(p){ if(typeof p.pid!=="string" || !p.pid) p.pid=null; });
     if(!data.earned) data.earned={};
     if(!data.weekly) data.weekly={};
     if(typeof data.standingsActivity!=="string") data.standingsActivity="";
@@ -26960,6 +27555,11 @@ nameLine
     if(!Array.isArray(data.codeSections) || !data.codeSections.length){
       data.codeSections = DEFAULT_CODE_SECTIONS.map(function(s){ return {key:s.key, label:s.label}; });
     }
+    // Printed prize codes need a section to land in. One-shot, and only for a
+    // rebbi who actually has prizes — see ensureStoreCodeSection(). Runs after
+    // the guard above, which is what guarantees there is a list to push onto.
+    if(typeof data.storeCodeSectionSeeded!=="boolean") data.storeCodeSectionSeeded=false;
+    ensureStoreCodeSection();
     // Replaced by each section's own label in v5. Deleted rather than left to
     // rot, so nothing can read a stale name back later.
     delete data.codeSectionNames;
