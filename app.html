@@ -1068,19 +1068,26 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .drop-row.sel{outline:3px solid var(--ink);background:var(--brass-soft)}
   .drop-row.shake{animation:shake .32s}
   @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
-  /* Floating launcher buttons (Points, Timer, Picker) — fixed regardless of
-     scroll, draggable to anywhere on screen, position remembered per teacher
-     in data.fabPos. Stay below the panels they open (z-index 200/201) so an
-     open panel always sits on top of its own launcher. Default stack is
-     bottom-right; a saved position overrides it via inline left/top (see
-     makeFabDraggable). */
-  .fab-btn{position:fixed;right:16px;z-index:190;width:52px;height:52px;border-radius:50%;border:1px solid #41507f;background:var(--ink);color:#fff;font-size:1.3rem;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 8px 24px rgba(20,26,46,.32);cursor:grab;touch-action:none;user-select:none}
-  .fab-btn:active{cursor:grabbing}
+  /* Floating tool buttons (Points, Timer, Picker, Board) — locked to the
+     bottom-right stack, always. Stay below the panels they open (z-index
+     200/201) so an open panel always sits on top of its own launcher.
+     #fabLauncher is the one always-visible trigger; the four tools
+     (.fab-tool) are hidden until body.fab-tray-open, then stack above it —
+     collapseFabTray() closes the tray again once a tool is tapped, same as
+     any speed-dial menu. data.fabPos (the old per-teacher dropped position)
+     is unused now but stays in the data model — an existing field, never
+     removed, per rule 1. */
+  .fab-btn{position:fixed;right:16px;z-index:190;width:52px;height:52px;border-radius:50%;border:1px solid #41507f;background:var(--ink);color:#fff;font-size:1.3rem;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 8px 24px rgba(20,26,46,.32);cursor:pointer;user-select:none}
   .fab-btn:hover{background:#26315a}
-  #fsBtn.fab-btn{bottom:16px}
-  #timerBtn.fab-btn{bottom:80px}
-  #pickerBtn.fab-btn{bottom:144px}
-  #boardBtn.fab-btn{bottom:208px}
+  #fabLauncher.fab-btn{bottom:16px;font-size:1.7rem;font-weight:600;transition:transform 160ms ease}
+  #fabLauncher.fab-btn.open{transform:rotate(45deg)}
+  .fab-tool{display:none}
+  body.fab-tray-open .fab-tool{display:flex}
+  #fsBtn.fab-btn{bottom:80px}
+  #timerBtn.fab-btn{bottom:144px}
+  #pickerBtn.fab-btn{bottom:208px}
+  #boardBtn.fab-btn{bottom:272px}
+  @media (prefers-reduced-motion:reduce){ #fabLauncher.fab-btn{ transition:none } }
 
   /* Board (4th FAB): fullscreen auto-fit big-text display for homework/
      announcements. Unlike the other three FABs this opens a full-viewport
@@ -1200,28 +1207,27 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     width:1.15rem; height:1.15rem; border-radius:50%;
     background:conic-gradient(#F2EFE4 0deg 180deg,#16241C 180deg 360deg); border:1px solid var(--board-btn-border);
   }
-  /* No separate close button — a screen already crowded with per-box ✕'s
-     (remove, shelf delete, screen delete) doesn't need one more, ambiguous,
-     glyph. #boardBtn is already a toggle (see boardToggle()); while the
-     board is open it stays visible, above the overlay, and becomes a
-     "Close board" pill so the SAME button that opened it closes it.
-     Top-right is the fullscreen-close convention, but it's also where a
-     top-right-filling cell's own .board-remove lives — sharing that corner
-     between a sizable labeled pill and a per-box control stays cramped no
-     matter how the two are individually tuned, and the only way to
-     guarantee real clearance there is a reserved top margin, which costs
-     exactly the text room this feature exists for. Bottom-center avoids the
-     fight entirely: it sits in the same row as the skin toggle and add
-     button (bottom-left/right), just centered, and clears #boardDots
-     (which sits lower, only present with 2+ screens) with margin. */
-  #boardBtn.fab-btn.board-active{
-    position:fixed; left:50%; transform:translateX(-50%); top:auto; right:auto;
-    bottom:clamp(2.3rem,4.2vw,3.1rem);
-    width:auto; height:auto; border-radius:999px; padding:.4rem .85rem;
+  /* A dedicated close pill, independent of #boardBtn — the FAB that opens
+     Board is now part of the locked bottom-right tool tray and never
+     changes appearance or position while Board is open (matches how the
+     other 3 tools behave). Top-CENTER, not top-right: top-right is the
+     fullscreen-close convention, but it's also where a top-right-filling
+     cell's own .board-remove lives, and sharing that corner between a
+     sizable labeled pill and a per-box control stayed cramped no matter how
+     the two were tuned. Top-center is clear of every per-cell control
+     (.board-controls sits at each cell's own top-LEFT, .board-remove at its
+     top-right) in any layout, and its own top offset matches
+     #boardStage's padding + .board-cell's padding-top — the same height the
+     color-picker chip sits at, just centered instead of left-aligned. */
+  #boardCloseBtn{
+    position:fixed; top:clamp(.5rem,1.6vw,1.1rem); left:50%; transform:translateX(-50%); right:auto;
+    border-radius:999px; padding:.4rem .85rem;
     font-family:var(--sans); font-size:.82rem; font-weight:700; letter-spacing:.02em;
     z-index:401; background:var(--board-chip-bg); border:1px solid var(--board-chip-border); color:var(--board-ink);
+    cursor:pointer;
   }
-  #boardBtn.fab-btn.board-active:hover{ background:rgba(178,59,46,.35); border-color:rgba(178,59,46,.5); color:#F2EFE4; }
+  #boardCloseBtn:hover{ background:rgba(178,59,46,.35); border-color:rgba(178,59,46,.5); color:#F2EFE4; }
+  #boardCloseBtn:focus-visible{ outline:2px solid var(--board-accent); outline-offset:2px; }
   #boardDots{
     position:fixed; left:50%; bottom:clamp(.9rem,2.8vw,1.9rem); transform:translateX(-50%);
     z-index:5; display:flex; align-items:center; gap:.3rem;
@@ -2064,14 +2070,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </head>
 <body>
 
-<button class="fab-btn" id="fsBtn" title="Floating points scanner (with activity buttons and a tap-to-score name list) — drag to move">🎯</button>
-<button class="fab-btn" id="timerBtn" title="Floating timer — drag to move">⏱</button>
-<button class="fab-btn" id="pickerBtn" title="Floating picker wheel — drag to move">🎡</button>
-<button class="fab-btn" id="boardBtn" title="Board — a fullscreen display for homework or a reminder">📋</button>
+<button class="fab-btn" id="fabLauncher" type="button" aria-expanded="false" aria-label="Tools" title="Tools">+</button>
+<button class="fab-btn fab-tool" id="fsBtn" title="Floating points scanner (with activity buttons and a tap-to-score name list)">🎯</button>
+<button class="fab-btn fab-tool" id="timerBtn" title="Floating timer">⏱</button>
+<button class="fab-btn fab-tool" id="pickerBtn" title="Floating picker wheel">🎡</button>
+<button class="fab-btn fab-tool" id="boardBtn" title="Board — a fullscreen display for homework or a reminder">📋</button>
 
 <div id="boardOverlay" style="display:none">
   <div id="boardStage" data-count="1"></div>
   <div id="boardDots" role="tablist" aria-label="Board screens"></div>
+  <button id="boardCloseBtn" type="button" aria-label="Close board" title="Close board">Close board</button>
   <button id="boardAdd" type="button" aria-label="Add box" title="Add box">+</button>
   <button id="boardSkinBtn" type="button" aria-label="Switch black/white" title="Switch black-on-white / white-on-black"><span class="board-skin-dot"></span></button>
   <button id="boardShelfTab" type="button" aria-label="Saved messages" title="Saved messages">Saved</button>
@@ -4633,8 +4641,8 @@ function setupRoster() {
 
     <div class="card pad" style="margin-bottom:14px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Header Shortcuts</h3>
-      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHeaderShortcuts"> Show the Points / Timer / Picker floating buttons</label>
-      <p class="view-note" style="margin:8px 0 0">On by default. These three float on top of the screen wherever you scroll, and can be dragged anywhere — drop one wherever it's out of your way. Turn this off to hide all three if you don't use the floating points scanner, timer, or picker wheel — the class dropdown and sound button stay either way, and you can always turn this back on here.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setHeaderShortcuts"> Show the floating tools button</label>
+      <p class="view-note" style="margin:8px 0 0">On by default. A single + sits in the bottom-right corner of every screen — tap it to reveal the floating points scanner, timer, picker wheel, and Board, then tap one to open it. Turn this off to hide it if you don't use any of the four — the class dropdown and sound button stay either way, and you can always turn this back on here.</p>
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
@@ -5144,9 +5152,10 @@ function setupRoster() {
     // modes (wheel + seating chart). Defaults ON so the seating chart keeps
     // the skip-until-everyone-has-had-a-turn rotation it has always had.
     pickerSkip: true,
-    // Per-teacher dropped position for each floating launcher FAB (Points/
-    // Timer/Picker/Board), keyed "scan"/"timer"/"picker"/"board". Empty means
-    // "use the CSS-stacked bottom-right default" — see applyFabPositions().
+    // Unused since the FAB tray locked into a fixed bottom-right stack
+    // behind #fabLauncher — kept in the data model rather than removed
+    // (rule 1: never remove an existing field), even though nothing reads
+    // or writes it anymore.
     fabPos: {},
     // Board (4th FAB): a fullscreen auto-fit display, screens split into
     // pages of up to 4 boxes each. boardPages is an array of pages, each a
@@ -5468,7 +5477,7 @@ function setupRoster() {
       $("autoSheet").checked=(data.autoSheet!==false);
       renderActButtons(); renderRecent(); renderStudents(); renderActivities();
       renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-      showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
+      showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
       if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
       renderShulchaniStatus();
       refreshLiveViews();
@@ -9485,7 +9494,8 @@ function setupRoster() {
     $("ftSetRow").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; addTime(parseInt(b.dataset.add,10)||0); });
     function renderSnackBtn(){ var s=(data&&data.snackSeconds)||420; $("ftSnack").textContent="🍪 Snack — "+fmtTime(s); }
     // This IIFE runs at script-eval time, before load() has populated data —
-    // the same ordering trap makeFabDraggable documents. So the saved default
+    // the same script-eval-vs-load() ordering trap that shows up anywhere a
+    // panel wires itself before boot has run. So the saved default
     // length is applied later, from the post-load call site.
     function applyDefaultLength(){
       if(running) return;                 // never yank a length out from under a running timer
@@ -9521,7 +9531,7 @@ function setupRoster() {
         }});
     });
     if(!pipSupported()) $("ftPip").style.display="none";
-    makeFabDraggable($("timerBtn"), "timer", function(){
+    wireFabTool($("timerBtn"), function(){
       // Popped out, the panel isn't on this page — toggling its display would
       // empty the pop-out window instead of hiding anything. Raise it instead.
       if(pipWin && pipPanelId==="floatTimer"){ pipWin.focus(); return; }
@@ -9551,61 +9561,20 @@ function setupRoster() {
     function up(){ d=null; document.removeEventListener("pointermove",mv,true); document.removeEventListener("pointerup",up,true); document.removeEventListener("pointercancel",up,true); }
     grip.addEventListener("pointerdown", function(e){ if(e.target.closest(".ft-btn")) return; var r=panel.getBoundingClientRect(); d={dx:e.clientX-r.left, dy:e.clientY-r.top}; panel.style.right="auto"; panel.style.left=r.left+"px"; panel.style.top=r.top+"px"; document.addEventListener("pointermove",mv,true); document.addEventListener("pointerup",up,true); document.addEventListener("pointercancel",up,true); e.preventDefault(); });
   }
-  // Floating launcher buttons (Points/Timer/Picker FABs). Unlike makeDraggable
-  // above, the button itself is BOTH the grip and the tap target — there's no
-  // separate handle — so a drag and a tap have to be told apart by movement,
-  // not by which element was pressed. A pointerdown starts tracking; if the
-  // pointer moves past a small threshold before release, it's a drag (reposition
-  // and save, no tap fires); if it never moves, it's a tap (onTap fires, no
-  // position change).
-  // Deliberately does NOT read data.fabPos here to restore position — this
-  // runs at page-script-eval time, before load() (called much later, see
-  // applyFabPositions()) has populated data from localStorage, so data isn't
-  // ready yet. Restoring position is applyFabPositions()'s job, run after load().
-  function makeFabDraggable(btn, posKey, onTap){
-    var d=null, dragged=false;
-    function mv(e){
-      if(!d) return;
-      if(!dragged && (Math.abs(e.clientX-d.sx)>4 || Math.abs(e.clientY-d.sy)>4)) dragged=true;
-      if(!dragged) return;
-      var x=e.clientX-d.dx, y=e.clientY-d.dy, w=btn.offsetWidth, h=btn.offsetHeight;
-      x=Math.max(2,Math.min(window.innerWidth-w-2,x)); y=Math.max(2,Math.min(window.innerHeight-h-2,y));
-      btn.style.left=x+"px"; btn.style.top=y+"px"; btn.style.right="auto"; btn.style.bottom="auto";
-    }
-    function up(){
-      document.removeEventListener("pointermove",mv,true);
-      document.removeEventListener("pointerup",up,true);
-      document.removeEventListener("pointercancel",up,true);
-      d=null;
-      if(dragged){
-        var r=btn.getBoundingClientRect();
-        data.fabPos[posKey]={left:r.left, top:r.top};
-        save();
-      } else {
-        onTap();
-      }
-    }
-    btn.addEventListener("pointerdown", function(e){
-      var r=btn.getBoundingClientRect();
-      d={dx:e.clientX-r.left, dy:e.clientY-r.top, sx:e.clientX, sy:e.clientY};
-      dragged=false;
-      document.addEventListener("pointermove",mv,true);
-      document.addEventListener("pointerup",up,true);
-      document.addEventListener("pointercancel",up,true);
-      e.preventDefault();
-    });
+  // Floating tool tray (Points/Timer/Picker/Board FABs). Locked to the
+  // bottom-right stack — #fabLauncher toggles body.fab-tray-open (CSS above
+  // shows/hides the four .fab-tool buttons); tapping a tool collapses the
+  // tray again before firing onTap, same close-on-select behavior any
+  // speed-dial menu has. data.fabPos (the old per-teacher dropped position)
+  // is unused now — an existing field, kept in the data model per rule 1,
+  // just nothing reads or writes it anymore.
+  function collapseFabTray(){
+    document.body.classList.remove("fab-tray-open");
+    var l=$("fabLauncher");
+    if(l){ l.classList.remove("open"); l.setAttribute("aria-expanded","false"); }
   }
-  // Restores each FAB's saved drop spot (data.fabPos) over the CSS default
-  // bottom-right stack. Must run AFTER load() — see makeFabDraggable's note —
-  // so it's called from the same post-load init spots as
-  // applyHeaderShortcutsVisibility()/applyFullWidth(), which have the same requirement.
-  function applyFabPositions(){
-    [["fsBtn","scan"],["timerBtn","timer"],["pickerBtn","picker"],["boardBtn","board"]].forEach(function(pair){
-      var btn=$(pair[0]), saved=data.fabPos[pair[1]];
-      if(saved && typeof saved.left==="number" && typeof saved.top==="number"){
-        btn.style.left=saved.left+"px"; btn.style.top=saved.top+"px"; btn.style.right="auto"; btn.style.bottom="auto";
-      }
-    });
+  function wireFabTool(btn, onTap){
+    btn.addEventListener("click", function(){ collapseFabTray(); onTap(); });
   }
   var fpOpen=false, fpActId=null, fpLastLogId=null, fpCustomAct=null;
   function fpFlash(ok,msg){ var f=$("fsFlash"); f.className="fs-flash "+(ok?"good":"bad"); f.textContent=msg; clearTimeout(f._t); f._t=setTimeout(function(){ f.textContent=""; f.className="fs-flash"; },1600); }
@@ -9761,7 +9730,7 @@ function setupRoster() {
     else { fpSetQrMode(false); }
     renderHeaderScanContext();
   }
-  makeFabDraggable($("fsBtn"), "scan", function(){ fpToggle(); });
+  wireFabTool($("fsBtn"), function(){ fpToggle(); });
   // Same scoping: a bare pipWin test would close the TIMER's pop-out window
   // when the rebbi clicked the scanner's own ✕ on the page.
   $("fsClose").addEventListener("click", function(){ if(pipWin && pipPanelId==="floatScan"){ pipWin.close(); } else { fpToggle(false); } });
@@ -9921,7 +9890,7 @@ function setupRoster() {
      pageIndex itself is NOT persisted — the board always opens on page 0. */
   (function(){
     var overlay=$("boardOverlay"), stage=$("boardStage"), dotsEl=$("boardDots");
-    var addBtn=$("boardAdd"), skinBtn=$("boardSkinBtn"), boardBtn=$("boardBtn");
+    var addBtn=$("boardAdd"), skinBtn=$("boardSkinBtn"), closeBtn=$("boardCloseBtn");
     var shelfTab=$("boardShelfTab"), shelfPanel=$("boardShelfPanel"), shelfBackdrop=$("boardShelfBackdrop");
     var shelfCloseBtn=$("boardShelfClose"), shelfListEl=$("boardShelfList");
     var MAX_BOXES=4, pageIndex=0, draggingId=null;
@@ -10209,24 +10178,19 @@ function setupRoster() {
     shelfTab.addEventListener("click", openShelf);
     shelfCloseBtn.addEventListener("click", closeShelf);
     shelfBackdrop.addEventListener("click", closeShelf);
+    closeBtn.addEventListener("click", boardClose);
 
     function boardOpen(){
       document.body.setAttribute("data-skin", data.boardSkin==="light" ? "light" : "dark");
       pageIndex=0;
       overlay.style.display="block";
       document.body.style.overflow="hidden";
-      // The other 3 FABs are freely draggable to anywhere on screen and
-      // would otherwise bleed through the overlay wherever it's translucent
-      // (e.g. board-remove's low-opacity fill) if dropped underneath it —
-      // hide them for the duration. boardBtn itself stays up (raised above
-      // the overlay via .board-active) and becomes the close control: no
-      // separate ✕ needed when the screen already has plenty of them
-      // (per-box remove, shelf delete, screen delete) — the same button
-      // that opened the board closes it, same as boardToggle() already does.
-      ["fsBtn","timerBtn","pickerBtn"].forEach(function(id){ var b=$(id); if(b) b.style.display="none"; });
-      boardBtn.classList.add("board-active");
-      boardBtn.textContent="Close board";
-      boardBtn.title="Close board";
+      // #boardOverlay's z-index (400) sits above the whole FAB tray (190),
+      // and #boardStage's own background is opaque across its full box —
+      // the FAB tray (already collapsed behind #fabLauncher by the time this
+      // runs; see collapseFabTray() in the tool-tap handler) needs no
+      // special hiding here. boardBtn itself never changes appearance or
+      // position — #boardCloseBtn is a wholly separate control.
       render(); renderShelf();
       var first=stage.querySelector(".board-celltext");
       if(first) setTimeout(function(){ first.focus(); }, 30);
@@ -10235,10 +10199,6 @@ function setupRoster() {
       overlay.style.display="none";
       document.body.style.overflow="";
       closeShelf();
-      boardBtn.classList.remove("board-active");
-      boardBtn.textContent="📋";
-      boardBtn.title="Board — a fullscreen display for homework or a reminder";
-      applyHeaderShortcutsVisibility();
     }
     window.boardToggle = function(){
       if(overlay.style.display==="none" || !overlay.style.display) boardOpen();
@@ -10246,8 +10206,14 @@ function setupRoster() {
     };
   })();
 
-  makeFabDraggable($("boardBtn"), "board", function(){ boardToggle(); });
-  makeFabDraggable($("pickerBtn"), "picker", function(){ pickerToggle(); });
+  wireFabTool($("boardBtn"), function(){ boardToggle(); });
+  wireFabTool($("pickerBtn"), function(){ pickerToggle(); });
+  $("fabLauncher").addEventListener("click", function(){
+    var open=document.body.classList.toggle("fab-tray-open");
+    this.classList.toggle("open", open);
+    this.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+
   $("pkClose").addEventListener("click", function(){ pickerToggle(false); });
   $("pkMin").addEventListener("click", function(){ $("floatPicker").classList.toggle("min"); });
   makeDraggable($("floatPicker"), $("pkGrip"));
@@ -24757,7 +24723,7 @@ nameLine
         $("autoSheet").checked = (data.autoSheet !== false);
         renderActButtons(); renderRecent(); renderStudents(); renderActivities();
         renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-        showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
+        showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
         if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
         if (statusEl) statusEl.textContent = "";
         notice("Restored from Google Sheet.");
@@ -25680,7 +25646,7 @@ nameLine
           $("autoSheet").checked=(data.autoSheet!==false);
           renderActButtons(); renderRecent(); renderStudents(); renderActivities();
           renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-          showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); applyFabPositions(); renderHeaderScanContext();
+          showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
           if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
           renderShulchaniStatus();
           notice("Backup restored.");
@@ -26840,10 +26806,13 @@ nameLine
   // Header Points/Timer/Picker shortcuts can be hidden from Settings to keep the
   // header simpler; the class dropdown and sound button are unaffected either way.
   function applyHeaderShortcutsVisibility(){
+    // Only the launcher's own visibility toggles here — the four tools are
+    // shown/hidden by body.fab-tray-open (see wireFabTool/collapseFabTray),
+    // and setting inline display on them here would fight that class rule.
     var show = data.showHeaderShortcuts!==false;
-    ["fsBtn","timerBtn","pickerBtn","boardBtn"].forEach(function(id){
-      var b=$(id); if(b) b.style.display = show ? "" : "none";
-    });
+    var l=$("fabLauncher");
+    if(l) l.style.display = show ? "" : "none";
+    if(!show) collapseFabTray();
   }
   // Full-width display mode (Settings tab, off by default) — removes the
   // centered-column width cap on <main> so every tab stretches to fill the
@@ -27169,7 +27138,6 @@ nameLine
   applyHeaderShortcutsVisibility();
   applyVoiceNotes();
   applyFullWidth();
-  applyFabPositions();
   renderHeaderScanContext();
   renderActButtons();
   syncCustomButtons();
@@ -27229,7 +27197,7 @@ nameLine
   if(typeof serialTryAutoReconnect==="function") serialTryAutoReconnect();
   // Runs after load(), which is when data.timerDefaultSeconds and
   // data.snackSeconds actually exist — the timer IIFE itself is evaluated
-  // long before that (same ordering trap as applyFabPositions).
+  // long before that.
   if(typeof window._refreshTimerPanel==="function") window._refreshTimerPanel();
   else if(typeof window._refreshSnackBtn==="function") window._refreshSnackBtn();
   // Auto-generate text set from wizard learning selection — runs once, async,
