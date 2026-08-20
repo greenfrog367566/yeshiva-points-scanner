@@ -639,6 +639,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .tap-btn.awarded{border-color:var(--good);background:var(--good-soft)}
   .tap-btn.awarded-bad{border-color:var(--bad);background:var(--bad-soft)}
   .tap-btn.awarded-ice{border-color:var(--ice);background:var(--ice-soft)}
+  .tap-btn.dim,.seat.dim{opacity:.35}
+  .track-focus-btn.on{background:var(--ice);color:#fff;border-color:var(--ice)}
   .tap-fly{position:absolute;top:5px;right:8px;font-size:.85rem;font-weight:800;color:var(--good);animation:flyUp .7s ease-out forwards;pointer-events:none}
   .tap-fly.neg{color:var(--bad)}
   .tap-fly.ice{color:var(--ice)}
@@ -9119,6 +9121,13 @@ function setupRoster() {
   // The wording both buttons use, so the tab and the chart cannot drift on which
   // way round the fill goes.
   function attFillLabel(){ return attPresenceFirst() ? "Mark the rest Absent" : "Mark the rest Present"; }
+  // CONTEXT BAR: same "unmarked" test attFillUnmarked() itself fills against
+  // and attRollComplete() checks — so the count on the board's button, the
+  // fill it performs, and "is the roll done" can never disagree about who
+  // still needs marking.
+  function attUnmarkedCount(dateKey){
+    return activeStudents().filter(function(s){ return !attMarkedRec(dateKey, s.id); }).length;
+  }
   function attFillTitle(){
     return attPresenceFirst()
       ? "Marks every student you haven't marked yet as absent — anyone you already marked is left alone"
@@ -9641,6 +9650,15 @@ function setupRoster() {
   // fall through to the points path any more, which is what the four hand-built
   // branches in award() used to be guarding against one name at a time.
   function reroutedActivity(a){ return !!a && a.tracked===true; }
+  // CONTEXT BAR: "some tracked item OTHER than attendance or freeze is
+  // armed" — the same gate trackedTileBadge() already applies via its own
+  // tracked/freeze checks, minus its ti-attendance special-case. Returns the
+  // activity itself (or null) so a caller doesn't need a second
+  // armedActivity() call.
+  function countArmed(){
+    var a=armedActivity();
+    return (reroutedActivity(a) && !attendanceActivity(a) && !freezeActivity(a)) ? a : null;
+  }
   // A coin activity is one of the seeded Shulchani denomination codes: it
   // carries a.coin = the COINS abbreviation it was minted from ("Di", "S", …).
   // The flag is what makes them mode-scoped — they only mean anything while
@@ -13445,6 +13463,16 @@ function setupRoster() {
     var cls="tile-track-badge "+(b.tone||"todo")+(b.itemId==="ti-attendance" ? " chip" : "");
     return el("span", cls, b.text);
   }
+  // CONTEXT BAR: every active student whose CURRENTLY ARMED tracked item
+  // reads "never" — calls the exact same per-tile function the badge itself
+  // renders from (not a reimplementation of the "never" test), so this
+  // count and what's on the tiles can never disagree.
+  function trackedNeverList(){
+    return activeStudents().filter(function(s){
+      var b=trackedTileBadge(s);
+      return b && b.text==="never";
+    });
+  }
   /* Repaint just the badges — the refreshFreezeTile() approach, and for the same
    * reason. Arming an item changes one line on each card; a full
    * renderTapPanel() would rebuild every QR code on the chart and throw away
@@ -13469,7 +13497,22 @@ function setupRoster() {
       var ptsEl=tb.querySelector(".ts");
       if(ptsEl) ptsEl.classList.toggle("also-pts", !!b);
       if(b) tb.appendChild(b);
+      // CONTEXT BAR: dim a tile that already has a turn while "Show only
+      // these" is on — same boolean fillSeatLiveCard() uses on a full
+      // render (see there), kept in sync here since a scan/tap only
+      // repaints the badge, never rebuilds the card. Reuses the badge's own
+      // .chip (attendance) / .todo (never) classes rather than recomputing
+      // tone separately.
+      tb.classList.toggle("dim", trackFocusNever && !!b && !b.classList.contains("chip") && !b.classList.contains("todo"));
     });
+    refreshTrackFocusBtn();
+    // CONTEXT BAR: the attendance-fill button's count needs the same live
+    // update — a tap-cycle (TRACKED_LEGACY["ti-attendance"]) never called
+    // refreshAttFillBtn() itself, only attCycleFlash(), so the count went
+    // stale between "arm changed" moments. Self-gated (checks
+    // attendanceActivity() internally), so this is a safe no-op whenever
+    // something other than attendance is what changed.
+    refreshAttFillBtn();
   }
   /* "MARK THE REST PRESENT", ON THE CLASS LIST ITSELF.
    *
@@ -13494,7 +13537,7 @@ function setupRoster() {
    * morning's roll onto a day the rebbi was reading last week.
    */
   function attFillToolbarBtn(){
-    var b=el("button","seat-modebtn att-fill-btn","✓ "+attFillLabel());
+    var b=el("button","seat-modebtn att-fill-btn","✓ "+attFillLabel()+" ("+attUnmarkedCount(todayKey())+")");
     b.title=attFillTitle()+" — for today.";
     b.addEventListener("click", function(){
       var n=attFillUnmarked(todayKey());
@@ -13628,8 +13671,40 @@ function setupRoster() {
       // Before the email button when that one is already up, so the two always
       // read in the order they are used: finish the roll, then send it.
       if(!cur){ tb.insertBefore(attFillToolbarBtn(), tb.querySelector(".att-email-btn")); return; }
-      cur.textContent="✓ "+attFillLabel();
+      cur.textContent="✓ "+attFillLabel()+" ("+attUnmarkedCount(todayKey())+")";
       cur.title=attFillTitle()+" — for today.";
+    });
+  }
+
+  // CONTEXT BAR, count mode's half of attFillToolbarBtn()/refreshAttFillBtn()
+  // above — same shape, same .seat-toolbar-main in-place pattern, gated on
+  // countArmed() instead of attendanceActivity(). Session state only, not
+  // persisted, matching the design's own "not remembered across arms" intent.
+  var trackFocusNever = false;
+  function trackFocusToolbarBtn(){
+    var n=trackedNeverList().length;
+    var b=el("button","seat-modebtn track-focus-btn"+(trackFocusNever?" on":""),
+      trackFocusNever ? "↺ Show everyone" : "◍ Show only these ("+n+")");
+    b.title = trackFocusNever ? "Show every student again" : "Dim everyone who's already had a turn";
+    b.addEventListener("click", function(){
+      trackFocusNever=!trackFocusNever;
+      // A full render, unlike the count-text refreshes above: this flips
+      // dimming on every tile at once, which fillSeatLiveCard() only
+      // applies on a full build. Fine here — a rare, deliberate click, not
+      // a per-scan hot path.
+      renderTapPanel();
+    });
+    return b;
+  }
+  function refreshTrackFocusBtn(){
+    var want=countArmed();
+    document.querySelectorAll(".seat-toolbar-main").forEach(function(tb){
+      var cur=tb.querySelector(".track-focus-btn");
+      if(!want){ if(cur && cur.parentNode) cur.parentNode.removeChild(cur); return; }
+      if(!cur){ tb.appendChild(trackFocusToolbarBtn()); return; }
+      var n=trackedNeverList().length;
+      cur.textContent = trackFocusNever ? "↺ Show everyone" : "◍ Show only these ("+n+")";
+      cur.classList.toggle("on", trackFocusNever);
     });
   }
 
@@ -15069,6 +15144,12 @@ function setupRoster() {
       save();
       refreshLiveViews();
       refreshTrackedBadges();
+      // refreshLiveViews() only re-renders whichever TAB is active — the
+      // Dashboard's own Recent Scans feed is a separate surface it never
+      // touches, so undoing a tracked entry from there left the strikethrough
+      // showing everywhere except the one list a rebbi was probably looking
+      // at when he pressed undo.
+      renderRecent();
     }
     return ok;
   }
@@ -16332,6 +16413,10 @@ function setupRoster() {
     // if anybody is frozen, then kept in step by renderFreezeAllBtn() via
     // tickFreezes() — including appearing/vanishing as freezes start and end.
     if(frozenInView().length) toolbar.appendChild(freezeAllToolbarBtn());
+    // CONTEXT BAR, count mode: same first-paint reason as the attendance
+    // button above, gated on countArmed() instead — anything tracked other
+    // than Attendance or Freeze.
+    if(countArmed()) toolbar.appendChild(trackFocusToolbarBtn());
 
     if(effViewMode==="seating"){
       var lay=seatLayout();
@@ -16620,6 +16705,11 @@ function setupRoster() {
       card.appendChild(coinScoreEl(s.id,"ts also-pts"));
     }
     if(trkBadge) card.appendChild(trkBadge);
+    // CONTEXT BAR: dim a tile that already has a turn while "Show only
+    // these" is on — same boolean refreshTrackedBadges() uses on its
+    // in-place repaint (see there), so a full render and a per-scan refresh
+    // can never disagree about which tiles are dimmed.
+    card.classList.toggle("dim", trackFocusNever && !!trkBadge && !trkBadge.classList.contains("chip") && !trkBadge.classList.contains("todo"));
   }
   // The held total for one boy, already formatted, or "" when there is nothing
   // to show. Kept next to the card rather than inside coinScoreEl() because
