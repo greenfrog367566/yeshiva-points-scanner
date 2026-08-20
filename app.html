@@ -756,6 +756,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .chav-group-card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;
     display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .chav-group-members{font-weight:600}
+  /* Group Entity mode's "unresolved pooled points" chip -- same pill family as
+     .ss-act-chip/.seats-pill so a pool reads as the same brass-family "amount
+     waiting on you" language the rest of the app already uses. */
+  .chav-group-pool{font-size:.79rem;font-weight:700;background:var(--brass-soft);color:#6b4d18;
+    border-radius:999px;padding:3px 11px;white-space:nowrap}
 
   /* ---- Seating chart mode ---- */
   /* Brief ring on the sheet after "⚙ Rearrange seats" scrolls to it, so it is
@@ -4712,6 +4717,15 @@ function setupRoster() {
       <button class="btn btn-sm" id="chavSaveNewBtn" type="button">Save &amp; start new</button>
     </div>
 
+    <div class="toolbar" style="margin-bottom:16px;gap:8px;flex-wrap:wrap">
+      <label class="lbl" style="margin:0">Point target</label>
+      <div class="seat-segmented" id="chavPointModeSeg">
+        <button class="seat-segbtn active" id="chavPointIndividualBtn" type="button">Individual</button>
+        <button class="seat-segbtn" id="chavPointGroupBtn" type="button">Entire Group</button>
+        <button class="seat-segbtn" id="chavPointEntityBtn" type="button">Group Entity</button>
+      </div>
+    </div>
+
     <div id="chavManualPanel" class="card pad" style="margin-bottom:16px">
       <div class="view-note" style="margin:0 0 10px">Tap students to select them, then Save as group.</div>
       <div id="chavTileGrid" class="chav-tile-grid"></div>
@@ -8586,10 +8600,20 @@ function setupRoster() {
     $("chavModeAutoBtn").classList.toggle("active", chavMode==="auto");
     $("chavManualPanel").style.display = chavMode==="manual" ? "block" : "none";
     $("chavAutoPanel").style.display = chavMode==="auto" ? "block" : "none";
+    chavRenderPointModeSeg();
     chavRenderTiles();
     chavRenderGroups();
     chavRenderHistory();
   }
+  function chavRenderPointModeSeg(){
+    var mode=data.chavrusaSession.pointTargetMode;
+    $("chavPointIndividualBtn").classList.toggle("active", mode==="individual");
+    $("chavPointGroupBtn").classList.toggle("active", mode==="group");
+    $("chavPointEntityBtn").classList.toggle("active", mode==="entity");
+  }
+  $("chavPointIndividualBtn").addEventListener("click", function(){ data.chavrusaSession.pointTargetMode="individual"; save(); renderChavrusa(); });
+  $("chavPointGroupBtn").addEventListener("click", function(){ data.chavrusaSession.pointTargetMode="group"; save(); renderChavrusa(); });
+  $("chavPointEntityBtn").addEventListener("click", function(){ data.chavrusaSession.pointTargetMode="entity"; save(); renderChavrusa(); });
   function chavRenderTiles(){
     var grouped=chavGroupedIds();
     var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
@@ -8634,29 +8658,62 @@ function setupRoster() {
       var card=el("div","chav-group-card");
       var names=(g.studentIds||[]).map(chavStudentName).join(", ");
       card.appendChild(el("span","chav-group-members",names||"(empty group)"));
+      var pool=data.chavrusaPools[g.id];
+      if(pool && pool.total){
+        card.appendChild(el("span","chav-group-pool","🧩 "+fmtVal(pool.total)+" pooled"));
+        var resolveBtn=el("button","btn btn-sm btn-primary","Resolve Group Points");
+        resolveBtn.type="button";
+        resolveBtn.addEventListener("click", function(){ chavResolveGroupPoints(g.id); });
+        card.appendChild(resolveBtn);
+      }
       var removeBtn=el("button","btn btn-sm btn-bad","Remove group");
       removeBtn.type="button";
       removeBtn.addEventListener("click", function(){
+        var p=data.chavrusaPools[g.id];
+        if(p && p.total){
+          alert("This group still has "+fmtVal(p.total)+" pooled — Resolve Group Points first, or those points are lost.");
+          return;
+        }
         data.chavrusaSession.groups=data.chavrusaSession.groups.filter(function(x){return x.id!==g.id;});
+        delete data.chavrusaPools[g.id];
         save(); renderChavrusa();
       });
       card.appendChild(removeBtn);
       list.appendChild(card);
     });
   }
+  // Anything that would orphan an unresolved Group Entity pool is refused
+  // rather than silently losing the points inside it (CLAUDE.md: "ask what
+  // happens when the data is gone or wrong" -- the Contest lesson). The one
+  // way out is Resolve Group Points, per group, from chavRenderGroups() above.
+  function chavUnresolvedGroups(){
+    return data.chavrusaSession.groups.filter(function(g){ var p=data.chavrusaPools[g.id]; return p && p.total; });
+  }
   $("chavClearGroupsBtn").addEventListener("click", function(){
     if(!data.chavrusaSession.groups.length) return;
+    var unresolved=chavUnresolvedGroups();
+    if(unresolved.length){
+      alert("Resolve Group Points for "+unresolved.length+" group"+(unresolved.length===1?"":"s")+" with pooled points before clearing — clearing groups would lose them.");
+      return;
+    }
     if(!confirm("Clear all of this sitting's groups? This does not affect Past Chavrusas.")) return;
+    data.chavrusaSession.groups.forEach(function(g){ delete data.chavrusaPools[g.id]; });
     data.chavrusaSession.groups=[];
     save(); renderChavrusa();
   });
   $("chavSaveNewBtn").addEventListener("click", function(){
+    var unresolved=chavUnresolvedGroups();
+    if(unresolved.length){
+      alert("Resolve Group Points for "+unresolved.length+" group"+(unresolved.length===1?"":"s")+" with pooled points before starting a new sitting — those points would otherwise be lost.");
+      return;
+    }
     // Only worth a history entry if there is anything to remember -- an empty
     // sitting saved and reloaded would just be clutter in Past Chavrusas.
     if(data.chavrusaSession.groups.length){
       data.chavrusaHistory.unshift({id:newId(), savedAt:Date.now(), groups:data.chavrusaSession.groups});
       if(data.chavrusaHistory.length>200) data.chavrusaHistory.length=200;
     }
+    data.chavrusaSession.groups.forEach(function(g){ delete data.chavrusaPools[g.id]; });
     data.chavrusaSession={groups:[], pointTargetMode:"individual"};
     chavSelected=[];
     save();
@@ -8695,6 +8752,121 @@ function setupRoster() {
   }
   $("chavModeManualBtn").addEventListener("click", function(){ chavMode="manual"; renderChavrusa(); });
   $("chavModeAutoBtn").addEventListener("click", function(){ chavMode="auto"; renderChavrusa(); });
+
+  /* ---- Point-target modes: Entire Group / Group Entity ----
+   * docs/Menchmark_UI_Redesign_Summary.md §6/§2. Individual mode needed no
+   * code at all -- award() falls straight through to applyScore() as it
+   * always has. These two intercept at that exact same call site (see the
+   * bottom of award()) so every guard above it there -- class membership,
+   * an activity's own .groups restriction, the tracked-item reroute, freeze
+   * -- still applies exactly as it does for a normal scan. Only WHERE the
+   * points land changes.
+   */
+  function chavActiveGroupFor(sid){
+    var groups=data.chavrusaSession.groups;
+    for(var i=0;i<groups.length;i++){
+      if((groups[i].studentIds||[]).indexOf(sid)>=0) return groups[i];
+    }
+    return null;
+  }
+  // No stored name exists for a group ({id, studentIds} only) -- computed at
+  // render/flash time from whichever member sorts first, matching the spec's
+  // own example ("Dovid's group").
+  function chavGroupLabel(group){
+    var first=chavStudentName((group.studentIds||[])[0]).split(" ")[0];
+    return first+"’s group";
+  }
+  function chavPoolFor(groupId){
+    var p=data.chavrusaPools[groupId];
+    if(!p){ p={total:0, entries:[]}; data.chavrusaPools[groupId]=p; }
+    return p;
+  }
+  // "Entire Group": give the armed activity's full value to every member. Reuses
+  // the exact batch pattern giveArmedToAll() already established (one batchId,
+  // deferSave, one save() at the end) so undoEntryById()'s existing "given to N
+  // students at once" confirm dialog (app.html ~15955) handles group-aware undo
+  // with no new undo code, and awardWith()'s own contest-tagging/freeze checks
+  // apply per member exactly as they do for any other batch award.
+  function awardGroupTarget(group, label, delta){
+    var ids=group.studentIds||[];
+    if(!ids.length) return false;
+    var bid=newId(), done=0;
+    ids.forEach(function(sid){
+      var s=studentById(sid);
+      if(s && awardWith(s, label, delta, {quiet:true, batchId:bid, deferSave:true})){
+        done++;
+        refreshStudentTiles(sid, delta);
+      }
+    });
+    save();
+    renderRecent(); renderScanBoard(); renderTapPanel(); refreshLiveViews();
+    var gname=chavGroupLabel(group);
+    flash(delta>=0, gname, fmtDeltaBare(delta), done+" student"+(done===1?"":"s")+" · "+label, delta>=0?"positive":"negative");
+    beep(delta>=0);
+    return done>0;
+  }
+  // "Group Entity": points accumulate in a shared pool instead of landing on
+  // any individual student's data.scores -- data.chavrusaPools is stored, not
+  // derived (the Contest lesson in CLAUDE.md: a total that's only ever summed
+  // from data.log, which is capped and wipeable, is built on sand). Resolve
+  // Group Points (chavResolveGroupPoints, below) is the only thing that ever
+  // turns a pool into real points.
+  function awardGroupEntity(group, label, delta, actId){
+    var pool=chavPoolFor(group.id);
+    pool.total += delta;
+    pool.entries.unshift({id:newId(), ts:Date.now(), label:label, delta:delta, actId:actId||null});
+    if(pool.entries.length>50) pool.entries.length=50;
+    save();
+    renderChavrusa();
+    var gname=chavGroupLabel(group);
+    flash(delta>=0, gname, fmtDeltaBare(delta), "🧩 Added to pool · now "+fmtVal(pool.total), delta>=0?"positive":"negative");
+    beep(delta>=0);
+    return true;
+  }
+  // Splits a pool's total evenly across its group's members (integer division,
+  // remainder to the first N in group order) and delivers it through the same
+  // batch pattern as awardGroupTarget() -- one data.log entry per student,
+  // shared batchId, so it's undoable the same way. Reuses awardWith() rather
+  // than writing data.scores directly, which is what makes the freeze guard
+  // below correct for free.
+  //
+  // A FROZEN MEMBER'S SHARE STAYS POOLED, NOT LOST. awardWith() refuses a
+  // frozen student exactly as it does for any other batch award -- freeze has
+  // only ever blocked GIVING, never confiscated points already earned, and a
+  // resolve that quietly dropped a frozen boy's share would be exactly that.
+  // Only the delivered amount is subtracted from the pool; what's left keeps
+  // the group "unresolved" (chavUnresolvedGroups) until it can be delivered.
+  function chavResolveGroupPoints(groupId){
+    var group=null;
+    for(var i=0;i<data.chavrusaSession.groups.length;i++){ if(data.chavrusaSession.groups[i].id===groupId){ group=data.chavrusaSession.groups[i]; break; } }
+    if(!group) return;
+    var pool=data.chavrusaPools[groupId];
+    if(!pool || !pool.total) return;
+    var ids=group.studentIds||[];
+    if(!ids.length) return;
+    var total=pool.total, n=ids.length;
+    var base=Math.trunc(total/n), remainder=total-base*n, sign=remainder<0?-1:1, extra=Math.abs(remainder);
+    var bid=newId(), done=0, delivered=0, skipped=0;
+    ids.forEach(function(sid, idx){
+      var amt=base + (idx<extra ? sign : 0);
+      if(!amt) return;
+      var s=studentById(sid);
+      if(s && awardWith(s, "Chavrusa pool resolved", amt, {quiet:true, batchId:bid, deferSave:true})){
+        done++; delivered+=amt; refreshStudentTiles(sid, amt);
+      } else { skipped++; }
+    });
+    pool.total -= delivered;
+    if(pool.total===0) pool.entries=[];
+    save();
+    renderRecent(); renderScanBoard(); renderTapPanel(); refreshLiveViews(); renderChavrusa();
+    var gname=chavGroupLabel(group);
+    if(skipped>0){
+      flash(delivered>=0, gname, fmtDeltaBare(delivered), skipped+" student"+(skipped===1?"":"s")+" frozen — their share stays pooled", "negative");
+    } else {
+      flash(delivered>=0, gname, fmtDeltaBare(delivered), "Resolved across "+done+" student"+(done===1?"":"s"), delivered>=0?"positive":"negative");
+    }
+    beep(skipped===0);
+  }
 
   // Every pair of students who have ever appeared together in a SAVED (past)
   // group -- walked fresh from data.chavrusaHistory each time rather than
@@ -14174,6 +14346,18 @@ function setupRoster() {
       flash(false, s.name, "❄️ Frozen", fmtFreezeTime(freezeRemainingMs(s.id))+" left — can't give points");
       beep(false);
       return false;
+    }
+    // Chavrusa Mode point-target modes (Phase 8). Individual is the spec's own
+    // default and needs no branch here at all -- it's exactly the fall-through
+    // below, unchanged. Group/Entity only take over once a scanned student is
+    // actually in an active group this sitting; an ungrouped student always
+    // scores normally regardless of the session's mode.
+    var chavGroup = chavActiveGroupFor(s.id);
+    if(chavGroup && data.chavrusaSession.pointTargetMode==="group"){
+      return awardGroupTarget(chavGroup, armed.label, armed.delta);
+    }
+    if(chavGroup && data.chavrusaSession.pointTargetMode==="entity"){
+      return awardGroupEntity(chavGroup, armed.label, armed.delta, armedAct?armedAct.id:null);
     }
     return applyScore(s, armed.label, armed.delta);
   }
@@ -30859,8 +31043,14 @@ nameLine
       data.chavrusaSession={groups:[], pointTargetMode:"individual"};
     }
     if(!Array.isArray(data.chavrusaSession.groups)) data.chavrusaSession.groups=[];
-    if(typeof data.chavrusaSession.pointTargetMode!=="string") data.chavrusaSession.pointTargetMode="individual";
+    if(["individual","group","entity"].indexOf(data.chavrusaSession.pointTargetMode)<0) data.chavrusaSession.pointTargetMode="individual";
     if(!Array.isArray(data.chavrusaHistory)) data.chavrusaHistory=[];
+    // Group Entity mode's pooled totals (Phase 8, point-target modes slice).
+    // Stored, not derived -- same "Contest lesson" as data.miniContest: a total
+    // that's only ever a sum over data.log (capped, wipeable) is built on sand.
+    // Keyed by chavrusaSession group id; created lazily on first entity-mode
+    // award, so a missing key just means "no pool yet", not corrupt data.
+    if(!data.chavrusaPools || typeof data.chavrusaPools!=="object" || Array.isArray(data.chavrusaPools)) data.chavrusaPools={};
   }
   // Reached from exactly ONE place: the "Reset all scores" button in Settings.
   // The end-contest flow used to call this too, bundled onto its OK button; that
