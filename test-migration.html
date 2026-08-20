@@ -71,10 +71,11 @@
 
 var DATA_VERSION = 5;
 var DEFAULT_CODE_SECTIONS=[
-  {key:"pos", label:"Positive"},
-  {key:"neg", label:"Negative"},
-  {key:"nav", label:"Navigation"}
+  {key:"pos", label:"Give"},
+  {key:"neg", label:"Take"},
+  {key:"nav", label:"Record"}
 ];
+var LEGACY_CODE_SECTION_LABELS={pos:"Positive", neg:"Negative", nav:"Navigation"};
 var PASS_ACT_NAME = "Bathroom Pass";
 var ATT_ACT_NAME = "Attendance";
 
@@ -755,6 +756,21 @@ if(Array.isArray(data.codeSections)){
 }
 if(!Array.isArray(data.codeSections) || !data.codeSections.length){
   data.codeSections = DEFAULT_CODE_SECTIONS.map(function(s){ return {key:s.key, label:s.label}; });
+}
+/* The three default sections were renamed Positive/Negative/Navigation ->
+ * Give/Take/Record so the codes under the seating chart carry the same
+ * headings as the Dashboard's activity band directly above them. Renames ONLY
+ * a default-keyed section still carrying its shipped label, one-shot via its
+ * own flag, and touches no key, membership or order — see app.html. */
+if(!data.codeSectionsDashboardLabelsSeeded){
+  data.codeSections.forEach(function(s){
+    if(LEGACY_CODE_SECTION_LABELS[s.key]===s.label){
+      for(var i=0;i<DEFAULT_CODE_SECTIONS.length;i++){
+        if(DEFAULT_CODE_SECTIONS[i].key===s.key){ s.label=DEFAULT_CODE_SECTIONS[i].label; break; }
+      }
+    }
+  });
+  data.codeSectionsDashboardLabelsSeeded=true;
 }
 // Printed prize codes need a section to land in. One-shot, and only for a
 // rebbi who actually has prizes — see ensureStoreCodeSection(). Runs after
@@ -2857,8 +2873,14 @@ function runBuiltInTests() {
     Array.isArray(t18.codeSections)
     && t18.codeSections.map(function(s){return s.key;}).join()==="pos,neg,nav",
     "got "+JSON.stringify(t18.codeSections));
-  assert("v5→default section labels are Positive / Negative / Navigation",
-    t18.codeSections.map(function(s){return s.label;}).join()==="Positive,Negative,Navigation");
+  // migrateData()'s v4→v5 branch still writes the labels v5 shipped with
+  // (Positive/Negative/Navigation); load2fix()'s one-shot rename then brings
+  // them to the Dashboard band's names. runMigration() runs both, so what a v4
+  // save actually ARRIVES at is Give / Take / Record — same place a v5 save
+  // lands, which is the whole point of the one-shot living in load2fix().
+  assert("v5→default section labels arrive as Give / Take / Record",
+    t18.codeSections.map(function(s){return s.label;}).join()==="Give,Take,Record",
+    "got "+JSON.stringify(t18.codeSections.map(function(s){return s.label;})));
   assert("v5→per-code section overrides cleared (old keys cannot be honoured)",
     t18.printCodeSections && Object.keys(t18.printCodeSections).length===0,
     "got "+JSON.stringify(t18.printCodeSections));
@@ -2901,6 +2923,45 @@ function runBuiltInTests() {
   var t18e = runMigration({ version:5, codeSections:[] });
   assert("v5→an emptied section list falls back to the defaults (codes always have somewhere to go)",
     t18e.codeSections.length===3);
+
+  /* THE DASHBOARD-LABEL RENAME (Give / Take / Record). Cosmetic by
+   * construction — it may touch labels and nothing else. These check the three
+   * things that could go wrong: it doesn't fire, it fires over a name the rebbi
+   * chose, or it moves a code. */
+  var t18f = runMigration({
+    version: 5,
+    codeSections: [{key:"pos",label:"Positive"},{key:"neg",label:"Negative"},{key:"nav",label:"Navigation"}],
+    printCodeSections: { "ACT:a1":"nav" },
+    printCodeOrder: ["ACT:a1"],
+    activities: [{id:"a1",name:"On time",pts:2}]
+  });
+  assert("sections→shipped labels renamed to the Dashboard band's names",
+    t18f.codeSections.map(function(s){return s.label;}).join()==="Give,Take,Record",
+    "got "+JSON.stringify(t18f.codeSections.map(function(s){return s.label;})));
+  assert("sections→rename touches labels ONLY: keys, memberships and order intact",
+    t18f.codeSections.map(function(s){return s.key;}).join()==="pos,neg,nav"
+    && t18f.printCodeSections["ACT:a1"]==="nav"
+    && t18f.printCodeOrder.join()==="ACT:a1",
+    "got "+JSON.stringify(t18f.printCodeSections)+" / "+JSON.stringify(t18f.printCodeOrder));
+  // A name the rebbi typed is his. Only a section still carrying its shipped
+  // label is a section nobody has had an opinion about.
+  var t18g = runMigration({
+    version: 5,
+    codeSections: [{key:"pos",label:"Middos"},{key:"neg",label:"Negative"},{key:"nav",label:"Controls"}]
+  });
+  assert("sections→a rebbi's own section names survive the rename",
+    t18g.codeSections.map(function(s){return s.label;}).join()==="Middos,Take,Controls",
+    "got "+JSON.stringify(t18g.codeSections.map(function(s){return s.label;})));
+  // One-shot: the flag is what lets a rebbi rename a section BACK to the old
+  // word afterwards without the next load overruling him.
+  var t18h = runMigration({
+    version: 5,
+    codeSectionsDashboardLabelsSeeded: true,
+    codeSections: [{key:"pos",label:"Positive"},{key:"neg",label:"Take"},{key:"nav",label:"Record"}]
+  });
+  assert("sections→the rename is one-shot and never re-runs",
+    t18h.codeSections[0].label==="Positive",
+    "got "+JSON.stringify(t18h.codeSections.map(function(s){return s.label;})));
 
   // And none of this disturbed the Phase 2a promise.
   assert("codes→old stores STILL byte-identical",
