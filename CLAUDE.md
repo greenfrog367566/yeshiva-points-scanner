@@ -386,6 +386,14 @@ branches that may never have landed, and dead worktrees. See
 still lives nowhere openable, and a spike built to answer "does this feel
 right?" cannot answer it from a branch name.
 
+**This now runs on its own.** `scripts/testbench.js` is wired into `SessionStart`
+in `.claude/settings.json`, alongside the shared-checkout sync and the dev-server
+reaper, so every session materializes any missing folder without anyone asking.
+It runs `async`, so it never delays startup, and it ends in `|| true` so a
+missing `gh` or a network blip can never fail a session's start.
+
+Run it by hand any time as well:
+
 ```bash
 node scripts/testbench.js        # a worktree per open PR + per spike/* branch
 node scripts/testbench.js --list # just show branch -> folder
