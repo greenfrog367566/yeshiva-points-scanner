@@ -86,6 +86,13 @@ From the current `printActivities` page:
 
 - **Class list** — a printable roster (names, optionally groups). *New but trivial* — the data's all there; just a clean printable table. Useful for a no-screen rebbi to have the roster on paper.
 - **Seating chart** — from `printSeats` / the Dashboard seating setup. (exists)
+  Prints **tables** as well as single desks (`docs/Seating_Tables_Proposal.md`,
+  shipped 2026-08-19): a table is a coloured rounded block drawn under a
+  rectangle of seats, carrying its own name. It reads by its **border**, not its
+  fill — this print block sets no global `print-color-adjust` and browsers drop
+  background colours from print, so anything that relied on the tint would print
+  as nothing. Tables appear in the Seating chart layout only; the List (A–Z)
+  layout has no room geometry to attach one to.
 - **Point cards** — per-student current-points cards from `printPoints`, using the Leader Board filter. (exists)
 
 ---
