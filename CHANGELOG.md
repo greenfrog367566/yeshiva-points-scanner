@@ -91,6 +91,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ### Changed
 
+- **A brand-new rebbi now starts with the Attendance tab already showing, and Chavrusa Mode tucked away instead.** A fresh setup deliberately opens a smaller app — most of the week-two-and-later tabs start hidden and get switched on in Settings when they're wanted — but Attendance was on that list, and taking attendance isn't a week-two extra: it's the first thing a rebbi does in the morning, and having to go hunting through Settings for it on day one is exactly backwards. Chavrusa Mode takes its place on the hidden list, since pairing a class off into chavrusas is a later, optional habit. Nothing here is a deletion: both tabs are only *hidden*, both are one checkbox away in **Run → Settings → Tabs shown**, and no data on either side is touched. **This only affects a rebbi setting the app up for the first time through the wizard** — an existing rebbi's saved menu choices are never overruled, and neither is a restore from a backup or from the Google Sheet, which carries its own answer to this question.
+
 - **Version bumped to 0.10.0** — the update-check banner and the new "Check for updates" card were both meaningless while `APP_VERSION`/`version.json` sat stuck at 0.9.0 (2026-07-18) through a month of shipped features (the Custom-points dial, four Gradebook edit slices, the Setup Wizard's Prize Store step, scannable Prize Store purchases, several activities per seating-chart sheet, and more). No data model change, no `DATA_VERSION` bump — this is a display-only version string.
 
 ## [0.10.0] — 2026-08-19
