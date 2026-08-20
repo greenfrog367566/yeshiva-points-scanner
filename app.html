@@ -2435,11 +2435,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
               <label class="lbl">Custom amount</label>
               <input type="number" id="customAmt" class="field" value="1" min="0" max="1000" step="1">
             </div>
-            <button class="act-btn" id="customAdd" type="button">
+            <button class="act-btn" id="customAdd" type="button" title="Each press moves the amount up by one — press three times for +3. Type in the box to jump straight to a number.">
               <span class="an">Custom (add)</span>
               <span class="av pos" id="customAddVal">+1 pts</span>
             </button>
-            <button class="act-btn" id="customSub" type="button">
+            <button class="act-btn" id="customSub" type="button" title="Each press moves the amount down by one — press after Custom (add) to step back, or keep going past 0 for a deduction.">
               <span class="an">Custom (subtract)</span>
               <span class="av neg" id="customSubVal">−1 pts</span>
             </button>
@@ -6275,9 +6275,27 @@ function setupRoster() {
     // Record activity changes so the scan strip can display them inline.
     // Skip the very first silent init arm (armed is still null then).
     if(armed !== null && (armed.label !== label || armed.delta !== delta)){
-      stripActLog.unshift({kind:'activity', label:label, delta:delta, warning:isWarning,
-        id:'act-'+(stripActLogNextId++), ts:Date.now()});
-      if(stripActLog.length > 20) stripActLog.length = 20;
+      // A DIAL STEP COLLAPSES INTO THE ONE BEFORE IT. Custom re-arms on every
+      // press now (nudgeCustom), and one chip per press buried the actual scan
+      // history — dialing to +10 pushed ten "Custom +1…+10" entries into a strip
+      // that only holds 20. Consecutive dial steps of the same label rewrite the
+      // newest chip instead, so a run leaves one chip showing where it landed.
+      //
+      // The ts test is what keeps that honest: collapsing is only allowed while
+      // the chip is still the newest thing on the strip. Once a boy has been
+      // scanned, the next dial step starts a fresh chip rather than silently
+      // editing one that now sits above a scan and would misreport what that
+      // scan was worth. Same reason the per-keystroke re-arm was left out.
+      var stripHead=stripActLog[0];
+      var newestScanTs=(data.log && data.log[0] && data.log[0].ts) || 0;
+      if(opts && opts.dial && stripHead && stripHead.kind==='activity' &&
+         stripHead.label===label && (stripHead.ts||0)>=newestScanTs){
+        stripHead.delta=delta; stripHead.warning=isWarning; stripHead.ts=Date.now();
+      } else {
+        stripActLog.unshift({kind:'activity', label:label, delta:delta, warning:isWarning,
+          id:'act-'+(stripActLogNextId++), ts:Date.now()});
+        if(stripActLog.length > 20) stripActLog.length = 20;
+      }
     }
     armed = {label:label, delta:delta, actId:(act && act.id) || null, warning:isWarning,
              storeId:(opts && opts.store && opts.store.id) || null};
@@ -10136,7 +10154,11 @@ function setupRoster() {
   }
   function fpAward(s){
     var label, delta;
-    if(fpCustomAct){ label=fpCustomAct.label; delta=fpCustomAct.delta; }
+    if(fpCustomAct){
+      label=fpCustomAct.label; delta=fpCustomAct.delta;
+      // Dialed down to nothing — same 0-point refusal award() makes. See there.
+      if(!Number(delta)){ fpFlash(false,"Custom is 0 — dial it up first"); beep(false); return; }
+    }
     else {
       var a=actById(fpActId)||data.activities.filter(function(x){return !x.tracked;})[0];
       if(!a){ fpFlash(false,"Add an activity first"); beep(false); return; }
@@ -10227,13 +10249,30 @@ function setupRoster() {
   $("fsCompact").addEventListener("click", function(){ data.fpCompact=!data.fpCompact; save(); this.classList.toggle("on", data.fpCompact); fpRenderNames(); });
   // Same guard as armCustom(): junk in the box must not arm Custom 0, and the
   // box always ends up showing the number that was actually armed.
+  // Dials the same way the Record tab's buttons do (see nudgeCustom) — but on
+  // this panel's OWN state, because the floating panel arms fpCustomAct rather
+  // than the global `armed`, and reads its own #fsCustomAmt box. Picking a
+  // normal activity here sets fpCustomAct=null, which is what ends a run.
   function fpArmCustom(sign){
     var f=$("fsCustomAmt");
-    var n=normCustomAmt(f.value);
-    if(n>0) lastGoodCustomAmt=n; else n=lastGoodCustomAmt;
-    f.value=n;
-    fpCustomAct={label:"Custom", delta:sign*n}; fpRenderActs();
-    fpFlash(true, "Now scoring: Custom  "+fmt(sign*n)); beep(true);
+    var step=(sign<0 ? -1 : 1);
+    var total;
+    // One press is one point once a run is going; the first press arms whatever
+    // this panel's own box is showing. Same rule as nudgeCustom() — see there.
+    if(fpCustomAct){
+      total=(Number(fpCustomAct.delta)||0) + step;
+    } else {
+      var n=normCustomAmt(f.value);
+      if(!(n>0)) n=lastGoodCustomAmt;
+      total=step*n;
+    }
+    if(total>CUSTOM_AMT_MAX) total=CUSTOM_AMT_MAX;
+    if(total<-CUSTOM_AMT_MAX) total=-CUSTOM_AMT_MAX;
+    f.value=Math.abs(total);
+    if(Math.abs(total)>0) lastGoodCustomAmt=Math.abs(total);
+    fpCustomAct={label:"Custom", delta:total}; fpRenderActs();
+    if(total===0){ fpFlash(false, "Custom is 0 — dial it up first"); beep(false); }
+    else { fpFlash(true, "Now scoring: Custom  "+fmt(total)); beep(true); }
   }
   $("fsCustomAdd").addEventListener("click", function(){ fpArmCustom(1); });
   $("fsCustomSub").addEventListener("click", function(){ fpArmCustom(-1); });
@@ -13112,6 +13151,16 @@ function setupRoster() {
   }
   function award(s){
     if(!armed){ flash(false,"Pick an activity first","",""); beep(false); return false; }
+    // Custom dials (nudgeCustom), so it can legitimately be sitting at exactly
+    // 0 — "+ then −" lands there, and so does scanning −Custom back down. That
+    // is a resting state, not a score: awarding it would write a log entry that
+    // moves nobody's total, which is invisible on screen yet still eats an
+    // "Undo last scan" press. Same 0-point hazard the arm paths have always
+    // guarded against, now that a 0 can be reached deliberately.
+    if(armed.label==="Custom" && !armed.storeId && !Number(armed.delta)){
+      flash(false,"Custom is 0","","Dial it up with +Custom before scanning");
+      beep(false); return false;
+    }
     if(!studentInCurrentClass(s)){
       flash(false, s.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to score this student");
       beep(false); return false;
@@ -16599,14 +16648,15 @@ function setupRoster() {
     // mis-scan must not be silently expensive. It is excluded from the printed
     // Activity Menu by default for the same reason (see printExcluded seeds).
     if(c==="CTRL:GIVEALL"){ giveArmedToAll(); return; }
+    // These two cards are the DIAL (see nudgeCustom): scan +Custom three times
+    // and Custom is armed at +3, scan −Custom once more and it is +2. That is
+    // the whole point of them being printed — an amount can be built without
+    // touching the screen. Scanning down to exactly 0 is a legitimate resting
+    // state and says so rather than pretending a student scan would score.
     if(c==="CTRL:CUSTOM+" || c==="CTRL:CUSTOM-"){
-      var camt2=$("customAmt");
-      var n2=normCustomAmt(camt2?camt2.value:1);
-      if(!(n2>0)) n2=lastGoodCustomAmt;
-      var neg2 = c==="CTRL:CUSTOM-";
-      setArmed("Custom", neg2?-n2:n2);
-      flash(true,"Now scoring","Custom  "+fmt(neg2?-n2:n2),"Scan a student next");
-      beep(true);
+      var t2=nudgeCustom(c==="CTRL:CUSTOM-" ? -1 : 1);
+      if(t2===0){ flash(false,"Custom is 0","","Scan +Custom or −Custom to dial an amount"); beep(false); }
+      else { flash(true,"Now scoring","Custom  "+fmt(t2),"Scan a student next"); beep(true); }
       return;
     }
     if(c==="CTRL:PASUKPREV" || c==="CTRL:PASUKNEXT"){
@@ -16707,9 +16757,15 @@ function setupRoster() {
       if(camt) camt.value=n;
       return n;
     }
+    // This dialog SETS the amount rather than dialing it (nudgeCustom) — you
+    // came here to type a number, so the number you typed is the number armed.
+    // It is also how a rebbi gets out of a dial run he'd rather not tap back
+    // down. syncCustomButtons() keeps the Record tab's two buttons agreeing
+    // with it, since their highlight now follows the armed sign.
     function armAndClose(sign){
       var n=applyAmt();
       setArmed("Custom", sign*n);
+      if(typeof syncCustomButtons==="function") syncCustomButtons();
       close();
       var f=$(focusInputId); if(f) f.focus();
     }
@@ -16939,9 +16995,14 @@ function setupRoster() {
     subBtn.dataset.label="Custom"; subBtn.dataset.delta=-n;
     $("customAddVal").textContent=isShulchani()?"+"+n+" prutot":"+"+n+" pts";
     $("customSubVal").textContent=isShulchani()?"−"+n+" prutot":"−"+n+" pts";
+    // Highlight by SIGN, not by an exact match against the step. Once Custom
+    // dials (nudgeCustom), armed.delta is the running total and n is only one
+    // step of it — "+3 armed, step 1" is the normal state, and matching on
+    // equality left both buttons looking unarmed while Custom was very much
+    // armed. Zero is a real dialed-down state and highlights neither.
     if(armed && !armed.storeId && armed.label==="Custom"){
-      addBtn.classList.toggle("selected", armed.delta===n);
-      subBtn.classList.toggle("selected", armed.delta===-n);
+      addBtn.classList.toggle("selected", armed.delta>0);
+      subBtn.classList.toggle("selected", armed.delta<0);
     } else {
       addBtn.classList.remove("selected"); subBtn.classList.remove("selected");
     }
@@ -16951,6 +17012,10 @@ function setupRoster() {
   // can be left empty — so "put back what it was" is what stops a stray scan
   // silently arming Custom 0.
   var lastGoodCustomAmt=1;
+  // True only when a keystroke has landed in the box since the last commit.
+  // See commitCustomAmt() for why "did the rebbi actually type" has to be
+  // distinguishable from "the box lost focus".
+  var customAmtEdited=false;
   // Commits whatever is in the box: falls back to the last good number if
   // something emptied it, and re-arms when Custom is what's armed, so the pill,
   // the buttons and the next scan can never disagree with the box.
@@ -16964,7 +17029,17 @@ function setupRoster() {
     // the pill arms another is exactly the disagreement this function exists to
     // prevent.
     f.value=n;
-    if(armed && !armed.storeId && armed.label==="Custom") setArmed("Custom", armed.delta<0 ? -n : n);
+    // Only a REAL EDIT re-arms, and re-arming SETS the total rather than
+    // stepping it — typing 5 means "score 5", not "add 5 to what's dialed".
+    //
+    // The customAmtEdited gate is load-bearing now that Custom dials. Arming
+    // Custom parks the cursor in this box, so pressing the button a second time
+    // blurs it and runs this function — and unconditionally re-arming there
+    // reset the running total back to one step on every press after the second,
+    // which made the dial silently stick at ±2. A button press fires no "input"
+    // event, so it no longer counts as an edit.
+    if(customAmtEdited && armed && !armed.storeId && armed.label==="Custom") setArmed("Custom", armed.delta<0 ? -n : n);
+    customAmtEdited=false;
     syncCustomButtons();
   }
   $("customAmt").addEventListener("input", function(){
@@ -16976,6 +17051,7 @@ function setupRoster() {
     // firing into this box. It is committed once instead, on the way out, and
     // every way out goes through commitCustomAmt(): Enter, leaving the field,
     // and the scan branch below.
+    customAmtEdited=true;
     syncCustomButtons();
     var n=normCustomAmt(this.value);
     if(n>0) lastGoodCustomAmt=n;
@@ -17004,6 +17080,11 @@ function setupRoster() {
       var scanned=caBuf; caBuf="";
       if(scanned.length>1 && /[^0-9]/.test(scanned)){
         this.value=caPreBurst;   // put the box back the way the rebbi left it
+        // A scanner burst types digits into this box, which fires "input" —
+        // but restoring the box is the opposite of an edit, and letting it
+        // count as one would reset a dialed-up Custom total (see
+        // commitCustomAmt) every time a boy was scanned from this field.
+        customAmtEdited=false;
         commitCustomAmt();       // ...and re-arm from it, so pill and box agree
         handleScannedCode(scanned);
         return;
@@ -17024,17 +17105,64 @@ function setupRoster() {
   // left to decide; Enter (or clicking anywhere else) hands it on to the scan
   // box. Scanning without touching the amount still works — see the burst
   // handling above, which is what makes leaving the cursor here safe.
-  function armCustom(sign){
+  // CUSTOM IS A DIAL, NOT A ONE-SHOT ARM (approved by Ben 2026-08-19).
+  // Pressing or scanning +Custom / −Custom while Custom is ALREADY armed moves
+  // the running total by one step instead of replacing it: "+ + +" arms +3, and
+  // a "−" after that arms +2. One signed number, the two buttons dial it up and
+  // down — which is what makes the printed CTRL:CUSTOM+/− cards usable to dial
+  // an amount without reaching for the screen at all.
+  //
+  // THERE IS ONLY ONE NUMBER. The amount box, the two button labels and the
+  // "Now scoring" pill all show it, and one press moves it by exactly one — a
+  // box reading 5 dials 5 → 6 → 7, never 5 → 10 → 15. Typing in the box is the
+  // override that jumps straight to a number; pressing dials from wherever that
+  // left it. armed.delta is where the number actually lives (so it carries the
+  // sign); the box carries its magnitude, and is also what the printed personal
+  // Custom card (PC:) reads, so that card now follows the dial too.
+  //
+  // Arming anything else ends the run for free: the accumulate branch only fires
+  // when Custom is what is currently armed, so any other activity starts fresh.
+  // The one shared entry point for all three surfaces (buttons, CTRL: cards, the
+  // amount modal) so they cannot drift apart. Returns the new total.
+  function nudgeCustom(sign){
     var f=$("customAmt");
-    var n=normCustomAmt(f.value);
-    // A box holding "abc" (a scanner burst's leftovers) or "0" used to arm
-    // Custom 0 here — and a 0-point scan writes a log entry that moves no
-    // score, which is invisible on screen but still eats an "Undo last scan"
-    // press. Same fallback the commit path has always used.
-    if(n>0) lastGoodCustomAmt=n; else n=lastGoodCustomAmt;
-    f.value=n;
-    setArmed("Custom", sign<0 ? -n : n);
+    var step=(sign<0 ? -1 : 1);
+    var total;
+    if(armed && !armed.storeId && armed.label==="Custom"){
+      // ONE PRESS IS ALWAYS ONE POINT, whatever the number currently reads.
+      // Not the box's value: dialing in steps of the displayed number meant a
+      // box showing 5 jumped 5 → 10 → 15, which is a multiplier, not a dial.
+      total=(Number(armed.delta)||0) + step;
+    } else {
+      // The first press of a run arms the number already showing, because that
+      // is exactly what the button is offering — a button reading "+5 pts" has
+      // to arm +5, not +1. Every press after this one moves it by one.
+      var n=normCustomAmt(f?f.value:1);
+      // A box holding "abc" (a scanner burst's leftovers) or "0" used to arm
+      // Custom 0 here — and a 0-point scan writes a log entry that moves no
+      // score, which is invisible on screen but still eats an "Undo last scan"
+      // press. Same fallback the commit path has always used.
+      if(!(n>0)) n=lastGoodCustomAmt;
+      total=step*n;
+    }
+    // Same bound as a typed amount, in both directions — dialing must not be a
+    // way around the cap that normCustomAmt() puts on everything else.
+    if(total>CUSTOM_AMT_MAX) total=CUSTOM_AMT_MAX;
+    if(total<-CUSTOM_AMT_MAX) total=-CUSTOM_AMT_MAX;
+    // THE BOX, THE BUTTON LABELS AND THE PILL ARE ONE NUMBER — they move
+    // together on every press. The box carries the magnitude (it is a min="0"
+    // number field); which way the total points is shown by the pill and by
+    // which of the two buttons is lit. syncCustomButtons() relabels from the
+    // box, so writing it here is what keeps "+3 pts" on the button in step.
+    if(f) f.value=Math.abs(total);
+    if(Math.abs(total)>0) lastGoodCustomAmt=Math.abs(total);
+    setArmed("Custom", total, null, {dial:true});
     syncCustomButtons();
+    return total;
+  }
+  function armCustom(sign){
+    nudgeCustom(sign);
+    var f=$("customAmt");
     f.focus(); f.select();
   }
   $("customAdd").addEventListener("click", function(){ armCustom(1); });
@@ -24022,8 +24150,8 @@ nameLine
     // subtracts — rather than both sitting under Navigation because they happen
     // to be control codes. Splitting the pair across Positive and Navigation
     // would be the odd outcome; a rebbi who wants them together drags one.
-    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"adds the live custom amount", tone:"pos", defaultSection:"pos"});
-    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"subtracts the live custom amount", tone:"neg", defaultSection:"neg"});
+    items.push({qrText:"CTRL:CUSTOM+", name:"+Custom", sub:"scan again to dial up", tone:"pos", defaultSection:"pos"});
+    items.push({qrText:"CTRL:CUSTOM-", name:"−Custom", sub:"scan again to dial down", tone:"neg", defaultSection:"neg"});
     items.push({qrText:"CTRL:UNDO", name:"Undo Last Scan", sub:"↩ reverses last scan", tone:"trk", defaultSection:"nav"});
     // Registered so it can be ticked in Choose codes, but seeded excluded — see
     // the printExcludedGiveAllSeeded note in load2fix().
