@@ -86,6 +86,22 @@ stop-and-ask action per `CLAUDE.md`: **list them for Ben, never sweep them.**
 - **When the pile feels bad.** That feeling is usually accurate and this
   quantifies it.
 
+## Its counterpart: `scripts/testbench.js`
+
+This skill tells you what is unfinished. **`testbench.js` makes it openable** —
+one worktree per open PR and per `spike/*` branch, named after the branch:
+
+```bash
+node scripts/testbench.js        # create anything missing (idempotent)
+node scripts/testbench.js --list # just show branch -> folder
+```
+
+The two are deliberately opposite halves and must stay that way: **testbench
+only ever adds; only this skill's `--stale` proposes removals, and only ever as
+a list for a human.** Nothing in either script deletes a worktree, because a
+worktree is exactly where uncommitted work hides — the audit that prompted both
+found 749 uncommitted lines that a sweep would have destroyed.
+
 ## What it deliberately does not cover
 
 - **Stale doc status headers** — that is the `doc-audit` skill.

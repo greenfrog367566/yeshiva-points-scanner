@@ -380,6 +380,31 @@ the cap, uncommitted worktrees, unpushed commits, PRs closed without merging,
 branches that may never have landed, and dead worktrees. See
 `.claude/skills/wip/SKILL.md` for what to do about each lane.
 
+### Every branch in flight has a folder you can open
+
+**A branch is not a thing you can double-click.** Work that is pushed and PR'd
+still lives nowhere openable, and a spike built to answer "does this feel
+right?" cannot answer it from a branch name.
+
+```bash
+node scripts/testbench.js        # a worktree per open PR + per spike/* branch
+node scripts/testbench.js --list # just show branch -> folder
+```
+
+Idempotent, so run it whenever. Folders are named after the branch (`/` as
+`+`), which also surfaces the case where an existing worktree's folder name and
+its branch have drifted apart.
+
+**It only ever adds.** It never removes a worktree, deletes a branch, or checks
+anything out over your work — removal stays the list-and-ask step in
+`wip-audit.js --stale`, because a worktree is exactly where uncommitted work
+hides. **This is why it cannot recreate the 92-worktree sprawl:** its targets
+are bounded by what is alive — open PRs are capped at 5, and a merged PR simply
+stops being a target.
+
+Open `app.html` in any of these directly; the app runs over `file://`. Only
+`test-migration.html` needs a server, because it uses `fetch`.
+
 ### Merged is not done — the ship ladder
 
 A merge climbs **one** rung of five, not all five. Recording rung 1 as rung 5
