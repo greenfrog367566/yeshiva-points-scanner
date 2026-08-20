@@ -10,11 +10,26 @@
  *  - Cross-origin requests (Google Sheets, the AI proxy, Sefaria) are left
  *    entirely alone — the SW never intercepts them.
  *  - skipWaiting() + clients.claim() make a new SW take control right away.
- *  - Bump CACHE_VERSION on each release to purge the old offline cache. Even
- *    if you forget, online users still get the latest app.html via
- *    network-first; the bump only refreshes the OFFLINE fallback copy.
+ *  - CACHE_VERSION is the release number, and scripts/bump-version.js moves
+ *    it alongside app.html/version.json/CHANGELOG.md, with
+ *    check-version-sync.js enforcing the agreement. It used to be a hand-
+ *    bumped "v1" that nobody remembered: 0.10.0 shipped still reading "v1",
+ *    which is what prompted wiring it into the gate that already existed for
+ *    exactly this drift class.
+ *
+ *    What the bump is FOR, stated precisely, because it is easy to
+ *    overstate: app.html is NETWORK-FIRST and every online load copies the
+ *    fresh response back into this cache, so the offline fallback of the app
+ *    itself is never stale for anyone who has opened it online — a missed
+ *    bump costs that nothing. It matters for the CACHE-FIRST branch below
+ *    (manifest, icons, vendor/firebase/*.js), which never revalidates: once
+ *    one of those is cached it is pinned for the life of the cache, so
+ *    changing a vendored SDK file or an icon IN PLACE reaches an already-
+ *    installed rebbi only when the cache name changes. Nothing has hit that
+ *    yet — the SDK was added, never modified — which is precisely why it is
+ *    worth making automatic before something does.
  */
-var CACHE_VERSION = "v1";
+var CACHE_VERSION = "0.10.0";
 var CACHE_NAME = "menchmark-" + CACHE_VERSION;
 var PRECACHE = [
   "./app.html",
