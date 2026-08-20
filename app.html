@@ -952,7 +952,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .rank.medal{color:var(--brass);font-size:1.05rem}
   .score-cell{font-weight:800;text-align:right;font-variant-numeric:tabular-nums}
   .grp-tag{font-size:.74rem;background:#eef0f6;color:var(--muted);border-radius:6px;padding:2px 7px;margin-left:8px;font-weight:600}
-  .class-pick-input{width:120px;padding:4px 8px;font-size:.8rem;border-radius:6px}
+  .class-pick-wrap{display:inline-flex}
+  .class-pick-input,.class-pick-select{width:120px;padding:4px 8px;font-size:.8rem;border-radius:6px}
   .au-cost-tag{cursor:pointer;background:var(--brass-soft);color:#6b4d18;border:1px dashed var(--brass)}
   .au-cost-tag:hover{background:var(--brass);color:#2a1d05}
   .empty-state{text-align:center;color:var(--muted);padding:40px 20px}
@@ -3456,7 +3457,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <p style="font-size:.82rem;color:var(--muted);margin:8px 0 6px">One name per line. To set a group, write <code>Name, Group</code>.</p>
         <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <label class="lbl" style="margin:0">Default class <span style="font-weight:400;color:var(--muted)">(used for any line without one)</span></label>
-          <input id="bulkDefaultClass" class="field class-pick-input" list="classListDL" placeholder="No class" style="width:160px">
+          <span id="bulkDefaultClassPicker"></span>
         </div>
         <textarea id="bulkBox" class="field" rows="5" placeholder="Yaakov Cohen, 5A&#10;Dovid Levi, 5A&#10;Moshe Stern, 5B"></textarea>
         <button class="btn btn-sm" id="bulkAdd" style="margin-top:8px">Add all</button>
@@ -3493,7 +3494,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div class="toolbar">
       <input id="studSearch" class="field grow" placeholder="Search students…">
       <select id="studGroupFilter" class="field" style="width:auto"><option value="">All classes</option></select>
-      <datalist id="classListDL"></datalist>
       <select id="breakdownPeriod" class="field" style="width:auto" title="Time period used by any open “▾ Breakdown” panels below">
         <option value="all">Breakdown: All time</option>
         <option value="week">Breakdown: This week</option>
@@ -3520,7 +3520,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     </div>
     <div class="toolbar" id="studBatchClassRow" style="display:none;gap:8px">
       <label class="lbl" style="margin:0">Class</label>
-      <input id="studBatchClassInput" class="field class-pick-input" list="classListDL" placeholder="No class" style="width:160px">
+      <span id="studBatchClassPicker"></span>
       <button class="btn btn-sm btn-primary" id="studBatchClassApply">Apply</button>
       <button class="btn btn-sm" id="studBatchClassCancel">Cancel</button>
     </div>
@@ -25458,11 +25458,11 @@ nameLine
       var name=el("span","grow");
       name.appendChild(document.createTextNode(s.name));
       // Was a static grp-tag <span>; now an editable class picker so a class
-      // switch doesn't need Rename's old second prompt() (see the change
-      // handler below and the trimmed Rename handler further down).
-      var classInp=makeClassPickerInput(s.group, "Class — type to search or add one, leave blank for no class");
-      classInp.addEventListener("change", function(){
-        var ng=classInp.value.trim();
+      // switch doesn't need Rename's old second prompt() (see the trimmed
+      // Rename handler further down).
+      var classPicker=makeClassPicker(s.group, "Class — pick another, “No class”, or “Other…” to type a new one");
+      classPicker.addEventListener("classcommit", function(e){
+        var ng=e.detail.value;
         if(ng===(s.group||"")) return;
         s.group=ng; save(); renderStudents(); renderClassSel(); renderScanBoard(); renderTapPanel(); renderStandings();
       });
@@ -25541,10 +25541,10 @@ nameLine
           delete data.scores[s.id]; delete studentBreakdownOpen[s.id]; save(); renderStudents();
         }
       });
-      row.appendChild(avatar); row.appendChild(name); row.appendChild(classInp); row.appendChild(code); row.appendChild(step); row.appendChild(bdBtn); row.appendChild(edit); row.appendChild(photoUrlBtn);
+      row.appendChild(avatar); row.appendChild(name); row.appendChild(classPicker); row.appendChild(code); row.appendChild(step); row.appendChild(bdBtn); row.appendChild(edit); row.appendChild(photoUrlBtn);
       // NOTE (row width): this row now carries a checkbox plus 8-9 controls. See
       // the PR discussion — Rename / Photo URL / Delete are the candidates for
-      // folding behind a per-row menu, deliberately NOT done here. classInp
+      // folding behind a per-row menu, deliberately NOT done here. classPicker
       // replaces the old static grp-tag <span> in place, so it isn't a net-new
       // control despite the row-width note above.
       if(removePhotoBtn) row.appendChild(removePhotoBtn);
@@ -25563,26 +25563,29 @@ nameLine
   $("studSelClear").addEventListener("click", function(){ studSelected={}; renderStudents(); });
   // (a) Assign every selected student to one class in a single action. Opens
   // the inline #studBatchClassRow (same class-picker widget as the row
-  // switcher and bulk import) instead of a prompt() — lets a rebbi pick an
-  // existing class from the datalist rather than retyping it exactly.
+  // switcher and bulk import) instead of a prompt() — a real dropdown of
+  // existing classes plus "No class" and "Other…", rather than retyping an
+  // exact class name into a modal.
+  var studBatchPickerEl=null;
   $("studBatchClass").addEventListener("click", function(){
     var sel=studSelectedList(); if(!sel.length) return;
     var existing=groups();
-    $("studBatchClassInput").value = existing.length===1 ? existing[0] : "";
+    var container=$("studBatchClassPicker"); container.innerHTML="";
+    studBatchPickerEl=makeClassPicker(existing.length===1?existing[0]:"", "Class to assign to the selected students");
+    container.appendChild(studBatchPickerEl);
     $("studBatchClassRow").style.display="flex";
-    $("studBatchClassInput").focus();
   });
   $("studBatchClassCancel").addEventListener("click", function(){ $("studBatchClassRow").style.display="none"; });
   $("studBatchClassApply").addEventListener("click", function(){
     var sel=studSelectedList();
     $("studBatchClassRow").style.display="none";
-    if(!sel.length) return;
-    var cls=$("studBatchClassInput").value.trim();
+    if(!sel.length || !studBatchPickerEl) return;
+    var cls=studBatchPickerEl.getValue();
     sel.forEach(function(s){ s.group=cls; });
     save(); renderStudents(); renderClassSel(); renderScanBoard(); renderTapPanel(); renderStandings();
     notice(sel.length+" student"+(sel.length===1?"":"s")+(cls?(" moved to “"+cls+"”."):" cleared of their class."));
   });
-  $("studBatchClassInput").addEventListener("keydown", function(e){
+  $("studBatchClassPicker").addEventListener("keydown", function(e){
     if(e.key==="Enter"){ e.preventDefault(); $("studBatchClassApply").click(); }
     else if(e.key==="Escape"){ $("studBatchClassCancel").click(); }
   });
@@ -25714,7 +25717,8 @@ nameLine
     if (!parsed.length) { $("bulkBox").focus(); return; }
     // A pasted row's own "Name, Group" column always wins — the default class
     // only fills in for rows that left that column blank.
-    var defaultClass = ($("bulkDefaultClass").value || "").trim();
+    var bdc=ensureBulkDefaultClassPicker();
+    var defaultClass = bdc ? bdc.getValue() : "";
     var added = 0, skipped = 0;
     parsed.forEach(function(p) {
       if (p.isDuplicate) { skipped++; return; }
@@ -25734,26 +25738,77 @@ nameLine
   });
 
   /* ---------- CLASSES + ROSTER IMPORT ---------- */
-  // Single shared <datalist> behind every class-picker input (row switcher,
-  // batch assign, bulk-import default class): a plain type-to-search text
-  // input, no new component. Fed from the same groups() list as #classSel, so
-  // hooking it into renderClassSel() keeps it current at every call site that
-  // already refreshes the class switcher after a group changes.
-  function populateClassDatalist(gs){
-    var dl=$("classListDL"); if(!dl) return;
-    gs = gs || groups();
-    dl.innerHTML="";
-    gs.forEach(function(g){ var o=el("option"); o.value=g; dl.appendChild(o); });
+  // Shared class-picker combobox behind the row switcher, batch assign, and
+  // the bulk-import default class field: a real <select> — every existing
+  // class, "No class", and "Other…" — so switching TO another class is a
+  // dropdown pick, not a retype. Picking "Other…" swaps in a text field to
+  // type a class that doesn't exist yet; committing it (Enter or blur) fires
+  // a "classcommit" event on the returned wrapper. Batch assign/bulk import
+  // don't listen for that — they just read .getValue() when their own
+  // Apply/Add button is clicked.
+  function makeClassPicker(value, title){
+    var wrap=el("span","class-pick-wrap");
+    var sel=el("select","field class-pick-select");
+    sel.title=title||"Class — pick one, choose “No class”, or “Other…” to type a new one";
+    var otherInput=el("input","field class-pick-input");
+    otherInput.type="text"; otherInput.autocomplete="off"; otherInput.placeholder="Type a class name";
+    otherInput.style.display="none";
+    wrap.appendChild(sel); wrap.appendChild(otherInput);
+
+    function buildOptions(){
+      sel.innerHTML="";
+      var noneOpt=el("option",null,"No class"); noneOpt.value=""; sel.appendChild(noneOpt);
+      groups().forEach(function(g){ var o=el("option",null,g); o.value=g; sel.appendChild(o); });
+      var otherOpt=el("option",null,"Other…"); otherOpt.value="__other__"; sel.appendChild(otherOpt);
+    }
+    function setValue(v){
+      v=v||"";
+      buildOptions();
+      if(v && groups().indexOf(v)<0){
+        // A value not (yet) among existing classes — e.g. a freshly-typed one
+        // before the row that owns it re-renders — shows as "Other…" with its
+        // own text visible, rather than silently falling back to "No class".
+        sel.value="__other__"; sel.style.display="none";
+        otherInput.value=v; otherInput.style.display="";
+      } else {
+        sel.value=v; sel.style.display="";
+        otherInput.style.display="none";
+      }
+    }
+    function getValue(){
+      return sel.style.display==="none" ? otherInput.value.trim() : sel.value;
+    }
+    sel.addEventListener("change", function(){
+      if(sel.value==="__other__"){
+        sel.style.display="none"; otherInput.style.display=""; otherInput.value=""; otherInput.focus();
+      } else {
+        wrap.dispatchEvent(new CustomEvent("classcommit",{detail:{value:sel.value}}));
+      }
+    });
+    function commitOther(){
+      wrap.dispatchEvent(new CustomEvent("classcommit",{detail:{value:otherInput.value.trim()}}));
+    }
+    otherInput.addEventListener("keydown", function(e){
+      if(e.key==="Enter"){ e.preventDefault(); commitOther(); }
+      else if(e.key==="Escape"){ setValue(value); }
+    });
+    // Leaving "Other…" blank on blur reverts to the picker's starting value
+    // instead of silently committing "No class" — only a typed name commits.
+    otherInput.addEventListener("blur", function(){
+      if(otherInput.value.trim()==="") setValue(value);
+      else commitOther();
+    });
+    setValue(value);
+    wrap.getValue=getValue; wrap.setValue=setValue;
+    wrap.refresh=function(){ setValue(getValue()); };
+    return wrap;
   }
-  function makeClassPickerInput(value, title){
-    var inp=el("input","field class-pick-input");
-    inp.type="text";
-    inp.setAttribute("list","classListDL");
-    inp.placeholder="No class";
-    inp.autocomplete="off";
-    inp.value=value||"";
-    inp.title=title||"Type to search or add a class — leave blank for no class";
-    return inp;
+  function ensureBulkDefaultClassPicker(){
+    var container=$("bulkDefaultClassPicker"); if(!container) return null;
+    if(!container.firstChild){
+      container.appendChild(makeClassPicker("", "Default class — pick one, “No class”, or “Other…” to type a new one"));
+    }
+    return container.firstChild;
   }
   function renderClassSel(){
     var sel=$("classSel"); if(!sel || typeof data==="undefined" || !data) return;
@@ -25763,7 +25818,8 @@ nameLine
     var all=el("option",null,"All classes"); all.value=""; sel.appendChild(all);
     gs.forEach(function(g){ var o=el("option",null,g); o.value=g; sel.appendChild(o); });
     sel.value=cur;
-    populateClassDatalist(gs);
+    var bdc=ensureBulkDefaultClassPicker();
+    if(bdc && bdc.refresh) bdc.refresh();
   }
   $("classSel").addEventListener("change", function(){
     data.currentClass=this.value; save();
