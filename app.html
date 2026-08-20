@@ -314,8 +314,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      other shelf reachable only from the scan bar. */
   .shelf:not(.open){z-index:150}
   .shelf-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  /* Keep the head and the foot of the list clear of the OTHER shelf's handle on
+     this edge — closed handles are deliberately drawn above an open shelf (see
+     the z-index note below) so they stay reachable, which means an open shelf
+     has to leave them room rather than put its title underneath one. */
+  .shelf-left .shelf-head{padding-left:40px}
+  .shelf-right .shelf-head{padding-right:40px}
   .shelf-title{font-weight:800;font-size:.9rem;color:var(--ink)}
-  .shelf-body{flex:1;min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:16px}
+  .shelf-body{flex:1;min-height:0;overflow:auto;padding:12px 12px 46px;display:flex;flex-direction:column;gap:16px}
   /* The handle rides on the shelf's outer edge, so it pokes out of the screen
      edge when closed and sits against the open drawer when open. */
   .shelf-handle{position:absolute;border:1px solid var(--line);background:var(--card);color:var(--ink);
@@ -323,10 +329,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     writing-mode:vertical-rl;box-shadow:0 6px 18px rgba(20,26,46,.16);max-height:46vh;overflow:hidden}
   .shelf-left .shelf-handle{left:100%;border-left:none;border-radius:0 10px 10px 0}
   .shelf-right .shelf-handle{right:100%;border-right:none;border-radius:10px 0 0 10px;transform:rotate(180deg)}
-  /* The two right-hand handles sit at opposite ends of the edge so they never
-     overlap, and so each one has a fixed place a rebbi can learn: Recent scans
-     is up by the scan bar it belongs to, the Leaderboard is down at the bottom. */
-  .shelf-left .shelf-handle{top:18px}
+  /* Two handles per edge, at opposite ends, so they never overlap and each has
+     a fixed place a rebbi can learn: the two he reaches for while scanning
+     (activities, class list) on the left, the two he reads (recent scans,
+     leaderboard) on the right, and the "glance" one of each pair up top. */
+  .shelf-left-top .shelf-handle{top:18px}
+  .shelf-left-bottom .shelf-handle{bottom:24px}
   .shelf-right-top .shelf-handle{top:18px}
   .shelf-right-bottom .shelf-handle{bottom:24px}
   .shelf-handle:hover{background:var(--brass-soft)}
@@ -2441,7 +2449,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      The two right shelves cover the same strip of screen. They open and close
      independently, and whichever was opened last is raised above the other —
      see shelfZTop(). -->
-<div class="shelf shelf-left" id="shelfLeft" data-shelf="left">
+<div class="shelf shelf-left shelf-left-top" id="shelfLeft" data-shelf="left">
   <button class="shelf-handle" id="shelfLeftHandle" type="button">Activities</button>
   <div class="shelf-head">
     <span class="shelf-title" id="shelfLeftTitle">Activities</span>
@@ -2450,6 +2458,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <button class="btn btn-sm" data-shelf-close="left" title="Close this shelf">✕</button>
   </div>
   <div class="shelf-body" id="shelfLeftBody"></div>
+</div>
+<div class="shelf shelf-left shelf-left-bottom" id="shelfLeft2" data-shelf="left2">
+  <button class="shelf-handle" id="shelfLeft2Handle" type="button">Prize Store</button>
+  <div class="shelf-head">
+    <span class="shelf-title" id="shelfLeft2Title">Prize Store</span>
+    <span class="grow" style="flex:1"></span>
+    <button class="btn btn-sm" data-shelf-tab="left2" title="Open the Store tab">Open tab →</button>
+    <button class="btn btn-sm" data-shelf-close="left2" title="Close this shelf">✕</button>
+  </div>
+  <div class="shelf-body" id="shelfLeft2Body"></div>
 </div>
 <div class="shelf shelf-right shelf-right-top" id="shelfRight" data-shelf="right">
   <button class="shelf-handle" id="shelfRightHandle" type="button">Recent scans</button>
@@ -14616,10 +14634,11 @@ function setupRoster() {
    * not a hoisted value. Getting this wrong took the whole app down at boot:
    * SHELVES.forEach threw, the boot sequence stopped, and every later render
    * failed on half-initialized data. */
-  var SHELVES=["left","right","right2"];
-  var SHELF_EL={left:"shelfLeft", right:"shelfRight", right2:"shelfRight2"};
+  var SHELVES=["left","left2","right","right2"];
+  var SHELF_EL={left:"shelfLeft", left2:"shelfLeft2", right:"shelfRight", right2:"shelfRight2"};
   var SHELF_ROLE={
     left:  {title:"Pick an activity", tab:"activities", tabName:"Activities"},
+    left2: {title:"Prize Store",      tab:"store",      tabName:"Store"},
     right: {title:"Recent scans",     tab:"history",    tabName:"History"},
     right2:{title:"Leaderboard",      tab:"standings",  tabName:"Leader Board"}
   };
@@ -17194,10 +17213,11 @@ function setupRoster() {
         // Nothing parked here, so the shelf does its standing job with a compact
         // list instead. This is what makes the shelves permanent: they work the
         // same whether or not a rebbi has ever opened Customize layout.
-        // hsb-dropdown only on the left: its `button{width:100%}` rule is what
-        // makes the activity picker's rows full-width, and it would squeeze the
-        // other two lists' names to nothing behind their trailing controls.
-        var fb=el("div","shelf-fallback"+(side==="left"?" hsb-dropdown":""));
+        // hsb-dropdown only on the two LEFT shelves: its `button{width:100%}`
+        // rule is what makes the activity and prize rows full-width, and it
+        // would squeeze the right-hand lists' names to nothing behind their
+        // trailing controls.
+        var fb=el("div","shelf-fallback"+(side==="left"||side==="left2"?" hsb-dropdown":""));
         body.appendChild(fb);
         fillShelfFallback(side, fb);
       }
@@ -17210,9 +17230,22 @@ function setupRoster() {
   }
   function fillShelfFallback(side, fb){
     fb.innerHTML="";
-    if(side==="left") populateActivityDropdown(fb, "seatsScanInput", function(){ setShelfOpen("left", false); });
-    else if(side==="right") renderScanHistoryList(fb);
-    else renderMiniBoardRows(fb, 12);
+    if(side==="left"){
+      populateActivityDropdown(fb, "seatsScanInput", function(){ setShelfOpen("left", false); });
+    } else if(side==="left2"){
+      // Arm a prize here and the next boy scanned or tapped buys it — the same
+      // arming the picker's Prize Store section does, through the same rows.
+      // The shelf closes on the pick so the seating chart is clear for that tap.
+      var n=appendPrizeRows(fb, function(){
+        setShelfOpen("left2", false);
+        var f=$("seatsScanInput"); if(f) f.focus();
+      });
+      if(!n) fb.appendChild(el("div","hd-empty","No prizes yet — add some on the Store tab."));
+    } else if(side==="right"){
+      renderScanHistoryList(fb);
+    } else {
+      renderMiniBoardRows(fb, 12);
+    }
   }
   // Called after every scan/undo so an open shelf doing its own job stays
   // current — the history list, the leaderboard, and the activity picker (whose
@@ -17732,6 +17765,38 @@ function setupRoster() {
   // This is the one arming surface that intentionally differs from
   // renderActButtons() / fpRenderActs() / armActivityByCode(), which still show
   // neither. Those sit next to the Homework tab in normal use; this one does not.
+  /* The Prize Store rows, in one place because two surfaces draw them: the
+   * activity picker (where they sit under the activities, which is the whole
+   * reason prizes are armable at all) and the Prize Store shelf. Same rows,
+   * same arming, same cost formatting — extracted rather than copied so a
+   * change to how a prize reads cannot land on one surface and miss the other.
+   *
+   * The cost is shown as the DEDUCTION it is (negative, red), so a prize row
+   * reads the way a demerit row does and nothing has to explain that buying
+   * costs something. Not filtered by class: prizes are one shared store, not
+   * per-class activities, so there is nothing to narrow to.
+   *
+   * Returns how many rows it drew, so a caller can decide what to say when the
+   * store is empty. `withHeading` adds the divider + "Prize Store" label the
+   * picker needs to separate them from the activities above; the shelf is
+   * already titled, so it asks for the rows alone.
+   */
+  function appendPrizeRows(box, onPick, withHeading){
+    var prizes=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    if(!prizes.length) return 0;
+    if(withHeading){
+      box.appendChild(el("div","hd-divider"));
+      box.appendChild(el("div","hd-head","Prize Store"));
+    }
+    prizes.forEach(function(it){
+      var pb=el("button"); pb.type="button";
+      pb.appendChild(el("span",null,(it.emoji||"🎁")+" "+it.name));
+      pb.appendChild(el("span","hd-pts neg", fmtDeltaBare(-it.cost)));
+      pb.addEventListener("click", function(){ armPrize(it); if(onPick) onPick(); });
+      box.appendChild(pb);
+    });
+    return prizes.length;
+  }
   function populateActivityDropdown(dd, focusInputId, closeFn){
     dd.innerHTML="";
     var armable=armableActivities().filter(actVisibleOnScreen);
@@ -17765,21 +17830,7 @@ function setupRoster() {
      * store for every class, not per-class activities, so there is nothing to
      * narrow to. An empty store simply prints no section.
      */
-    var prizes=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
-    if(prizes.length){
-      dd.appendChild(el("div","hd-divider"));
-      dd.appendChild(el("div","hd-head","Prize Store"));
-      prizes.forEach(function(it){
-        var pb=el("button"); pb.type="button";
-        pb.appendChild(el("span",null,(it.emoji||"🎁")+" "+it.name));
-        pb.appendChild(el("span","hd-pts neg", fmtDeltaBare(-it.cost)));
-        pb.addEventListener("click", function(){
-          armPrize(it); closeFn();
-          var f=$(focusInputId); if(f) f.focus();
-        });
-        dd.appendChild(pb);
-      });
-    }
+    if(appendPrizeRows(dd, function(){ closeFn(); var f=$(focusInputId); if(f) f.focus(); }, true)){ /* rows appended */ }
     dd.appendChild(el("div","hd-divider"));
     var customBtn=el("button","hd-custom-btn"); customBtn.type="button";
     customBtn.appendChild(el("span",null,"✏️ Custom…"));
