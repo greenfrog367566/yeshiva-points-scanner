@@ -20,7 +20,10 @@ spec, not here.
 
 ## Doing now
 
-**Open PRs — 4 of 5** (the cap is in `CLAUDE.md` → "Finishing work"). All drafts.
+⚠️ **Open PRs — 6, one OVER the cap of 5** (`CLAUDE.md` → "Finishing work").
+All drafts. **Merge or close one before opening anything new** — and note the
+three that touch `app.html` (#358, #360, #364) conflict with each other by
+construction, so the order they land in matters.
 
 | PR | What | Owed before ready |
 |---|---|---|
@@ -28,6 +31,8 @@ spec, not here.
 | #359 | Tie `sw.js` `CACHE_VERSION` to the release number, gate it in CI | review |
 | #360 | Seating chart: move "Close full screen" next to Setup & arrange | unblock CI |
 | #362 | Fix stale #122 references for the Homework four-state work | review |
+| #363 | This: the WIP audit, the cap, the ship-tail | review of the rules |
+| #364 | Seating tables (recovered + rebased 93 commits) | browser pass on the feature |
 
 **Phase 8 (Chavrusa Mode) is the active build.** Slice 1 (manual/automatic
 group-building, Past Chavrusas, Individual point mode) has merged; #358 is the
@@ -82,16 +87,17 @@ Found by the 2026-08-20 worktree audit. **These are not stale — they are
 built work that never landed**, invisible to every list until now. Verify each
 with the `branch-merge-audit` skill before concluding either way.
 
-- ✅ **Seating tables — RECOVERED 2026-08-20, commit `8159f8f`, pushed.** It was
-  749 uncommitted lines (550 in `app.html`, 99 of `test-migration.html`
-  assertions, a CHANGELOG entry) with no commit, no branch and no remote copy —
-  one `rm` from gone, since its proposal PR #337 had already merged. Real,
-  finished work: `lay.tables` parallel to `lay.seats`, a table never owns a
-  student, 5,625 exhaustive move-permutation cases, 9 harness tests. Validated
-  before committing (JS OK, `migrateData`/`load2fix` in sync, CSS balanced).
-  **Still owed: it is 93 commits behind `main` and needs a rebase — it will
-  conflict in `app.html` — and it has no PR yet**, deliberately, because the
-  cap was full when it was recovered.
+- ✅ **Seating tables — RECOVERED, REBASED AND PROPOSED 2026-08-20, now PR #364.**
+  It was 749 uncommitted lines with no commit, no branch and no remote copy —
+  one `rm` from gone, since its proposal PR #337 had already merged. Recovered
+  as `8159f8f` on `docs/seating-tables-proposal` (left there as a recovery
+  point), then rebased 93 commits onto `main` as `feat/seating-tables`.
+  Harness re-run in a browser on the rebased tree: **371 passed, 0 failed**,
+  all 9 `tables→` tests green. **One judgment call to confirm by eye:**
+  multi-band print landed on `main` after this feature was written, so neither
+  side of the `app.html` conflict spoke to it — the tables toolbar is gated to
+  one per sheet rather than one per band. **Still owed: a real browser pass on
+  the feature's interaction**, which is why it is still a draft.
 - **`feat/board-fab`** — removes the redundant "Close board" pill on a solo
   box. `main` still shows it twice.
 - **`fix/seats-fullscreen-topbar`** — shrink-to-fit grid so full-screen seating
