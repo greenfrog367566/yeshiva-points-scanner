@@ -3296,6 +3296,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <option value="none">None</option>
           <option value="activity">Activity code</option>
           <option value="actphoto">Activity code + photo</option>
+          <option value="prize">Prize code</option>
+          <option value="przphoto">Prize code + photo</option>
         </select>
       </label>
       <span class="seat-size" id="seatPrintIconSizeRow" title="How big each boy's code and photo print. Smaller cards are shorter, so more rows fit — this is the control to reach for when a big class runs onto a second page. In List, sizing is automatic: the sheet shrinks itself to one page, and these buttons set the largest size it may use.">Code size
@@ -3305,6 +3307,9 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       </span>
       <label id="seatPrintActivityRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Every seat's code becomes that one activity, pre-applied to that student — scan straight down the grid with no arming step. One sheet per activity.">Activity:
         <select id="seatPrintActivityPicker" class="field" style="width:auto"></select>
+      </label>
+      <label id="seatPrintPrizeRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Every seat's code becomes that one prize, charged to that student — scan straight down the grid with no arming step, and each boy is refused if he can't afford it. One sheet per prize.">Prize:
+        <select id="seatPrintPrizePicker" class="field" style="width:auto"></select>
       </label>
       <label id="seatPrintMultiActRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Stack a chart per activity on the one sheet — +1 at the top, −1 under it, Freeze at the bottom. Each band is the same seating chart with that activity's codes in it, and the sheet shrinks itself so they all fit one page."><input type="checkbox" id="seatPrintMultiAct"> Several on one page</label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem"><input type="checkbox" id="seatPrintShowPoints"> Points</label>
@@ -4262,6 +4267,17 @@ function setupRoster() {
        on the Activities tab, with nothing here to explain it. ============ -->
   <section id="view-printPrizes" class="view">
     <h2 class="view-title">Print: Prizes</h2>
+    <!-- ONE PAGE, TWO SHEETS, ONE AT A TIME. Print: Students solves the same
+         problem with two always-present blocks and a body class per print
+         button; this switches instead, so whatever is on screen is exactly
+         what prints and there is no second print button to aim wrongly. -->
+    <div class="toolbar no-print">
+      <span style="font-weight:600">Sheet</span>
+      <select id="prizeSheetMode" class="field" style="width:auto">
+        <option value="prizes">Prize cards — one per prize</option>
+        <option value="students">Student cards — one per student</option>
+      </select>
+    </div>
     <div id="prizeLabelsBlock">
       <p class="view-note no-print">One card per prize in your Store, with its cost and its own scan code. Scanning one <b>arms that prize</b> — the next student you scan or tap buys it, and the cost comes off his balance. Tape them to the prize box, or keep the sheet with the prizes themselves.</p>
       <div class="toolbar no-print">
@@ -4274,6 +4290,23 @@ function setupRoster() {
       <div id="prizePrintTitle" class="seat-print-title" style="display:none"></div>
       <div class="labels-grid" id="prizeGrid"></div>
       <div id="prizeAverySheet" class="avery-wrap"></div>
+    </div>
+
+    <!-- STUDENT PRIZE CARDS — the spending counterpart of the personal
+         activity codes on Print: Students. Each card belongs to one boy and
+         encodes one prize (PP:<student>:<prize>), so a single scan buys it for
+         him with no arming step. Hand the sheet to the boys and let each scan
+         the prize he chose; a boy who cannot afford his is refused by name. -->
+    <div id="prizePersonalBlock" style="display:none">
+      <p class="view-note no-print">One card per student, per prize — each card is that boy's own. <b>One scan buys that prize for him</b>, with no arming step, and refuses him by name if he can't afford it. Cards carry the student's name, so they stay identifiable once the sheet is cut apart.</p>
+      <div class="toolbar no-print">
+        <select id="prizePersonGroup" class="field" style="width:auto"><option value="">All groups</option></select>
+        <select id="prizePersonWho" class="field" style="width:auto"><option value="">Whole class</option></select>
+        <select id="prizePersonWhich" class="field" style="width:auto"><option value="">All prizes</option></select>
+        <button class="btn btn-primary" id="printPrizePersonal">🖨 Print student cards</button>
+      </div>
+      <div id="prizePersonalTitle" class="seat-print-title" style="display:none"></div>
+      <div id="prizePersonalGrid"></div>
     </div>
   </section>
 
@@ -5374,7 +5407,7 @@ function setupRoster() {
     //
     // Discoverability is fixed by putting the checkbox on a page rebbeim
     // actually reach, not by flipping a setting under them.
-    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", multiActivity:false, activityIds:[], actGrouped:true, actCols:2, iconScale:1 },
+    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", prizeId:"", multiActivity:false, activityIds:[], actGrouped:true, actCols:2, iconScale:1 },
     // Mini Contest — the contest whose totals are stored rather than derived.
     // See the MINI CONTEST block above award() for why that distinction is the
     // whole feature. null = nothing running; [] = no contests have closed yet.
@@ -7696,7 +7729,7 @@ function setupRoster() {
     if(tab==="students") renderStudents();
     if(tab==="activities") renderActivities();
     if(tab==="printStudents" || tab==="printActivities") renderLabels();
-    if(tab==="printPrizes") renderPrizeLabels();
+    if(tab==="printPrizes") applyPrizeSheetMode();
     if(tab==="printSeats"){
       $("seatPrintAvatarMode").value = data.seatPrintOpts.avatarMode;
       $("seatPrintShowPoints").checked = data.seatPrintOpts.showPoints;
@@ -10224,7 +10257,7 @@ function setupRoster() {
     // Same treatment, and the same reason, as the tracked-activity refusal
     // above; left as a refusal rather than built out because selling is a
     // deliberate, one-boy action and this panel is the fast-scoring surface.
-    if(/^PRZ:/i.test(code)){
+    if(/^(PRZ|PP):/i.test(code)){
       fpFlash(false,"Prizes can't be sold from this panel — use the scan bar or the seating chart");
       beep(false); return;
     }
@@ -13248,14 +13281,14 @@ function setupRoster() {
    * a rebbi who has switched the negative banners off must still see the prize
    * he just sold — and must always see a refusal, or he will think it worked.
    */
-  function awardPrize(s){
-    var it=armedPrize();
-    // Deleted between arming and this scan. Refused by name rather than
-    // silently, because "nothing happened" on a scan reads as a bad scan.
-    if(!it){
-      flash(false, "Prize no longer in the store", armed.label, "It was deleted after you armed it — arm another");
-      beep(false); return false;
-    }
+  /* ONE SALE, TWO WAYS IN. Everything from the affordability check downwards is
+   * shared by the armed path (arm a prize, then scan boys) and the personal
+   * PP:<student>:<prize> card (one scan, no arming) — the same split award()
+   * and the personal PA: codes already have. The two must not drift: a boy who
+   * cannot afford a prize has to be refused identically whichever code the
+   * rebbi happened to scan, and both have to leave the same two records behind.
+   */
+  function sellPrizeTo(s, it){
     if(score(s.id) < it.cost){
       flash(false, s.name, isShulchani()?"Not enough coins":"Not enough points",
             "has "+fmtScore(s.id)+" — "+it.name+" costs "+fmtVal(it.cost));
@@ -13273,6 +13306,16 @@ function setupRoster() {
     // Only then: rebuilding a hidden tab on every scan buys nothing.
     if($("view-store") && $("view-store").classList.contains("active")) renderStore();
     return true;
+  }
+  function awardPrize(s){
+    var it=armedPrize();
+    // Deleted between arming and this scan. Refused by name rather than
+    // silently, because "nothing happened" on a scan reads as a bad scan.
+    if(!it){
+      flash(false, "Prize no longer in the store", armed.label, "It was deleted after you armed it — arm another");
+      beep(false); return false;
+    }
+    return sellPrizeTo(s, it);
   }
   // THE ONE PATH EVERY POINT IN THE APP TRAVELS THROUGH. Extracted verbatim
   // from award() so a second caller can score a student without setting and
@@ -13862,6 +13905,26 @@ function setupRoster() {
   function processScan(code){
     code=(code||"").trim();
     if(!code) return;
+    /* PP:<student>:<prize> — a boy's own card for one prize, the spending
+     * counterpart of PA:. One scan buys it for exactly that boy: no arming
+     * step, so a rebbi can hand a sheet of these to the boys themselves and
+     * let each scan the prize he chose.
+     *
+     * Checked ABOVE PA: only because both start with "P" and this keeps the
+     * two prefix tests adjacent and obvious; they cannot actually collide.
+     */
+    if(code.indexOf("PP:")===0){
+      var prest=code.slice(3), psep=prest.indexOf(":");
+      var ppsid=psep<0?prest:prest.slice(0,psep), ppid=psep<0?"":prest.slice(psep+1);
+      var pps=studentById(ppsid), ppit=storeItemById(ppid);
+      if(!pps||!ppit){ flash(false,"Unknown prize card","","\u201C"+code+"\u201D — the student or the prize may have been deleted"); beep(false); return; }
+      if(!studentInCurrentClass(pps)){
+        flash(false, pps.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to sell to this student");
+        beep(false); return;
+      }
+      sellPrizeTo(pps, ppit);
+      return;
+    }
     if(code.indexOf("PA:")===0){
       var rest=code.slice(3), sep=rest.indexOf(":");
       var psid=sep<0?rest:rest.slice(0,sep), paid=sep<0?"":rest.slice(sep+1);
@@ -23552,9 +23615,9 @@ nameLine
     // otherwise keep offering the class he just left.
     if($("view-printSeats").classList.contains("active")){ seatPrintSyncActivityRow(); renderSeatChartPrint(); }
     if($("view-printPoints").classList.contains("active")) renderPointsPrint();
-    // The prize sheet's own title names the class, so it has to follow the
-    // picker even though the prizes themselves are shared across classes.
-    if($("view-printPrizes").classList.contains("active")) renderPrizeLabels();
+    // The prize sheets' own titles name the class, and the student-cards sheet
+    // is filtered by class outright, so both have to follow the picker.
+    if($("view-printPrizes").classList.contains("active")) applyPrizeSheetMode();
     auctionPrizeId=null; auctionStudentId=null;
     if($("view-auction").classList.contains("active")) renderAuction();
     if(typeof pickerOpen!=="undefined" && pickerOpen) renderPicker();
@@ -24387,6 +24450,74 @@ nameLine
       pg.appendChild(card);
     });
   }
+  /* STUDENT PRIZE CARDS. Grouped by boy — his name is a heading AND repeated on
+   * every one of his cards, because the two readings of this sheet are
+   * different: whole, a rebbi reads down it by name; cut apart, a single card
+   * has to still say whose it is or it is worthless. renderPersonalPages()
+   * only needs the page heading because a page is never cut into pieces.
+   */
+  function renderPrizePersonalCards(hasQR){
+    if(typeof hasQR==="undefined") hasQR=(typeof QRCode!=="undefined");
+    var grid=$("prizePersonalGrid"); if(!grid) return;
+    grid.innerHTML="";
+
+    var gsel=$("prizePersonGroup"), gcur=gsel.value;
+    gsel.innerHTML='<option value="">All groups</option>';
+    groups().forEach(function(g){ var o=el("option",null,g); o.value=g; gsel.appendChild(o); });
+    if(groups().indexOf(gcur)>=0) gsel.value=gcur; else gsel.value="";
+    var grp=gsel.value;
+
+    var list=data.students.filter(function(s){ return !grp || s.group===grp; })
+      .sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+
+    var wsel=$("prizePersonWho"), wcur=wsel.value;
+    wsel.innerHTML='<option value="">Whole class</option>';
+    list.forEach(function(s){ var o=el("option",null,s.name); o.value=s.id; wsel.appendChild(o); });
+    if(list.some(function(s){ return s.id===wcur; })) wsel.value=wcur; else wsel.value="";
+    if(wsel.value) list=list.filter(function(s){ return s.id===wsel.value; });
+
+    var prizes=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    var psel=$("prizePersonWhich"), pcur=psel.value;
+    psel.innerHTML='<option value="">All prizes</option>';
+    prizes.forEach(function(it){ var o=el("option",null,(it.emoji||"🎁")+" "+it.name); o.value=it.id; psel.appendChild(o); });
+    if(prizes.some(function(it){ return it.id===pcur; })) psel.value=pcur; else psel.value="";
+    if(psel.value) prizes=prizes.filter(function(it){ return it.id===psel.value; });
+
+    var t=$("prizePersonalTitle");
+    if(t){ t.textContent=(data.currentClass||"All Classes")+" · Student Prize Cards"; t.style.display=(list.length&&prizes.length)?"block":"none"; }
+
+    if(!list.length){ grid.appendChild(el("div","empty-state","Add students first, then come back to print their prize cards.")); return; }
+    if(!prizes.length){ grid.appendChild(el("div","empty-state","No prizes yet — add some on the Store tab and they'll print here.")); return; }
+
+    list.forEach(function(s){
+      var block=el("div","personal-page");
+      block.appendChild(el("h3","personal-name",s.name));
+      var qgrid=el("div","personal-qr-grid");
+      prizes.forEach(function(it){
+        // negative:true — the cost is money leaving the boy, and this is the
+        // same red treatment a deduction gets everywhere else in the app.
+        addPersonalQrCard(qgrid, "PP:"+s.id+":"+it.id,
+          (it.emoji||"🎁")+" "+it.name,
+          fmtDeltaBare(-it.cost),
+          s.name,
+          true, hasQR);
+      });
+      block.appendChild(qgrid);
+      grid.appendChild(block);
+    });
+  }
+  function prizeSheetMode(){ var m=$("prizeSheetMode"); return (m && m.value==="students") ? "students" : "prizes"; }
+  function applyPrizeSheetMode(){
+    var students = prizeSheetMode()==="students";
+    $("prizeLabelsBlock").style.display  = students ? "none" : "";
+    $("prizePersonalBlock").style.display = students ? "" : "none";
+    if(students) renderPrizePersonalCards(); else renderPrizeLabels();
+  }
+  $("prizeSheetMode").addEventListener("change", applyPrizeSheetMode);
+  $("prizePersonGroup").addEventListener("change", function(){ renderPrizePersonalCards(); });
+  $("prizePersonWho").addEventListener("change", function(){ renderPrizePersonalCards(); });
+  $("prizePersonWhich").addEventListener("change", function(){ renderPrizePersonalCards(); });
+  $("printPrizePersonal").addEventListener("click", function(){ window.print(); });
   $("printPrizesBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "printPrizes" }); });
   // Format is the one choice here that IS remembered, same rule the other label
   // pages follow: it is a property of the paper in the tray, not of what the
@@ -24776,6 +24907,7 @@ nameLine
   $("seatPrintCodesAddSection").addEventListener("click", function(){ addCodeSection(); refreshCodeSurfaces(); });
   $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); seatPrintSyncActivityRow(); renderSeatChartPrint(); });
   $("seatPrintActivityPicker").addEventListener("change", function(){ data.seatPrintOpts.activityId=this.value; save(); renderSeatChartPrint(); });
+  $("seatPrintPrizePicker").addEventListener("change", function(){ data.seatPrintOpts.prizeId=this.value; save(); renderSeatChartPrint(); });
   $("seatPrintMultiAct").addEventListener("change", function(){
     data.seatPrintOpts.multiActivity=this.checked;
     // Ticking it for the first time carries the activity he already had into the
@@ -24979,7 +25111,26 @@ nameLine
   // separate arming code needed) only in Activity mode, and keeps the
   // picker's options in sync with the same armable/visible filter every
   // other arming surface uses (armableActivities() + actVisibleInCurrentClass).
+  function seatPrintSyncPrizeRow(){
+    var isPrize = seatPrintCodeKind($("seatPrintAvatarMode").value)==="prize";
+    var row=$("seatPrintPrizeRow"); if(!row) return;
+    row.style.display = isPrize ? "flex" : "none";
+    if(!isPrize) return;
+    var sel=$("seatPrintPrizePicker"), cur=sel.value || data.seatPrintOpts.prizeId;
+    var opts=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    sel.innerHTML="";
+    if(!opts.length){
+      // No prizes yet. Says so in the picker itself rather than leaving an
+      // empty dropdown above a grid of codes that would encode nothing.
+      var o0=el("option",null,"No prizes yet — add some on the Store tab"); o0.value="";
+      sel.appendChild(o0); sel.value=""; data.seatPrintOpts.prizeId=""; return;
+    }
+    opts.forEach(function(it){ var o=el("option",null,(it.emoji||"🎁")+" "+it.name+"  ("+fmtVal(it.cost)+")"); o.value=it.id; sel.appendChild(o); });
+    if(opts.some(function(it){ return it.id===cur; })) sel.value=cur; else sel.value=opts[0].id;
+    data.seatPrintOpts.prizeId = sel.value;
+  }
   function seatPrintSyncActivityRow(){
+    seatPrintSyncPrizeRow();
     var isActivity = seatPrintCodeKind($("seatPrintAvatarMode").value)==="activity";
     // "Several on one page" replaces the single picker rather than sitting
     // beside it: two controls both claiming to say which activity prints is how
@@ -25593,10 +25744,16 @@ nameLine
   function seatPrintCodeKind(mode){
     if(mode==="qr" || mode==="qrphoto") return "qr";
     if(mode==="activity" || mode==="actphoto") return "activity";
+    // The spending counterpart of "activity". The LIVE chart reads this same
+    // function and draws a code only for "qr", so a prize mode shows nothing
+    // on screen — exactly what "activity" already does, and the right answer
+    // either way: a per-student prize code is a thing you print, not a thing
+    // you tap.
+    if(mode==="prize" || mode==="przphoto") return "prize";
     return "none";
   }
   function seatPrintWantsPhoto(mode){
-    return mode==="photo" || mode==="qrphoto" || mode==="actphoto";
+    return mode==="photo" || mode==="qrphoto" || mode==="actphoto" || mode==="przphoto";
   }
 
   /* ONE STUDENT'S PRINTED CARD — shared by both layouts on this page.
@@ -25629,7 +25786,12 @@ nameLine
         // Same PA:<student>:<activity> merged code renderPersonalPages()
         // prints per student, just laid out in the grid instead — one scan
         // applies this exact activity to this exact student.
-        var qrText = (kind==="activity") ? ("PA:"+s.id+":"+act.id) : s.id;
+        // Same personal codes renderPersonalPages() prints per student, laid
+        // out in the grid instead — one scan applies this exact activity, or
+        // sells this exact prize, to this exact student.
+        var qrText = (kind==="activity") ? ("PA:"+s.id+":"+act.id)
+                   : (kind==="prize")    ? ("PP:"+s.id+":"+(data.seatPrintOpts.prizeId||""))
+                   : s.id;
         try{ new QRCode(holder,{text:qrText,width:95,height:95,correctLevel:QRCode.CorrectLevel.M}); }
         catch(e){ qrw.appendChild(document.createTextNode("QR?")); }
       } else {
@@ -27562,6 +27724,10 @@ nameLine
     // way, is left exactly as the rebbi set it.
     if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
     if(typeof data.seatPrintOpts.activityId!=="string") data.seatPrintOpts.activityId="";
+    // Which prize the "Prize code" seat modes encode. Additive and empty by
+    // default; seatPrintSyncPrizeRow() fills it in from the store the first
+    // time one of those modes is picked.
+    if(typeof data.seatPrintOpts.prizeId!=="string") data.seatPrintOpts.prizeId="";
     // SEVERAL ACTIVITY CHARTS ON ONE SHEET. Both fields are purely additive and
     // default to the single-chart behaviour every existing save already has, so
     // a rebbi's Monday sheet is unchanged until he asks for the stack himself.
