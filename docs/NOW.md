@@ -43,10 +43,12 @@ see `Menchmark_Phased_Build_Plan.md`).
 **The Firebase/Firestore rebuild is built and deployed.** All 8 build-order
 steps merged (PRs #290, #292, #300, #303, #309) and `firebase deploy` is live
 against `menchmark-backend`. **Step 8 — migrating the real beta cohort — is
-all that remains**, and it waits on the verification runs listed under "Merged,
-not done." Everything else about the rebuild lives in
-`docs/Firebase_Rebuild_Scope.md`, including the live-project setup and the
-console-only gaps that cost a day.
+the only *step* left**, and it waits on the verification runs listed under
+"Merged, not done" — **which also now carries a bigger one**: tier-1 has no
+live write-sync path yet, so step 8 as currently scoped would move rebbeim
+onto real accounts without moving their day-to-day data onto Firestore.
+Everything else about the rebuild lives in `docs/Firebase_Rebuild_Scope.md`,
+including the live-project setup and the console-only gaps that cost a day.
 
 ---
 
@@ -78,6 +80,21 @@ console-only gaps that cost a day.
 - **Announce the print fix and the Apps Script redeploy instruction.** Pasting
   new Apps Script code is not enough; teachers must trigger "Manage deployments
   → New version" themselves, and nobody has told them.
+- **Tier-1 classes have no live Firestore sync — the rebuild's headline
+  promise ("becomes a real multi-user product with … a real database") isn't
+  true yet for day-to-day use.** Verified 2026-08-20 by grepping `app.html`:
+  the only Firestore function anywhere in the file is `fetchClassFromFirestore()`
+  (line 7284) — a *read*, called exactly once (line 25050), for admin's Class
+  Book view and superadmin's view-as. There is no write path. A rebbi's scans,
+  points, and gradebook entries still live only in `localStorage`, exactly as
+  before the rebuild. The only data that has ever reached Firestore is a
+  one-time snapshot pushed through the converter tool at import time; nothing
+  keeps it current afterward. `Firebase_Rebuild_Scope.md`'s step 7 text already
+  names this ("tier-1 … needs a live Firestore write-sync path from a rebbi's
+  own scans that doesn't exist anywhere yet"), but it was never carried here.
+  **Migrating the real beta cohort (step 8) before this exists moves their
+  accounts, not their safety** — real auth and security rules, but their
+  actual class data is exactly as fragile as it is today.
 
 ---
 
