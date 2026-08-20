@@ -672,9 +672,9 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-code-val.pos{color:var(--good)}
   .seat-code-val.neg{color:var(--bad)}
   .seat-code-val.trk{color:var(--ice)}
-  /* Grouped layout: the same Points / Tracked / Navigation sections the printed
-     sheet already prints, laid out as small grids side by side instead of one
-     long wrapped row. Sections stretch to share the width. */
+  /* Grouped layout: the same Give / Take / Record (+ Prize Store) sections the
+     printed sheet already prints, laid out as small grids side by side instead
+     of one long wrapped row. Sections stretch to share the width. */
   .seat-codes-groups{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;
     padding:10px 14px 14px;border-top:2px solid var(--line);margin-top:6px}
   .seat-codes-group{background:var(--gb-row,#f7f8fc);border:1px solid var(--line);
@@ -5648,6 +5648,12 @@ function setupRoster() {
     // it is destructive: load2fix() runs on every single load, so a reset there
     // would wipe the rebbi's new arrangement again every time he reopened the
     // app. This runs once, ever.
+    //
+    // The three labels written below are HISTORY and stay spelled the old way
+    // on purpose — they are what v5 shipped with. They read Give/Take/Record
+    // now; load2fix()'s codeSectionsDashboardLabelsSeeded one-shot runs after
+    // this and renames them, so a v4 save arrives at the same place a v5 one
+    // does. Don't "fix" these literals — DEFAULT_CODE_SECTIONS is the live list.
     if(d.version===4){
       d.printCodeSections = {};
       delete d.codeSectionNames;
@@ -24545,18 +24551,21 @@ nameLine
       // defaults to "tracked", every other activity to "points". Only codes a
       // rebbi drags elsewhere get an explicit data.printCodeSections override.
       var tracked = homeworkActivity(a) || attendanceActivity(a) || passActivity(a) || freezeActivity(a);
-      // Which default section this code starts in. Freeze is the one that does
-      // not follow `tracked`: it scores nothing, but it is unmistakably a
-      // consequence, so it belongs with the deductions rather than with
-      // Homework Checked and Attendance.
+      // Which default section this code starts in — the same three buckets the
+      // Dashboard band sorts by, so a code sits under the same heading in both
+      // places. Freeze used to be the one exception, filed under the deductions
+      // on the reasoning that it is unmistakably a consequence; it now follows
+      // `tracked` like every other scoreless code, because the band has always
+      // drawn it under Record and "Take" is a plainly wrong name for something
+      // that takes nothing. A rebbi who wants it back beside the deductions
+      // drags it there.
       // Coin codes start in their own section rather than being split across
-      // Positive and Negative by sign: on paper they are one strip a rebbi reads
+      // Give and Take by sign: on paper they are one strip a rebbi reads
       // as a currency chart, and a Dinar filed away from its own deduction is
       // the odd outcome. Still only a DEFAULT — dragging one splits the pair,
       // and if the rebbi has deleted the Coins section printCodeSectionOf()
       // falls them back to the first section rather than dropping them.
       var defSection = coinActivity(a)    ? COIN_SECTION_KEY
-                     : freezeActivity(a)  ? "neg"
                      : tracked            ? "nav"
                      : (a.pts<0)          ? "neg"
                      :                      "pos";
@@ -24626,16 +24635,29 @@ nameLine
   // adding can now be the same idea instead of two.
   //
   // The three DEFAULTS below are only a starting point. They split by what a
-  // code does to a boy's score — a gain, a deduction, or neither. Everything
-  // that scores nothing shares Navigation: the tracked codes (Homework Checked,
-  // Bathroom Pass, Attendance) alongside Undo, Pick and the phrase codes. A
-  // rebbi who wants those apart adds a section and drags them into it, which is
-  // the point of sections being his rather than ours.
+  // code does to a boy's score — a gain, a deduction, or neither, which is the
+  // SAME split the Dashboard's activity band already draws (ACT_CLUSTERS), so
+  // they now carry the same three names: Give / Take / Record. They used to
+  // read Positive / Negative / Navigation, which named the identical buckets in
+  // a second vocabulary — and both surfaces sit on the Dashboard at once, so a
+  // rebbi saw one set of activities grouped two ways on one screen. With the
+  // Prize Store section (ensureStoreCodeSection) that makes the seating chart's
+  // headings Give / Take / Record / Prize Store, matching the band above it and
+  // the prize half of its own arming dropdown.
+  //
+  // Everything that scores nothing shares Record: the tracked codes (Homework
+  // Checked, Bathroom Pass, Attendance, Freeze) alongside Undo, Pick and the
+  // phrase codes. A rebbi who wants those apart adds a section and drags them
+  // into it, which is the point of sections being his rather than ours.
   var DEFAULT_CODE_SECTIONS=[
-    {key:"pos", label:"Positive"},
-    {key:"neg", label:"Negative"},
-    {key:"nav", label:"Navigation"}
+    {key:"pos", label:"Give"},
+    {key:"neg", label:"Take"},
+    {key:"nav", label:"Record"}
   ];
+  // The labels the three default sections shipped with BEFORE they were renamed
+  // to match the Dashboard band. Read only by the one-shot rename in load2fix(),
+  // which is what stops a rebbi's own rename from being overwritten.
+  var LEGACY_CODE_SECTION_LABELS={pos:"Positive", neg:"Negative", nav:"Navigation"};
   // Always a usable array with at least one section: everything downstream
   // buckets codes into these, and an empty list would leave every code with
   // nowhere to go.
@@ -28503,6 +28525,34 @@ nameLine
     }
     if(!Array.isArray(data.codeSections) || !data.codeSections.length){
       data.codeSections = DEFAULT_CODE_SECTIONS.map(function(s){ return {key:s.key, label:s.label}; });
+    }
+    /* The three default sections were renamed Positive/Negative/Navigation ->
+     * Give/Take/Record so the codes under the seating chart carry the same
+     * headings as the Dashboard's activity band directly above them. A save
+     * made before that already holds the OLD labels, and DEFAULT_CODE_SECTIONS
+     * is only consulted when the list is missing entirely — so without this
+     * one-shot the rename would reach new installs only, and the two groupings
+     * would stay out of step for exactly the rebbeim who already have codes.
+     *
+     * Renames ONLY a default-keyed section still carrying its shipped label. A
+     * rebbi who typed his own name over one keeps it: sections are his (see
+     * DEFAULT_CODE_SECTIONS), and silently overwriting a name he chose is the
+     * one outcome worth designing out. One-shot via its own flag rather than by
+     * clearing anything, so a rebbi who renames a section BACK to "Positive"
+     * afterwards is not overruled on the next load either.
+     *
+     * Purely cosmetic: keys, memberships, data.printCodeSections and
+     * data.printCodeOrder are all untouched, so every code stays exactly where
+     * the rebbi put it and only the heading over it changes. */
+    if(!data.codeSectionsDashboardLabelsSeeded){
+      data.codeSections.forEach(function(s){
+        if(LEGACY_CODE_SECTION_LABELS[s.key]===s.label){
+          for(var i=0;i<DEFAULT_CODE_SECTIONS.length;i++){
+            if(DEFAULT_CODE_SECTIONS[i].key===s.key){ s.label=DEFAULT_CODE_SECTIONS[i].label; break; }
+          }
+        }
+      });
+      data.codeSectionsDashboardLabelsSeeded=true;
     }
     // Printed prize codes need a section to land in. One-shot, and only for a
     // rebbi who actually has prizes — see ensureStoreCodeSection(). Runs after
