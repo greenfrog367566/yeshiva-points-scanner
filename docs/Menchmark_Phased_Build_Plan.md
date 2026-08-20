@@ -180,13 +180,14 @@ Now that tabs are reorganized and the armed-item mechanic exists (2d), refine th
 
 ## Phase 8 — Chavrusa Mode *(full build; touches Dashboard from Phase 3)*
 
-> **Status (2026-08-04):** NOT STARTED. Independent in scope, but **no longer "isolated"** the way the Firebase doc once described it — its Dashboard integration builds on Phase 3, parts of which the rebuild absorbs into its routing step. Sequence it after that work rather than treating it as orthogonal.
+> **Status (2026-08-19):** **STARTED — first slice open as a PR, see `CHANGELOG.md`.** The "sequence after Phase 3" framing above was checked against real code and found stricter than the spec's own content actually requires: every real Chavrusa touchpoint (§2) is scoped to Dashboard's List/Class-view toggle and the mini leaderboard strip, both of which shipped in #195 (the one Phase 3 item that IS done) — none of the four still-open Phase 3 items (floating Points panel dropdown, History's contest filter, History bulk-undo, Trends redesign) are actually a dependency. Manual/Automatic group-building and a reusable Past Chavrusas history are done (new "Chavrusa Mode" tab, Run group); Individual point-target mode needed zero extra code (the spec's own default, "no Dashboard changes"). Still open: the Dashboard visual integration (§2's touchpoints), Entire Group / Group Entity point-target modes, the rule editor.
 
 The largest deferred feature. Spec is complete.
 
-- Focused-mode screen, manual/automatic pairing, compatibility rules, past-chavrusas.
-- Point-target modes (Individual / Group / Group Entity + Resolve).
-- Dashboard integration (grouping in List + Class view, scan-bar target indicator, multi-tile flash, unresolved-points strip) — *builds on Phase 3's Dashboard.*
+- ✅ Manual/automatic pairing, past-chavrusas — **shipped**, this slice.
+- Rule editor (compatibility rules) — not yet built.
+- Point-target modes: Individual **shipped** (no code needed); Group / Group Entity + Resolve — not yet built.
+- Dashboard integration (grouping in List + Class view, scan-bar target indicator, multi-tile flash, unresolved-points strip) — not yet built. *Confirmed unblocked, not gated on the rest of Phase 3 — see status line above.*
 
 **Why last:** biggest new surface, depends on the most other things being stable, and isn't blocking anything. Genuinely a "once the core is solid" feature.
 
