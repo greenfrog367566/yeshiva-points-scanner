@@ -150,6 +150,8 @@ next draw instead of staying sticky? Not the behavior ladder — that stays in
 separators) is blocked on #227 — pull it once that lands. ⚠️ Re-check this
 count against `fix/theory-audit-batch-1` above, which never landed.
 
+**7. Homework tab: still a boolean, not the four-state credit cycle (#361).** `ti-homework` is already seeded with `unchecked / full credit / partial credit / no credit`, and the mirror write, the History "notable exception" gate, and `GB_FIXED_TONES` cell-tinting are all already written generically against all four states — but the Homework tab's own UI (`renderHomework()`) still only offers a "Mark checked / Mark unchecked" toggle, so "partial credit" and "no credit" have no writer anywhere. **Not the same thing as #227** (the Gradebook's *own* homework cell editor, shipped in #227 slice 2, is deliberately two-state pending this). Three `app.html` comments previously cited the wrong, unrelated, closed issue #122 (Phase 2c's tab-retirement/data-migration work) for this — corrected 2026-08-20 to point at #361, the real tracking issue.
+
 ---
 
 ## Waiting on Ben
