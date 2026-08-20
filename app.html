@@ -3569,6 +3569,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button class="btn" id="offlineDownloadBtn" style="margin-top:10px">⬇ Download separate offline copy</button>
       <div id="offlineDownloadStatus" style="margin-top:8px;font-size:.85rem;color:var(--muted)"></div>
     </details>
+    <!-- The passive banner (top of the update-check IIFE near the end of this
+         file) only speaks up on its own when it has good news to deliver, and
+         stays silent on a stale-but-matching version.json — see the note
+         there. This card is the honest complement: a rebbi can ask outright,
+         any time, and always gets an answer rather than inferring "no banner
+         means up to date." -->
+    <details class="card pad bk-card" id="updateCheckCard" style="margin-bottom:14px">
+      <summary>Check for updates</summary>
+      <p>Menchmark updates itself automatically when you're online. Use this if you want to confirm right now that you're on the latest version.</p>
+      <div id="updateCheckStatus" style="margin-top:10px;font-size:.88rem;font-weight:600"></div>
+      <button class="btn" id="updateCheckBtn" style="margin-top:10px">Check now</button>
+    </details>
 
     <h3 class="bk-section-title">Other exports</h3>
     <!-- Full-width, not .backup-grid — a single card in a 2-column grid left
@@ -27484,6 +27496,39 @@ nameLine
     });
   })();
 
+  $("updateCheckBtn").addEventListener("click", function(){
+    var btn = $("updateCheckBtn"), el = $("updateCheckStatus");
+    if(typeof window.mmCheckForUpdate !== "function"){
+      el.textContent = "Can't check right now — try again in a moment.";
+      el.style.color = "var(--muted)";
+      return;
+    }
+    btn.disabled = true;
+    el.textContent = "Checking…";
+    el.style.color = "var(--muted)";
+    window.mmCheckForUpdate(function(result){
+      btn.disabled = false;
+      if(!result.ok){
+        el.textContent = "Couldn't check right now — check your internet connection and try again.";
+        el.style.color = "var(--muted)";
+      } else if(result.newer){
+        if(location.protocol === "file:"){
+          el.textContent = "Version " + result.latest + " is out — this downloaded copy can't update itself. ";
+          var link = document.createElement("a");
+          link.href = result.downloadUrl || "https://menchmark.app/app.html";
+          link.target = "_blank"; link.rel = "noopener";
+          link.textContent = "Download the new copy";
+          el.appendChild(link);
+        } else {
+          el.textContent = "Version " + result.latest + " is available — reload the page to get it.";
+        }
+        el.style.color = "var(--bad)";
+      } else {
+        el.textContent = "✓ You're on the latest version (" + (window.MENCHMARK_APP_VERSION || "—") + ").";
+        el.style.color = "var(--good, #1f8a5b)";
+      }
+    });
+  });
   $("exportCsv").addEventListener("click", function(){
     var rows=[["Rank","Name","Group","Points"]];
     data.students.slice().map(function(s){return{s:s,sc:score(s.id)};})
@@ -30286,7 +30331,7 @@ Two different resets, matching the two sections of the scanner's manual — try 
      window so the Help → About tab can show it; a rebbi reporting a problem can
      then say which copy he is actually running, which until now nothing in the
      app could tell him. */
-  var APP_VERSION = "0.9.0";
+  var APP_VERSION = "0.10.0";
   window.MENCHMARK_APP_VERSION = APP_VERSION;
 
   // 1) Service worker — only over http/https (a file:// offline copy can't use one).
@@ -30464,6 +30509,27 @@ Two different resets, matching the two sections of the scanner's manual — try 
 
     document.body.insertBefore(bar, document.body.firstChild);
   }
+
+  // 5) Manual on-demand check for Backup & Restore's "Check for updates"
+  // card. checkForUpdate() below deliberately stays quiet for a
+  // service-worker-controlled copy (its own reload toast already covers
+  // that case) and says nothing at all on a fetch failure — both are right
+  // for an unattended check, but wrong for a rebbi who explicitly asked and
+  // is looking at the screen waiting for an answer. This always fetches and
+  // always calls back, success or failure, so the card can say so either way.
+  function runManualVersionCheck(onDone){
+    if(typeof fetch !== "function"){ onDone({ok:false}); return; }
+    fetch(VERSION_URL, { cache: "no-store", mode: "cors", credentials: "omit" })
+      .then(function(res){ return res && res.ok ? res.json() : null; })
+      .then(function(info){
+        if(!info || typeof info.version !== "string"){ onDone({ok:false}); return; }
+        var newer = cmpVersion(info.version, APP_VERSION) > 0;
+        if(newer) showOutdatedBanner(info.version, info.downloadUrl);
+        onDone({ok:true, newer:newer, latest:info.version, downloadUrl:info.downloadUrl});
+      })
+      .catch(function(){ onDone({ok:false}); });
+  }
+  window.mmCheckForUpdate = runManualVersionCheck;
 
   function checkForUpdate(){
     if(!updateCheckApplies() || typeof fetch !== "function") return;
