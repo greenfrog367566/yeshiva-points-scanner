@@ -16278,7 +16278,28 @@ function setupRoster() {
       if(reverseChavPoolAdd(pendingPool)) return "scan";
       // Stale — fall through to the log-walk candidate instead.
     }
-    if(candidate){ undoEntry(candidateIdx); return "scan"; }
+    if(candidate){
+      undoEntry(candidateIdx);
+      // "One press reverses one scan" (deliberate, see the batch-undo comment
+      // above) means a rebbi undoing a mis-aimed batch from a quick-undo
+      // button only ever takes back the one student it landed on — the other
+      // N-1 keep their points with nothing on screen saying so. Said once,
+      // here, so every quick-undo surface (the pill, the Dashboard button,
+      // the seating chart, CTRL:UNDO) carries the same warning without
+      // duplicating it at each call site. batchSiblings() already excludes
+      // the entry undoEntry() just marked undone, so "remaining" really is
+      // what's still standing.
+      if(candidate.batchId){
+        var remaining=batchSiblings(candidate.batchId).length;
+        if(remaining>0){
+          var bs=subjectById(candidate.sid);
+          flash(false, "⚠️ Only "+(bs?bs.name:"one student")+"'s scan was undone",
+                "", remaining+" other"+(remaining===1?"":"s")+" from this batch still stand — undo from Recent scans or History to reverse them all.");
+          return "scanPartial";
+        }
+      }
+      return "scan";
+    }
     return false;
   }
   $("giveAllBtn").addEventListener("click", function(){ giveArmedToAll(); });
@@ -18827,6 +18848,10 @@ function setupRoster() {
     if(c==="CTRL:UNDO"){
       var undone=undoMostRecentScan();
       if(undone==="note"){ flash(true,"Undo","","Removed the spoken note"); beep(true); }
+      // "scanPartial" means undoMostRecentScan() already flashed its own
+      // "only one of a batch was undone" warning -- flashing over it here
+      // would just replace that message with the generic one below.
+      else if(undone==="scanPartial"){ beep(true); }
       else if(undone){ flash(true,"Undo","","Reversed the last scan"); beep(true); }
       else { flash(false,"Nothing to undo","",""); beep(false); }
       return;
