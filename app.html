@@ -697,6 +697,76 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat.dragging{opacity:.4}
   .seat-clear{position:absolute;top:2px;right:4px;font-size:.7rem;color:var(--muted);background:transparent;border:none;padding:2px 4px;line-height:1}
   .seat-clear:hover{color:var(--bad)}
+  /* ---- Tables in the seating chart (docs/Seating_Tables_Proposal.md) ----
+     A table is FURNITURE DRAWN UNDER THE SEATS, never a container that owns
+     them: lay.seats stays the only record of who sits where, and lay.tables is
+     a parallel list of rectangles. So the worst a bug in here can do is lose a
+     rectangle — it has no way to lose a boy.
+
+     One extra grid item per table, placed explicitly over the block of cells it
+     covers. Because an explicitly-placed grid item makes CSS auto-placement
+     skip the cells it occupies, EVERY SEAT IS ALSO PLACED EXPLICITLY (see
+     renderSeatGrid and renderSeatChartPrint) — without that, every seat after
+     the first table would silently slide somewhere new. */
+  /* position:relative is load-bearing, not tidiness: the name caption and the
+     grip are both position:absolute, and without a positioned ancestor here
+     they anchor to the page instead and land in the top-left corner of the
+     whole app. */
+  .seat-table{position:relative;border:2px solid var(--tbl-line,#c3c8d4);border-radius:16px;
+    background:var(--tbl-fill,#f2f4f9);z-index:0;pointer-events:none;
+    /* Half the .seat-grid gap, so the surface runs UNDERNEATH the gutters
+       between its own seats and reads as one continuous table rather than a
+       box drawn around four separate tiles. */
+    margin:-5px}
+  .seat-grid .seat{position:relative;z-index:1}
+  /* A boy at a table sits ON the tabletop, so his card drops its own
+     background and border and lets the surface show through.
+
+     Scoped through .seat-grid deliberately: `.seat-print-preview .seat` sets a
+     border at the same specificity as a bare `.seat.at-table` would and is
+     declared later in this stylesheet, so on the class sheet it won and every
+     boy at a table kept a card border the table was supposed to absorb. */
+  .seat-grid .seat.at-table{background:transparent;border-color:transparent}
+  /* And a vacant chair at a table is just bare tabletop. The dashed "Empty
+     seat" placeholder is right in the middle of a room and wrong in the
+     middle of a table. */
+  .seat-grid .seat.at-table.empty{background:transparent;border-style:solid;color:transparent}
+  /* The six colours are a fixed palette rather than a free picker, for a
+     reason that only shows up on paper: each one has to stay legible when the
+     browser drops the fill (see the print block), so the BORDER is the colour
+     that carries the table and is chosen dark enough to do it alone. */
+  .seat-table.tc-slate{--tbl-line:#8d94a6;--tbl-fill:#f2f4f9}
+  .seat-table.tc-blue{--tbl-line:#5b7fc4;--tbl-fill:#eef3fc}
+  .seat-table.tc-green{--tbl-line:#5b9c6e;--tbl-fill:#eef8f1}
+  .seat-table.tc-amber{--tbl-line:#b98c33;--tbl-fill:#fdf5e7}
+  .seat-table.tc-rose{--tbl-line:#c46b7f;--tbl-fill:#fdeff2}
+  .seat-table.tc-violet{--tbl-line:#8a72c0;--tbl-fill:#f4f0fc}
+  .seat-table-name{position:absolute;top:3px;left:11px;font-size:.62rem;font-weight:700;
+    letter-spacing:.4px;text-transform:uppercase;color:var(--tbl-line,#8d94a6);
+    pointer-events:none;max-width:calc(100% - 22px);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  /* The grip is the ONLY interactive part of a table, which is why the
+     backdrop itself is pointer-events:none — a table must never intercept a
+     tap meant for the boy sitting at it. */
+  .seat-table-grip{position:absolute;top:-9px;left:8px;display:none;align-items:center;gap:4px;
+    pointer-events:auto;background:#fff;border:1px solid var(--tbl-line,#c3c8d4);
+    border-radius:999px;padding:1px 7px;font-size:.68rem;font-weight:700;
+    color:var(--tbl-line,#8d94a6);max-width:calc(100% - 16px);z-index:2}
+  .seat-grid.tables-mode .seat-table-grip{display:inline-flex}
+  .seat-grid.tables-mode .seat-table-name{display:none}
+  .seat-table-grip .tg-drag{cursor:grab}
+  .seat-table-grip input{border:0;background:transparent;font:inherit;color:var(--ink);
+    width:9ch;min-width:4ch;padding:0}
+  .seat-table-grip button{border:0;background:transparent;font:inherit;color:inherit;
+    padding:0 2px;line-height:1;cursor:pointer}
+  .seat-table-grip .tg-x:hover{color:var(--bad)}
+  .seat-table-grip .tg-color{width:11px;height:11px;border-radius:50%;flex:0 0 auto;
+    background:var(--tbl-line,#8d94a6);padding:0}
+  /* Tables mode: seats stop being draggable and become selectable instead. */
+  .seat-grid.tables-mode .seat{cursor:pointer}
+  .seat-grid.tables-mode .seat.tbl-sel{box-shadow:0 0 0 2px var(--brass) inset}
+  .seat-tables-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:8px 14px 0;font-size:.82rem;color:var(--muted);font-weight:600}
   .seat-unplaced{padding:0 14px 14px}
   .seat-unplaced-label{font-size:.78rem;color:var(--muted);font-weight:600;margin:4px 0 8px}
   .seat-tray{display:flex;flex-wrap:wrap;gap:8px}
@@ -1758,6 +1828,20 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
        row edge. Same rule the rest of the print CSS already uses on .label,
        .personal-qr-card, .point-card and .lb-row-compact. */
     body.print-seating .seat{border:1px solid #999;break-inside:avoid;page-break-inside:avoid}
+    /* A TABLE PRINTS BY ITS BORDER, NOT ITS FILL. This print block sets no
+       global print-color-adjust, and browsers drop background colours from
+       print by default — so a table that reads only as a tint prints as
+       nothing at all. The 2px coloured outline and the table's name carry it;
+       the tint is a bonus wherever the hint is honoured.
+       break-inside is best-effort: support for it on a grid item spanning
+       several rows is patchy, and the existing fit warning above the preview
+       stays the real backstop for a sheet that runs onto a second page. */
+    body.print-seating .seat-table{border-width:2px;break-inside:avoid;page-break-inside:avoid;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact}
+    /* Beats the .seat rule above, which would otherwise draw a grey box around
+       every boy sitting at a table. */
+    body.print-seating .seat.at-table{border-color:transparent}
+    body.print-seating .seat-table-grip{display:none!important}
     /* The codes block stays whole. Half a key on each page is worse than none.
        It ALWAYS sits at the bottom, in every case — see the note in
        renderSeatChartPrint() before reordering it. */
@@ -3257,6 +3341,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <span id="seatPrintArrangeRow" style="display:flex;gap:6px">
         <button class="btn btn-sm" id="seatSortByName" title="Seat the whole class alphabetically by last name, filling the desks left to right, front to back. Only where each boy sits changes.">A&ndash;Z by name</button>
         <button class="btn btn-sm" id="seatShuffle" title="Deal the whole class into random desks. Only where each boy sits changes.">🎲 Shuffle</button>
+        <!-- Tables — docs/Seating_Tables_Proposal.md. Sits with the other two
+             whole-room controls because it describes the furniture, not the
+             boys: making, moving or removing a table never changes anyone's
+             score, and removing one leaves every boy exactly where he sits. -->
+        <button class="btn btn-sm" id="seatPrintTablesBtn" title="Group seats into a table, then drag the whole table around. For a room with tables instead of single desks.">🪑 Tables</button>
       </span>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="What sits in each boy's card. The two &quot;+ photo&quot; options print his picture and his code SIDE BY SIDE, which costs no extra height on the page — so you can recognise a boy and scan him from the same card. Fewer columns, or Landscape, makes the pictures bigger.">Avatar:
         <select id="seatPrintAvatarMode" class="field" style="width:auto">
@@ -7477,9 +7566,16 @@ function setupRoster() {
     // — a silent data change caused by something the rebbi did on a different
     // page ten minutes earlier. Arranging is a thing you are doing right now,
     // so it ends when you leave the page you were doing it on.
-    if(activeTabName==="printSeats" && tab!=="printSeats" && data.seatArranging){
+    // Tables mode leaves with it, and for the same reason — it is even more
+    // clearly a thing you are doing right now. It is listed separately in the
+    // condition because the class sheet's seats drag without data.seatArranging
+    // ever being set (that page is always in arranging), so tables mode can be
+    // on there while the flag beside it is off.
+    if(activeTabName==="printSeats" && tab!=="printSeats" && (data.seatArranging || data.seatTablesMode)){
       data.seatArranging=false;
       data.seatSetupOpen=false;   // the two are one switch now
+      data.seatTablesMode=false;
+      seatTablesReset();
       save();
       renderTapPanel();
     }
@@ -14833,6 +14929,10 @@ function setupRoster() {
     if(!Array.isArray(lay.seats)) lay.seats=[];
     var need=lay.rows*lay.cols;
     if(lay.seats.length!==need) seatResize(lay, lay.rows, lay.cols);
+    // Same repair pass the seats get, for the furniture. seatResize() ends with
+    // this too, so the call above already covers the reshaping case — this is
+    // for the far more common one where the grid was already the right size.
+    seatTablesFit(lay);
     return lay;
   }
   // How tall/wide the Rows and Cols spinners let a rebbi go. Rows is generous
@@ -14910,6 +15010,290 @@ function setupRoster() {
       }
     }
     lay.rows=rows; lay.cols=cols; lay.seats=grid;
+    // Keep the furniture inside the room the reshape just produced. Last,
+    // because it reads the new rows/cols. See seatTablesFit().
+    seatTablesFit(lay);
+  }
+
+  /* ---------- seating chart: tables ----------
+   *
+   * docs/Seating_Tables_Proposal.md. A table is a rectangle of CELLS drawn
+   * underneath the seats — furniture, not a container. `lay.seats` remains the
+   * only record of who sits where, and nothing in this section writes to it
+   * except seatTableMove(), which permutes it and then verifies the
+   * permutation before saving. The practical consequence is worth stating
+   * plainly: the worst a bug in here can do is lose a rectangle.
+   *
+   * Stored as data.seating[class].tables = [{id,name,r,c,w,h,shape,color}].
+   * Purely additive — no DATA_VERSION bump, because nothing converts.
+   */
+  var SEAT_TABLE_COLORS=["slate","blue","green","amber","rose","violet"];
+  function seatTablesArr(lay){
+    if(!Array.isArray(lay.tables)) lay.tables=[];
+    return lay.tables;
+  }
+  function seatRectsOverlap(a,b){
+    return a.r < b.r+b.h && b.r < a.r+a.h && a.c < b.c+b.w && b.c < a.c+a.w;
+  }
+  /* Keep every table inside the room after the room changes shape.
+   *
+   * Called at the END of seatResize(), which covers every caller at once — the
+   * Rows/Cols spinners on both charts and seatLayout()'s own repair pass — so
+   * no caller has to remember. Clamps where it can and dissolves where it
+   * cannot: a table wider than the room has no honest position to be clamped
+   * to.
+   *
+   * This is the ONLY thing a resize is allowed to destroy. seatResize itself
+   * still never drops a boy (see its comment above), and this function never
+   * touches lay.seats at all.
+   */
+  function seatTablesFit(lay){
+    var kept=[];
+    seatTablesArr(lay).forEach(function(t){
+      if(!t||typeof t!=="object") return;
+      if(t.w>lay.cols||t.h>lay.rows) return;        // cannot fit in this room
+      if(t.c+t.w>lay.cols) t.c=lay.cols-t.w;
+      if(t.r+t.h>lay.rows) t.r=lay.rows-t.h;
+      if(t.r<0||t.c<0) return;
+      // Clamping can push two tables into one another; first one keeps its
+      // place, the loser is dissolved rather than left overlapping.
+      if(kept.some(function(o){ return seatRectsOverlap(o,t); })) return;
+      kept.push(t);
+    });
+    lay.tables=kept;
+  }
+  // Which table covers a given (row, col) — in TRUE coordinates, never display
+  // ones. Returns null for a plain desk.
+  function seatTableAtRC(lay, r, c){
+    var tables=seatTablesArr(lay);
+    for(var i=0;i<tables.length;i++){
+      var t=tables[i];
+      if(r>=t.r && r<t.r+t.h && c>=t.c && c<t.c+t.w) return t;
+    }
+    return null;
+  }
+  /* Move a table to (nr,nc), TAKING ITS BOYS WITH IT — and SWAPPING with
+   * whoever is standing in the new spot.
+   *
+   * The swap is the whole reason this is usable. An earlier version refused a
+   * move onto occupied cells, which is safe and, on a real chart, almost
+   * always useless: a class of 24 in a 25-desk room leaves one free cell, so
+   * every direction a rebbi could drag a table was refused and the grip read
+   * as broken. Dragging one SEAT onto another has always swapped the two boys
+   * (see wireSeatArrange), so dragging a table swaps the block. Same idiom,
+   * scaled up.
+   *
+   * This is the one operation in the feature that writes to lay.seats, so it
+   * is written as what it is — a permutation, the same ids at different
+   * indices — and each affected cell is assigned exactly once, computed from
+   * the ORIGINAL array rather than from a partially-updated one. That matters
+   * because the source and destination blocks are allowed to overlap (nudging
+   * a table one column across is the common case), and a naive pairwise swap
+   * clobbers itself the moment they do.
+   *
+   *   destination cells  <- the table's own boys, offset for offset
+   *   vacated cells      <- the boys who were displaced, in reading order
+   *
+   * Those two sets are always the same size (both are |block| - |overlap|), so
+   * nobody is left without a seat. The count check afterwards should therefore
+   * be impossible to trip; it is here because "impossible" is exactly what the
+   * seating code has been bitten by before (see seatResize's comment), and
+   * writing nothing is a free way to be certain.
+   *
+   * Returns true only if the move happened. Refused, with nothing written, if
+   * the block would leave the room or overlap another table — a boy should
+   * never be swapped onto furniture he was not seated at.
+   */
+  function seatTableMove(lay, t, nr, nc){
+    if(nr<0||nc<0||nr+t.h>lay.rows||nc+t.w>lay.cols) return false;
+    if(nr===t.r && nc===t.c) return false;
+    var moved={r:nr,c:nc,w:t.w,h:t.h};
+    if(seatTablesArr(lay).some(function(o){ return o!==t && seatRectsOverlap(o,moved); })) return false;
+    var cols=lay.cols, src=[], dst=[], i, j;
+    for(i=0;i<t.h;i++) for(j=0;j<t.w;j++){
+      src.push((t.r+i)*cols+(t.c+j));
+      dst.push((nr+i)*cols+(nc+j));
+    }
+    var inSrc={}, inDst={};
+    src.forEach(function(x){ inSrc[x]=1; });
+    dst.forEach(function(x){ inDst[x]=1; });
+    var next=lay.seats.slice();
+    // The table's own boys, each keeping his place within the block.
+    for(i=0;i<dst.length;i++) next[dst[i]]=lay.seats[src[i]];
+    // Everyone the table landed on, moved into the cells it left behind.
+    var displaced=dst.filter(function(x){ return !inSrc[x]; }).map(function(x){ return lay.seats[x]; });
+    var vacated=src.filter(function(x){ return !inDst[x]; });
+    for(i=0;i<vacated.length;i++) next[vacated[i]]=displaced[i];
+    function seated(a){ var k=0; a.forEach(function(v){ if(v) k++; }); return k; }
+    if(seated(next)!==seated(lay.seats)) return false;
+    lay.seats=next; t.r=nr; t.c=nc;
+    return true;
+  }
+  /* Make a table over a block of cells. Returns it, or null if the block is
+   * illegal — off the grid, a single cell, or overlapping a table that is
+   * already there.
+   *
+   * `shape` is stored as "rect" and there is no UI to change it: round tables
+   * were considered and deliberately left out of v1 (a round table that reads
+   * properly wants a hollow middle, which is a convention to explain rather
+   * than a feature to build). The field exists so adding them later is a
+   * render change, not a migration.
+   */
+  function seatTableCreate(lay, r, c, w, h){
+    if(w<1||h<1||w*h<2) return null;
+    if(r<0||c<0||r+h>lay.rows||c+w>lay.cols) return null;
+    var rect={r:r,c:c,w:w,h:h};
+    if(seatTablesArr(lay).some(function(o){ return seatRectsOverlap(o,rect); })) return null;
+    var t={ id:newId(), name:"Table "+(lay.tables.length+1), r:r, c:c, w:w, h:h, shape:"rect",
+            color:SEAT_TABLE_COLORS[lay.tables.length%SEAT_TABLE_COLORS.length] };
+    lay.tables.push(t);
+    return t;
+  }
+  /* In-memory only, exactly like seatGridPending above: both describe an
+   * action half-finished on this screen, not a preference, so they store no
+   * field and need no migration.
+   *
+   * seatTableSel holds TRUE flat indices, never display ones, so nothing in
+   * here can be confused by Rebbi's view.
+   */
+  var seatTableSel=[], seatTablePending=null;
+  // The selection is always the BOUNDING BOX of the cells tapped, which is what
+  // guarantees a table is a rectangle without a fiddly polygon model — and is
+  // predictable enough to explain in one line of helper text.
+  function seatTableSelBox(cols){
+    if(!seatTableSel.length) return null;
+    var r0=1e9,c0=1e9,r1=-1,c1=-1;
+    seatTableSel.forEach(function(idx){
+      var r=Math.floor(idx/cols), c=idx%cols;
+      if(r<r0) r0=r; if(c<c0) c0=c; if(r>r1) r1=r; if(c>c1) c1=c;
+    });
+    return {r:r0, c:c0, w:c1-c0+1, h:r1-r0+1};
+  }
+  function seatTablesReset(){ seatTableSel=[]; seatTablePending=null; }
+  /* Draw the tables into a chart grid. Shared by the live chart and the class
+   * sheet — which is the whole point, since it means paper cannot disagree
+   * with the screen about where the furniture is.
+   *
+   * rebbiView MIRRORS the block, and that line is load-bearing. Both charts
+   * implement Rebbi's view by reversing the flat seats array — a true 180°
+   * rotation — but a table is stored as (r,c) rather than as a flat index, so
+   * it does not come along for free. Without the mirror the boys rotate around
+   * tables that stay put. Render-time only: lay.tables is never written here.
+   */
+  function renderSeatTables(grid, lay, rebbiView, interactive, redraw){
+    seatTablesArr(lay).forEach(function(t){
+      var r = rebbiView ? (lay.rows - t.r - t.h) : t.r;
+      var c = rebbiView ? (lay.cols - t.c - t.w) : t.c;
+      var back=el("div","seat-table tc-"+(SEAT_TABLE_COLORS.indexOf(t.color)>=0?t.color:"slate"));
+      back.style.gridRow    = (r+1)+" / span "+t.h;
+      back.style.gridColumn = (c+1)+" / span "+t.w;
+      back.appendChild(el("div","seat-table-name", t.name||"Table"));
+      if(interactive) back.appendChild(seatTableGrip(lay, t, redraw));
+      grid.appendChild(back);
+    });
+  }
+  function seatTableGrip(lay, t, redraw){
+    var grip=el("div","seat-table-grip no-print");
+    var handle=el("span","tg-drag","⠿");
+    handle.draggable=true;
+    handle.title="Drag onto the seat where this table's front-left corner should go — the boys at it come with it. On a touch screen, tap this then tap that seat.";
+    handle.addEventListener("dragstart", function(ev){
+      ev.dataTransfer.setData("text/plain", JSON.stringify({tbl:t.id}));
+      ev.dataTransfer.effectAllowed="move";
+    });
+    // Tap-to-move fallback, matching the one the unplaced tray already offers:
+    // a smartboard has no drag.
+    handle.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      seatTablePending = (seatTablePending===t.id) ? null : t.id;
+      redraw();
+    });
+    if(seatTablePending===t.id) grip.style.outline="2px solid var(--brass)";
+    grip.appendChild(handle);
+    var nameIn=el("input"); nameIn.type="text"; nameIn.value=t.name||"";
+    nameIn.title="Rename this table";
+    nameIn.addEventListener("click", function(ev){ ev.stopPropagation(); });
+    // "change", never "input" — redraw() replaces this element, so reacting to
+    // every keystroke would take the focus away mid-word.
+    nameIn.addEventListener("change", function(){
+      t.name=nameIn.value.slice(0,24); save(); redraw();
+    });
+    grip.appendChild(nameIn);
+    var col=el("button","tg-color"); col.type="button";
+    col.title="Change this table's colour";
+    col.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      var i=SEAT_TABLE_COLORS.indexOf(t.color);
+      t.color=SEAT_TABLE_COLORS[(i+1)%SEAT_TABLE_COLORS.length];
+      save(); redraw();
+    });
+    grip.appendChild(col);
+    var x=el("button","tg-x","✕"); x.type="button";
+    // No confirm, deliberately: dissolving a table is non-destructive by
+    // construction — it removes a rectangle and touches nobody's seat.
+    x.title="Remove this table. Everyone stays exactly where he is sitting.";
+    x.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      lay.tables=seatTablesArr(lay).filter(function(o){ return o!==t; });
+      save(); redraw();
+    });
+    grip.appendChild(x);
+    return grip;
+  }
+  function renderSeatTablesBar(host, lay, redraw){
+    var bar=el("div","seat-tables-bar no-print");
+    var box=seatTableSelBox(lay.cols);
+    var clash = box && seatTablesArr(lay).some(function(o){ return seatRectsOverlap(o,box); });
+    var can = !!box && box.w*box.h>=2 && !clash;
+    bar.appendChild(el("span",null, seatTablePending
+      ? "Now tap the seat where that table's front-left corner should go."
+      : "Tap seats to mark out a table, then Make a table. Drag a table's ⠿ grip to move it — the boys at it come too. Seats don't drag while this is on."));
+    var mk=el("button","btn btn-sm"+(can?" btn-primary":""), "Make a table");
+    mk.disabled=!can;
+    if(clash) mk.title="That block overlaps a table you already have.";
+    else if(box && box.w*box.h<2) mk.title="A table needs at least two seats.";
+    mk.addEventListener("click", function(){
+      var b=seatTableSelBox(lay.cols);
+      if(b && seatTableCreate(lay,b.r,b.c,b.w,b.h)){ seatTableSel=[]; save(); redraw(); }
+    });
+    bar.appendChild(mk);
+    if(seatTableSel.length){
+      var clr=el("button","btn btn-sm","Clear selection");
+      clr.addEventListener("click", function(){ seatTableSel=[]; redraw(); });
+      bar.appendChild(clr);
+    }
+    host.appendChild(bar);
+  }
+  /* What a seat does while Tables mode is on. Seat dragging is deliberately
+   * suspended for the duration: dragging a boy onto another boy already means
+   * SWAP, and overloading it to also mean "bond these two into a table" is the
+   * kind of ambiguity that loses a rebbi his seating arrangement.
+   */
+  function wireSeatTablesCell(seat, lay, trueIdx, redraw){
+    function drop(nr, nc, id){
+      var t=seatTablesArr(lay).filter(function(o){ return o.id===id; })[0];
+      if(t && seatTableMove(lay, t, nr, nc)) save();
+      redraw();
+    }
+    seat.addEventListener("click", function(){
+      if(seatTablePending){
+        var id=seatTablePending; seatTablePending=null;
+        drop(Math.floor(trueIdx/lay.cols), trueIdx%lay.cols, id);
+        return;
+      }
+      var i=seatTableSel.indexOf(trueIdx);
+      if(i>=0) seatTableSel.splice(i,1); else seatTableSel.push(trueIdx);
+      redraw();
+    });
+    seat.addEventListener("dragover", function(ev){ ev.preventDefault(); seat.classList.add("drag-over"); });
+    seat.addEventListener("dragleave", function(){ seat.classList.remove("drag-over"); });
+    seat.addEventListener("drop", function(ev){
+      ev.preventDefault(); seat.classList.remove("drag-over");
+      var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+      var p; try{ p=JSON.parse(raw); }catch(e){ return; }
+      if(!p.tbl) return;
+      drop(Math.floor(trueIdx/lay.cols), trueIdx%lay.cols, p.tbl);
+    });
   }
   /* Seats any student who has none, so a rebbi who has only imported a roster
    * gets a usable class sheet instead of a page of empty boxes. Returns how
@@ -15333,6 +15717,10 @@ function setupRoster() {
       function setSeatSetup(on){
         data.seatSetupOpen=!!on;
         data.seatArranging=!!on;
+        // Tables mode is a sub-mode of arranging, so it cannot outlive it —
+        // otherwise reopening Setup later lands the rebbi in a mode he left
+        // days ago and did not ask for again.
+        if(!on){ data.seatTablesMode=false; seatTablesReset(); }
         // Rebbi's view and arranging stay strictly mutually exclusive — see
         // rebbiBtn below for why this first pass keeps that as a hard rule.
         if(on) data.seatLiveRebbiView=false;
@@ -15398,6 +15786,22 @@ function setupRoster() {
 
       // (The separate "Arrange seats" button that used to sit here is gone —
       // opening this row IS arranging now. See setSeatSetup() above.)
+
+      // Tables (docs/Seating_Tables_Proposal.md) — for a room with tables
+      // rather than single desks. Inside Setup because it is a way of
+      // describing the room, not a way of using it.
+      var tblBtn=el("button","btn btn-sm"+(data.seatTablesMode?" btn-primary":""),
+                    data.seatTablesMode?"✓ Done with tables":"🪑 Tables");
+      tblBtn.disabled=!!data.seatLiveRebbiView;
+      tblBtn.title=data.seatLiveRebbiView
+        ? "Turn Rebbi's view off to edit tables — a table is stored by where it sits in the room, so editing one through a mirrored chart moves the wrong block."
+        : "Group seats into a table, then drag the whole table around. For a room with tables instead of single desks.";
+      tblBtn.addEventListener("click", function(){
+        data.seatTablesMode=!data.seatTablesMode;
+        seatTablesReset();
+        save(); renderTapPanel();
+      });
+      setupRow.appendChild(tblBtn);
 
       // "Rebbi's view" for the LIVE chart — same 180° flip as the print
       // option, but this one is interactive (click-to-award, drag-to-
@@ -15803,10 +16207,22 @@ function setupRoster() {
     // "Front of room" sits above the grid in normal view; in Rebbi's view the
     // seats are reversed (Rebbi faces the class), so the front is at the
     // BOTTOM — same convention the printed chart already uses.
+    /* Tables mode lives INSIDE arranging — it is a way of setting the room up,
+     * not a way of using it — and is held off while Rebbi's view is on. A table
+     * is stored by its position in the room, so editing one through a mirrored
+     * chart is the one reliable way to move the wrong block; the live chart
+     * already disables Rebbi's view during arranging for the same family of
+     * reason (see rebbiBtn), so in practice this is a second layer. */
+    var tablesMode = arranging && !!data.seatTablesMode && !data.seatLiveRebbiView;
+    if(tablesMode) renderSeatTablesBar(body, lay, renderTapPanel);
+
     if(!data.seatLiveRebbiView) body.appendChild(el("div","seat-front","Front of room"));
-    var grid=el("div","seat-grid"+(arranging?" arranging":""));
+    var grid=el("div","seat-grid"+(arranging?" arranging":"")+(tablesMode?" tables-mode":""));
     grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
     grid.style.gridTemplateRows="repeat("+lay.rows+", 1fr)";
+    // BEFORE the seats, so the tabletops sit under them in paint order as well
+    // as by z-index. Mirrored here when Rebbi's view is on — see renderSeatTables.
+    renderSeatTables(grid, lay, !!data.seatLiveRebbiView, tablesMode, renderTapPanel);
 
     // Rebbi's view for the LIVE chart must never reverse lay.seats itself —
     // arranging mode's drag/drop and clear-seat logic write directly to
@@ -15821,11 +16237,26 @@ function setupRoster() {
     var displayOrder = lay.seats.map(function(sid, trueIdx){ return {sid:sid, trueIdx:trueIdx}; });
     if(data.seatLiveRebbiView) displayOrder = displayOrder.slice().reverse();
 
-    displayOrder.forEach(function(item){
+    displayOrder.forEach(function(item, dispIdx){
       var sid=item.sid, trueIdx=item.trueIdx;
       var s = sid ? byId[sid] : null;
-      var seat=el("div","seat"+(s?"":" empty")+(scanMode&&s?" scan-seat":""));
+      // Which table this seat is at, in TRUE coordinates. Correct under Rebbi's
+      // view too: the seat's display position and the table's rendered block are
+      // mirrored by the same transform, so a true-coordinate lookup still names
+      // the block the seat is drawn inside.
+      var atTable = seatTableAtRC(lay, Math.floor(trueIdx/lay.cols), trueIdx%lay.cols);
+      var seat=el("div","seat"+(s?"":" empty")+(scanMode&&s?" scan-seat":"")+(atTable?" at-table":"")
+                 +(tablesMode&&seatTableSel.indexOf(trueIdx)>=0?" tbl-sel":""));
       seat.dataset.idx=trueIdx;
+      /* EXPLICIT PLACEMENT, and it is not cosmetic. The seats used to rely on
+       * CSS grid auto-placement — appended in order, landing in reading order
+       * by themselves — but a table backdrop is an explicitly-placed grid item,
+       * and auto-placement skips the cells an explicit item occupies. Left
+       * automatic, every seat after the first table would slide somewhere new.
+       * Placing each seat from the index already in hand costs two lines and
+       * makes the chart deterministic instead of order-dependent. */
+      seat.style.gridRow    = Math.floor(dispIdx/lay.cols)+1;
+      seat.style.gridColumn = (dispIdx%lay.cols)+1;
       if(s){
         seat.dataset.sid=s.id;
         /* BIGGER, not smaller, when it is sharing the cell with a code. The
@@ -15846,7 +16277,9 @@ function setupRoster() {
         seat.textContent="Empty seat";
       }
 
-      if(arranging){
+      if(tablesMode){
+        wireSeatTablesCell(seat, lay, trueIdx, renderTapPanel);
+      } else if(arranging){
         wireSeatArrange(seat, lay, trueIdx, renderTapPanel);
       } else if(s){
         seat.addEventListener("click", function(){ tapClick(s, seat); });
@@ -15869,7 +16302,11 @@ function setupRoster() {
     // only way to fix a mis-scan is to leave the view he is working in.
     renderScanUndoRow(body);
 
-    if(arranging){
+    // Not in Tables mode: the tray's tap-a-name-then-tap-a-seat path writes
+    // through seatGridPending, which the seats are not listening for while
+    // they are being selected into tables. Offering a control that does
+    // nothing is worse than not offering it.
+    if(arranging && !tablesMode){
       renderUnplacedTray(body, unplaced, renderTapPanel);
     } else {
       seatGridPending=null;
@@ -24191,8 +24628,31 @@ nameLine
       return "Shuffle all "+n+" students into random seats?\n\nThis replaces the current seating chart and can't be undone. Only where each boy sits changes — no points, scans or history are touched.";
     });
   });
+  /* Tables mode on the class sheet. One flag, shared with the live chart, so
+   * "am I editing tables right now" has a single answer wherever the rebbi is
+   * looking — and the furniture he builds on this page is the furniture the
+   * Dashboard chart shows him a moment later.
+   *
+   * Kept in step with Rebbi's view by seatPrintSyncTablesBtn() below rather
+   * than only here, since the checkbox can be flipped independently. */
+  function seatPrintSyncTablesBtn(){
+    var b=$("seatPrintTablesBtn"); if(!b) return;
+    var rv = $("seatPrintRebbiView") ? $("seatPrintRebbiView").checked : false;
+    var on = !!data.seatTablesMode && !rv;
+    b.textContent = on ? "✓ Done with tables" : "🪑 Tables";
+    b.classList.toggle("btn-primary", on);
+    b.disabled = rv;
+    b.title = rv
+      ? "Turn Rebbi's view off to edit tables — a table is stored by where it sits in the room, so editing one through a mirrored chart moves the wrong block."
+      : "Group seats into a table, then drag the whole table around. For a room with tables instead of single desks.";
+  }
+  $("seatPrintTablesBtn").addEventListener("click", function(){
+    data.seatTablesMode=!data.seatTablesMode;
+    seatTablesReset();
+    save(); seatPrintSyncTablesBtn(); renderTapPanel(); renderSeatChartPrint();
+  });
   $("seatPrintShowPoints").addEventListener("change", function(){ data.seatPrintOpts.showPoints=this.checked; save(); renderSeatChartPrint(); });
-  $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); renderSeatChartPrint(); });
+  $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); seatPrintSyncTablesBtn(); renderSeatChartPrint(); });
   $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); seatPrintSyncActLayout(); renderSeatChartPrint(); });
   // Layout of the printed codes block — the print-side twins of the chart's own
   // ▤ One row / ▦ Grouped and width buttons, worded identically so a rebbi who
@@ -24243,6 +24703,10 @@ nameLine
     var dims=$("seatPrintDims"); if(dims) dims.style.display = isList ? "none" : "";
     var rv=$("seatPrintRebbiViewRow"); if(rv) rv.style.display = isList ? "none" : "flex";
     var ar=$("seatPrintArrangeRow"); if(ar) ar.style.display = isList ? "none" : "flex";
+    // The Tables button lives inside that row, so List hides it along with the
+    // other two whole-room controls — but its label and disabled state still
+    // have to be right the moment the row comes back.
+    seatPrintSyncTablesBtn();
   }
   /* Seat the unplaced for the class sheet, and re-sync the two controls that
    * describe what it just did. One function so the three callers cannot drift —
@@ -24997,14 +25461,31 @@ nameLine
     // SEE — writing by the display position would move the wrong boy.
     var displayOrder = lay.seats.map(function(sid, trueIdx){ return {sid:sid, trueIdx:trueIdx}; });
     if(rebbiView) displayOrder = displayOrder.slice().reverse();
+    // Held off under Rebbi's view for the same reason the live chart holds it
+    // off — a table is stored by its position in the room, and editing one
+    // through a mirrored chart is how you move the wrong block. Tables still
+    // DRAW under Rebbi's view (and print that way); it is only editing them
+    // that waits for the checkbox to come off.
+    var tablesMode = !!data.seatTablesMode && !rebbiView;
+    if(tablesMode) renderSeatTablesBar(wrap, lay, seatRedraw);
     if(!rebbiView) wrap.appendChild(el("div","seat-front","Front of room"));
-    var grid=el("div","seat-grid print-seat-grid arranging");
+    var grid=el("div","seat-grid print-seat-grid arranging"+(tablesMode?" tables-mode":""));
     grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
-    displayOrder.forEach(function(item){
+    renderSeatTables(grid, lay, rebbiView, tablesMode, seatRedraw);
+    displayOrder.forEach(function(item, dispIdx){
       var sid=item.sid, trueIdx=item.trueIdx;
       var s = sid ? byId[sid] : null;
-      var seat=el("div","seat"+(s?"":" empty"));
+      // TRUE coordinates — see the same lookup in renderSeatGrid for why that
+      // stays right under Rebbi's view.
+      var atTable = seatTableAtRC(lay, Math.floor(trueIdx/lay.cols), trueIdx%lay.cols);
+      var seat=el("div","seat"+(s?"":" empty")+(atTable?" at-table":"")
+                 +(tablesMode&&seatTableSel.indexOf(trueIdx)>=0?" tbl-sel":""));
       seat.dataset.idx=trueIdx;
+      // Explicit placement — required once a table backdrop is in the grid,
+      // because auto-placement skips the cells an explicit item occupies. See
+      // the fuller note in renderSeatGrid.
+      seat.style.gridRow    = Math.floor(dispIdx/lay.cols)+1;
+      seat.style.gridColumn = (dispIdx%lay.cols)+1;
       if(s){
         fillSeatPrintCard(seat, s, avatarMode, act, showPts, hasQR);
         var clearBtn=el("button","seat-clear no-print","✕");
@@ -25021,7 +25502,9 @@ nameLine
       // behind a switch so a stray touch on a smartboard mid-lesson can't move
       // a boy. This page is where you set the sheet up — there is no lesson
       // running on it, and making the mock-up the thing you edit is the point.
-      wireSeatArrange(seat, lay, trueIdx, seatRedraw);
+      // Tables mode takes the seat over for the duration; see wireSeatTablesCell.
+      if(tablesMode) wireSeatTablesCell(seat, lay, trueIdx, seatRedraw);
+      else wireSeatArrange(seat, lay, trueIdx, seatRedraw);
       grid.appendChild(seat);
     });
     wrap.appendChild(grid);
@@ -25038,8 +25521,9 @@ nameLine
       unplacedBox.innerHTML="";
       // No "not yet seated" tray in List: every student in the class is already
       // on the sheet, so a tray would be offering to place boys who are printed
-      // three inches above it.
-      if(!isList) renderUnplacedTray(unplacedBox, unplaced, seatRedraw);
+      // three inches above it. Nor in Tables mode, where the seats are not
+      // listening for the tray's tap-to-place — see renderSeatGrid's copy.
+      if(!isList && !tablesMode) renderUnplacedTray(unplacedBox, unplaced, seatRedraw);
     }
     /* Non-blocking fit check.
      *
@@ -26590,6 +27074,46 @@ nameLine
     if(typeof data.promptStyle!=="string") data.promptStyle="";
     if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
     if(!data.seating||typeof data.seating!=="object") data.seating={};
+    /* Tables in the seating chart (docs/Seating_Tables_Proposal.md).
+     *
+     * Purely additive — NO DATA_VERSION bump, because nothing converts: a save
+     * with no tables gets an empty list and renders exactly as it did before.
+     *
+     * Written out longhand rather than calling seatTablesFit() so this block
+     * stays self-contained: test-migration.html carries its own copy of
+     * load2fix() and has no seating helpers to call into. It is also doing a
+     * different job from the runtime helper — this one is the CORRUPT-DATA
+     * guard, so it DROPS anything it cannot vouch for, where seatTablesFit()
+     * clamps a merely out-of-date rectangle back into the room.
+     *
+     * Either way it can only ever discard a rectangle. Nothing here reads or
+     * writes lay.seats, so no arrangement of boys is reachable from this code.
+     */
+    if(typeof data.seatTablesMode!=="boolean") data.seatTablesMode=false;
+    Object.keys(data.seating).forEach(function(seatK){
+      var lay=data.seating[seatK];
+      if(!lay||typeof lay!=="object") return;
+      if(!Array.isArray(lay.tables)){ lay.tables=[]; return; }
+      var rows=(typeof lay.rows==="number"&&lay.rows>0)?lay.rows:4;
+      var cols=(typeof lay.cols==="number"&&lay.cols>0)?lay.cols:6;
+      var kept=[];
+      lay.tables.forEach(function(t){
+        if(!t||typeof t!=="object") return;
+        var r=Math.floor(t.r), c=Math.floor(t.c), w=Math.floor(t.w), h=Math.floor(t.h);
+        // NaN fails every one of these, which is how a garbage entry is caught.
+        if(!(r>=0&&c>=0&&w>=1&&h>=1)) return;
+        if(w*h<2) return;
+        if(r+h>rows||c+w>cols) return;
+        if(kept.some(function(o){ return r<o.r+o.h && o.r<r+h && c<o.c+o.w && o.c<c+w; })) return;
+        kept.push({
+          id: (typeof t.id==="string"&&t.id) ? t.id : ("tbl"+seatK+"-"+r+"-"+c+"-"+kept.length),
+          name: (typeof t.name==="string") ? t.name.slice(0,24) : "Table",
+          r:r, c:c, w:w, h:h, shape:"rect",
+          color: (["slate","blue","green","amber","rose","violet"].indexOf(t.color)>=0) ? t.color : "slate"
+        });
+      });
+      lay.tables=kept;
+    });
     if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
     // Show the class list for a class with no seating chart yet. Additive
     // boolean, defaults ON for existing saves as well as new ones: the state it
