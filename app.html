@@ -93,6 +93,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .hsb-dropdown .hd-head{padding:7px 10px 3px;font-size:.7rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
   .hd-divider{height:1px;background:var(--line);margin:4px 2px}
   .hsb-dropdown .hd-custom-btn{font-weight:700;color:var(--brass)}
+  /* Same floating box as .hsb-dropdown, deliberately WITHOUT its `button{width:
+     100%}` row styling: this one holds .seats-hist-row content (a flex row of
+     name + delta + a small ↩ button), and that width:100% would stretch the ↩
+     button to fill the row and squeeze the name to 0 — exactly the bug the
+     comment on fillShelfFallback's own hsb-dropdown usage already warns about
+     for the right-hand shelves. Used by the shelves-off scan-bar fallbacks for
+     History and Leaderboard (see toggleBarFallback()); the activity one still
+     uses .hsb-dropdown, since populateActivityDropdown() really does render a
+     list of full-width buttons. */
+  .bar-fallback{position:absolute;top:calc(100% + 6px);z-index:60;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px;min-width:220px;max-height:280px;overflow:auto}
 
   /* ---- Tabs (still bar 1, sitting inline with the brand) ---- */
   nav.tabs{background:transparent;display:flex;overflow-x:auto;flex:0 1 auto}
@@ -2478,16 +2488,29 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <!-- Three of the bar's controls open a side shelf rather than a dropdown of
        their own: the activity pill opens the LEFT shelf, Leaderboard and
        History open the two RIGHT ones. Same shelves Customize layout parks
-       whole sections in, so a menu can never end up covering a shelf. -->
+       whole sections in, so a menu can never end up covering a shelf.
+       With shelves off (Settings → Side Shelves), each falls back to a small
+       anchored dropdown instead — the same fallback content a shelf shows
+       when nothing's parked in it (populateActivityDropdown/
+       renderScanHistoryList/renderMiniBoardRows), just drawn into one of the
+       three *Fallback boxes below instead of a shelf body. See
+       toggleBarFallback() near the shelf engine. -->
   <span class="seats-pill-wrap" style="position:relative">
     <span class="seats-pill" id="seatsArmedPill"></span>
+    <div class="hsb-dropdown" id="seatsActivityFallback" style="display:none"></div>
   </span>
   <button class="contest-c-badge" id="contestCBadge" style="display:none" title="A contest is running — these scans count for it. Tap to pause/resume contest-counting without ending the contest.">C</button>
   <input id="seatsScanInput" autocomplete="off" placeholder="Scan a QR code here  (or type a student code + Enter)">
   <div class="scan-strip" id="scanStrip"></div>
   <button class="btn btn-sm" id="seatsUndoBtn" title="Reverse the most recent scan — same as the printed Undo card">↩ Undo</button>
-  <button class="btn btn-sm seats-hist-btn" id="seatsBoardBtn">Leaderboard <span class="chev">▾</span></button>
-  <button class="btn btn-sm seats-hist-btn" id="seatsHistoryBtn">History <span class="chev">▾</span></button>
+  <span class="seats-pill-wrap" style="position:relative">
+    <button class="btn btn-sm seats-hist-btn" id="seatsBoardBtn">Leaderboard <span class="chev">▾</span></button>
+    <div class="bar-fallback" id="seatsBoardFallback" style="display:none;right:0;left:auto"></div>
+  </span>
+  <span class="seats-pill-wrap" style="position:relative">
+    <button class="btn btn-sm seats-hist-btn" id="seatsHistoryBtn">History <span class="chev">▾</span></button>
+    <div class="bar-fallback" id="seatsHistoryFallback" style="display:none;right:0;left:auto"></div>
+  </span>
 </div>
 
 <!-- ============ SIDE SHELVES ============
@@ -5234,6 +5257,12 @@ function setupRoster() {
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Page Width</h3>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setFullWidth"> Use the full width of the screen (less side padding)</label>
       <p class="view-note" style="margin:8px 0 0">Off by default. The app normally keeps its content in a centered column, which reads comfortably on a laptop but leaves a lot of empty space on either side of a large desktop monitor. Turn this on to stretch every tab to fill the screen instead — most noticeable on the Scan tab's Customize layout, where it gives the movable sections more room to work with.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Side Shelves</h3>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setShelves"> Enable side shelves</label>
+      <p class="view-note" style="margin:8px 0 0">Off by default. When on, the Dashboard can park a section — Activities, Recent scans, Leaderboard — in a slide-out shelf on the screen edge, and the scan bar's Activities/History/Leaderboard buttons open a quick-glance shelf instead of jumping to that tab. Turning this off doesn't lose any arrangement you've made: a section already parked in a shelf just shows on the page again until you turn shelves back on.</p>
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
@@ -8104,10 +8133,14 @@ function setupRoster() {
     // sections and are raised by this bar's pills. On a tab with no scan bar
     // they go with it. Nothing is persisted here: the rebbi's open/closed
     // choice is untouched and comes back the moment he returns.
-    document.body.classList.toggle("no-shelves", barHidden);
+    // The Settings toggle (default off) folds in here too: shelves are
+    // document-level, not owned by any one tab, so this is the one place
+    // that already recomputes "no-shelves" on every tab switch — the natural
+    // spot to also recompute it when the setting changes (see its handler).
+    document.body.classList.toggle("no-shelves", barHidden || !shelvesFeatureOn());
     if(typeof applyShelfOpen==="function"){
       var L=(typeof data==="object" && data && data.scanLayout && data.scanLayout.open) ? data.scanLayout.open : {};
-      var live = !barHidden && !scanCustomizing;
+      var live = !barHidden && !scanCustomizing && shelvesFeatureOn();
       SHELVES.forEach(function(side){ applyShelfOpen(side, live && !!L[side]); });
     }
     /* The class-points pill lives in the header, so it is never hidden by that
@@ -11751,6 +11784,7 @@ function setupRoster() {
     $("setHeaderShortcuts").checked = data.showHeaderShortcuts!==false;
     $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setFullWidth").checked = !!data.fullWidth;
+    $("setShelves").checked = !!data.shelvesEnabled;
     $("setSixSeven").checked = !!data.sixSeven;
     $("setClassPoints").checked = classPointsOn();
     syncPickerModeSetting();
@@ -12133,6 +12167,15 @@ function setupRoster() {
   $("setFullWidth").addEventListener("change", function(){
     data.fullWidth=this.checked; save(); applyFullWidth();
     var c=$("scanFullWidth"); if(c) c.checked=this.checked;   // the twin in Customize layout
+  });
+  // Redraws the Dashboard grid (shelved sections fall back onto the page, or
+  // return to their shelf) and the scan bar (shelf handles + the bar's
+  // Activities/History/Leaderboard buttons, which fall back to router.go()
+  // when this is off) — see shelvesFeatureOn()'s callers.
+  $("setShelves").addEventListener("change", function(){
+    data.shelvesEnabled=this.checked; save();
+    applyScanLayout();
+    applyGlobalScanBarVisibility(activeTabName);
   });
   $("setSixSeven").addEventListener("change", function(){ data.sixSeven=this.checked; save(); });
   /* Turning Class Points on or off only changes what is SHOWN — it never
@@ -15352,17 +15395,33 @@ function setupRoster() {
     right2:{title:"Leaderboard",      tab:"standings",  tabName:"Leader Board"}
   };
   $("seatsUndoBtn").addEventListener("click", function(){ undoMostRecentScan(); });
+  // Shelves off: the bar's three controls fall back to a small anchored
+  // dropdown apiece — the same job the pre-shelf bar did, and the same
+  // content a shelf shows when nothing's parked in it, just drawn into one
+  // of these boxes instead of a shelf body. Only one open at a time.
+  var BAR_FALLBACKS=["seatsActivityFallback","seatsBoardFallback","seatsHistoryFallback"];
+  function closeBarFallbacks(){
+    BAR_FALLBACKS.forEach(function(id){ var el=$(id); if(el) el.style.display="none"; });
+  }
+  function toggleBarFallback(id, fill){
+    var el=$(id); if(!el) return;
+    var opening = el.style.display==="none";
+    closeBarFallbacks();
+    if(opening){ fill(el); el.style.display=""; }
+  }
   // Three bar controls raise the three shelves: the activity pill the left one,
   // Leaderboard and History the two right-hand ones. Pressing one while both
   // right shelves are open brings that one to the front rather than doing
   // nothing — see setShelfOpen().
   $("seatsHistoryBtn").addEventListener("click", function(e){
     e.stopPropagation();
+    if(!shelvesFeatureOn()){ toggleBarFallback("seatsHistoryFallback", renderScanHistoryList); return; }
     if(isShelfOpen("right") && shelfIsFrontmostRight("right")) setShelfOpen("right", false);
     else setShelfOpen("right", true);
   });
   $("seatsBoardBtn").addEventListener("click", function(e){
     e.stopPropagation();
+    if(!shelvesFeatureOn()){ toggleBarFallback("seatsBoardFallback", function(el){ renderMiniBoardRows(el, 12); }); return; }
     if(isShelfOpen("right2") && shelfIsFrontmostRight("right2")) setShelfOpen("right2", false);
     else setShelfOpen("right2", true);
   });
@@ -15386,6 +15445,10 @@ function setupRoster() {
   $("seatsArmedPill").addEventListener("click", function(e){
     e.stopPropagation();
     if(!this.classList.contains("clickable")) return;
+    if(!shelvesFeatureOn()){
+      toggleBarFallback("seatsActivityFallback", function(el){ populateActivityDropdown(el, "seatsScanInput", closeBarFallbacks); });
+      return;
+    }
     setShelfOpen("left", !isShelfOpen("left"));
   });
   $("contestCBadge").addEventListener("click", function(e){
@@ -15405,6 +15468,10 @@ function setupRoster() {
     if(had && had.style.display!=="none" && !e.target.closest(".header-account-wrap")) had.style.display="none";
     var cpd=$("classPointsDropdown");
     if(cpd && cpd.style.display!=="none" && !e.target.closest(".header-cp-wrap")) closeClassPointsDropdown();
+    // The bar's shelves-off fallback dropdowns are inside #globalScanBar, so
+    // they need closing here, before the early return below exits on any
+    // click inside the bar.
+    if(!e.target.closest(".seats-pill-wrap")) closeBarFallbacks();
     // Clicking off a shelf closes it. Deliberately NOT preventDefault or
     // stopPropagation: the click still reaches whatever it landed on, so
     // arming from the left shelf and then tapping a boy on the seating chart
@@ -17867,7 +17934,20 @@ function setupRoster() {
   function markLayoutTouched(){
     if(data.scanLayout) data.scanLayout.touched=true;
   }
-  function panelPlace(id){ ensureScanLayout(); return data.scanLayout.place[id] || "col"; }
+  // Side shelves are a settings toggle (default off, #344's temporary revert
+  // — Ben wasn't sure about the feature yet). This is the ONE gate that
+  // matters: every caller of panelPlace() (applyScanLayout, shelfPanelIds,
+  // updatePanelTools, the badge on each tile) sees a shelved section as a
+  // plain "col" placement whenever the feature is off, so it draws back on
+  // the page automatically. The stored value in data.scanLayout.place is
+  // never touched here — turning the setting back on reveals whatever a
+  // rebbi had parked, exactly as he left it.
+  function shelvesFeatureOn(){ return !!data.shelvesEnabled; }
+  function panelPlace(id){
+    ensureScanLayout();
+    var p=data.scanLayout.place[id] || "col";
+    return (p!=="col" && p!=="hidden" && !shelvesFeatureOn()) ? "col" : p;
+  }
   function panelLabel(id){
     var p=$("panel-"+id); if(!p) return id;
     var n=p.querySelector(".panel-name");
@@ -17922,7 +18002,7 @@ function setupRoster() {
       }
     }
     renderShelves();
-    SHELVES.forEach(function(side){ applyShelfOpen(side, !scanCustomizing && L.open[side]); });
+    SHELVES.forEach(function(side){ applyShelfOpen(side, !scanCustomizing && shelvesFeatureOn() && L.open[side]); });
     updateScanColsToggle();
     updatePanelTools();
   }
@@ -18085,6 +18165,16 @@ function setupRoster() {
       var fb=body.querySelector(".shelf-fallback");
       if(fb) fillShelfFallback(side, fb);
     });
+    // Shelves off: the bar's own small dropdowns are the same standing job,
+    // just not inside a shelf — keep whichever one is open current too.
+    if(!shelvesFeatureOn()){
+      var ab=$("seatsActivityFallback");
+      if(ab && ab.style.display!=="none") populateActivityDropdown(ab, "seatsScanInput", closeBarFallbacks);
+      var bb=$("seatsBoardFallback");
+      if(bb && bb.style.display!=="none") renderMiniBoardRows(bb, 12);
+      var hb=$("seatsHistoryFallback");
+      if(hb && hb.style.display!=="none") renderScanHistoryList(hb);
+    }
   }
   // Keeps --scan-bar-height in sync with the sticky scan bar's real
   // rendered height, so .scroll-clear-bar's scroll-margin-top never drifts
@@ -18176,6 +18266,10 @@ function setupRoster() {
         // highlighted action button reads as already-pressed. The 🚫 Hidden
         // badge on the left of the row is what states the section's place.
         b.classList.toggle("active", b.dataset.place===pl && b.dataset.place!=="hidden");
+        // Shelves off: don't offer a destination that panelPlace() will just
+        // coerce back to "col" the moment it's read — that reads as a button
+        // doing nothing. The stored placement itself is untouched either way.
+        if(SHELVES.indexOf(b.dataset.place)>=0) b.style.display = shelvesFeatureOn() ? "" : "none";
       });
       // Once a section IS hidden, the button that hid it becomes the way back
       // — it says so rather than leaving "put it on the page again" as
@@ -18254,9 +18348,16 @@ function setupRoster() {
     btn.textContent = scanCustomizing ? "✓ Done" : "⚙ Customize layout";
     btn.classList.toggle("btn-primary", scanCustomizing);
     $("scanLayoutReset").style.display = scanCustomizing ? "" : "none";
-    $("scanCustomizeHint").style.display = scanCustomizing ? "" : "none";
+    var hint=$("scanCustomizeHint");
+    hint.style.display = scanCustomizing ? "" : "none";
+    // "Seating chart only" parks the other three sections in their shelves —
+    // meaningless with shelves off (they'd just stack back onto the same
+    // single column), so it and the hint's shelf sentence both drop out.
+    hint.innerHTML = shelvesFeatureOn()
+      ? 'Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / ◧ / ◨ / ▤ / 🚫 decide where it lives: on the page, in the left shelf, in the top-right shelf, in the bottom-right shelf, or hidden. The three shelves are always there on the screen edges whatever you choose here — a section on the page just means it is on the page <em>as well</em>. Everything shows here while you\'re customizing: a hidden section appears faded and marked 🚫 Hidden, and its button reads 👁 Show, which puts it back. Tap "Done" when finished.'
+      : 'Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / 🚫 decide whether it\'s on the page or hidden — side shelves are off (Settings → Side Shelves to turn them back on and park a section in one). Everything shows here while you\'re customizing: a hidden section appears faded and marked 🚫 Hidden, and its button reads 👁 Show, which puts it back. Tap "Done" when finished.';
     $("scanColsToggle").style.display = scanCustomizing ? "" : "none";
-    $("scanLayoutSeatsOnly").style.display = scanCustomizing ? "" : "none";
+    $("scanLayoutSeatsOnly").style.display = (scanCustomizing && shelvesFeatureOn()) ? "" : "none";
     $("scanFullWidthWrap").style.display = scanCustomizing ? "" : "none";
     if(scanCustomizing){ updateScanColsToggle(); $("scanFullWidth").checked = !!data.fullWidth; }
     SCAN_PANELS.forEach(function(id){ var p=$("panel-"+id); if(p) p.setAttribute("draggable", scanCustomizing?"true":"false"); });
@@ -29766,6 +29867,14 @@ nameLine
     // a new button on his scan panel unasked; Settings → Warning Flash is
     // the opt-in. Purely additive, no DATA_VERSION bump: nothing converts.
     if(typeof data.warningFlashEnabled!=="boolean") data.warningFlashEnabled=false;
+    // Side shelves (#344) — temporary revert to a plain settings toggle,
+    // default OFF, per Ben 2026-08-20: he wasn't sure about the feature yet.
+    // Purely additive, no DATA_VERSION bump. Nothing else is touched — a
+    // rebbi's saved shelf placements (data.scanLayout.place) are left exactly
+    // as they are, so flipping this back on instantly restores them; see
+    // shelvesFeatureOn()'s callers for how "off" is applied without erasing
+    // that arrangement.
+    if(typeof data.shelvesEnabled!=="boolean") data.shelvesEnabled=false;
     // Which kinds of scan/tap outcome the floating confirmation banner shows.
     // Three independent additive booleans, all default ON — the banner shows
     // exactly what it always has until a rebbi turns one off. The beep is a
