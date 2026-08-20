@@ -7585,6 +7585,7 @@ function setupRoster() {
     }
   }
   function activateTab(tab){
+    var prevTab=activeTabName; // read before it's overwritten below — used to detect a real tab switch, not a same-tab re-render
     // Undoes applyAdminClassBookRoute()'s nav-hiding — activateTab() is the
     // normal path back into any real tab (Back button, a tab click), and
     // that route is the only thing that ever sets this class.
@@ -7608,8 +7609,11 @@ function setupRoster() {
     renderGroupTabs(group);
     renderSubTabs(group, tab);
     document.querySelectorAll(".view").forEach(function(v){ v.classList.toggle("active", v.id==="view-"+tab); });
-    // Clean up the seating-chart pop-out if it was open (seats folded into
-    // Dashboard — its full-screen state must not survive a tab switch).
+    // Tear down the seating-chart pop-out's overlay if it was open (seats
+    // folded into Dashboard — the overlay itself can't stay mounted over a
+    // different tab's view). This is visual teardown only: data.seatsFsOpen
+    // is untouched, so returning to the Dashboard (below) reopens it — a tab
+    // switch away is navigation, not the deliberate ✕ close that clears it.
     var vseats=$("view-seats");
     if(vseats && (vseats.classList.contains("seats-fullscreen") || vseats.classList.contains("seats-shrinking"))){
       vseats.classList.remove("seats-fullscreen","seats-shrinking");
@@ -7631,6 +7635,17 @@ function setupRoster() {
     if(typeof resetDndStuck==="function") resetDndStuck();
     if(tab==="scan"){
       renderScanBoard(); renderTapPanel(); setTimeout(function(){ $("seatsScanInput").focus(); },50);
+      // Coming back to the Dashboard from another tab, with the pop-out left
+      // full-screen last time (data.seatsFsOpen — cleared only by the
+      // deliberate ✕ close): reopen it through the button's own click path,
+      // same as the boot-time reopen (see seatsWantFsReopen/init block), so
+      // "click out and back" behaves the same as reloading the app. Guarded
+      // on prevTab!==tab so this never fires from a same-tab re-render (e.g.
+      // closeSeatsPopout's own activateTab("scan") call, which just set
+      // data.seatsFsOpen=false and would otherwise immediately reopen it).
+      if(prevTab!==tab && seatsWantFsReopen()){
+        var popBtn=$("seatsPopOut"); if(popBtn) popBtn.click();
+      }
     }
     if(tab==="history") renderHistoryTab();
     if(tab==="standings") renderStandings();
@@ -14180,6 +14195,13 @@ function setupRoster() {
     document.documentElement.style.setProperty("--seats-fs-top", Math.max(0, Math.round(bottom)) + "px");
   }
   var seatsPopReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Shared by the boot-time reopen (below) and activateTab()'s return-to-
+  // Dashboard reopen: "fs" always wants the pop-out open; "dash" never
+  // auto-opens it, overriding whatever data.seatsFsOpen last recorded; "last"
+  // (the default, recordOpenMode unset) follows data.seatsFsOpen.
+  function seatsWantFsReopen(){
+    return data.recordOpenMode==="fs" || (data.recordOpenMode!=="dash" && data.seatsFsOpen===true);
+  }
   // FLIP expand: the overlay starts transformed to exactly match the Class
   // list card's on-screen rectangle, then animates to its natural full-screen
   // rect — so it genuinely looks like the card growing to fill the screen.
@@ -14196,6 +14218,15 @@ function setupRoster() {
   }
   $("seatsPopOut").addEventListener("click", function(){
     var vs=$("view-seats");
+    // The overlay's top offset is measured from the scan bar's on-screen
+    // position (syncSeatsFsTop below), which depends on scroll — the header
+    // itself isn't sticky, so if the page was scrolled down to reach this
+    // button (the usual case; the seating-chart card sits well below the
+    // fold), it stays scrolled off-screen for the whole time the overlay is
+    // open, since background scroll gets frozen next. Scroll to top FIRST so
+    // the header is what's above the overlay, matching the "below the top
+    // bar" contract the fullscreen CSS is written against.
+    window.scrollTo(0,0);
     // Remember the mode. For a rebbi who scans from the full-screen chart —
     // the usual way to run a room — the app now reopens straight into it (see
     // the init block) instead of starting him at the Dashboard every morning.
@@ -28765,8 +28796,7 @@ nameLine
   // existing at all.
   setTimeout(function(){
     var vscan=$("view-scan"), btn=$("seatsPopOut");
-    var wantFs = data.recordOpenMode==="fs" || (data.recordOpenMode!=="dash" && data.seatsFsOpen===true);
-    if(wantFs && btn && vscan && vscan.classList.contains("active")) btn.click();
+    if(seatsWantFsReopen() && btn && vscan && vscan.classList.contains("active")) btn.click();
   },140);
   // Backup staleness check. Deferred so it never competes with first paint, and
   // wrapped like its neighbours — a nudge failing must never stop the app from
