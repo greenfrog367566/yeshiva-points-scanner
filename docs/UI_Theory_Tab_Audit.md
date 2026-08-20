@@ -15,13 +15,20 @@ function, don't trust the number.*
 > the file stays in place rather than folding into either of those. Re-verify
 > any item against the real code before acting; line numbers are not durable.
 >
-> ✅ **Status as of 2026-08-19: 23 of 27 done.** Items 1–22 and 27 all shipped
-> — items 1–6 in commit `0bf9778` (2026-08-14, though its own message
+> ✅ **Status as of 2026-08-19: 25 of 27 done.** Items 1–23, 25 and 27 have all
+> shipped — items 1–6 in commit `0bf9778` (2026-08-14, though its own message
 > over-claimed item 5, which PR #301 actually delivered), items 7–22 in
-> **PR #301** (merged 2026-08-18), and item 27 (double-scan detection)
-> separately in **PR #287** (merged 2026-08-16). Each closed item below is
-> marked ✅ **DONE** with its PR/commit. **Only 23, 24, 25, 26 remain open** —
-> see "Ranked shortlist" section E and the tail of section D.
+> **PR #301** (merged 2026-08-18), item 27 (double-scan detection) separately
+> in **PR #287** (merged 2026-08-16), and items 23 + 25 in
+> `fix/tab-audit-23-25`. Each closed item below is marked ✅ **DONE** with its
+> PR/commit. **Only 24 and 26 remain open** — 24 is being handled separately
+> (Ben, 2026-08-19), and 26 stays blocked on #227. See "Ranked shortlist"
+> section E.
+>
+> **Note on item 25:** most of it had already shipped without this doc being
+> restamped — commit `61c4d76` (2026-08-14) extended the first-run seed to
+> nine tabs, so all this doc's example tabs but one were long since covered.
+> The genuine remainder was a single tab, Brachos.
 
 **Status: everything here is a finding, not a commitment.** Items are marked:
 
@@ -40,10 +47,10 @@ literally: armed pill, live strip with inline undo, sticky on every working
 tab, hidden on admin tabs. Auto-arm on load, never-truncated tiles, collapsed
 setup drawers, navHidden with locked escape hatches, the wizard's four steps,
 contest fear-answering copy — the audit's "matches" lists are long
-everywhere. Of the 27 findings this audit itself produced, 23 have since
-shipped (see the status callout above); **what remains is items 23–26** —
-one small comment/array inconsistency and three sequenced bigger items, one
-of which (26) is explicitly blocked on #227.
+everywhere. Of the 27 findings this audit itself produced, 25 have since
+shipped (see the status callout above); **what remains is items 24 and 26** —
+the Dashboard default layout (handled separately) and the Run-row separators,
+which are explicitly blocked on #227.
 
 ## Ranked shortlist
 
@@ -94,7 +101,7 @@ Plus one positioning leak: setup.html's restore screen said "Every **teacher**
 needs their own sheet" — the one "teacher" in a file that otherwise says
 rebbi. Fixed.
 
-### D. Small disclosure/cockpit fixes — 11–22 ✅ DONE (PR #301, merged 2026-08-18), 23 🟡 propose, still open
+### D. Small disclosure/cockpit fixes — 11–22 ✅ DONE (PR #301, merged 2026-08-18), 23 ✅ DONE (`fix/tab-audit-23-25`)
 
 11. ✅ **DONE — Cap the Dashboard's live Leaderboard panel at ~8 rows** with a "See
     all in Standings →" link. Previously `renderScanBoard` rendered every
@@ -134,15 +141,15 @@ rebbi. Fixed.
     that PR updates `TAB_LABELS.backup` to match, so the two stay in agreement;
     watch for this item resurfacing if a future change touches one side without
     the other.
-23. **Scan-bar hidden-tabs comment contradicts its array** — the comment says
-    the bar stays on Students/Activities; the array hides it there. Fix the
-    comment (or the array, if the old rationale stands). *(tiny)* **Still open —
-    verified 2026-08-19: `GLOBAL_SCAN_BAR_HIDDEN_TABS` (app.html ~line 6870)
-    still includes `"students"` and `"activities"`, while the comment above it
-    still says the bar is "Visible everywhere else, including Students/Activities
-    management."**
+23. ✅ **DONE (`fix/tab-audit-23-25`, 2026-08-19) — Scan-bar hidden-tabs comment
+    contradicted its array.** The comment claimed the bar stays visible on
+    Students/Activities; `GLOBAL_SCAN_BAR_HIDDEN_TABS` hid it there. **Ben
+    confirmed the array is correct** — the bar genuinely is meant to be hidden
+    on those screens — so the comment was rewritten to match, and no behaviour
+    changed. It was stale twice over: it also never mentioned `learn-text`,
+    which the array has been hiding all along.
 
-### E. Bigger items, sequenced — 24–26 🟡 propose, still open; 27 ✅ DONE
+### E. Bigger items, sequenced — 24 🟡 handled separately, 26 🟡 blocked on #227; 25 and 27 ✅ DONE
 
 24. **Dashboard default layout still ships the two panels the spec cut.** The
     default includes a second scan input (panel-scanbar) and a Recent-scans
@@ -150,12 +157,21 @@ rebbi. Fixed.
     three undo buttons on one screen. Honest route: per-panel hide toggles in
     Customize, relax `validScanLayout` to accept absent panels, drop both from
     the *default for new users only* (existing layouts untouched). *(medium)*
-25. **First-run navHidden seed (open item 4) — the hook already exists.** The
-    wizard bridge already seeds `navHidden.groups.learn = true` for fresh
-    setups only, restore path skipped. Extending to a fuller beginner set
-    (contest, trends, auction, spinner, brachos…) is one line per tab in the
-    same guarded block. No new mechanism, zero risk to existing users.
-    *(small)*
+25. ✅ **DONE (`fix/tab-audit-23-25`, 2026-08-19) — First-run navHidden seed
+    (open item 4).** Mostly already shipped before this doc was restamped:
+    commit `61c4d76` (2026-08-14) had already extended the wizard bridge's
+    guarded `!restoring` block to nine tabs — trends, contest, auction,
+    spinner, passes, attendance, tracker, homework, gradebook — alongside the
+    whole Review group. **Brachos was the one tab from this item's own example
+    list still missing**, and it is now seeded too, so a fresh setup no longer
+    opens with a lone week-two tab in the Run row. Reversible in Settings like
+    every other one; the restore path is still skipped, so no existing rebbi's
+    saved `navHidden` is touched.
+    - While here, corrected the block's own claim that "no group here ever
+      drops below 2 visible tabs." It does — `standings` seeds down to one
+      visible tab — but that is **not** the Lean-mode bug (#121):
+      `renderSubTabs()` returns early below 2 visible tabs, so the row is
+      omitted rather than rendered empty. Verified in code, not assumed.
 26. **Run-row section separators (open item 3) — after #227.** The row's 12
     tabs drop to 8 when the legacy tabs go; a tiny `MANAGE_SECTIONS` constant
     in `renderSubTabs()` gives Class/Classroom/System separators with no
