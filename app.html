@@ -16869,6 +16869,38 @@ function setupRoster() {
    * it does not come along for free. Without the mirror the boys rotate around
    * tables that stay put. Render-time only: lay.tables is never written here.
    */
+  /* A blank COLUMN now costs as little page as a blank ROW already did.
+   *
+   * Rows were always auto-sized — the print sheet sets no gridTemplateRows at
+   * all, and on the Dashboard the grid's height is indefinite — so an empty row
+   * collapses to the height of an empty seat. Columns were `1fr` throughout,
+   * and width is always definite, so an empty column kept a full equal share of
+   * the page while an empty row cost nothing. A room that is 8 wide but only
+   * uses 5 columns wasted three columns' worth of width on every printed sheet.
+   *
+   * "Blank" means no boy AND no table over it: a table spanning empty cells is
+   * still furniture in the room and keeps its width. Coordinates are DISPLAY
+   * ones throughout — seats are placed by display index and tables mirror their
+   * own r/c under Rebbi's view, so both are mirrored consistently here.
+   *
+   * A chart nobody has been placed into yet keeps equal columns rather than
+   * collapsing to a row of slivers. */
+  function seatColTemplate(lay, rebbiView){
+    var cols = lay.cols, used = [], i, k;
+    for(i=0;i<cols;i++) used.push(false);
+    // Display order is built the same way both charts build theirs — the flat
+    // seat list, reversed under Rebbi's view — so it is derived here rather
+    // than passed in, and the live chart can call this before it needs its own.
+    var seats = lay.seats.slice();
+    if(rebbiView) seats.reverse();
+    seats.forEach(function(sid, idx){ if(sid) used[idx % cols] = true; });
+    seatTablesArr(lay).forEach(function(t){
+      var c = rebbiView ? (lay.cols - t.c - t.w) : t.c;
+      for(k=0;k<t.w;k++) if(c+k>=0 && c+k<cols) used[c+k] = true;
+    });
+    if(!used.some(function(u){ return u; })) return "repeat("+cols+", 1fr)";
+    return used.map(function(u){ return u ? "1fr" : "auto"; }).join(" ");
+  }
   function renderSeatTables(grid, lay, rebbiView, interactive, redraw){
     seatTablesArr(lay).forEach(function(t){
       var r = rebbiView ? (lay.rows - t.r - t.h) : t.r;
@@ -16889,6 +16921,20 @@ function setupRoster() {
     handle.addEventListener("dragstart", function(ev){
       ev.dataTransfer.setData("text/plain", JSON.stringify({tbl:t.id}));
       ev.dataTransfer.effectAllowed="move";
+      /* Drag the TABLE, not the grip. With no drag image set, the browser
+       * snapshots the element the drag started on — the ⠿ handle — so moving a
+       * six-seat table looked like dragging one small box, giving no sense of
+       * the block about to move. The grip lives inside the tabletop rectangle,
+       * so that rectangle is the right picture.
+       *
+       * The offset is the pointer's position WITHIN the table, so the table
+       * stays under the cursor exactly where it was grabbed instead of
+       * snapping its corner to the pointer. */
+      var back = grip.parentNode;
+      if(back && back.classList && back.classList.contains("seat-table")){
+        var rect = back.getBoundingClientRect();
+        ev.dataTransfer.setDragImage(back, ev.clientX - rect.left, ev.clientY - rect.top);
+      }
     });
     // Tap-to-move fallback, matching the one the unplaced tray already offers:
     // a smartboard has no drag.
@@ -17940,7 +17986,7 @@ function setupRoster() {
 
     if(!data.seatLiveRebbiView) body.appendChild(el("div","seat-front","Front of room"));
     var grid=el("div","seat-grid"+(arranging?" arranging":"")+(tablesMode?" tables-mode":""));
-    grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
+    grid.style.gridTemplateColumns=seatColTemplate(lay, !!data.seatLiveRebbiView);
     grid.style.gridTemplateRows="repeat("+lay.rows+", 1fr)";
     // BEFORE the seats, so the tabletops sit under them in paint order as well
     // as by z-index. Mirrored here when Rebbi's view is on — see renderSeatTables.
@@ -28785,7 +28831,7 @@ nameLine
     // both are loop-invariant, and the tail after the loop reads tablesMode.
     if(!rebbiView && showFront) host.appendChild(el("div","seat-front","Front of room"));
     var grid=el("div","seat-grid print-seat-grid arranging"+(tablesMode?" tables-mode":""));
-    grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
+    grid.style.gridTemplateColumns=seatColTemplate(lay, rebbiView);
     renderSeatTables(grid, lay, rebbiView, tablesMode, seatRedraw);
     displayOrder.forEach(function(item, dispIdx){
       var sid=item.sid, trueIdx=item.trueIdx;
