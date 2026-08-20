@@ -605,6 +605,19 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      a problem, it is just work still to do, and 25 red tiles at the start of a
      period would read as 25 things wrong. */
 
+  /* ---- Chavrusa Mode: Manual builder's tile grid (Phase 8) ----
+     .chav-tile reuses .tap-btn's own look (border/radius/background) rather
+     than a fresh style, so a selection tile reads as the same visual family
+     as every other tap-to-act tile in the app. */
+  .chav-tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+  .chav-tile{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer}
+  .chav-tile.chav-selected{border-color:var(--brass);background:var(--brass-soft)}
+  .chav-tile.chav-grouped{opacity:.4;cursor:default}
+  .chav-tile.chav-grouped:hover{border-color:var(--line)}
+  .chav-group-card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .chav-group-members{font-weight:600}
+
   /* ---- Seating chart mode ---- */
   /* Brief ring on the sheet after "⚙ Rearrange seats" scrolls to it, so it is
      obvious what the button moved to. Cleared on a 1.2s timer, and explicitly
@@ -1749,7 +1762,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     body{background:#fff}
     main{max-width:none;padding:0}
     .view{display:none!important}
-    #view-printSeats.active,#view-printStudents.active,#view-printActivities.active{display:block!important}
+    #view-printSeats.active,#view-printStudents.active,#view-printActivities.active,#view-printPrizes.active{display:block!important}
     .labels-grid{grid-template-columns:repeat(3,1fr);gap:8px;padding:0.4in 0.3in}
     .label{border:1px solid #bbb}
     h2.view-title{display:none}
@@ -3355,6 +3368,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <option value="none">None</option>
           <option value="activity">Activity code</option>
           <option value="actphoto">Activity code + photo</option>
+          <option value="prize">Prize code</option>
+          <option value="przphoto">Prize code + photo</option>
         </select>
       </label>
       <span class="seat-size" id="seatPrintIconSizeRow" title="How big each boy's code and photo print. Smaller cards are shorter, so more rows fit — this is the control to reach for when a big class runs onto a second page. In List, sizing is automatic: the sheet shrinks itself to one page, and these buttons set the largest size it may use.">Code size
@@ -3365,6 +3380,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <label id="seatPrintActivityRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Every seat's code becomes that one activity, pre-applied to that student — scan straight down the grid with no arming step. One sheet per activity.">Activity:
         <select id="seatPrintActivityPicker" class="field" style="width:auto"></select>
       </label>
+      <label id="seatPrintPrizeRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Every seat's code becomes that one prize, charged to that student — scan straight down the grid with no arming step, and each boy is refused if he can't afford it. One sheet per prize.">Prize:
+        <select id="seatPrintPrizePicker" class="field" style="width:auto"></select>
+      </label>
+      <label id="seatPrintMultiPrizeRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Stack a chart per prize on the one sheet — Pencil at the top, Snack under it, and so on. Each band is the same seating chart with that prize's codes in it, and the sheet shrinks itself so they all fit one page."><input type="checkbox" id="seatPrintMultiPrize"> Several on one page</label>
       <label id="seatPrintMultiActRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Stack a chart per activity on the one sheet — +1 at the top, −1 under it, Freeze at the bottom. Each band is the same seating chart with that activity's codes in it, and the sheet shrinks itself so they all fit one page."><input type="checkbox" id="seatPrintMultiAct"> Several on one page</label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem"><input type="checkbox" id="seatPrintShowPoints"> Points</label>
       <label id="seatPrintRebbiViewRow" style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Flips the chart 180° — front of room at the bottom, left/right mirrored — matching what you actually see facing the class. Names stay right-side-up and readable."><input type="checkbox" id="seatPrintRebbiView"> Rebbi's view</label>
@@ -3393,6 +3412,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div class="card pad no-print" id="seatPrintMultiActCard" style="margin-bottom:12px;display:none">
       <p class="view-note" style="margin-top:0">Tick an activity to give it its own chart on the sheet. They print <b>top to bottom in this order</b> — use ▲ / ▼ to move one. Every band is your same seating chart, so a boy sits in the same desk in all of them; only the code in his card changes. The whole sheet shrinks itself to fit one page.</p>
       <div class="row-list" id="seatPrintMultiActList"></div>
+    </div>
+    <div class="card pad no-print" id="seatPrintMultiPrizeCard" style="margin-bottom:12px;display:none">
+      <p class="view-note" style="margin-top:0">Tick a prize to give it its own chart on the sheet. They print <b>top to bottom in this order</b> — use ▲ / ▼ to move one. Every band is your same seating chart, so a boy sits in the same desk in all of them; only the prize in his card changes. The whole sheet shrinks itself to fit one page.</p>
+      <div class="row-list" id="seatPrintMultiPrizeList"></div>
     </div>
     <div class="card pad no-print" id="seatPrintCodesCard" style="margin-bottom:12px;display:none">
       <p class="view-note" style="margin-top:0">Which codes you use, and how they're grouped. This one list governs all of them — the class sheet, the activity menu, and the codes under the seating chart. Drag a code to reorder it within a section, or into a different section; ✕ takes it off everywhere and it waits in the tray below. <b>The sections are yours:</b> rename one by typing in its heading, add your own with <b>+ Section</b>, or remove one with its ✕ — its codes move to the first section rather than disappearing. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
@@ -3614,6 +3637,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <p style="margin:6px 0 0;font-size:.82rem;color:var(--muted)">If you just want Menchmark to work without internet, <b>install it as an app</b> above instead — that keeps one set of data. Use this download only when you need a copy that lives entirely on its own.</p>
       <button class="btn" id="offlineDownloadBtn" style="margin-top:10px">⬇ Download separate offline copy</button>
       <div id="offlineDownloadStatus" style="margin-top:8px;font-size:.85rem;color:var(--muted)"></div>
+    </details>
+    <!-- The passive banner (top of the update-check IIFE near the end of this
+         file) only speaks up on its own when it has good news to deliver, and
+         stays silent on a stale-but-matching version.json — see the note
+         there. This card is the honest complement: a rebbi can ask outright,
+         any time, and always gets an answer rather than inferring "no banner
+         means up to date." -->
+    <details class="card pad bk-card" id="updateCheckCard" style="margin-bottom:14px">
+      <summary>Check for updates</summary>
+      <p>Menchmark updates itself automatically when you're online. Use this if you want to confirm right now that you're on the latest version.</p>
+      <div id="updateCheckStatus" style="margin-top:10px;font-size:.88rem;font-weight:600"></div>
+      <button class="btn" id="updateCheckBtn" style="margin-top:10px">Check now</button>
     </details>
 
     <h3 class="bk-section-title">Other exports</h3>
@@ -4268,7 +4303,8 @@ function setupRoster() {
     <!-- ============ PRIZE STORE ============ -->
   <section id="view-store" class="view">
     <h2 class="view-title">Prize Store</h2>
-    <p class="view-note">Students spend their points to buy prizes. Set up prizes and their point cost, then pick a student (or scan) and tap what they want. Every prize also gets its own scan code on <b>Print: Activities</b> (the 🖨 on the Activities tab) — scan a prize, then scan or tap students, and the cost comes off each one's balance. Prizes are armed from the seating chart the same way activities are. <button class="btn btn-sm" id="coinGuideBtnStore" style="display:none">🪙 Coin Guide</button></p>
+    <p class="view-note">Students spend their points to buy prizes. Set up prizes and their point cost, then pick a student (or scan) and tap what they want. Every prize also gets its own scan code — scan a prize, then scan or tap students, and the cost comes off each one's balance. Prizes are armed from the seating chart the same way activities are. <button class="btn btn-sm" id="coinGuideBtnStore" style="display:none">🪙 Coin Guide</button></p>
+    <p class="view-note no-print" style="margin-top:-12px"><button class="btn btn-sm" id="printPrizesBtn">🖨 Print prize labels</button></p>
 
     <div class="card pad" style="margin-bottom:16px">
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Prizes for sale</h3>
@@ -4322,6 +4358,64 @@ function setupRoster() {
         Auto-mark new purchases as received (prize handed over at time of purchase)
       </label>
       <div id="storeHistory" class="row-list" style="padding:10px 14px"></div>
+    </div>
+  </section>
+
+  <!-- ============ PRINT: PRIZES (prize codes, from the Store tab) ============
+       Its own page rather than a section of Print: Activities. The two sheets
+       are used at different moments and get cut up differently: the activity
+       menu lives on a clipboard and is scanned all period, while prize cards
+       get taped to the prize box or the shelf the prize sits on. Prize codes
+       still print on the activity menu as well — this page is an addition, not
+       a move, so nothing a rebbi already prints changes.
+
+       Reads data.store.items DIRECTLY, not menuLabelItems(). That is the whole
+       point of it being the Store's own page: what prints here is what is in
+       the store, full stop. Routing it through the code picker's data.printExcluded
+       would mean a prize could go missing from this sheet because of a checkbox
+       on the Activities tab, with nothing here to explain it. ============ -->
+  <section id="view-printPrizes" class="view">
+    <h2 class="view-title">Print: Prizes</h2>
+    <!-- ONE PAGE, TWO SHEETS, ONE AT A TIME. Print: Students solves the same
+         problem with two always-present blocks and a body class per print
+         button; this switches instead, so whatever is on screen is exactly
+         what prints and there is no second print button to aim wrongly. -->
+    <div class="toolbar no-print">
+      <span style="font-weight:600">Sheet</span>
+      <select id="prizeSheetMode" class="field" style="width:auto">
+        <option value="prizes">Prize cards — one per prize</option>
+        <option value="students">Student cards — one per student</option>
+      </select>
+    </div>
+    <div id="prizeLabelsBlock">
+      <p class="view-note no-print">One card per prize in your Store, with its cost and its own scan code. Scanning one <b>arms that prize</b> — the next student you scan or tap buys it, and the cost comes off his balance. Tape them to the prize box, or keep the sheet with the prizes themselves.</p>
+      <div class="toolbar no-print">
+        <select id="prizeLabelFormat" class="field" style="width:auto"></select>
+        <select id="prizeWhich" class="field" style="width:auto"><option value="">All prizes</option></select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.9rem;color:var(--muted)">Copies each <input id="prizeCopies" type="number" min="1" value="1" class="field" style="width:64px"></label>
+        <button class="btn btn-sm" id="prizeFillSheet" title="Fill one whole sheet with the selected prize">Fill a sheet (1 prize)</button>
+        <button class="btn btn-primary" id="printPrizes">🖨 Print prize labels</button>
+      </div>
+      <div id="prizePrintTitle" class="seat-print-title" style="display:none"></div>
+      <div class="labels-grid" id="prizeGrid"></div>
+      <div id="prizeAverySheet" class="avery-wrap"></div>
+    </div>
+
+    <!-- STUDENT PRIZE CARDS — the spending counterpart of the personal
+         activity codes on Print: Students. Each card belongs to one boy and
+         encodes one prize (PP:<student>:<prize>), so a single scan buys it for
+         him with no arming step. Hand the sheet to the boys and let each scan
+         the prize he chose; a boy who cannot afford his is refused by name. -->
+    <div id="prizePersonalBlock" style="display:none">
+      <p class="view-note no-print">One card per student, per prize — each card is that boy's own. <b>One scan buys that prize for him</b>, with no arming step, and refuses him by name if he can't afford it. Cards carry the student's name, so they stay identifiable once the sheet is cut apart.</p>
+      <div class="toolbar no-print">
+        <select id="prizePersonGroup" class="field" style="width:auto"><option value="">All groups</option></select>
+        <select id="prizePersonWho" class="field" style="width:auto"><option value="">Whole class</option></select>
+        <select id="prizePersonWhich" class="field" style="width:auto"><option value="">All prizes</option></select>
+        <button class="btn btn-primary" id="printPrizePersonal">🖨 Print student cards</button>
+      </div>
+      <div id="prizePersonalTitle" class="seat-print-title" style="display:none"></div>
+      <div id="prizePersonalGrid"></div>
     </div>
   </section>
 
@@ -4382,6 +4476,62 @@ function setupRoster() {
     </div>
 
     <div class="card pad"><div id="passList" class="row-list"></div></div>
+  </section>
+
+  <!-- ============ CHAVRUSA MODE ============ -->
+  <section id="view-chavrusa" class="view">
+    <h2 class="view-title">Chavrusa Mode</h2>
+    <p class="view-note">Build learning pairs or small groups for this sitting — tap students to group them manually, or generate groups automatically. A session ends every sitting; past groups are saved below to reuse.</p>
+
+    <div class="toolbar" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+      <div class="seat-segmented" id="chavModeSeg">
+        <button class="seat-segbtn active" id="chavModeManualBtn" type="button">Manual</button>
+        <button class="seat-segbtn" id="chavModeAutoBtn" type="button">Automatic</button>
+      </div>
+      <span class="grow"></span>
+      <button class="btn btn-sm" id="chavSaveNewBtn" type="button">Save &amp; start new</button>
+    </div>
+
+    <div id="chavManualPanel" class="card pad" style="margin-bottom:16px">
+      <div class="view-note" style="margin:0 0 10px">Tap students to select them, then Save as group.</div>
+      <div id="chavTileGrid" class="chav-tile-grid"></div>
+      <div class="toolbar" id="chavSelectBar" style="margin-top:12px;gap:8px;display:none">
+        <span class="grow" id="chavSelectCount"></span>
+        <button class="btn btn-sm" id="chavClearSelBtn" type="button">Clear</button>
+        <button class="btn btn-sm btn-primary" id="chavSaveGroupBtn" type="button">Save as group</button>
+      </div>
+    </div>
+
+    <div id="chavAutoPanel" class="card pad" style="margin-bottom:16px;display:none">
+      <div class="toolbar" style="gap:14px;flex-wrap:wrap">
+        <label class="lbl" style="margin:0;display:flex;align-items:center;gap:6px">Group size
+          <input type="number" id="chavGroupSize" class="field" min="2" step="1" value="2" style="width:64px">
+        </label>
+        <label class="lbl" style="margin:0;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="chavAvoidPairings" checked> Avoid previous pairings
+        </label>
+        <span class="grow"></span>
+        <button class="btn btn-sm btn-primary" id="chavGenerateBtn" type="button">Generate</button>
+      </div>
+      <div class="gb-warn" id="chavFallbackWarn" style="display:none;margin-top:10px;align-items:center;gap:10px">
+        <span class="grow" id="chavFallbackWarnText"></span>
+        <button class="btn btn-sm" id="chavFallbackWarnClose" type="button">Dismiss</button>
+      </div>
+    </div>
+
+    <div class="card pad" style="margin-bottom:16px">
+      <div class="toolbar" style="margin-bottom:8px">
+        <h3 style="margin:0">This sitting's groups</h3>
+        <span class="grow"></span>
+        <button class="btn btn-sm btn-bad" id="chavClearGroupsBtn" type="button">Clear groups</button>
+      </div>
+      <div id="chavGroupsList" class="row-list"></div>
+    </div>
+
+    <details class="card pad" id="chavHistoryShelf">
+      <summary>Past Chavrusas</summary>
+      <div id="chavHistoryList" class="row-list" style="margin-top:10px"></div>
+    </details>
   </section>
 
   <!-- ============ ATTENDANCE ============ -->
@@ -5430,7 +5580,7 @@ function setupRoster() {
     //
     // Discoverability is fixed by putting the checkbox on a page rebbeim
     // actually reach, not by flipping a setting under them.
-    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", multiActivity:false, activityIds:[], actGrouped:true, actCols:2, iconScale:1 },
+    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", prizeId:"", multiActivity:false, activityIds:[], multiPrize:false, prizeIds:[], actGrouped:true, actCols:2, iconScale:1 },
     // Mini Contest — the contest whose totals are stored rather than derived.
     // See the MINI CONTEST block above award() for why that distinction is the
     // whole feature. null = nothing running; [] = no contests have closed yet.
@@ -6550,7 +6700,7 @@ function setupRoster() {
     // sheet that has to be found: student codes in seat positions plus every
     // activity code, on one page — without it there is nothing to scan, and it
     // used to be reachable only via an unlabelled 🖨 button on the Dashboard.
-    manage:      { label:"Run",          icon:'<circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1.7"/><path d="M8 1.2v2.3M8 12.5v2.3M1.2 8h2.3M12.5 8h2.3M3.2 3.2l1.6 1.6M11.2 11.2l1.6 1.6M12.8 3.2l-1.6 1.6M4.8 11.2l-1.6 1.6"/>', tabs:["printSeats","students","activities","brachos","spinner","passes","attendance","tracker","homework","gradebook","backup","settings"] },
+    manage:      { label:"Run",          icon:'<circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1.7"/><path d="M8 1.2v2.3M8 12.5v2.3M1.2 8h2.3M12.5 8h2.3M3.2 3.2l1.6 1.6M11.2 11.2l1.6 1.6M12.8 3.2l-1.6 1.6M4.8 11.2l-1.6 1.6"/>', tabs:["printSeats","students","activities","brachos","spinner","passes","attendance","tracker","homework","gradebook","chavrusa","backup","settings"] },
     learn:       { label:"Review",       icon:'<path d="M2 2.5c2.4 0 4.4.5 6 1.7V14c-1.6-1.2-3.6-1.7-6-1.7V2.5z"/><path d="M14 2.5c-2.4 0-4.4.5-6 1.7V14c1.6-1.2 3.6-1.7 6-1.7V2.5z"/>', tabs:["learn-text","learn-chart","learn-pesukim","learn-mishnayos","learn-shorashim"] }
   };
   var GROUP_ORDER=["scan","standings","rewards","learn","manage"];
@@ -6564,6 +6714,7 @@ function setupRoster() {
     raffle:"Raffle", auction:"Auction", store:"Store", coinbank:"Coin Deposit",
     students:"Students", activities:"Activities", brachos:"Brachos", spinner:"Spinner",
     passes:"Passes", attendance:"Attendance", tracker:"Tracker", homework:"Homework", gradebook:"Gradebook",
+    chavrusa:"Chavrusa Mode",
     backup:"Backup & Restore", settings:"Settings",
     "learn-text":"Text", "learn-chart":"Chart", "learn-pesukim":"Pesukim", "learn-mishnayos":"Mishnayos", "learn-shorashim":"Shorashim",
     // printSeats is navigable, and its name has to carry BOTH jobs this page
@@ -6577,7 +6728,10 @@ function setupRoster() {
     printSeats:"Seating chart & print",
     // The other three print views are not navigable — reached via 🖨 buttons on
     // their data-owner tabs.
-    printStudents:"Students", printActivities:"Activities", printPoints:"Points"
+    printStudents:"Students", printActivities:"Activities", printPoints:"Points",
+    // Reached by the 🖨 on the Store tab, the same way the three above are
+    // reached from theirs.
+    printPrizes:"Prizes"
   };
   var lastTabInGroup = {}; // remembers which subtab was last open per group
   var activeGroupName="scan", activeTabName="scan";
@@ -6587,7 +6741,7 @@ function setupRoster() {
     for(var g in TAB_GROUPS){ if(TAB_GROUPS[g].tabs.indexOf(tab)>=0) return g; }
     // Print tabs are no longer in any group but their views still exist
     // (accessed via buttons on data-owner tabs). Return the data-owner group.
-    var printOwner={"printStudents":"manage","printActivities":"manage","printSeats":"scan","printPoints":"standings"};
+    var printOwner={"printStudents":"manage","printActivities":"manage","printSeats":"scan","printPoints":"standings","printPrizes":"rewards"};
     if(printOwner[tab]) return printOwner[tab];
     return "scan";
   }
@@ -7760,7 +7914,7 @@ function setupRoster() {
   // on every other tab. Keep this comment and the array below in agreement —
   // they disagreed for months about Students/Activities, which is what the
   // tab audit's item 23 was.
-  var GLOBAL_SCAN_BAR_HIDDEN_TABS=["settings","backup","students","activities","printStudents","printActivities","printSeats","printPoints","learn-text"];
+  var GLOBAL_SCAN_BAR_HIDDEN_TABS=["settings","backup","students","activities","printStudents","printActivities","printSeats","printPoints","printPrizes","learn-text"];
   function applyGlobalScanBarVisibility(tab){
     var bar=$("globalScanBar"); if(!bar) return;
     bar.classList.toggle("hidden-on-tab", GLOBAL_SCAN_BAR_HIDDEN_TABS.indexOf(tab)>=0);
@@ -7790,6 +7944,7 @@ function setupRoster() {
     }
   }
   function activateTab(tab){
+    var prevTab=activeTabName; // read before it's overwritten below — used to detect a real tab switch, not a same-tab re-render
     // Undoes applyAdminClassBookRoute()'s nav-hiding — activateTab() is the
     // normal path back into any real tab (Back button, a tab click), and
     // that route is the only thing that ever sets this class.
@@ -7813,8 +7968,11 @@ function setupRoster() {
     renderGroupTabs(group);
     renderSubTabs(group, tab);
     document.querySelectorAll(".view").forEach(function(v){ v.classList.toggle("active", v.id==="view-"+tab); });
-    // Clean up the seating-chart pop-out if it was open (seats folded into
-    // Dashboard — its full-screen state must not survive a tab switch).
+    // Tear down the seating-chart pop-out's overlay if it was open (seats
+    // folded into Dashboard — the overlay itself can't stay mounted over a
+    // different tab's view). This is visual teardown only: data.seatsFsOpen
+    // is untouched, so returning to the Dashboard (below) reopens it — a tab
+    // switch away is navigation, not the deliberate ✕ close that clears it.
     var vseats=$("view-seats");
     if(vseats && (vseats.classList.contains("seats-fullscreen") || vseats.classList.contains("seats-shrinking"))){
       vseats.classList.remove("seats-fullscreen","seats-shrinking");
@@ -7836,6 +7994,17 @@ function setupRoster() {
     if(typeof resetDndStuck==="function") resetDndStuck();
     if(tab==="scan"){
       renderScanBoard(); renderTapPanel(); setTimeout(function(){ $("seatsScanInput").focus(); },50);
+      // Coming back to the Dashboard from another tab, with the pop-out left
+      // full-screen last time (data.seatsFsOpen — cleared only by the
+      // deliberate ✕ close): reopen it through the button's own click path,
+      // same as the boot-time reopen (see seatsWantFsReopen/init block), so
+      // "click out and back" behaves the same as reloading the app. Guarded
+      // on prevTab!==tab so this never fires from a same-tab re-render (e.g.
+      // closeSeatsPopout's own activateTab("scan") call, which just set
+      // data.seatsFsOpen=false and would otherwise immediately reopen it).
+      if(prevTab!==tab && seatsWantFsReopen()){
+        var popBtn=$("seatsPopOut"); if(popBtn) popBtn.click();
+      }
     }
     if(tab==="history") renderHistoryTab();
     if(tab==="standings") renderStandings();
@@ -7867,6 +8036,7 @@ function setupRoster() {
     if(tab==="students") renderStudents();
     if(tab==="activities") renderActivities();
     if(tab==="printStudents" || tab==="printActivities") renderLabels();
+    if(tab==="printPrizes") applyPrizeSheetMode();
     if(tab==="printSeats"){
       $("seatPrintAvatarMode").value = data.seatPrintOpts.avatarMode;
       $("seatPrintShowPoints").checked = data.seatPrintOpts.showPoints;
@@ -7915,6 +8085,7 @@ function setupRoster() {
     if(tab==="spinner") renderSpinner();
     if(tab==="gradebook") renderGradebook();
     if(tab==="passes"){ renderPasses(); setTimeout(function(){ $("passScanInput").focus(); },50); }
+    if(tab==="chavrusa") renderChavrusa();
     renderHeaderScanContext();
   }
   // Called after a visibility checkbox changes in Settings — refreshes the nav,
@@ -8138,6 +8309,214 @@ function setupRoster() {
     if(!isFinite(n) || n<1) n=1;
     data.passCap=n; save(); renderPasses();
   });
+
+  /* ==================== CHAVRUSA MODE (Phase 8) ====================
+   * docs/Menchmark_UI_Redesign_Summary.md §6. data.chavrusaSession is the
+   * one active session for the whole app -- it ends every sitting via
+   * "Save & start new", never a timeout; data.chavrusaHistory is what that
+   * action saves into, and what the Past Chavrusas panel loads back from.
+   * Manual mode's tiles reuse avatarEl() (the same shared helper the tap
+   * panel, Students tab and floating scanner already use) rather than the
+   * full seating-chart tap-panel component itself -- that component is
+   * single-tap-to-award, built for a different interaction shape than
+   * multi-select-into-groups, and retrofitting selection state into it
+   * would be a large, risky surgical footprint on shared, heavily-used code.
+   */
+  var chavMode="manual"; // "manual" | "auto" -- session-only UI state, not persisted
+  var chavSelected=[]; // student ids currently tapped in Manual mode, not persisted
+
+  function chavGroupedIds(){
+    var ids={};
+    data.chavrusaSession.groups.forEach(function(g){ (g.studentIds||[]).forEach(function(id){ ids[id]=1; }); });
+    return ids;
+  }
+  function chavStudentName(sid){
+    var s=studentById(sid);
+    return s ? s.name : "(removed student)";
+  }
+  function renderChavrusa(){
+    $("chavModeManualBtn").classList.toggle("active", chavMode==="manual");
+    $("chavModeAutoBtn").classList.toggle("active", chavMode==="auto");
+    $("chavManualPanel").style.display = chavMode==="manual" ? "block" : "none";
+    $("chavAutoPanel").style.display = chavMode==="auto" ? "block" : "none";
+    chavRenderTiles();
+    chavRenderGroups();
+    chavRenderHistory();
+  }
+  function chavRenderTiles(){
+    var grouped=chavGroupedIds();
+    var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+    var grid=$("chavTileGrid"); grid.innerHTML="";
+    if(!studs.length){ grid.appendChild(el("div","recent-empty","Add students on the Students tab first.")); }
+    studs.forEach(function(s){
+      var isGrouped=!!grouped[s.id];
+      var isSelected=chavSelected.indexOf(s.id)>=0;
+      var tile=el("div","tap-btn chav-tile"+(isSelected?" chav-selected":"")+(isGrouped?" chav-grouped":""));
+      tile.appendChild(avatarEl(s,32));
+      tile.appendChild(el("span",null,s.name));
+      if(!isGrouped){
+        tile.addEventListener("click", function(){ chavToggleSelect(s.id); });
+      }
+      grid.appendChild(tile);
+    });
+    chavRenderSelectBar();
+  }
+  function chavToggleSelect(sid){
+    var i=chavSelected.indexOf(sid);
+    if(i>=0) chavSelected.splice(i,1); else chavSelected.push(sid);
+    chavRenderTiles();
+  }
+  function chavRenderSelectBar(){
+    var bar=$("chavSelectBar");
+    bar.style.display = chavSelected.length ? "flex" : "none";
+    $("chavSelectCount").textContent = chavSelected.length===1 ? "1 student selected" : (chavSelected.length+" students selected");
+  }
+  $("chavClearSelBtn").addEventListener("click", function(){ chavSelected=[]; chavRenderTiles(); });
+  $("chavSaveGroupBtn").addEventListener("click", function(){
+    if(!chavSelected.length) return;
+    data.chavrusaSession.groups.push({id:newId(), studentIds:chavSelected.slice()});
+    chavSelected=[];
+    save();
+    renderChavrusa();
+  });
+  function chavRenderGroups(){
+    var list=$("chavGroupsList"); list.innerHTML="";
+    var groups=data.chavrusaSession.groups;
+    if(!groups.length){ list.appendChild(el("div","recent-empty","No groups yet this sitting.")); return; }
+    groups.forEach(function(g){
+      var card=el("div","chav-group-card");
+      var names=(g.studentIds||[]).map(chavStudentName).join(", ");
+      card.appendChild(el("span","chav-group-members",names||"(empty group)"));
+      var removeBtn=el("button","btn btn-sm btn-bad","Remove group");
+      removeBtn.type="button";
+      removeBtn.addEventListener("click", function(){
+        data.chavrusaSession.groups=data.chavrusaSession.groups.filter(function(x){return x.id!==g.id;});
+        save(); renderChavrusa();
+      });
+      card.appendChild(removeBtn);
+      list.appendChild(card);
+    });
+  }
+  $("chavClearGroupsBtn").addEventListener("click", function(){
+    if(!data.chavrusaSession.groups.length) return;
+    if(!confirm("Clear all of this sitting's groups? This does not affect Past Chavrusas.")) return;
+    data.chavrusaSession.groups=[];
+    save(); renderChavrusa();
+  });
+  $("chavSaveNewBtn").addEventListener("click", function(){
+    // Only worth a history entry if there is anything to remember -- an empty
+    // sitting saved and reloaded would just be clutter in Past Chavrusas.
+    if(data.chavrusaSession.groups.length){
+      data.chavrusaHistory.unshift({id:newId(), savedAt:Date.now(), groups:data.chavrusaSession.groups});
+      if(data.chavrusaHistory.length>200) data.chavrusaHistory.length=200;
+    }
+    data.chavrusaSession={groups:[], pointTargetMode:"individual"};
+    chavSelected=[];
+    save();
+    renderChavrusa();
+  });
+  function chavRenderHistory(){
+    var list=$("chavHistoryList"); list.innerHTML="";
+    if(!data.chavrusaHistory.length){ list.appendChild(el("div","recent-empty","No past sessions saved yet.")); return; }
+    data.chavrusaHistory.forEach(function(h){
+      var card=el("div","chav-group-card");
+      var d=new Date(h.savedAt);
+      var when=d.toLocaleDateString(undefined,{month:"short",day:"numeric"})+"  "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+      var summary=h.groups.length+" group"+(h.groups.length===1?"":"s")+" — "+when;
+      card.appendChild(el("span","chav-group-members",summary));
+      var loadBtn=el("button","btn btn-sm","Load");
+      loadBtn.type="button";
+      loadBtn.title="Start this sitting's groups from this saved session";
+      loadBtn.addEventListener("click", function(){
+        if(data.chavrusaSession.groups.length && !confirm("Replace this sitting's current groups with this saved session?")) return;
+        // Fresh group ids -- editing the loaded copy must never mutate the
+        // saved history entry it came from. Deep-cloned, not referenced.
+        data.chavrusaSession.groups=h.groups.map(function(g){ return {id:newId(), studentIds:(g.studentIds||[]).slice()}; });
+        save(); renderChavrusa();
+      });
+      card.appendChild(loadBtn);
+      var delBtn=el("button","btn btn-sm btn-bad","Delete");
+      delBtn.type="button";
+      delBtn.addEventListener("click", function(){
+        if(!confirm("Delete this saved session? This can't be undone.")) return;
+        data.chavrusaHistory=data.chavrusaHistory.filter(function(x){return x.id!==h.id;});
+        save(); renderChavrusa();
+      });
+      card.appendChild(delBtn);
+      list.appendChild(card);
+    });
+  }
+  $("chavModeManualBtn").addEventListener("click", function(){ chavMode="manual"; renderChavrusa(); });
+  $("chavModeAutoBtn").addEventListener("click", function(){ chavMode="auto"; renderChavrusa(); });
+
+  // Every pair of students who have ever appeared together in a SAVED (past)
+  // group -- walked fresh from data.chavrusaHistory each time rather than
+  // kept as a standing index, so there is only one source of truth and no
+  // risk of the two drifting apart. Not derived from data.log (CLAUDE.md's
+  // Contest lesson) -- chavrusaHistory is its own deliberate record, not a
+  // capped/wipeable one, so deriving from it carries none of that risk.
+  function chavPairKey(a,b){ return a<b ? a+"|"+b : b+"|"+a; }
+  function chavSeenPairs(){
+    var seen={};
+    data.chavrusaHistory.forEach(function(h){
+      (h.groups||[]).forEach(function(g){
+        var ids=g.studentIds||[];
+        for(var i=0;i<ids.length;i++) for(var j=i+1;j<ids.length;j++) seen[chavPairKey(ids[i],ids[j])]=true;
+      });
+    });
+    return seen;
+  }
+  /* Greedy randomized partition, not an exact constraint solver -- produces a
+   * genuinely good grouping fast rather than guaranteeing zero repeats when
+   * the class is too small/constrained for that to even be possible. Falls
+   * back with a dismissible warning (per spec) instead of blocking or
+   * silently ignoring the "avoid" request. */
+  function chavGenerateGroups(size, avoidPairings){
+    var grouped=chavGroupedIds();
+    var pool=activeStudents().filter(function(s){ return !grouped[s.id]; }).map(function(s){return s.id;});
+    for(var i=pool.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=pool[i]; pool[i]=pool[j]; pool[j]=t; }
+    var seen = avoidPairings ? chavSeenPairs() : {};
+    var newGroups=[], hadRepeat=false, remaining=pool.slice();
+    while(remaining.length){
+      var group=[remaining.shift()];
+      while(group.length<size && remaining.length){
+        var bestIdx=0, bestScore=Infinity;
+        for(var k=0;k<remaining.length;k++){
+          var cand=remaining[k], score=0;
+          for(var m=0;m<group.length;m++){ if(seen[chavPairKey(cand,group[m])]) score++; }
+          if(score<bestScore){ bestScore=score; bestIdx=k; if(score===0) break; }
+        }
+        if(bestScore>0) hadRepeat=true;
+        group.push(remaining.splice(bestIdx,1)[0]);
+      }
+      newGroups.push({id:newId(), studentIds:group});
+    }
+    return {groups:newGroups, hadRepeat:hadRepeat};
+  }
+  $("chavGenerateBtn").addEventListener("click", function(){
+    var size=parseInt($("chavGroupSize").value,10);
+    if(!isFinite(size) || size<2) size=2;
+    var avoid=$("chavAvoidPairings").checked;
+    var grouped=chavGroupedIds();
+    var ungroupedCount=activeStudents().filter(function(s){ return !grouped[s.id]; }).length;
+    var warn=$("chavFallbackWarn");
+    if(!ungroupedCount){
+      $("chavFallbackWarnText").textContent="Every student already has a group this sitting.";
+      warn.style.display="flex";
+      return;
+    }
+    var result=chavGenerateGroups(size, avoid);
+    data.chavrusaSession.groups=data.chavrusaSession.groups.concat(result.groups);
+    save();
+    if(avoid && result.hadRepeat){
+      $("chavFallbackWarnText").textContent="Couldn't avoid every previous pairing for every group — the class is too small or too constrained for a fully fresh set.";
+      warn.style.display="flex";
+    } else {
+      warn.style.display="none";
+    }
+    renderChavrusa();
+  });
+  $("chavFallbackWarnClose").addEventListener("click", function(){ $("chavFallbackWarn").style.display="none"; });
 
   /* ==================== ATTENDANCE ==================== */
   function todayKey(){ return new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10); }
@@ -10398,7 +10777,7 @@ function setupRoster() {
     // Same treatment, and the same reason, as the tracked-activity refusal
     // above; left as a refusal rather than built out because selling is a
     // deliberate, one-boy action and this panel is the fast-scoring surface.
-    if(/^PRZ:/i.test(code)){
+    if(/^(PRZ|PP):/i.test(code)){
       fpFlash(false,"Prizes can't be sold from this panel — use the scan bar or the seating chart");
       beep(false); return;
     }
@@ -13461,21 +13840,24 @@ function setupRoster() {
    * a rebbi who has switched the negative banners off must still see the prize
    * he just sold — and must always see a refusal, or he will think it worked.
    */
-  function awardPrize(s){
-    var it=armedPrize();
-    // Deleted between arming and this scan. Refused by name rather than
-    // silently, because "nothing happened" on a scan reads as a bad scan.
-    if(!it){
-      flash(false, "Prize no longer in the store", armed.label, "It was deleted after you armed it — arm another");
-      beep(false); return false;
-    }
+  /* ONE SALE, TWO WAYS IN. Everything below is shared by the armed path (arm a
+   * prize, then scan boys) and the personal PP:<student>:<prize> card (one
+   * scan, no arming) — the same split award() and the personal PA: codes
+   * already have. The two must not drift: a boy who cannot afford a prize, or
+   * a prize that is a class prize, has to be refused identically whichever
+   * code the rebbi happened to scan, and both have to leave the same two
+   * records behind on a real sale.
+   */
+  function sellPrizeTo(s, it){
     /* A CLASS PRIZE MAY NOT BE CHARGED TO A BOY. The Store tab already keeps
      * the two apart — a "for the whole class" prize is excluded from the
      * student buy list so it can never come out of one boy's points — and now
-     * that every prize is also printable and scannable, that rule has to hold
-     * on the scan path too or the tab and the scanner disagree. Without this,
-     * arming the pizza party and scanning a boy would quietly bill him 150
-     * points for something the class was meant to buy together. */
+     * that every prize is also printable and scannable (both as an armed code
+     * and as a personal PP: card), that rule has to hold on both scan paths
+     * too or the tab and the scanner disagree. Without this, arming the pizza
+     * party and scanning a boy — or handing out a PP: card for it — would
+     * quietly bill him 150 points for something the class was meant to buy
+     * together. */
     if(storeItemIsClass(it)){
       flash(false, s.name, "That's a class prize", "Scan the 🏆 "+classPoolLabel(data.currentClass)+" card to buy it with class points");
       beep(false); return false;
@@ -13497,6 +13879,16 @@ function setupRoster() {
     // Only then: rebuilding a hidden tab on every scan buys nothing.
     if($("view-store") && $("view-store").classList.contains("active")) renderStore();
     return true;
+  }
+  function awardPrize(s){
+    var it=armedPrize();
+    // Deleted between arming and this scan. Refused by name rather than
+    // silently, because "nothing happened" on a scan reads as a bad scan.
+    if(!it){
+      flash(false, "Prize no longer in the store", armed.label, "It was deleted after you armed it — arm another");
+      beep(false); return false;
+    }
+    return sellPrizeTo(s, it);
   }
   // THE ONE PATH EVERY POINT IN THE APP TRAVELS THROUGH. Extracted verbatim
   // from award() so a second caller can score a student without setting and
@@ -14361,6 +14753,26 @@ function setupRoster() {
   function processScan(code){
     code=(code||"").trim();
     if(!code) return;
+    /* PP:<student>:<prize> — a boy's own card for one prize, the spending
+     * counterpart of PA:. One scan buys it for exactly that boy: no arming
+     * step, so a rebbi can hand a sheet of these to the boys themselves and
+     * let each scan the prize he chose.
+     *
+     * Checked ABOVE PA: only because both start with "P" and this keeps the
+     * two prefix tests adjacent and obvious; they cannot actually collide.
+     */
+    if(code.indexOf("PP:")===0){
+      var prest=code.slice(3), psep=prest.indexOf(":");
+      var ppsid=psep<0?prest:prest.slice(0,psep), ppid=psep<0?"":prest.slice(psep+1);
+      var pps=studentById(ppsid), ppit=storeItemById(ppid);
+      if(!pps||!ppit){ flash(false,"Unknown prize card","","\u201C"+code+"\u201D — the student or the prize may have been deleted"); beep(false); return; }
+      if(!studentInCurrentClass(pps)){
+        flash(false, pps.name, "Not in selected class", "Switch to \u201C"+data.currentClass+"\u201D or choose \u201CAll classes\u201D to sell to this student");
+        beep(false); return;
+      }
+      sellPrizeTo(pps, ppit);
+      return;
+    }
     if(code.indexOf("PA:")===0){
       var rest=code.slice(3), sep=rest.indexOf(":");
       var psid=sep<0?rest:rest.slice(0,sep), paid=sep<0?"":rest.slice(sep+1);
@@ -14716,6 +15128,13 @@ function setupRoster() {
     document.documentElement.style.setProperty("--seats-fs-top", Math.max(0, Math.round(bottom)) + "px");
   }
   var seatsPopReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Shared by the boot-time reopen (below) and activateTab()'s return-to-
+  // Dashboard reopen: "fs" always wants the pop-out open; "dash" never
+  // auto-opens it, overriding whatever data.seatsFsOpen last recorded; "last"
+  // (the default, recordOpenMode unset) follows data.seatsFsOpen.
+  function seatsWantFsReopen(){
+    return data.recordOpenMode==="fs" || (data.recordOpenMode!=="dash" && data.seatsFsOpen===true);
+  }
   // FLIP expand: the overlay starts transformed to exactly match the Class
   // list card's on-screen rectangle, then animates to its natural full-screen
   // rect — so it genuinely looks like the card growing to fill the screen.
@@ -14732,6 +15151,15 @@ function setupRoster() {
   }
   $("seatsPopOut").addEventListener("click", function(){
     var vs=$("view-seats");
+    // The overlay's top offset is measured from the scan bar's on-screen
+    // position (syncSeatsFsTop below), which depends on scroll — the header
+    // itself isn't sticky, so if the page was scrolled down to reach this
+    // button (the usual case; the seating-chart card sits well below the
+    // fold), it stays scrolled off-screen for the whole time the overlay is
+    // open, since background scroll gets frozen next. Scroll to top FIRST so
+    // the header is what's above the overlay, matching the "below the top
+    // bar" contract the fullscreen CSS is written against.
+    window.scrollTo(0,0);
     // Remember the mode. For a rebbi who scans from the full-screen chart —
     // the usual way to run a room — the app now reopens straight into it (see
     // the init block) instead of starting him at the Dashboard every morning.
@@ -24316,11 +24744,15 @@ nameLine
     // otherwise keep offering the class he just left.
     if($("view-printSeats").classList.contains("active")){ seatPrintSyncActivityRow(); renderSeatChartPrint(); }
     if($("view-printPoints").classList.contains("active")) renderPointsPrint();
+    // The prize sheets' own titles name the class, and the student-cards sheet
+    // is filtered by class outright, so both have to follow the picker.
+    if($("view-printPrizes").classList.contains("active")) applyPrizeSheetMode();
     auctionPrizeId=null; auctionStudentId=null;
     if($("view-auction").classList.contains("active")) renderAuction();
     if(typeof pickerOpen!=="undefined" && pickerOpen) renderPicker();
     if($("view-attendance").classList.contains("active")) safeRenderTool(applyAttViewMode, "attList", "Attendance");
     if($("view-tracker").classList.contains("active")) safeRenderTool(renderTracker, "trackerActList", "Tracker");
+    if($("view-chavrusa") && $("view-chavrusa").classList.contains("active")) renderChavrusa();
     if($("view-homework").classList.contains("active")) safeRenderTool(applyHwViewMode, "hwList", "Homework");
     if($("view-history").classList.contains("active")) renderHistoryTab();
     // The Activities tab is now scoped to the selected class too (see
@@ -25082,6 +25514,178 @@ nameLine
       mg.appendChild(card);
     });
   }
+  /* ---------- PRINT: PRIZES ----------
+   * The Store's own sheet. Deliberately simpler than renderMenuLabels(): there
+   * are no sections here and no Choose-codes step, because a prize list is
+   * already flat and already curated — it IS the store. Format, which one, and
+   * how many, which is the same trio every other label page offers.
+   */
+  function prizeLabelItems(){
+    var list=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    return list.map(function(it){
+      return {
+        qrText: "PRZ:"+it.id,
+        name: (it.emoji||"🎁")+" "+it.name,
+        // fmtVal() so a Shulchani class reads coins and a points class reads
+        // points, exactly as the same cost is written everywhere else.
+        sub: "costs "+fmtVal(it.cost)
+      };
+    });
+  }
+  function renderPrizeLabels(hasQR){
+    if(typeof hasQR==="undefined") hasQR=(typeof QRCode!=="undefined");
+    var fsel=$("prizeLabelFormat");
+    if(fsel.options.length!==LABEL_ORDER.length){
+      fsel.innerHTML="";
+      LABEL_ORDER.forEach(function(k){ var o=el("option",null, k==="tiles"?"Tiles (screen / cut-out)":LABEL_SPECS[k].name); o.value=k; fsel.appendChild(o); });
+    }
+    fsel.value=data.prizeLabelFormat||"tiles";
+    var avery=(data.prizeLabelFormat||"tiles")!=="tiles";
+    var pg=$("prizeGrid"), sheet=$("prizeAverySheet");
+    pg.style.display = avery?"none":"grid";
+    sheet.style.display = avery?"block":"none";
+    pg.innerHTML=""; sheet.innerHTML="";
+
+    var items=prizeLabelItems();
+
+    // Named for the class like every other printed sheet, so a rebbi with two
+    // shiurim can tell two printouts apart. Tiles only — an extra element above
+    // an Avery sheet pushes every die-cut label out of position.
+    var pt=$("prizePrintTitle");
+    if(pt){ pt.textContent=(data.currentClass||"All Classes")+" · Prize Store"; pt.style.display=(avery||!items.length)?"none":"block"; }
+
+    // An empty store is the ordinary state for a rebbi who has not set one up,
+    // so this says where to go rather than reading as a broken page.
+    if(!items.length){
+      (avery?sheet:pg).appendChild(el("div","empty-state","No prizes yet — add some on the Store tab and they'll print here."));
+      var wsel0=$("prizeWhich"); wsel0.innerHTML='<option value="">All prizes</option>';
+      return;
+    }
+
+    /* ONE PRIZE, AND HOW MANY — same pair the student labels and the activity
+     * menu carry. A prize box wants several copies of one card far more often
+     * than it wants one of each, which is exactly what "Fill a sheet" is for. */
+    var wsel=$("prizeWhich"), wcur=wsel.value;
+    wsel.innerHTML='<option value="">All prizes</option>';
+    items.forEach(function(it){ var o=el("option",null,it.name); o.value=it.qrText; wsel.appendChild(o); });
+    if(items.some(function(it){ return it.qrText===wcur; })) wsel.value=wcur; else wsel.value="";
+    var which=wsel.value;
+    if(which) items=items.filter(function(it){ return it.qrText===which; });
+
+    // Same clamp the other two label pages use, for the same reason: this
+    // multiplies straight into a QR-generating loop, so a pasted 99999 would
+    // hang the tab rather than print anything.
+    var copies=Math.max(1, Math.min(400, parseInt($("prizeCopies").value,10)||1));
+    if(copies>1){
+      var expanded=[];
+      items.forEach(function(it){ for(var k=0;k<copies;k++) expanded.push(it); });
+      items=expanded;
+    }
+
+    if(avery){
+      var averyItems=items.map(function(it){ return {qrText:it.qrText, line1:it.name, line2:it.sub}; });
+      renderAverySheetGeneric(averyItems, sheet, data.prizeLabelFormat, hasQR);
+      return;
+    }
+    items.forEach(function(it){
+      var card=el("div","label");
+      var qrw=el("div","qrwrap");
+      if(hasQR){
+        var holder=el("div"); qrw.appendChild(holder);
+        try{ new QRCode(holder,{text:it.qrText,width:104,height:104,correctLevel:QRCode.CorrectLevel.M}); }
+        catch(e){ qrw.appendChild(el("div","lc","(QR error)")); }
+      } else {
+        qrw.appendChild(el("div","lc","Connect to internet to show QR"));
+      }
+      card.appendChild(qrw);
+      card.appendChild(el("div","ln",it.name));
+      card.appendChild(el("div","lg",it.sub));
+      pg.appendChild(card);
+    });
+  }
+  /* STUDENT PRIZE CARDS. Grouped by boy — his name is a heading AND repeated on
+   * every one of his cards, because the two readings of this sheet are
+   * different: whole, a rebbi reads down it by name; cut apart, a single card
+   * has to still say whose it is or it is worthless. renderPersonalPages()
+   * only needs the page heading because a page is never cut into pieces.
+   */
+  function renderPrizePersonalCards(hasQR){
+    if(typeof hasQR==="undefined") hasQR=(typeof QRCode!=="undefined");
+    var grid=$("prizePersonalGrid"); if(!grid) return;
+    grid.innerHTML="";
+
+    var gsel=$("prizePersonGroup"), gcur=gsel.value;
+    gsel.innerHTML='<option value="">All groups</option>';
+    groups().forEach(function(g){ var o=el("option",null,g); o.value=g; gsel.appendChild(o); });
+    if(groups().indexOf(gcur)>=0) gsel.value=gcur; else gsel.value="";
+    var grp=gsel.value;
+
+    var list=data.students.filter(function(s){ return !grp || s.group===grp; })
+      .sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
+
+    var wsel=$("prizePersonWho"), wcur=wsel.value;
+    wsel.innerHTML='<option value="">Whole class</option>';
+    list.forEach(function(s){ var o=el("option",null,s.name); o.value=s.id; wsel.appendChild(o); });
+    if(list.some(function(s){ return s.id===wcur; })) wsel.value=wcur; else wsel.value="";
+    if(wsel.value) list=list.filter(function(s){ return s.id===wsel.value; });
+
+    var prizes=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    var psel=$("prizePersonWhich"), pcur=psel.value;
+    psel.innerHTML='<option value="">All prizes</option>';
+    prizes.forEach(function(it){ var o=el("option",null,(it.emoji||"🎁")+" "+it.name); o.value=it.id; psel.appendChild(o); });
+    if(prizes.some(function(it){ return it.id===pcur; })) psel.value=pcur; else psel.value="";
+    if(psel.value) prizes=prizes.filter(function(it){ return it.id===psel.value; });
+
+    var t=$("prizePersonalTitle");
+    if(t){ t.textContent=(data.currentClass||"All Classes")+" · Student Prize Cards"; t.style.display=(list.length&&prizes.length)?"block":"none"; }
+
+    if(!list.length){ grid.appendChild(el("div","empty-state","Add students first, then come back to print their prize cards.")); return; }
+    if(!prizes.length){ grid.appendChild(el("div","empty-state","No prizes yet — add some on the Store tab and they'll print here.")); return; }
+
+    list.forEach(function(s){
+      var block=el("div","personal-page");
+      block.appendChild(el("h3","personal-name",s.name));
+      var qgrid=el("div","personal-qr-grid");
+      prizes.forEach(function(it){
+        // negative:true — the cost is money leaving the boy, and this is the
+        // same red treatment a deduction gets everywhere else in the app.
+        addPersonalQrCard(qgrid, "PP:"+s.id+":"+it.id,
+          (it.emoji||"🎁")+" "+it.name,
+          fmtDeltaBare(-it.cost),
+          s.name,
+          true, hasQR);
+      });
+      block.appendChild(qgrid);
+      grid.appendChild(block);
+    });
+  }
+  function prizeSheetMode(){ var m=$("prizeSheetMode"); return (m && m.value==="students") ? "students" : "prizes"; }
+  function applyPrizeSheetMode(){
+    var students = prizeSheetMode()==="students";
+    $("prizeLabelsBlock").style.display  = students ? "none" : "";
+    $("prizePersonalBlock").style.display = students ? "" : "none";
+    if(students) renderPrizePersonalCards(); else renderPrizeLabels();
+  }
+  $("prizeSheetMode").addEventListener("change", applyPrizeSheetMode);
+  $("prizePersonGroup").addEventListener("change", function(){ renderPrizePersonalCards(); });
+  $("prizePersonWho").addEventListener("change", function(){ renderPrizePersonalCards(); });
+  $("prizePersonWhich").addEventListener("change", function(){ renderPrizePersonalCards(); });
+  $("printPrizePersonal").addEventListener("click", function(){ window.print(); });
+  $("printPrizesBtn").addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "printPrizes" }); });
+  // Format is the one choice here that IS remembered, same rule the other label
+  // pages follow: it is a property of the paper in the tray, not of what the
+  // rebbi happens to be printing this minute. "Which prize" and "copies" are
+  // deliberately not persisted.
+  $("prizeLabelFormat").addEventListener("change", function(){ data.prizeLabelFormat=this.value; save(); renderPrizeLabels(); });
+  $("prizeWhich").addEventListener("change", function(){ renderPrizeLabels(); });
+  $("prizeCopies").addEventListener("input", function(){ renderPrizeLabels(); });
+  $("prizeFillSheet").addEventListener("click", function(){
+    var fmt=data.prizeLabelFormat||"tiles";
+    var per = (fmt==="tiles") ? 12 : (LABEL_SPECS[fmt] ? LABEL_SPECS[fmt].cols*LABEL_SPECS[fmt].rows : 12);
+    if(!$("prizeWhich").value){ notice("Pick one prize in the “All prizes” dropdown first — then this fills a whole sheet with just that one."); return; }
+    $("prizeCopies").value=per; renderPrizeLabels();
+  });
+  $("printPrizes").addEventListener("click", function(){ window.print(); });
   function addPersonalQrCard(grid, qrText, title, pointText, hint, negative, hasQR){
     var card=el("div","personal-qr-card");
     card.appendChild(el("div","personal-label",title));
@@ -25456,6 +26060,17 @@ nameLine
   $("seatPrintCodesAddSection").addEventListener("click", function(){ addCodeSection(); refreshCodeSurfaces(); });
   $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); seatPrintSyncActivityRow(); renderSeatChartPrint(); });
   $("seatPrintActivityPicker").addEventListener("change", function(){ data.seatPrintOpts.activityId=this.value; save(); renderSeatChartPrint(); });
+  $("seatPrintPrizePicker").addEventListener("change", function(){ data.seatPrintOpts.prizeId=this.value; save(); renderSeatChartPrint(); });
+  $("seatPrintMultiPrize").addEventListener("change", function(){
+    data.seatPrintOpts.multiPrize=this.checked;
+    // Turning it on with nothing ticked yet carries the single picker's prize
+    // across, so the sheet the rebbi was looking at becomes the first band
+    // rather than going blank and asking him to pick again.
+    if(this.checked && !seatPrintChosenPrizes().length && data.seatPrintOpts.prizeId){
+      data.seatPrintOpts.prizeIds=[data.seatPrintOpts.prizeId];
+    }
+    save(); seatPrintSyncActivityRow(); renderSeatChartPrint();
+  });
   $("seatPrintMultiAct").addEventListener("change", function(){
     data.seatPrintOpts.multiActivity=this.checked;
     // Ticking it for the first time carries the activity he already had into the
@@ -25659,7 +26274,35 @@ nameLine
   // separate arming code needed) only in Activity mode, and keeps the
   // picker's options in sync with the same armable/visible filter every
   // other arming surface uses (armableActivities() + actVisibleInCurrentClass).
+  function seatPrintSyncPrizeRow(){
+    var isPrize = seatPrintCodeKind($("seatPrintAvatarMode").value)==="prize";
+    var row=$("seatPrintPrizeRow"); if(!row) return;
+    // "Several on one page" REPLACES the single picker rather than sitting
+    // beside it — same rule the activity row follows, and for the same reason:
+    // two controls both claiming to say which prize prints is how a rebbi ends
+    // up staring at a sheet that ignores the one he just set.
+    var multi = isPrize && seatPrintMultiPrize();
+    row.style.display = (isPrize && !multi) ? "flex" : "none";
+    $("seatPrintMultiPrizeRow").style.display = isPrize ? "flex" : "none";
+    $("seatPrintMultiPrize").checked = seatPrintMultiPrize();
+    $("seatPrintMultiPrizeCard").style.display = multi ? "block" : "none";
+    if(multi) renderSeatPrintMultiPrizeList();
+    if(!isPrize || multi) return;
+    var sel=$("seatPrintPrizePicker"), cur=sel.value || data.seatPrintOpts.prizeId;
+    var opts=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    sel.innerHTML="";
+    if(!opts.length){
+      // No prizes yet. Says so in the picker itself rather than leaving an
+      // empty dropdown above a grid of codes that would encode nothing.
+      var o0=el("option",null,"No prizes yet — add some on the Store tab"); o0.value="";
+      sel.appendChild(o0); sel.value=""; data.seatPrintOpts.prizeId=""; return;
+    }
+    opts.forEach(function(it){ var o=el("option",null,(it.emoji||"🎁")+" "+it.name+"  ("+fmtVal(it.cost)+")"); o.value=it.id; sel.appendChild(o); });
+    if(opts.some(function(it){ return it.id===cur; })) sel.value=cur; else sel.value=opts[0].id;
+    data.seatPrintOpts.prizeId = sel.value;
+  }
   function seatPrintSyncActivityRow(){
+    seatPrintSyncPrizeRow();
     var isActivity = seatPrintCodeKind($("seatPrintAvatarMode").value)==="activity";
     // "Several on one page" replaces the single picker rather than sitting
     // beside it: two controls both claiming to say which activity prints is how
@@ -25954,6 +26597,88 @@ nameLine
    * and back again does not silently forget it.
    */
   var SEAT_PRINT_MAX_BANDS=6;
+  /* THE PRIZE HALF OF THE BAND MODEL. Deliberately a mirror of the four
+   * activity functions below rather than a generalisation of them: the two
+   * differ in what they read (data.store.items vs armableActivities()), in what
+   * a band's label says (a cost vs a point value), and in nothing else, so a
+   * shared abstraction would be two branches wearing one name. Keeping them
+   * parallel means a change to how bands work is visibly two edits, not one
+   * edit and a forgotten case.
+   */
+  function seatPrintMultiPrize(){ return data.seatPrintOpts.multiPrize===true; }
+  function seatPrintChosenPrizes(){
+    var byId={};
+    ((data.store && Array.isArray(data.store.items)) ? data.store.items : []).forEach(function(it){ byId[it.id]=it; });
+    var out=[], seen={};
+    (data.seatPrintOpts.prizeIds||[]).forEach(function(id){
+      // seen[] for the same reason the activity version has it: a hand-edited
+      // or restored save could carry an id twice, and two identical bands is a
+      // wasted third of a page.
+      if(byId[id] && !seen[id]){ seen[id]=1; out.push(byId[id]); }
+    });
+    return out.slice(0, SEAT_PRINT_MAX_BANDS);
+  }
+  function seatPrintToggleMultiPrize(id, on){
+    var ids=(data.seatPrintOpts.prizeIds||[]).filter(function(x){ return x!==id; });
+    // Newly ticked goes to the BOTTOM, so ▲ is one press and no band the rebbi
+    // has already positioned moves under him.
+    if(on) ids.push(id);
+    data.seatPrintOpts.prizeIds=ids;
+    save(); renderSeatPrintMultiPrizeList(); renderSeatChartPrint();
+  }
+  function seatPrintMoveMultiPrize(id, dir){
+    // Swap with the nearest VISIBLE neighbour inside the full stored list —
+    // rewriting the list to just the visible ones would drop ids for prizes
+    // that have since been deleted but may yet be re-added.
+    var stored=(data.seatPrintOpts.prizeIds||[]).slice();
+    var vis=seatPrintChosenPrizes().map(function(it){ return it.id; });
+    var vi=vis.indexOf(id); if(vi<0) return;
+    var vj=vi+dir; if(vj<0 || vj>=vis.length) return;
+    var i=stored.indexOf(id), j=stored.indexOf(vis[vj]);
+    if(i<0 || j<0) return;
+    stored[i]=vis[vj]; stored[j]=id;
+    data.seatPrintOpts.prizeIds=stored;
+    save(); renderSeatPrintMultiPrizeList(); renderSeatChartPrint();
+  }
+  function renderSeatPrintMultiPrizeList(){
+    var box=$("seatPrintMultiPrizeList"); if(!box) return;
+    box.innerHTML="";
+    var opts=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    if(!opts.length){
+      box.appendChild(el("div","empty-state","No prizes to print codes for yet — add one on the Store tab."));
+      return;
+    }
+    var chosen=seatPrintChosenPrizes(), chosenIds={};
+    chosen.forEach(function(it){ chosenIds[it.id]=1; });
+    var full = chosen.length>=SEAT_PRINT_MAX_BANDS;
+    var rows=chosen.concat(opts.filter(function(it){ return !chosenIds[it.id]; }));
+    rows.forEach(function(it){
+      var on=!!chosenIds[it.id], pos=on ? chosen.indexOf(it) : -1;
+      var row=el("div","erow");
+      var cb=el("input"); cb.type="checkbox"; cb.checked=on;
+      // Same cap and same reason as the activity bands: every band redraws a QR
+      // per student, so a dozen ticked on a class of 30 is thousands of codes
+      // and a visibly frozen page.
+      cb.disabled = !on && full;
+      if(cb.disabled) cb.title="Six charts is the most one sheet will take — untick one first.";
+      cb.addEventListener("change", function(){ seatPrintToggleMultiPrize(it.id, cb.checked); });
+      row.appendChild(cb);
+      row.appendChild(el("span","grow", (on ? (pos+1)+". " : "")+(it.emoji||"🎁")+" "+it.name));
+      row.appendChild(el("span","code", fmtVal(it.cost)));
+      if(on){
+        var up=el("button","btn btn-sm","▲"); up.type="button";
+        up.title="Print this chart higher up the sheet";
+        up.disabled = pos<=0;
+        up.addEventListener("click", function(){ seatPrintMoveMultiPrize(it.id,-1); });
+        var dn=el("button","btn btn-sm","▼"); dn.type="button";
+        dn.title="Print this chart lower down the sheet";
+        dn.disabled = pos>=chosen.length-1;
+        dn.addEventListener("click", function(){ seatPrintMoveMultiPrize(it.id,1); });
+        row.appendChild(up); row.appendChild(dn);
+      }
+      box.appendChild(row);
+    });
+  }
   function seatPrintMultiAct(){ return data.seatPrintOpts.multiActivity===true; }
   function seatPrintChosenActivities(){
     var byId={};
@@ -26273,10 +26998,16 @@ nameLine
   function seatPrintCodeKind(mode){
     if(mode==="qr" || mode==="qrphoto") return "qr";
     if(mode==="activity" || mode==="actphoto") return "activity";
+    // The spending counterpart of "activity". The LIVE chart reads this same
+    // function and draws a code only for "qr", so a prize mode shows nothing
+    // on screen — exactly what "activity" already does, and the right answer
+    // either way: a per-student prize code is a thing you print, not a thing
+    // you tap.
+    if(mode==="prize" || mode==="przphoto") return "prize";
     return "none";
   }
   function seatPrintWantsPhoto(mode){
-    return mode==="photo" || mode==="qrphoto" || mode==="actphoto";
+    return mode==="photo" || mode==="qrphoto" || mode==="actphoto" || mode==="przphoto";
   }
 
   /* ONE STUDENT'S PRINTED CARD — shared by both layouts on this page.
@@ -26309,7 +27040,15 @@ nameLine
         // Same PA:<student>:<activity> merged code renderPersonalPages()
         // prints per student, just laid out in the grid instead — one scan
         // applies this exact activity to this exact student.
-        var qrText = (kind==="activity") ? ("PA:"+s.id+":"+act.id) : s.id;
+        // Same personal codes renderPersonalPages() prints per student, laid
+        // out in the grid instead — one scan applies this exact activity, or
+        // sells this exact prize, to this exact student.
+        // The BAND's prize, not the stored picker value — with several charts
+        // on one sheet those differ, and reading the stored one would print six
+        // identical bands under six different titles.
+        var qrText = (kind==="activity") ? ("PA:"+s.id+":"+act.id)
+                   : (kind==="prize")    ? ("PP:"+s.id+":"+((act && act.id) || data.seatPrintOpts.prizeId || ""))
+                   : s.id;
         try{ new QRCode(holder,{text:qrText,width:95,height:95,correctLevel:QRCode.CorrectLevel.M}); }
         catch(e){ qrw.appendChild(document.createTextNode("QR?")); }
       } else {
@@ -26402,14 +27141,34 @@ nameLine
         ? seatPrintChosenActivities()
         : [actById(data.seatPrintOpts.activityId)].filter(function(a){ return !!a; });
     }
+    /* Prize mode fills the band list the same way — and note it does so even
+     * for a SINGLE prize, where the activity path also carries one entry. That
+     * is what gives every prize chart its own title badge: a band with an item
+     * in it gets labelled, so one prize and six behave identically. */
+    if(actKind==="prize"){
+      actList = seatPrintMultiPrize()
+        ? seatPrintChosenPrizes()
+        : [storeItemById(data.seatPrintOpts.prizeId)].filter(function(p){ return !!p; });
+    }
     var multiBands = actList.length>1;
-    if(actKind==="activity" && !actList.length){
+    if((actKind==="activity" || actKind==="prize") && !actList.length){
       wrap.appendChild(el("div","seat-print-title", seatPrintTitle()));
-      wrap.appendChild(el("div","empty-state", !data.activities.length
-        ? "Add an activity first, on the Activities tab."
-        : (seatPrintMultiAct()
-            ? "Tick the activities you want a chart for, above."
-            : "Pick an activity above to print its seating chart.")));
+      var noneMsg;
+      if(actKind==="prize"){
+        var anyPrize=!!(data.store && Array.isArray(data.store.items) && data.store.items.length);
+        noneMsg = !anyPrize
+          ? "Add a prize first, on the Store tab."
+          : (seatPrintMultiPrize()
+              ? "Tick the prizes you want a chart for, above."
+              : "Pick a prize above to print its seating chart.");
+      } else {
+        noneMsg = !data.activities.length
+          ? "Add an activity first, on the Activities tab."
+          : (seatPrintMultiAct()
+              ? "Tick the activities you want a chart for, above."
+              : "Pick an activity above to print its seating chart.");
+      }
+      wrap.appendChild(el("div","empty-state", noneMsg));
       if($("seatPrintFitWarning")) $("seatPrintFitWarning").style.display="none";
       seatPrintFitScale=seatPrintIconScale();
       seatPrintSyncIconSize();
@@ -26447,8 +27206,13 @@ nameLine
     // of their own.
     if(act){
       var badgeWrap=el("div","seat-print-activity-badge-wrap");
-      var badge=el("div","seat-print-activity-badge",
-        act.name+" · "+(reroutedActivity(act) ? personalActionSub(act) : fmtDelta(act.pts)));
+      // A prize band says what the card COSTS, not what it is worth — the same
+      // badge, reading the other half of the store. activityPrintColor() hashes
+      // id-or-name, so a prize gets its own stable colour with no extra field.
+      var badgeText = (actKind==="prize")
+        ? ((act.emoji||"🎁")+" "+act.name+" · "+fmtDeltaBare(-act.cost))
+        : (act.name+" · "+(reroutedActivity(act) ? personalActionSub(act) : fmtDelta(act.pts)));
+      var badge=el("div","seat-print-activity-badge", badgeText);
       var actColor=activityPrintColor(act);
       badge.style.borderColor=actColor; badge.style.color=actColor;
       badgeWrap.appendChild(badge);
@@ -27841,6 +28605,39 @@ nameLine
     });
   })();
 
+  $("updateCheckBtn").addEventListener("click", function(){
+    var btn = $("updateCheckBtn"), el = $("updateCheckStatus");
+    if(typeof window.mmCheckForUpdate !== "function"){
+      el.textContent = "Can't check right now — try again in a moment.";
+      el.style.color = "var(--muted)";
+      return;
+    }
+    btn.disabled = true;
+    el.textContent = "Checking…";
+    el.style.color = "var(--muted)";
+    window.mmCheckForUpdate(function(result){
+      btn.disabled = false;
+      if(!result.ok){
+        el.textContent = "Couldn't check right now — check your internet connection and try again.";
+        el.style.color = "var(--muted)";
+      } else if(result.newer){
+        if(location.protocol === "file:"){
+          el.textContent = "Version " + result.latest + " is out — this downloaded copy can't update itself. ";
+          var link = document.createElement("a");
+          link.href = result.downloadUrl || "https://menchmark.app/app.html";
+          link.target = "_blank"; link.rel = "noopener";
+          link.textContent = "Download the new copy";
+          el.appendChild(link);
+        } else {
+          el.textContent = "Version " + result.latest + " is available — reload the page to get it.";
+        }
+        el.style.color = "var(--bad)";
+      } else {
+        el.textContent = "✓ You're on the latest version (" + (window.MENCHMARK_APP_VERSION || "—") + ").";
+        el.style.color = "var(--good, #1f8a5b)";
+      }
+    });
+  });
   $("exportCsv").addEventListener("click", function(){
     var rows=[["Rank","Name","Group","Points"]];
     data.students.slice().map(function(s){return{s:s,sc:score(s.id)};})
@@ -28259,6 +29056,14 @@ nameLine
     // way, is left exactly as the rebbi set it.
     if(typeof data.seatPrintOpts.showActivities!=="boolean") data.seatPrintOpts.showActivities=false;
     if(typeof data.seatPrintOpts.activityId!=="string") data.seatPrintOpts.activityId="";
+    // Which prize the "Prize code" seat modes encode. Additive and empty by
+    // default; seatPrintSyncPrizeRow() fills it in from the store the first
+    // time one of those modes is picked.
+    if(typeof data.seatPrintOpts.prizeId!=="string") data.seatPrintOpts.prizeId="";
+    // "Several on one page" for prizes, and the prizes it prints. Both additive
+    // and inert until a rebbi ticks the box.
+    if(typeof data.seatPrintOpts.multiPrize!=="boolean") data.seatPrintOpts.multiPrize=false;
+    if(!Array.isArray(data.seatPrintOpts.prizeIds)) data.seatPrintOpts.prizeIds=[];
     // SEVERAL ACTIVITY CHARTS ON ONE SHEET. Both fields are purely additive and
     // default to the single-chart behaviour every existing save already has, so
     // a rebbi's Monday sheet is unchanged until he asks for the stack himself.
@@ -28447,6 +29252,11 @@ nameLine
     if(typeof data.teachFlipKeys!=="boolean") data.teachFlipKeys=false;
     if(typeof data.teachFlipCols!=="boolean") data.teachFlipCols=false;
     if(typeof data.menuLabelFormat!=="string") data.menuLabelFormat="tiles";
+    // Print: Prizes' own paper choice. Additive and independent of
+    // menuLabelFormat on purpose — the two sheets are cut up differently, so a
+    // rebbi printing his activity menu on Avery labels may well want the prize
+    // cards as big cut-out tiles.
+    if(typeof data.prizeLabelFormat!=="string") data.prizeLabelFormat="tiles";
     if(typeof data.personalLabelFormat!=="string") data.personalLabelFormat="pages";
     if(typeof data.seatArranging!=="boolean") data.seatArranging=false;
     // Scannable seating chart (#scannable-screen). Stored so a rebbi who turns
@@ -29007,6 +29817,19 @@ nameLine
       });
       data.mirrorBackfill=mbStats;
     }
+    // Chavrusa Mode (Phase 8, docs/Menchmark_UI_Redesign_Summary.md §6).
+    // data.chavrusaSession is the one active, in-progress session — it ends
+    // every sitting (an explicit "Save & start new" clears it into history,
+    // never a timeout), so it always exists as an object rather than being
+    // nullable, the same shape guaranteed fresh or restored. data.chavrusaHistory
+    // is the persisted, loadable record of past sessions — what "see past
+    // groups to reuse" reads from.
+    if(!data.chavrusaSession || typeof data.chavrusaSession!=="object" || Array.isArray(data.chavrusaSession)){
+      data.chavrusaSession={groups:[], pointTargetMode:"individual"};
+    }
+    if(!Array.isArray(data.chavrusaSession.groups)) data.chavrusaSession.groups=[];
+    if(typeof data.chavrusaSession.pointTargetMode!=="string") data.chavrusaSession.pointTargetMode="individual";
+    if(!Array.isArray(data.chavrusaHistory)) data.chavrusaHistory=[];
   }
   // Reached from exactly ONE place: the "Reset all scores" button in Settings.
   // The end-contest flow used to call this too, bundled onto its OK button; that
@@ -29547,8 +30370,7 @@ nameLine
   // existing at all.
   setTimeout(function(){
     var vscan=$("view-scan"), btn=$("seatsPopOut");
-    var wantFs = data.recordOpenMode==="fs" || (data.recordOpenMode!=="dash" && data.seatsFsOpen===true);
-    if(wantFs && btn && vscan && vscan.classList.contains("active")) btn.click();
+    if(seatsWantFsReopen() && btn && vscan && vscan.classList.contains("active")) btn.click();
   },140);
   // Backup staleness check. Deferred so it never competes with first paint, and
   // wrapped like its neighbours — a nudge failing must never stop the app from
@@ -30647,7 +31469,7 @@ Two different resets, matching the two sections of the scanner's manual — try 
      window so the Help → About tab can show it; a rebbi reporting a problem can
      then say which copy he is actually running, which until now nothing in the
      app could tell him. */
-  var APP_VERSION = "0.9.0";
+  var APP_VERSION = "0.10.0";
   window.MENCHMARK_APP_VERSION = APP_VERSION;
 
   // 1) Service worker — only over http/https (a file:// offline copy can't use one).
@@ -30825,6 +31647,27 @@ Two different resets, matching the two sections of the scanner's manual — try 
 
     document.body.insertBefore(bar, document.body.firstChild);
   }
+
+  // 5) Manual on-demand check for Backup & Restore's "Check for updates"
+  // card. checkForUpdate() below deliberately stays quiet for a
+  // service-worker-controlled copy (its own reload toast already covers
+  // that case) and says nothing at all on a fetch failure — both are right
+  // for an unattended check, but wrong for a rebbi who explicitly asked and
+  // is looking at the screen waiting for an answer. This always fetches and
+  // always calls back, success or failure, so the card can say so either way.
+  function runManualVersionCheck(onDone){
+    if(typeof fetch !== "function"){ onDone({ok:false}); return; }
+    fetch(VERSION_URL, { cache: "no-store", mode: "cors", credentials: "omit" })
+      .then(function(res){ return res && res.ok ? res.json() : null; })
+      .then(function(info){
+        if(!info || typeof info.version !== "string"){ onDone({ok:false}); return; }
+        var newer = cmpVersion(info.version, APP_VERSION) > 0;
+        if(newer) showOutdatedBanner(info.version, info.downloadUrl);
+        onDone({ok:true, newer:newer, latest:info.version, downloadUrl:info.downloadUrl});
+      })
+      .catch(function(){ onDone({ok:false}); });
+  }
+  window.mmCheckForUpdate = runManualVersionCheck;
 
   function checkForUpdate(){
     if(!updateCheckApplies() || typeof fetch !== "function") return;
