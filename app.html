@@ -8666,6 +8666,24 @@ function setupRoster() {
         resolveBtn.addEventListener("click", function(){ chavResolveGroupPoints(g.id); });
         card.appendChild(resolveBtn);
       }
+      // A pool add has no data.log row (see awardGroupEntity()), so it never
+      // gets the ↩ every other scan gets in Recent scans/the strip/History.
+      // This is the one place that undo lives for anything but the single
+      // most recent pool add (which "↩ Undo" up top also reaches, via
+      // lastChavPoolAdd) -- always the group's own newest entry, matching
+      // "Undo last scan"'s one-at-a-time shape rather than a per-row list.
+      if(pool && pool.entries.length){
+        var undoPoolBtn=el("button","btn btn-sm","↩ Undo last pooled scan");
+        undoPoolBtn.type="button";
+        undoPoolBtn.title="Undo “"+pool.entries[0].label+"” "+fmtDeltaBare(pool.entries[0].delta);
+        undoPoolBtn.addEventListener("click", function(){
+          var removed=chavRemovePoolEntry(g.id, pool.entries[0].id);
+          if(!removed) return;
+          if(lastChavPoolAdd && lastChavPoolAdd.entryId===removed.id) lastChavPoolAdd=null;
+          save(); renderChavrusa();
+        });
+        card.appendChild(undoPoolBtn);
+      }
       var removeBtn=el("button","btn btn-sm btn-bad","Remove group");
       removeBtn.type="button";
       removeBtn.addEventListener("click", function(){
@@ -8805,6 +8823,15 @@ function setupRoster() {
     beep(delta>=0);
     return done>0;
   }
+  // The single most recent Group Entity pool contribution, in enough detail to
+  // reverse it -- not persisted, deliberately just one slot deep. Mirrors
+  // lastTrackedScan exactly, and for the same reason: a pool add is a real
+  // write with no data.log row behind it, so undoMostRecentScan()'s ordinary
+  // log-walk cannot find it. Without this, "Undo last scan" right after an
+  // entity-mode scan silently reversed whatever OLDER log entry it walked
+  // back to instead -- the pool sat untouched and a real, unrelated scan got
+  // reversed with no warning. See undoMostRecentScan() for what reads it.
+  var lastChavPoolAdd = null;
   // "Group Entity": points accumulate in a shared pool instead of landing on
   // any individual student's data.scores -- data.chavrusaPools is stored, not
   // derived (the Contest lesson in CLAUDE.md: a total that's only ever summed
@@ -8814,13 +8841,42 @@ function setupRoster() {
   function awardGroupEntity(group, label, delta, actId){
     var pool=chavPoolFor(group.id);
     pool.total += delta;
-    pool.entries.unshift({id:newId(), ts:Date.now(), label:label, delta:delta, actId:actId||null});
+    var entry={id:newId(), ts:Date.now(), label:label, delta:delta, actId:actId||null};
+    pool.entries.unshift(entry);
     if(pool.entries.length>50) pool.entries.length=50;
+    lastChavPoolAdd={groupId:group.id, entryId:entry.id, ts:entry.ts};
     save();
     renderChavrusa();
     var gname=chavGroupLabel(group);
     flash(delta>=0, gname, fmtDeltaBare(delta), "🧩 Added to pool · now "+fmtVal(pool.total), delta>=0?"positive":"negative");
     beep(delta>=0);
+    return true;
+  }
+  // Removes one entry from a pool by id and un-adds its delta -- the one
+  // primitive both undoMostRecentScan() (via reverseChavPoolAdd, below) and
+  // the Chavrusa Mode tab's own "↩ Undo last" button (chavRenderGroups) share,
+  // so there is exactly one way a pool entry ever goes away. Guarded by id
+  // rather than always popping entries[0]: a stale lastChavPoolAdd (the entry
+  // it names has already been removed some other way) is simply a no-op,
+  // never a wrong removal.
+  function chavRemovePoolEntry(groupId, entryId){
+    var pool=data.chavrusaPools[groupId];
+    if(!pool) return null;
+    var idx=-1;
+    for(var i=0;i<pool.entries.length;i++){ if(pool.entries[i].id===entryId){ idx=i; break; } }
+    if(idx<0) return null;
+    var removed=pool.entries.splice(idx,1)[0];
+    pool.total -= removed.delta;
+    return removed;
+  }
+  // reverseTrackedWrite()'s counterpart for a pending pool add -- same
+  // descriptor-in, bool-out shape, called from undoMostRecentScan() below.
+  function reverseChavPoolAdd(desc){
+    if(!desc) return false;
+    var removed=chavRemovePoolEntry(desc.groupId, desc.entryId);
+    if(!removed) return false;
+    save();
+    renderChavrusa();
     return true;
   }
   // Splits a pool's total evenly across its group's members (integer division,
@@ -16194,7 +16250,7 @@ function setupRoster() {
     // either — and it is dropped rather than held, since holding it would let
     // it surface later when the rebbi switches back.
     if(lastTrackedScan && !logEntryInCurrentClass(lastTrackedScan)) lastTrackedScan=null;
-    if(lastTrackedScan && (!candidate || lastTrackedScan.ts>=candidate.ts)){
+    if(lastTrackedScan && (!candidate || lastTrackedScan.ts>=candidate.ts) && (!lastChavPoolAdd || lastTrackedScan.ts>=lastChavPoolAdd.ts)){
       var pending=lastTrackedScan;
       lastTrackedScan=null;
       if(reverseTrackedWrite(pending)){
@@ -16208,7 +16264,19 @@ function setupRoster() {
         refreshTrackedBadges();
         return "scan";
       }
-      // Stale — fall through and try the log-walk candidate instead.
+      // Stale — fall through and try the other candidates instead.
+    }
+    // A Group Entity pool add is a third kind of "real write with no data.log
+    // row behind it" (see lastChavPoolAdd's own comment) — checked the same
+    // way as lastTrackedScan, just above the log-walk candidate. Not
+    // class-scoped: a Chavrusa session is one sitting for the whole app, not
+    // per class (see the Chavrusa Mode module's own top comment), so there is
+    // no class filter to apply here the way there is for a tracked scan.
+    if(lastChavPoolAdd && (!candidate || lastChavPoolAdd.ts>=candidate.ts)){
+      var pendingPool=lastChavPoolAdd;
+      lastChavPoolAdd=null;
+      if(reverseChavPoolAdd(pendingPool)) return "scan";
+      // Stale — fall through to the log-walk candidate instead.
     }
     if(candidate){ undoEntry(candidateIdx); return "scan"; }
     return false;
