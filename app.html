@@ -500,6 +500,30 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      history dropdown is position:absolute so opening it overlays on top of
      the chart instead of pushing it down the page. */
   .seats-scanbar{position:relative; z-index:30; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 10px}
+  /* Class points pill, in the header beside the class picker. Brass, like
+     every other "this is a points total" surface in the app, and never printed
+     — it is a live running total, not part of any sheet.
+
+     It borrows .mute-btn's shape (the class picker and the account button next
+     to it are both .mute-btn) so the three read as one row of header controls
+     rather than as a bar with something bolted on; only the brass colouring is
+     added here. Visibility is owned by renderClassPoints() via the wrapper's
+     inline style, not by CSS, so the pill cannot flash on for a frame before
+     the renderer has decided whether it belongs on screen at all. */
+  .cp-pill{display:inline-flex; align-items:center; gap:6px; background:var(--brass-soft); border-color:#e0d2b4; color:#6b4d18; font-weight:800; white-space:nowrap}
+  .cp-pill:hover{background:var(--brass); color:#fff}
+  .cp-val{font-weight:800}
+  /* One row per class inside the pill's dropdown. */
+  .cp-row{display:flex; align-items:baseline; gap:10px; width:100%; padding:6px 9px; border-radius:7px; background:none; border:0; text-align:left; cursor:default; font:inherit}
+  .cp-row .cp-name{font-size:.86rem; font-weight:600; color:var(--ink); flex:1}
+  .cp-row .cp-val{font-size:.92rem; color:var(--brass)}
+  .cp-row.cp-current{background:var(--brass-soft)}
+  /* A pool whose class has no students left. Dimmed rather than hidden — the
+     points are real and still spendable once a boy is back in that class. */
+  .cp-row.cp-orphan .cp-name{color:var(--muted); font-style:italic}
+  .cp-row.cp-orphan .cp-val{color:var(--muted)}
+  .cp-note{padding:5px 9px 3px; font-size:.76rem; color:var(--muted); line-height:1.35}
+  @media print{ .header-cp-wrap{display:none !important} }
   /* GROW ZERO, AND THAT IS THE INTENDED BEHAVIOUR — the input stays 200px
      however wide the bar gets, and .scan-strip below takes every spare pixel so
      the row holds as much scan history as possible.
@@ -711,6 +735,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 0}
   .seat-modebtn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:6px 12px;font-size:.85rem;font-weight:600}
   .seat-modebtn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  /* 🏆 Class, in the chart's toolbar. Brass on purpose: every other button in
+     that row changes what you are LOOKING at and can be pressed freely, while
+     this one moves a score. It deliberately never takes .active — it is an
+     action, not a state, and a toggle-looking button in a row of real toggles
+     would read as "class mode is on". */
+  .seat-classbtn{background:var(--brass-soft);border-color:#e0d2b4;color:#6b4d18;font-weight:800}
+  .seat-classbtn:hover{background:var(--brass);color:#fff;border-color:var(--brass)}
   /* The view switch — List / Seating chart — sits in the toolbar itself,
      as a segmented pair, so it reads as one control with two states rather
      than two buttons that happen to sit together. */
@@ -2401,6 +2432,20 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div class="header-right">
     <span id="micDot" class="mic-dot" title="Recording a voice note"></span>
     <select id="classSel" class="mute-btn" title="Which class you're working with"></select>
+    <!-- Class points, deliberately RIGHT HERE and nowhere else: the pill shows
+         the selected class's pool, and the control that selects that class is
+         the element immediately to its left. Anywhere further away and the
+         number would need to name its own class to be read at all.
+
+         It replaces the full-width strip this first shipped as — a whole bar
+         across every tab was more furniture than one number is worth. The
+         other classes' pools didn't disappear with it; they moved into this
+         pill's dropdown, which is also the only place an ORPHANED pool (a
+         class renamed out from under its points) can still be seen. -->
+    <span class="header-cp-wrap" id="classPointsWrap" style="position:relative;display:none">
+      <button class="mute-btn cp-pill" id="classPointsPill"></button>
+      <div class="hsb-dropdown" id="classPointsDropdown" style="display:none;left:auto;right:0"></div>
+    </span>
     <span class="header-date" id="todayDate"></span>
     <span class="header-date" id="todayDateHebrew"></span>
     <!-- Header account menu: a persistent, always-visible sign-in state and
@@ -2608,6 +2653,20 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
             <span class="armed-pill" id="armedPill">—</span>
             <!-- margin-left:auto, not .grow — .grow is only defined inside
                  .toolbar and .erow, and .armed-bar is neither. -->
+            <!-- Class points. Hidden entirely unless the feature is on — see
+                 renderClassPointsBtn(), which also owns the title.
+
+                 It sits BEFORE "Give to all" and carries the margin-left:auto
+                 that button used to have, so the pair is pushed right together
+                 as one group. Added after it instead, the auto margin took all
+                 the free space and dropped this button onto a second row.
+
+                 The two are deliberately adjacent and deliberately worded
+                 apart: they look alike and do near-opposite things — one award
+                 to the class, versus one award to each boy — so each spells
+                 out the difference in its own title rather than trusting the
+                 icon to carry it. -->
+            <button class="btn btn-sm" id="classPointsBtn" type="button" style="display:none;margin-left:auto">🏆 Class</button>
             <button class="btn btn-sm" id="giveAllBtn" type="button" style="margin-left:auto" title="Give the armed activity to every student in the selected class">👥 Give to all</button>
             <!-- Hidden until somebody is actually frozen — see
                  renderFreezeAllBtn(), which owns its label, title and
@@ -4428,9 +4487,29 @@ function setupRoster() {
         <select id="storeEmoji" class="field" style="width:62px"></select>
         <input id="storeName" class="field" style="max-width:220px" placeholder="Prize name (e.g. Pencil)">
         <input id="storeCost" class="field" type="number" min="0" style="width:96px" placeholder="Cost">
+        <!-- Shown only when Class Points is on (renderStore). With the feature
+             off there is only one kind of prize, and a two-option dropdown
+             offering a choice a rebbi cannot act on is worse than no dropdown. -->
+        <select id="storeFor" class="field" style="width:auto" title="Who pays for this prize" >
+          <option value="student">For a student</option>
+          <option value="class">For the whole class</option>
+        </select>
         <button id="storeAdd" class="btn btn-sm btn-primary">+ Add prize</button>
       </div>
       <div id="storeList" class="row-list"></div>
+    </div>
+
+    <!-- Class prizes. Its own block above the student picker, mirroring where
+         the class pool sits everywhere else in the app — over the boys, not
+         among them. Hidden wholesale unless Class Points is on AND at least
+         one class prize exists. -->
+    <div id="storeClassCard" class="card pad" style="margin-bottom:16px;display:none">
+      <div class="toolbar" style="margin:0 0 8px">
+        <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0">For the class</h3>
+        <span class="grow"></span>
+        <span id="storeClassBalance" style="font-weight:700;color:var(--brass)"></span>
+      </div>
+      <div id="storeClassBuy" style="display:flex;flex-wrap:wrap;gap:8px"></div>
     </div>
 
     <div class="toolbar">
@@ -5155,6 +5234,14 @@ function setupRoster() {
       <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Page Width</h3>
       <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setFullWidth"> Use the full width of the screen (less side padding)</label>
       <p class="view-note" style="margin:8px 0 0">Off by default. The app normally keeps its content in a centered column, which reads comfortably on a laptop but leaves a lot of empty space on either side of a large desktop monitor. Turn this on to stretch every tab to fill the screen instead — most noticeable on the Scan tab's Customize layout, where it gives the movable sections more room to work with.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="font-family:var(--serif);font-size:1.05rem;margin:0 0 10px">Class Points</h3>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="setClassPoints"> Give the class its own points, counted separately from the boys'</label>
+      <p class="view-note" style="margin:8px 0 0">Off by default. When on, each class gets its own pool of points that works like an extra "student" — arm an activity and scan the class's own QR card (print it from <b>Run → QR Labels → Activity Menu</b>), or tap <b>🏆 Class</b> on the Record tab or on the seating chart. The running total sits in a 🏆 pill in the top bar, right beside the class picker — click it to see every class's total at once. The class pool never appears in the Leader Board, the raffle, the picker, attendance or the Gradebook — it is a separate count, not a boy.</p>
+      <p class="view-note" style="margin:8px 0 0">Class points are spent in the <b>Prize Store</b>, where a prize can be marked <b>for the whole class</b> (a pizza party, a trip) instead of for one student. A class scan can be undone and shows in History exactly like any other scan.</p>
+      <p class="view-note" style="margin:8px 0 0">Turning this off later hides the pill, the button and the class prizes — it never deletes a pool's points. Turn it back on and the totals are exactly where they were.</p>
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
@@ -6121,6 +6208,96 @@ function setupRoster() {
   }
   function nextActId(){ var n=1; var used={}; data.activities.forEach(function(a){used[a.id]=1;}); while(used["a"+n]) n++; return "a"+n; }
   function studentById(id){ id=(id||"").trim().toUpperCase(); for(var i=0;i<data.students.length;i++){ if(data.students[i].id.toUpperCase()===id) return data.students[i]; } return null; }
+
+  /* ---------- CLASS POINTS (data.classPointsEnabled, Settings tab) ----------
+   *
+   * A class earns points as a pool, alongside — never mixed into — the boys'
+   * own totals. It "acts like a different student": arm an activity, scan the
+   * printed Class card, and the pool goes up by that activity's value. It can
+   * be undone, it lands in History, and it is spent in the Prize Store like
+   * any other balance.
+   *
+   * THE POOL IS A SCORE KEY, NOT A STUDENT RECORD, and that is the whole
+   * design. data.scores is a plain lookup map — nothing in this app ever
+   * enumerates its keys (every list is built by walking data.students), so a
+   * reserved key sits in it inertly and inherits score(), applyScore()'s
+   * arithmetic, undoEntry()'s reversal, storeBuy()/refundPurchase() and the
+   * rebuild-from-log path for free, with no second scoring mechanism to keep
+   * in step with the first.
+   *
+   * A fake entry in data.students would have bought the same reuse and then
+   * leaked into all 45 places that walk that array: Standings, the raffle, the
+   * picker, the seating chart, Attendance, the Gradebook, the printed sheets,
+   * the Sheet's roster push and — since the Firebase rebuild — the class's
+   * Firestore document and the admin Class Book. Every one of those would have
+   * needed a filter, and the one that got missed would have shown a phantom
+   * boy to a rebbi or an administrator. This way there is nothing to filter.
+   *
+   * One pool per class, keyed by the class NAME, because a class has no id in
+   * this data model — it is only ever s.group. Renaming a class therefore
+   * leaves its pool behind rather than carrying it across. Nothing is lost (the
+   * balance stays in data.scores), and orphanedClassPools() surfaces it in the
+   * bar so it cannot go quietly missing.
+   */
+  var CLASS_POOL_PREFIX="CLASS:";
+  // "" (All classes, or a roster with no groups at all) keys as "*" rather
+  // than an empty tail, so the key is never the bare prefix and the printed
+  // QR text is never an ambiguous "CLASS:".
+  function classPoolKey(cls){ return CLASS_POOL_PREFIX+(cls||"*"); }
+  function isClassPoolId(id){ return typeof id==="string" && id.slice(0,CLASS_POOL_PREFIX.length)===CLASS_POOL_PREFIX; }
+  function classOfPoolId(id){ var c=String(id).slice(CLASS_POOL_PREFIX.length); return c==="*" ? "" : c; }
+  function classPoolLabel(cls){ return cls || data.className || "Class"; }
+  function classPointsOn(){ return data.classPointsEnabled===true; }
+  /* A stand-in student object for a pool id — built fresh on every call and
+   * NEVER pushed into data.students. It exists so the places that turn a log
+   * entry's sid into a display name (Recent scans, History, the scan strip,
+   * the Store's purchase log) keep using one lookup instead of each growing
+   * its own "is this a class?" branch. `group` is set to the class so
+   * studentInCurrentClass() scopes a pool's rows to its own class exactly as
+   * it scopes a boy's.
+   */
+  function classPoolStandIn(id){
+    var cls=classOfPoolId(id);
+    return {id:id, name:"🏆 "+classPoolLabel(cls), group:cls, isClassPool:true};
+  }
+  /* studentById() for anything that can be a boy OR a class pool. Deliberately
+   * a SECOND function rather than a change to studentById(): that one is what
+   * every scan-routing path calls to decide "is this string a student?", and
+   * teaching it to say yes to a pool would let a class code fall through into
+   * attendanceScan(), hwScan(), passScan() and the games, each of which would
+   * then write a pool id into a per-student store. Only the display and
+   * spending sites — which have already established what they are looking at —
+   * call this one.
+   */
+  function subjectById(id){
+    return studentById(id) || (isClassPoolId(id) ? classPoolStandIn(id) : null);
+  }
+  // Pools holding a balance whose class has no students any more — almost
+  // always a class "renamed" by moving every boy to a new group name. Listed
+  // in the bar so the points stay visible rather than silently stranded. This
+  // walks data.scores' keys, which is the one place in the app that does; it
+  // is reading only its own reserved keys, and only ones that are non-zero.
+  // The pools that currently belong to a real class. One definition, used by
+  // both the orphan test and the bar's chip styling, so the two can never
+  // disagree about what "live" means.
+  function livePoolKeys(){
+    var live={}, gs=groups();
+    gs.forEach(function(g){ live[classPoolKey(g)]=1; });
+    // The "*" pool is live only on a roster with NO groups at all, where it is
+    // the one and only class. Once a rebbi has real classes it is a leftover —
+    // from before he split the roster up, or from a card printed back then —
+    // and counting it as live would leave any balance on it showing nowhere
+    // and spendable by nobody. Better it appears as an orphan chip he can see.
+    if(!gs.length) live[classPoolKey("")]=1;
+    return live;
+  }
+  function orphanedClassPools(){
+    var live=livePoolKeys(), out=[];
+    Object.keys(data.scores||{}).forEach(function(k){
+      if(isClassPoolId(k) && !live[k] && (data.scores[k]||0)!==0) out.push(k);
+    });
+    return out.sort();
+  }
   // Case-insensitive exact-name lookup — for warning about duplicates, never
   // for routing anything: a name is a label, only an id identifies a student.
   function studentByName(name){
@@ -6515,7 +6692,11 @@ function setupRoster() {
   function logEntryInCurrentClass(entry){
     if(!data.currentClass) return true;
     if(!entry) return false;
-    var s=studentById(entry.sid);
+    // subjectById(), so a CLASS POOL entry is scoped to its own class rather
+    // than falling through the `!s` branch below and showing up in every
+    // class's history. The stand-in carries the pool's class as its `group`,
+    // which is exactly what studentInCurrentClass() tests.
+    var s=subjectById(entry.sid);
     return !s || studentInCurrentClass(s);
   }
   // The log as the selected class sees it. Returns data.log itself under
@@ -7929,6 +8110,12 @@ function setupRoster() {
       var live = !barHidden && !scanCustomizing;
       SHELVES.forEach(function(side){ applyShelfOpen(side, live && !!L[side]); });
     }
+    /* The class-points pill lives in the header, so it is never hidden by that
+     * list at all — it is simply redrawn here because a tab switch is the
+     * cheapest reliable moment to catch a roster change made on the Students
+     * tab, which nothing else refreshes it for (emptying a class there is what
+     * turns its pool into an orphan). */
+    renderClassPoints();
   }
   // Runs a tool-tab renderer and, if it throws, shows the actual error message
   // directly in that tab's list box instead of leaving it silently blank —
@@ -11565,6 +11752,7 @@ function setupRoster() {
     $("setHebrewDate").checked = data.showHebrewDate!==false;
     $("setFullWidth").checked = !!data.fullWidth;
     $("setSixSeven").checked = !!data.sixSeven;
+    $("setClassPoints").checked = classPointsOn();
     syncPickerModeSetting();
     syncMatchModeSetting();
     syncRecordOpenSetting();
@@ -11947,6 +12135,17 @@ function setupRoster() {
     var c=$("scanFullWidth"); if(c) c.checked=this.checked;   // the twin in Customize layout
   });
   $("setSixSeven").addEventListener("change", function(){ data.sixSeven=this.checked; save(); });
+  /* Turning Class Points on or off only changes what is SHOWN — it never
+   * touches a pool's balance, the printed cards a rebbi has already run off,
+   * or a class prize he has already set up. Switching it back on brings all
+   * three back exactly as they were. Every surface the flag gates is redrawn
+   * here so the change is visible immediately on whatever tab is open, rather
+   * than on the next tab switch. */
+  $("setClassPoints").addEventListener("change", function(){
+    data.classPointsEnabled=this.checked; save();
+    renderClassPoints();          // also refreshes the Record tab's 🏆 button
+    renderStore(); refreshCodeSurfaces();
+  });
   function escHtml(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
   $("teachWordBtn").addEventListener("click", function(){
@@ -13909,14 +14108,28 @@ function setupRoster() {
    * a rebbi who has switched the negative banners off must still see the prize
    * he just sold — and must always see a refusal, or he will think it worked.
    */
-  /* ONE SALE, TWO WAYS IN. Everything from the affordability check downwards is
-   * shared by the armed path (arm a prize, then scan boys) and the personal
-   * PP:<student>:<prize> card (one scan, no arming) — the same split award()
-   * and the personal PA: codes already have. The two must not drift: a boy who
-   * cannot afford a prize has to be refused identically whichever code the
-   * rebbi happened to scan, and both have to leave the same two records behind.
+  /* ONE SALE, TWO WAYS IN. Everything below is shared by the armed path (arm a
+   * prize, then scan boys) and the personal PP:<student>:<prize> card (one
+   * scan, no arming) — the same split award() and the personal PA: codes
+   * already have. The two must not drift: a boy who cannot afford a prize, or
+   * a prize that is a class prize, has to be refused identically whichever
+   * code the rebbi happened to scan, and both have to leave the same two
+   * records behind on a real sale.
    */
   function sellPrizeTo(s, it){
+    /* A CLASS PRIZE MAY NOT BE CHARGED TO A BOY. The Store tab already keeps
+     * the two apart — a "for the whole class" prize is excluded from the
+     * student buy list so it can never come out of one boy's points — and now
+     * that every prize is also printable and scannable (both as an armed code
+     * and as a personal PP: card), that rule has to hold on both scan paths
+     * too or the tab and the scanner disagree. Without this, arming the pizza
+     * party and scanning a boy — or handing out a PP: card for it — would
+     * quietly bill him 150 points for something the class was meant to buy
+     * together. */
+    if(storeItemIsClass(it)){
+      flash(false, s.name, "That's a class prize", "Scan the 🏆 "+classPoolLabel(data.currentClass)+" card to buy it with class points");
+      beep(false); return false;
+    }
     if(score(s.id) < it.cost){
       flash(false, s.name, isShulchani()?"Not enough coins":"Not enough points",
             "has "+fmtScore(s.id)+" — "+it.name+" costs "+fmtVal(it.cost));
@@ -14395,6 +14608,281 @@ function setupRoster() {
     }
     return true;
   }
+  /* ---------- CLASS POINTS: the award path ----------
+   *
+   * Deliberately its OWN small function rather than a branch inside
+   * awardWith(): almost everything that function does is about a boy — the
+   * class-membership guard, freeze, recordEarn/Trends, the contest hold-aside,
+   * the tile flash — and a pool wants none of it. What it does share is the
+   * two things that make a scan reversible and accountable: the data.log entry
+   * (ordinary shape, ordinary `kind`, so undoMostRecentScan() and undoEntry()
+   * reverse it with no special case at all) and the Sheet push.
+   *
+   * CONTESTS ARE DELIBERATELY NOT TAGGED. A contest ranks boys against each
+   * other; a class pool is not a competitor, and holding its points aside
+   * would put a "🏆 Shiur Alef" row into the contest standings. "Separate
+   * calculation" is the whole point of the feature.
+   */
+  function awardClass(cls, label, delta){
+    if(!classPointsOn()) return false;
+    var key=classPoolKey(cls);
+    data.scores[key]=score(key)+delta;
+    var entry=addLogEntry({ts:Date.now(), sid:key, label:label, delta:delta});
+    save();
+    if(data.autoSheet){
+      pushToSheet({type:"scan", ts:Date.now(), name:"🏆 "+classPoolLabel(cls)+" (class)", group:cls||"",
+                   label:label, delta:delta, total:score(key), id:entry.id});
+    }
+    flash(delta>=0, "🏆 "+classPoolLabel(cls), fmtDeltaBare(delta),
+          label+" · class now "+fmtScore(key), delta>=0?"positive":"negative");
+    beep(delta>=0);
+    renderRecent(); renderClassPoints(); refreshLiveViews();
+    return true;
+  }
+  /* The armed activity, given to a class pool — what the printed Class card
+   * and the Record tab's 🏆 button both call. Refuses the same two things
+   * giveArmedToAll() refuses, for the same reasons: a tracked item records a
+   * mark rather than points and has no pool meaning at all, and a zero-value
+   * activity would write a log entry that changed nothing.
+   */
+  /* Is this pool the selected class's? The same question studentInCurrentClass()
+   * answers for a boy, asked through the same predicate rather than a second
+   * copy of the rule — the pool's stand-in carries its class as `group`, which
+   * is exactly what that function tests. "All classes" passes, as it does for
+   * a student.
+   */
+  function classPoolInCurrentClass(cls){
+    return studentInCurrentClass(classPoolStandIn(classPoolKey(cls)));
+  }
+  function awardArmedToClass(cls){
+    if(!classPointsOn()) return false;
+    /* THE CLASS GATE, and class scans are inside it like everything else.
+     *
+     * A printed class card names its own class, so scanning Shiur Alef's card
+     * while Shiur Bais is selected used to score Shiur Alef anyway — the one
+     * scan in the app that ignored which class was on screen. Every other
+     * surface refuses that: award(), awardWith(), the personal PA:/PC: codes,
+     * passes, attendance and freeze all stop at "Not in selected class", and
+     * since the history/undo scoping landed, the scan bar and Undo do too.
+     *
+     * Being the exception was worse than useless — the scan would land on a
+     * class the rebbi is not looking at, and the pill, the 🏆 buttons, Recent
+     * scans and Undo would all correctly refuse to show it, so the points went
+     * somewhere he had no way to see. Refused here, with the same wording the
+     * student guard uses, so one rule covers boys and classes alike.
+     */
+    if(!classPoolInCurrentClass(cls)){
+      flash(false, "🏆 "+classPoolLabel(cls), "Not in selected class",
+            "Switch to “"+classPoolLabel(cls)+"” or choose “All classes” to score this class");
+      beep(false); return false;
+    }
+    if(!armed || !armed.label){
+      flash(false, "Nothing armed", "", "Pick an activity first, then give it to the class pool"); beep(false); return false;
+    }
+    if(armed.warning){
+      flash(false, "Not for the class pool", "⚠️ Warning", "A warning is for a boy, and records nothing anywhere"); beep(false); return false;
+    }
+    /* AN ARMED PRIZE IS A SALE, NOT A DEDUCTION — and this branch has to come
+     * before the delta checks below, because armPrize() arms the cost as a
+     * NEGATIVE delta. Left to fall through, a class card scanned with a prize
+     * armed would take the cost off the pool as a plain point deduction and
+     * write no purchase record at all: the class charged, and nothing owed to
+     * it. That is the same failure fpScan() refuses a prize code to avoid.
+     *
+     * Here it is served rather than refused, because storePurchase() already
+     * takes a pool key (see its subjectById note) — so the class buys the
+     * prize through the one purchase path, getting the pickup-list row, the
+     * linked spend entry, Refund and Undo exactly as a boy does. */
+    if(armedPrize()) return buyArmedPrizeForClass(cls);
+    var a=armedActivity();
+    if(a && (a.tracked || freezeActivity(a))){
+      flash(false, "Not for the class pool", armed.label, "That records a mark, not points"); beep(false); return false;
+    }
+    if(!isFinite(armed.delta) || armed.delta===0){
+      flash(false, "Nothing to give", armed.label, "That activity is worth zero"); beep(false); return false;
+    }
+    return awardClass(cls, armed.label, armed.delta);
+  }
+  /* Selling an armed prize to a class pool — awardPrize()'s counterpart, and
+   * deliberately shaped like it (same refusal-by-name for a deleted prize,
+   * same can't-afford refusal, same storePurchase() call).
+   *
+   * ONLY A CLASS PRIZE, refused out loud otherwise. The Store tab already
+   * keeps the two kinds strictly apart — student prizes never appear in the
+   * "For the class" section, precisely so a boy's prize is never paid out of
+   * the pool — and the scan path has to agree with the tab, or the rule holds
+   * on one surface and not the other.
+   */
+  function buyArmedPrizeForClass(cls){
+    var it=armedPrize();
+    if(!it){
+      flash(false, "Prize no longer in the store", armed.label, "It was deleted after you armed it — arm another");
+      beep(false); return false;
+    }
+    if(!storeItemIsClass(it)){
+      flash(false, "Not a class prize", armed.label, "Mark it “for the whole class” in the Prize Store to buy it with class points");
+      beep(false); return false;
+    }
+    var key=classPoolKey(cls);
+    if(score(key) < it.cost){
+      flash(false, "🏆 "+classPoolLabel(cls), isShulchani()?"Not enough coins":"Not enough points",
+            "has "+fmtScore(key)+" — "+it.name+" costs "+fmtVal(it.cost));
+      beep(false); return false;
+    }
+    storePurchase(key, it);
+    flash(true, "🏆 "+classPoolLabel(cls), (it.emoji||"🎁")+" "+it.name,
+          fmtDeltaBare(-it.cost)+" · class now "+fmtScore(key));
+    beep(true);
+    renderRecent(); renderScanBoard(); renderClassPoints(); refreshLiveViews();
+    if($("view-store") && $("view-store").classList.contains("active")) renderStore();
+    return true;
+  }
+  /* Which pools the bar shows. On a selected class that is just that one; on
+   * "All classes" it is every class that has students, so the bar reads as a
+   * scoreboard of the pools rather than going blank at the exact moment a
+   * rebbi with several classes wants to compare them. Orphans (a pool whose
+   * class no longer exists) are appended in both cases — they are the one
+   * thing a rebbi cannot otherwise discover.
+   */
+  function classPoolsToShow(){
+    var keys=[];
+    if(data.currentClass) keys.push(classPoolKey(data.currentClass));
+    else {
+      var gs=groups();
+      if(gs.length) gs.forEach(function(g){ keys.push(classPoolKey(g)); });
+      else keys.push(classPoolKey(""));
+    }
+    orphanedClassPools().forEach(function(k){ if(keys.indexOf(k)<0) keys.push(k); });
+    return keys;
+  }
+  /* The header pill, beside the class picker. Absent entirely when the feature
+   * is off — no empty slot, no reserved space.
+   *
+   * It shows the SELECTED class's total, because the control naming that class
+   * sits immediately to its left; that adjacency is what lets the pill be just
+   * a number instead of having to label itself. On "All classes" there is no
+   * one pool to show, so it falls back to naming how many there are and leaves
+   * the totals to the dropdown — the same reasoning that hides the Record
+   * tab's 🏆 button in that state, rather than letting either one guess.
+   */
+  function renderClassPoints(){
+    // The Record tab's 🏆 button is gated by the same flag and changes at the
+    // same moments (feature toggled, class switched, roster edited), so it is
+    // refreshed from here rather than from a second set of call sites that
+    // would eventually fall out of step with this one.
+    renderClassPointsBtn();
+    var wrap=$("classPointsWrap"), pill=$("classPointsPill");
+    if(!wrap || !pill) return;
+    if(!classPointsOn()){
+      wrap.style.display="none";
+      closeClassPointsDropdown();
+      return;
+    }
+    wrap.style.display="";
+    pill.textContent="";
+    pill.appendChild(document.createTextNode("🏆 "));
+    if(data.currentClass || !groups().length){
+      var key=classPoolKey(data.currentClass);
+      pill.appendChild(el("span","cp-val", fmtScoreShort(key)));
+      pill.title=classPoolLabel(data.currentClass)+"'s class points — "+fmtScoreFull(key)+". Click to see every class.";
+    } else {
+      var n=classPoolsToShow().length;
+      pill.appendChild(el("span","cp-val", n+" class"+(n===1?"":"es")));
+      pill.title="Class points. Pick one class to see its total here — click for all of them.";
+    }
+    if($("classPointsDropdown").style.display!=="none") renderClassPointsDropdown();
+  }
+  /* The pill's dropdown: every class's pool at once. This is the only place an
+   * ORPHANED pool can be seen — a class "renamed" by moving its boys to a new
+   * group name leaves its points behind under the old name, and without this
+   * list there would be no way to discover that they are still there.
+   */
+  function renderClassPointsDropdown(){
+    var dd=$("classPointsDropdown");
+    if(!dd) return;
+    dd.innerHTML="";
+    var live=livePoolKeys(), keys=classPoolsToShow(), anyOrphan=false;
+    // Deliberately every class, not just the selected one — the dropdown is
+    // the "all of them" view the pill itself cannot be.
+    var gs=groups();
+    var allKeys = gs.length ? gs.map(classPoolKey) : [classPoolKey("")];
+    orphanedClassPools().forEach(function(k){ if(allKeys.indexOf(k)<0) allKeys.push(k); });
+    allKeys.forEach(function(key){
+      var cls=classOfPoolId(key), isLive=!!live[key];
+      if(!isLive) anyOrphan=true;
+      var row=el("div","cp-row"+(isLive?"":" cp-orphan")+((isLive && cls===data.currentClass)?" cp-current":""));
+      row.appendChild(el("span","cp-name", classPoolLabel(cls)+(isLive?"":" (no students)")));
+      row.appendChild(el("span","cp-val", fmtScoreShort(key)));
+      dd.appendChild(row);
+    });
+    if(anyOrphan){
+      dd.appendChild(el("div","cp-note","A class with no students keeps its points — nothing has been lost. They become spendable again if a student is put back in that class."));
+    }
+  }
+  function closeClassPointsDropdown(){
+    var dd=$("classPointsDropdown");
+    if(dd) dd.style.display="none";
+  }
+  function toggleClassPointsDropdown(){
+    var dd=$("classPointsDropdown");
+    if(!dd) return;
+    if(dd.style.display==="none"){ renderClassPointsDropdown(); dd.style.display="block"; }
+    else dd.style.display="none";
+  }
+  /* The Record tab's 🏆 Class button. Hidden when the feature is off, and also
+   * hidden on "All classes" when the rebbi has more than one class — there is
+   * no single pool to charge, and a button that had to guess would be putting
+   * points on the wrong class's board in front of the room.
+   *
+   * The printed card names its own class, so it never has to guess — but it is
+   * still refused when that class is not the selected one, by the class gate in
+   * awardArmedToClass(). Hiding the button and refusing the card are the same
+   * rule seen from two sides: nothing scores a class the rebbi is not looking
+   * at.
+   */
+  /* The button's own label carries the class's running total — "🏆 Class 34 pts"
+   * — so the number is on the thing you press rather than only up in the header
+   * pill. On the seating chart especially that matters: the chart is often the
+   * only thing on screen (full-screen pop-out, projector), and a rebbi about to
+   * award the class wants to see what it already has without looking away.
+   *
+   * Built as text + a styled <span> rather than one string so the value keeps
+   * the same brass weighting it has in the pill, and so it goes through
+   * fmtScoreShort() — which is what makes it read as coins in Shulchani mode
+   * instead of a bare pruta count.
+   */
+  function classPointsBtnLabel(btn){
+    btn.textContent="";
+    btn.appendChild(document.createTextNode("🏆 Class "));
+    btn.appendChild(el("span","cp-val", fmtScoreShort(classPoolKey(data.currentClass))));
+  }
+  function renderClassPointsBtn(){
+    var b=$("classPointsBtn");
+    if(!b) return;
+    var usable = classPointsOn() && (data.currentClass || !groups().length);
+    b.style.display = usable ? "" : "none";
+    if(usable){
+      classPointsBtnLabel(b);
+      b.title="Give the armed activity to "+classPoolLabel(data.currentClass)+"'s class pool — one award to the class, not one to each boy";
+    }
+    /* Exactly ONE of the pair carries the auto margin at any time. Both
+     * carrying it splits the free space between them and strands 🏆 Class in
+     * the middle of the bar; neither carrying it leaves the pair jammed
+     * against the armed pill. So the margin belongs to whichever of the two
+     * comes first and is actually visible. */
+    var g=$("giveAllBtn");
+    if(g) g.style.marginLeft = usable ? "0" : "auto";
+    /* The seating chart's own copies carry the same label, and an award made
+     * FROM one of them must not leave it showing the total from before the
+     * press. Relabelled in place rather than by re-rendering the panel:
+     * renderTapPanel() rebuilds the whole chart (and would drop any drag or
+     * drawer state with it) which is far too much for one number. Nothing
+     * needs adding when the feature is off or unusable — the buttons are not
+     * built at all in that case, so this finds none.
+     */
+    document.querySelectorAll(".seat-classbtn").forEach(function(btn){ classPointsBtnLabel(btn); });
+  }
+
   /* #128 — GIVE THE ARMED ACTIVITY TO THE WHOLE CLASS.
    *
    * No new concept: `armed` is already {label, delta} waiting for the next
@@ -14640,7 +15128,7 @@ function setupRoster() {
     var shownLog = visibleLog();
     if(!shownLog.length){ box.appendChild(el("div","recent-empty","Scans will appear here.")); return; }
     shownLog.slice(0,12).forEach(function(entry,i){
-      var s=studentById(entry.sid);
+      var s=subjectById(entry.sid);
       var isCorrection = entry.kind==="correction";
       var isTracked = isTrackedEntry(entry);
       var row=el("div","recent-item"+(entry.undone?" undone":"")+(isCorrection?" correction":""));
@@ -14759,7 +15247,7 @@ function setupRoster() {
           entryEl.appendChild(chip);
         } else {
           // Scan entry
-          var stu=studentById(entry.sid);
+          var stu=subjectById(entry.sid);
           var stuName=stu?stu.name:entry.sid;
           var ssTracked=isTrackedEntry(entry);
           entryEl.appendChild(el("span","ss-name",stuName));
@@ -14824,7 +15312,7 @@ function setupRoster() {
     var histLog=visibleLog();
     if(!histLog.length){ wrap.appendChild(el("div","seats-hist-empty","Scans will appear here.")); return; }
     histLog.slice(0,10).forEach(function(entry,i){
-      var s=studentById(entry.sid);
+      var s=subjectById(entry.sid);
       var isCorrection=entry.kind==="correction";
       var shTracked=isTrackedEntry(entry);
       var row=el("div","seats-hist-row"+(entry.undone?" undone":""));
@@ -14915,6 +15403,8 @@ function setupRoster() {
   document.addEventListener("click", function(e){
     var had=$("headerAccountDropdown");
     if(had && had.style.display!=="none" && !e.target.closest(".header-account-wrap")) had.style.display="none";
+    var cpd=$("classPointsDropdown");
+    if(cpd && cpd.style.display!=="none" && !e.target.closest(".header-cp-wrap")) closeClassPointsDropdown();
     // Clicking off a shelf closes it. Deliberately NOT preventDefault or
     // stopPropagation: the click still reaches whatever it landed on, so
     // arming from the left shelf and then tapping a boy on the seating chart
@@ -15241,7 +15731,13 @@ function setupRoster() {
       if($("view-store") && $("view-store").classList.contains("active")) renderStore();
     }
     var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Undo: "+entry.label, delta:-entry.delta, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false, mcId:entry.mcId||undefined, mcMerged:entry.mcMerged||undefined});
-    save(); renderRecent(); renderScanBoard();
+    // renderClassPoints() is here for the same reason refreshStudentTiles()
+    // is below: undoing a CLASS scan corrects data.scores and would otherwise
+    // leave the old total sitting in the bar until something else redrew it.
+    // Found in the browser, not by reading — the arithmetic was right and only
+    // the display was stale, which is exactly the kind of thing a static check
+    // cannot see.
+    save(); renderRecent(); renderScanBoard(); renderClassPoints();
     // The boy's own tile, on both surfaces. Without this an undo corrected the
     // score in the store and left the old number sitting on the seating chart
     // and the class list until something else rebuilt the panel — and, during a
@@ -15251,7 +15747,7 @@ function setupRoster() {
     // updates whatever aggregate view is open (standings, history, contest,
     // trends, raffle) instead of only the three that were special-cased here.
     refreshLiveViews();
-    var s=studentById(entry.sid);
+    var s=subjectById(entry.sid);
     if(data.autoSheet && s){ pushToSheet({type:"correction", ts:Date.now(), name:s.name, group:s.group||"", label:corr.label, delta:corr.delta, total:score(entry.sid), id:corr.id, undoOf:entry.id}); }
   }
   // Resolves an entry's CURRENT index by its stable id at click time, then
@@ -15397,6 +15893,8 @@ function setupRoster() {
     return false;
   }
   $("giveAllBtn").addEventListener("click", function(){ giveArmedToAll(); });
+  $("classPointsBtn").addEventListener("click", function(){ awardArmedToClass(data.currentClass); });
+  $("classPointsPill").addEventListener("click", function(e){ e.stopPropagation(); toggleClassPointsDropdown(); });
   $("freezeAllBtn").addEventListener("click", function(){ toggleAllFreezes(); });
   $("undoLast").addEventListener("click", function(){ undoMostRecentScan(); });
   // The dashboard and seating-chart undos are the SAME action, not a second
@@ -15653,7 +16151,7 @@ function setupRoster() {
     // and the filter that narrows them disagreed about which class this tab is
     // showing. See visibleLog().
     var filtered = visibleLog().filter(function(entry){
-      var s=studentById(entry.sid);
+      var s=subjectById(entry.sid);
       var name = s ? s.name : entry.sid;
       if(studentFilter && entry.sid!==studentFilter) return false;
       // Matches student name, activity label, or note text — the activity
@@ -15693,7 +16191,7 @@ function setupRoster() {
     var overflowCount = logView.length - historyShowCount;
     var capped = logView.slice(0, historyShowCount);
     capped.forEach(function(entry, idx){
-      var s=studentById(entry.sid);
+      var s=subjectById(entry.sid);
       var name = s ? s.name : entry.sid;
       shown++;
       var isCorrection = entry.kind==="correction";
@@ -15833,7 +16331,7 @@ function setupRoster() {
     // change. The Edit button isn't drawn for one, but the guard belongs here
     // rather than only in the renderer.
     if(isTrackedEntry(entry)) return;
-    var raw=prompt("Change points for this scan \u2014 \u201C"+entry.label+" / "+(studentById(entry.sid)||{name:entry.sid}).name+"\u201D  (current: "+(entry.delta>0?"+":"")+entry.delta+")  New value:", String(entry.delta));
+    var raw=prompt("Change points for this scan \u2014 \u201C"+entry.label+" / "+(subjectById(entry.sid)||{name:entry.sid}).name+"\u201D  (current: "+(entry.delta>0?"+":"")+entry.delta+")  New value:", String(entry.delta));
     if(raw===null) return; // cancelled
     var newDelta=parseInt(raw,10);
     if(isNaN(newDelta)){ notice("Please enter a whole number."); return; }
@@ -15855,10 +16353,10 @@ function setupRoster() {
       data.scores[entry.sid]=score(entry.sid)+newDelta;    // apply new
     }
     var corr=addLogEntry({ts:Date.now(), sid:entry.sid, label:"Edit: "+entry.label, delta:diff, kind:"correction", undoOf:entry.id, contestId:entry.contestId||null, contestOnly:entry.contestOnly||false, mcId:entry.mcId||undefined, mcMerged:entry.mcMerged||undefined});
-    save(); renderRecent(); renderScanBoard();
+    save(); renderRecent(); renderScanBoard(); renderClassPoints();
     if($("view-standings").classList.contains("active")) renderStandings();
     renderHistoryTab();
-    var s=studentById(entry.sid);
+    var s=subjectById(entry.sid);
     if(data.autoSheet && s){ pushToSheet({type:"correction", ts:Date.now(), name:s.name, group:s.group||"", label:corr.label, delta:corr.delta, total:score(entry.sid), id:corr.id, undoOf:entry.id}); }
   }
 
@@ -16322,6 +16820,30 @@ function setupRoster() {
         seg.appendChild(seatBtn);
       }
       toolbar.appendChild(seg);
+    }
+    /* 🏆 Class — give the armed activity to the class pool, from the chart the
+     * rebbi is already looking at. The seating chart is where he scores boys by
+     * tapping, so "and one for the whole class" belongs on the same surface
+     * rather than only on the Record tab.
+     *
+     * Placed BEFORE ⚙ Display rather than after it, for the reason the comment
+     * below gives about the switch: the drawer's contents flow into this same
+     * row (display:contents), so anything appended after the ⚙ button gets
+     * pushed along when the drawer opens. In front of it, this button holds
+     * still whether the drawer is open or shut.
+     *
+     * Brass, not a plain seat-modebtn, because everything else in this row
+     * changes what you are LOOKING at and this one changes a score. Same
+     * visibility rule as the Record tab's copy — hidden on "All classes" when
+     * there is more than one class, since there would be no single pool to
+     * charge and guessing would put points on the wrong class's board.
+     */
+    if(classPointsOn() && (data.currentClass || !groups().length)){
+      var cpBtn=el("button","seat-modebtn seat-classbtn");
+      classPointsBtnLabel(cpBtn);   // "🏆 Class 34 pts" — same label as the Record tab's copy
+      cpBtn.title="Give the armed activity to "+classPoolLabel(data.currentClass)+"'s class pool — one award to the class, not one to each boy";
+      cpBtn.addEventListener("click", function(){ awardArmedToClass(data.currentClass); });
+      toolbar.appendChild(cpBtn);
     }
     // ⚙ Display comes AFTER the List/Seating chart switch (not before it) so
     // that opening its drawer never shifts the switch — the drawer's content
@@ -17845,6 +18367,26 @@ function setupRoster() {
     // be the one control that silently depends on which panel happens to be
     // open. (The other CTRL: codes have that gap too; leaving it as found.)
     if(c==="CTRL:NOTE"){ startVoiceNote(); return; }
+    /* CLASS:<class name> — the class pool's own card. Intercepted HERE, above
+     * the floating panel and above every per-tab route, for the same reason
+     * CTRL:NOTE is: the card is printed and scanned from across the room, so
+     * what it does must not depend on which tab or panel happens to be open.
+     *
+     * It also has to be intercepted rather than allowed to fall through, and
+     * that is the load-bearing part. Left to reach the tab handlers, a class
+     * code arriving on Attendance/Homework/Passes/Store would be looked up
+     * with studentById() — which returns null for a pool — and rejected as an
+     * unknown code at best. subjectById() exists precisely so those handlers
+     * never have to learn about pools; this line is what guarantees they
+     * never see one.
+     */
+    if(isClassPoolId(c)){
+      if(!classPointsOn()){
+        flash(false,"Class points are off","","Turn them on in Run → Settings to use this card"); beep(false); return;
+      }
+      awardArmedToClass(classOfPoolId(c));
+      return;
+    }
     if(fpOpen){ fpScan(c); return; }
     if(/^ACT:/i.test(c)){ armActivityByCode(c); return; }
     // PRZ:<prize id> — the Prize Store's own printed code, and the exact
@@ -20561,10 +21103,21 @@ function setupRoster() {
   /* ---------- PRIZE STORE ---------- */
   var storeStudentId=null;
   function storeFlash(ok,l1,l2){ var f=$("storeFlash"); f.className="flash show "+(ok?"good":"bad"); f.innerHTML=""; if(l1) f.appendChild(el("div","who",l1)); if(l2) f.appendChild(el("div","total",l2)); clearTimeout(f._t); f._t=setTimeout(function(){ f.classList.remove("show"); },1600); }
+  /* Who a prize is bought for. Absence means "a student", so every prize that
+   * existed before Class Points shipped keeps its meaning with no backfill and
+   * no migration — the field is only ever written when a rebbi picks "for the
+   * whole class". Read through this helper rather than testing it.for directly
+   * so that stays true in one place. */
+  function storeItemIsClass(it){ return !!(it && it.for==="class"); }
   function renderStore(){
     syncCoinGuideButtons();
     var arEl=$("storeAutoReceived"); if(arEl) arEl.checked=!!data.store.autoReceived;
     if(!$("storeEmoji").options.length) fillEmojiSelect($("storeEmoji"), AU_EMOJIS[0]);
+    var forSel=$("storeFor");
+    if(forSel){
+      forSel.style.display = classPointsOn() ? "" : "none";
+      if(!classPointsOn()) forSel.value="student";
+    }
     var list=$("storeList"); list.innerHTML="";
     if(!data.store.items.length){ list.appendChild(el("div","recent-empty","No prizes yet — add some above.")); }
     else data.store.items.forEach(function(it){
@@ -20572,11 +21125,23 @@ function setupRoster() {
       var emo=makeEmojiSelect(it.emoji||"🎁"); emo.addEventListener("change",function(){ it.emoji=emo.value; save(); renderStore(); });
       var nm=el("span","grow"); nm.textContent=it.name;
       nm.appendChild(document.createTextNode("  ")); nm.appendChild(el("span","grp-tag", fmtVal(it.cost)));
+      // A class prize is tagged in the manage list whether or not the feature
+      // is currently on, so a rebbi who switches Class Points off can still
+      // see why those prizes have stopped appearing in the buy area rather
+      // than concluding they were deleted.
+      if(storeItemIsClass(it)){
+        nm.appendChild(document.createTextNode("  "));
+        var ctag=el("span","grp-tag", classPointsOn() ? "🏆 class" : "🏆 class — Class Points is off");
+        nm.appendChild(ctag);
+      }
       var ren=el("button","btn btn-sm","Edit"); ren.addEventListener("click",function(){ var nn=prompt("Prize name:",it.name); if(nn===null) return; var nc=prompt(isShulchani()?"Cost (prutot):":"Cost (points):", String(it.cost)); if(nc===null) return; it.name=nn.trim()||it.name; it.cost=Math.max(0,parseInt(nc,10)||0); save(); refreshArmedPrize(); renderStore(); });
       var del=el("button","btn btn-sm btn-bad","✕"); del.addEventListener("click",function(){ if(!confirm("Delete \""+it.name+"\"?")) return; data.store.items=data.store.items.filter(function(x){return x.id!==it.id;}); save(); renderStore(); });
       row.appendChild(emo); row.appendChild(nm); row.appendChild(ren); row.appendChild(del);
       list.appendChild(row);
     });
+    // Before the student picker's early return below — a rebbi with an empty
+    // roster but a live class pool should still see (and be able to spend) it.
+    renderStoreClassSection();
     var sel=$("storeStudSel"); sel.innerHTML="";
     var studs=activeStudents().sort(function(a,b){return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name));});
     if(!studs.length){ $("storeBalance").textContent="Add students on the Students tab first."; $("storeBuy").innerHTML=""; renderStoreHistory(); return; }
@@ -20591,8 +21156,13 @@ function setupRoster() {
     balEl.appendChild(el("b",null,isShulchani()?formatCoins(score(sid),{abbr:coinAbbr(score(sid),48)}):String(score(sid))));
     balEl.appendChild(document.createTextNode(isShulchani()?" to spend":" point"+(score(sid)===1?"":"s")+" to spend"));
     var buy=$("storeBuy"); buy.innerHTML="";
-    if(!data.store.items.length){ buy.appendChild(el("div","recent-empty","Add prizes above to start selling.")); }
-    else data.store.items.forEach(function(it){
+    // Class prizes are excluded here whether or not the feature is on. With it
+    // on they have their own section above; with it off they cannot be paid
+    // for at all, and offering a boy a prize that would silently come out of
+    // his own points is the one outcome to avoid.
+    var studentItems=data.store.items.filter(function(it){ return !storeItemIsClass(it); });
+    if(!studentItems.length){ buy.appendChild(el("div","recent-empty", data.store.items.length ? "No student prizes yet — every prize here is a class prize." : "Add prizes above to start selling.")); }
+    else studentItems.forEach(function(it){
       var canAfford=score(sid)>=it.cost;
       var b=el("button","fs-name"+(canAfford?"":" store-cant"));
       b.appendChild(document.createTextNode((it.emoji||"🎁")+" "+it.name+"  "));
@@ -20601,6 +21171,35 @@ function setupRoster() {
       buy.appendChild(b);
     });
     renderStoreHistory();
+  }
+  /* The "For the class" block. Spends from the pool of the SELECTED class —
+   * and is hidden on "All classes" rather than guessing, because there is no
+   * one pool to charge and picking one silently would be spending the wrong
+   * class's points.
+   */
+  function renderStoreClassSection(){
+    var card=$("storeClassCard");
+    if(!card) return;
+    var items=data.store.items.filter(storeItemIsClass);
+    if(!classPointsOn() || !items.length){ card.style.display="none"; return; }
+    card.style.display="";
+    var balEl=$("storeClassBalance"), buy=$("storeClassBuy");
+    buy.innerHTML="";
+    if(!data.currentClass && groups().length){
+      balEl.textContent="";
+      buy.appendChild(el("div","recent-empty","Pick one class in the header to spend its points — “All classes” has no single pool to charge."));
+      return;
+    }
+    var key=classPoolKey(data.currentClass);
+    balEl.textContent=classPoolLabel(data.currentClass)+" has "+fmtScoreShort(key)+" to spend";
+    items.forEach(function(it){
+      var canAfford=score(key)>=it.cost;
+      var b=el("button","fs-name"+(canAfford?"":" store-cant"));
+      b.appendChild(document.createTextNode((it.emoji||"🎁")+" "+it.name+"  "));
+      b.appendChild(el("span","pts", isShulchani()?formatCoins(it.cost,{abbr:coinAbbr(it.cost,20)}):it.cost+"pt"));
+      b.addEventListener("click", function(){ storeBuy(key, it); });
+      buy.appendChild(b);
+    });
   }
   /* THE ONE PATH EVERY PURCHASE TRAVELS THROUGH. Extracted verbatim out of
    * storeBuy() so the scan path can sell a prize without borrowing this tab's
@@ -20623,8 +21222,14 @@ function setupRoster() {
    * tab either, and making the scan path the one exception would have left the
    * two surfaces disagreeing about what gets recorded where.
    */
+  /* subjectById(), not studentById(): `sid` here is "whoever is paying", and
+   * since Class Points that can be a class pool key as well as a student id.
+   * Nothing else in this function had to change to accept one — the balance
+   * read, data.scores, the purchase-log row, the linked spend entry and
+   * refundPurchase()'s reversal of both are all already id-agnostic, which is
+   * the same property that let the pool reuse the scoring path. */
   function storePurchase(sid, it){
-    var s=studentById(sid); if(!s) return null;
+    var s=subjectById(sid); if(!s) return null;
     var pid=newId(), ts=Date.now();
     data.scores[sid]=score(sid)-it.cost;
     data.store.log.unshift({pid:pid, sid:sid, name:s.name, itemName:it.name, emoji:it.emoji||"🎁", cost:it.cost, ts:ts, received:data.store.autoReceived===true});
@@ -20634,11 +21239,14 @@ function setupRoster() {
     return entry;
   }
   function storeBuy(sid, it){
-    var s=studentById(sid); if(!s) return;
+    var s=subjectById(sid); if(!s) return;
     if(score(sid) < it.cost){ storeFlash(false, isShulchani()?"Not enough coins":"Not enough points", s.name+" has "+fmtScore(sid)+", needs "+fmtVal(it.cost)); beep(false); return; }
     storePurchase(sid, it);
     beep(true); storeFlash(true, s.name+" bought "+(it.emoji||"")+" "+it.name, (isShulchani()?formatCoins(it.cost,{signed:false})+" → ":"-"+it.cost+" → ")+fmtScore(sid));
-    renderStore(); renderScanBoard(); refreshStudentTiles(sid, -it.cost); refreshLiveViews();
+    // refreshStudentTiles() is a no-op for a class pool (there is no tile with
+    // that data-sid), which is exactly right — the pool's total lives in the
+    // class-points bar instead, so that is refreshed alongside.
+    renderStore(); renderScanBoard(); refreshStudentTiles(sid, -it.cost); refreshLiveViews(); renderClassPoints();
   }
   function refundPurchase(idx){
     var p=data.store.log[idx]; if(!p) return;
@@ -20659,7 +21267,7 @@ function setupRoster() {
     }
     addLogEntry({ts:Date.now(), sid:p.sid, label:"Store refund: "+p.itemName, delta:p.cost, kind:"refund"});
     data.store.log.splice(idx,1);
-    save(); renderStore(); renderScanBoard(); refreshStudentTiles(p.sid); refreshLiveViews();
+    save(); renderStore(); renderScanBoard(); refreshStudentTiles(p.sid); refreshLiveViews(); renderClassPoints();
   }
   function renderStoreHistory(){
     var h=$("storeHistory"); h.innerHTML="";
@@ -20686,7 +21294,13 @@ function setupRoster() {
   $("storeAdd").addEventListener("click", function(){
     var name=$("storeName").value.trim(); if(!name){ $("storeName").focus(); return; }
     var cost=Math.max(0,parseInt($("storeCost").value,10)||0), emoji=$("storeEmoji").value||"🎁";
-    data.store.items.push({id:"it"+Date.now().toString(36)+Math.floor(Math.random()*1000), name:name, cost:cost, emoji:emoji});
+    // `for` is written ONLY for a class prize. A student prize carries no such
+    // field at all, which is what makes every prize created before Class
+    // Points shipped read correctly with no backfill — see storeItemIsClass().
+    var item={id:"it"+Date.now().toString(36)+Math.floor(Math.random()*1000), name:name, cost:cost, emoji:emoji};
+    var forSel=$("storeFor");
+    if(classPointsOn() && forSel && forSel.value==="class") item.for="class";
+    data.store.items.push(item);
     // The rebbi who adds his first prize AFTER this loaded gets the section too,
     // not only the one who already had prizes when load2fix() last ran.
     ensureStoreCodeSection();
@@ -24922,6 +25536,9 @@ nameLine
   }
   $("classSel").addEventListener("change", function(){
     data.currentClass=this.value; save();
+    // The bar shows the selected class's pool (and the 🏆 button is hidden on
+    // "All classes"), so both have to follow the class picker.
+    renderClassPoints();
     renderActButtons(); renderRecent();
     renderScanBoard(); renderTapPanel(); if(typeof fpOpen!=="undefined" && fpOpen) fpRenderNames();
     renderStandings(); renderPasses();
@@ -25397,6 +26014,29 @@ nameLine
     // the printExcludedGiveAllSeeded note in load2fix().
     items.push({qrText:"CTRL:GIVEALL", name:"Give to All", sub:"👥 armed activity to the whole class", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:NOTE", name:"🎤 Voice Note", sub:"speak a note onto the last scan", tone:"trk", defaultSection:"nav"});
+    /* CLASS POINTS: the pool's own card, one per class, and only while the
+     * feature is on. It belongs on this list rather than in a print view of
+     * its own because this function is the single source for all four code
+     * surfaces — the printed Activity Menu, the class sheet's footer, the
+     * on-screen chart and the Choose-codes picker — so registering it here is
+     * what makes it printable, tappable and switch-off-able in one go.
+     *
+     * NOT seeded excluded, unlike CTRL:GIVEALL. That one is held back because
+     * a mis-scan awards every boy at once; this one moves a single pool by a
+     * single activity's value and undoes in one scan, so the caution that
+     * earned Give-to-All its exclusion does not apply.
+     *
+     * Filed under Navigation with Give to All — the two are the app's only
+     * whole-class cards, and a rebbi looking for one will look where the
+     * other is.
+     */
+    if(classPointsOn()){
+      var poolClasses = data.currentClass ? [data.currentClass] : (groups().length ? groups() : [""]);
+      poolClasses.forEach(function(cls){
+        items.push({qrText:classPoolKey(cls), name:"🏆 "+classPoolLabel(cls),
+                    sub:"class points — armed activity to the class", tone:"trk", defaultSection:"nav"});
+      });
+    }
     items.push({qrText:"CTRL:PICK", name:"🎡 Pick", sub:"opens the picker and spins — scan again for another", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKPREV", name:"◂ Previous Phrase", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
     items.push({qrText:"CTRL:PASUKNEXT", name:"Next Phrase ▸", sub:"Teach mode only", tone:"trk", defaultSection:"nav"});
@@ -27711,7 +28351,7 @@ nameLine
     });
     if(!toSync.length){ $("sheetStatus").textContent="Nothing to resync — no scans logged on this device yet."; return; }
     toSync.forEach(function(item){
-      var e=item.e, s=studentById(e.sid);
+      var e=item.e, s=subjectById(e.sid);
       pushToSheet({type: e.kind==="correction"?"correction":"scan", ts:e.ts, name:s?s.name:e.sid, group:(s&&s.group)||"", label:e.label, delta:e.delta, total:item.total, id:e.id, undoOf:e.undoOf});
     });
     $("sheetStatus").textContent="Resent "+toSync.length+" scan"+(toSync.length===1?"":"s")+" — your sheet skips any it already has, so this is safe to click anytime.";
@@ -29173,6 +29813,23 @@ nameLine
     if(typeof data.showHebrewDate!=="boolean") data.showHebrewDate=true;
     if(typeof data.fullWidth!=="boolean") data.fullWidth=false;
     if(typeof data.sixSeven!=="boolean") data.sixSeven=false;
+    /* CLASS POINTS — purely additive, and deliberately NOT a DATA_VERSION
+     * bump. One boolean with a safe default, and no existing value is
+     * converted: the pool balances live as reserved keys inside data.scores,
+     * which every save already carries and every backup already round-trips,
+     * so there is nothing to migrate and nothing that can be lost. A save from
+     * before this shipped simply has no such keys and no flag, which reads
+     * correctly as "off, no pools".
+     *
+     * Defaults to false rather than being seeded from `defaults`, because it
+     * has to reach existing saves as well as new installs, and both should
+     * start in the same place: a rebbi who has never asked for class points
+     * should not find a new bar across the top of his app after an update.
+     *
+     * data.store.items needs no backfill at all — a prize with no `for` field
+     * is a student prize, which is exactly what every prize that already
+     * exists is. See storeItemIsClass(). */
+    if(typeof data.classPointsEnabled!=="boolean") data.classPointsEnabled=false;
     // Instant (no-spin) toggles — one per random-selection tool. Additive
     // booleans: absent on every existing save, so they backfill to false and
     // old data keeps the current animated behavior untouched.
