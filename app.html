@@ -16944,10 +16944,24 @@ function setupRoster() {
    * column is then always the wider of the two by construction — its own `1fr`
    * is `minmax(auto, 1fr)`, whose floor is its content, so it can only ever be
    * pushed wider, never squeezed below a blank one. */
-  var SEAT_BLANK_TRACK = "minmax(0, 0.35fr)";
-  function seatTrackTemplate(used, n){
+  /* The two axes need DIFFERENT blank sizes to end up looking the same, which
+   * is not obvious and was wrong at first.
+   *
+   * A fraction is a share of that axis, and the two axes are nowhere near the
+   * same size: on a full-screen chart a column's full share runs about 270px
+   * against a row's 135px. The same `0.35fr` therefore drew a blank column
+   * twice as thick as a blank row — the rows looked right and the columns
+   * still looked fat.
+   *
+   * So rows keep the fraction, which reads correctly and scales with how many
+   * rows there are, and blank columns take a FIXED thin width instead. Fixed
+   * also means a blank column does not quietly get fatter on a wider screen,
+   * which is exactly what a fraction would do. */
+  var SEAT_BLANK_ROW = "minmax(0, 0.35fr)";
+  var SEAT_BLANK_COL = "36px";
+  function seatTrackTemplate(used, n, blank){
     if(!used) return "repeat("+n+", 1fr)";
-    return used.map(function(u){ return u ? "1fr" : SEAT_BLANK_TRACK; }).join(" ");
+    return used.map(function(u){ return u ? "1fr" : blank; }).join(" ");
   }
   function renderSeatTables(grid, lay, rebbiView, interactive, redraw){
     seatTablesArr(lay).forEach(function(t){
@@ -18095,11 +18109,11 @@ function setupRoster() {
     if(!data.seatLiveRebbiView) body.appendChild(el("div","seat-front","Front of room"));
     var grid=el("div","seat-grid"+(arranging?" arranging":"")+(tablesMode?" tables-mode":""));
     var axes=seatUsedAxes(lay, !!data.seatLiveRebbiView), blankCols=axes.cols, blankRows=axes.rows;
-    grid.style.gridTemplateColumns=seatTrackTemplate(axes.cols, lay.cols);
+    grid.style.gridTemplateColumns=seatTrackTemplate(axes.cols, lay.cols, SEAT_BLANK_COL);
     // Rows were `repeat(N, 1fr)` — dead equal — so in the full-screen chart,
     // where the grid's height IS definite, a row with nobody in it took as much
     // of the screen as a full one. Same rule as the columns now.
-    grid.style.gridTemplateRows=seatTrackTemplate(axes.rows, lay.rows);
+    grid.style.gridTemplateRows=seatTrackTemplate(axes.rows, lay.rows, SEAT_BLANK_ROW);
     // BEFORE the seats, so the tabletops sit under them in paint order as well
     // as by z-index. Mirrored here when Rebbi's view is on — see renderSeatTables.
     renderSeatTables(grid, lay, !!data.seatLiveRebbiView, tablesMode, renderTapPanel);
@@ -28952,7 +28966,7 @@ nameLine
     if(!rebbiView && showFront) host.appendChild(el("div","seat-front","Front of room"));
     var grid=el("div","seat-grid print-seat-grid arranging"+(tablesMode?" tables-mode":""));
     var axes=seatUsedAxes(lay, rebbiView), blankCols=axes.cols, blankRows=axes.rows;
-    grid.style.gridTemplateColumns=seatTrackTemplate(axes.cols, lay.cols);
+    grid.style.gridTemplateColumns=seatTrackTemplate(axes.cols, lay.cols, SEAT_BLANK_COL);
     /* Rows are left auto-sized on the SHEET, deliberately — the print grid has
      * never set gridTemplateRows, and a printed page's height is what it is.
      * A blank row still gets thinner here, because its cells drop the "Empty
