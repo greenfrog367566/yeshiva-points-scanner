@@ -856,6 +856,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-grid.arranging .seat{cursor:grab;border-style:solid;box-shadow:0 1px 3px rgba(27,36,64,.08)}
   .seat-grid.arranging .seat.empty{cursor:default;box-shadow:none}
   .seat-grid.arranging .seat.drag-over{border-color:var(--brass);background:var(--brass-soft)}
+  /* The whole landing zone of a dragged table, not just the cell under the
+     cursor. Brass matches the single-cell drag-over above, so the two read as
+     the same "this is where it goes" language at two sizes. `-bad` is the same
+     shape in the warning colour, for a drop seatTableMove would refuse (off
+     the grid, or onto another table) — a zone that lit up regardless would
+     promise a move that then silently does nothing. */
+  .seat-grid.arranging .seat.tbl-drop{border-color:var(--brass);background:var(--brass-soft)}
+  .seat-grid.arranging .seat.tbl-drop-bad{border-color:var(--bad);background:var(--bad-soft)}
   .seat.dragging{opacity:.4}
   .seat-clear{position:absolute;top:2px;right:4px;font-size:.7rem;color:var(--muted);background:transparent;border:none;padding:2px 4px;line-height:1}
   .seat-clear:hover{color:var(--bad)}
@@ -16846,6 +16854,14 @@ function setupRoster() {
    * here can be confused by Rebbi's view.
    */
   var seatTableSel=[], seatTablePending=null;
+  /* Which table is under the cursor RIGHT NOW, during an HTML5 drag.
+   *
+   * It cannot come from the dataTransfer: a `dragover` handler is forbidden
+   * from reading dataTransfer.getData() (only `drop` may), which is exactly
+   * when the landing zone needs to be drawn. So the id is parked here at
+   * dragstart and cleared at dragend. In-memory only, like seatTablePending —
+   * it describes a gesture in flight, not a preference. */
+  var seatTableDragId=null;
   // The selection is always the BOUNDING BOX of the cells tapped, which is what
   // guarantees a table is a rectangle without a fiddly polygon model — and is
   // predictable enough to explain in one line of helper text.
@@ -16935,6 +16951,17 @@ function setupRoster() {
         var rect = back.getBoundingClientRect();
         ev.dataTransfer.setDragImage(back, ev.clientX - rect.left, ev.clientY - rect.top);
       }
+      // The landing-zone paint needs to know WHICH table is moving, and
+      // dragover may not read dataTransfer. See seatTableDragId.
+      seatTableDragId = t.id;
+    });
+    /* Fires however the drag ends — dropped on a seat, dropped nowhere, or
+     * cancelled with Escape — so the landing zone can never be left painted on
+     * a chart with nothing being dragged. */
+    handle.addEventListener("dragend", function(){
+      seatTableDragId = null;
+      var grid = grip.closest ? grip.closest(".seat-grid") : null;
+      seatTableClearDrop(grid);
     });
     // Tap-to-move fallback, matching the one the unplaced tray already offers:
     // a smartboard has no drag.
@@ -17004,6 +17031,41 @@ function setupRoster() {
    * SWAP, and overloading it to also mean "bond these two into a table" is the
    * kind of ambiguity that loses a rebbi his seating arrangement.
    */
+  /* Light up EVERY cell a dragged table would land on, not just the one under
+   * the cursor. Dragging a six-seat table while a single box highlighted gave
+   * no idea where the block was actually going — you had to picture it.
+   *
+   * The paint mirrors seatTableMove's own refusals rather than guessing at
+   * them: out of bounds, or overlapping another table, and the zone is drawn
+   * as refused instead of promising a drop that will silently do nothing.
+   * (`nr===t.r && nc===t.c` — dropping a table back where it started — is left
+   * looking valid on purpose: nothing moves, and flagging "no" for putting a
+   * thing back where it was reads as an error when it isn't.)
+   *
+   * Coordinates are plain true/flat indices here, with no display mirroring,
+   * because tables are only ever EDITABLE with Rebbi's view off — both charts
+   * compute tablesMode as `... && !rebbiView` — so display and true coincide
+   * for every cell this can touch. */
+  function seatTableClearDrop(grid){
+    if(!grid) return;
+    var lit = grid.querySelectorAll(".tbl-drop, .tbl-drop-bad");
+    for(var i=0;i<lit.length;i++) lit[i].classList.remove("tbl-drop","tbl-drop-bad");
+  }
+  function seatTablePaintDrop(grid, lay, t, nr, nc){
+    seatTableClearDrop(grid);
+    if(!grid || !t) return;
+    var fits = nr>=0 && nc>=0 && nr+t.h<=lay.rows && nc+t.w<=lay.cols;
+    var clash = seatTablesArr(lay).some(function(o){
+      return o.id!==t.id && seatRectsOverlap(o, {r:nr,c:nc,w:t.w,h:t.h});
+    });
+    var cls = (fits && !clash) ? "tbl-drop" : "tbl-drop-bad";
+    for(var i=0;i<t.h;i++) for(var j=0;j<t.w;j++){
+      var r=nr+i, c=nc+j;
+      if(r<0||c<0||r>=lay.rows||c>=lay.cols) continue; // off the grid: nothing to paint
+      var cell = grid.querySelector('[data-seatidx="'+(r*lay.cols+c)+'"]');
+      if(cell) cell.classList.add(cls);
+    }
+  }
   function wireSeatTablesCell(seat, lay, trueIdx, redraw){
     function drop(nr, nc, id){
       var t=seatTablesArr(lay).filter(function(o){ return o.id===id; })[0];
@@ -17020,10 +17082,24 @@ function setupRoster() {
       if(i>=0) seatTableSel.splice(i,1); else seatTableSel.push(trueIdx);
       redraw();
     });
-    seat.addEventListener("dragover", function(ev){ ev.preventDefault(); seat.classList.add("drag-over"); });
+    // Lets seatTablePaintDrop find the other cells of the landing zone; a cell
+    // has no other addressable identity once it is in the grid.
+    seat.dataset.seatidx = trueIdx;
+    seat.addEventListener("dragover", function(ev){
+      ev.preventDefault();
+      // Only a TABLE drag gets a footprint. A student being dragged (which the
+      // seat may also be listening for) keeps the plain single-cell highlight.
+      if(!seatTableDragId){ seat.classList.add("drag-over"); return; }
+      var t=seatTablesArr(lay).filter(function(o){ return o.id===seatTableDragId; })[0];
+      seatTablePaintDrop(seat.parentNode, lay, t, Math.floor(trueIdx/lay.cols), trueIdx%lay.cols);
+    });
+    // No repaint on dragleave: leaving one cell means entering the next, and
+    // clearing here would flicker the zone off between them. Each dragover
+    // repaints from scratch, and dragend/drop clear it.
     seat.addEventListener("dragleave", function(){ seat.classList.remove("drag-over"); });
     seat.addEventListener("drop", function(ev){
       ev.preventDefault(); seat.classList.remove("drag-over");
+      seatTableClearDrop(seat.parentNode);
       var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
       var p; try{ p=JSON.parse(raw); }catch(e){ return; }
       if(!p.tbl) return;
