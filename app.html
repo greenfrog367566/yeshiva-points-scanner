@@ -3324,6 +3324,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <label id="seatPrintPrizeRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Every seat's code becomes that one prize, charged to that student — scan straight down the grid with no arming step, and each boy is refused if he can't afford it. One sheet per prize.">Prize:
         <select id="seatPrintPrizePicker" class="field" style="width:auto"></select>
       </label>
+      <label id="seatPrintMultiPrizeRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Stack a chart per prize on the one sheet — Pencil at the top, Snack under it, and so on. Each band is the same seating chart with that prize's codes in it, and the sheet shrinks itself so they all fit one page."><input type="checkbox" id="seatPrintMultiPrize"> Several on one page</label>
       <label id="seatPrintMultiActRow" style="display:none;align-items:center;gap:5px;font-size:.9rem" title="Stack a chart per activity on the one sheet — +1 at the top, −1 under it, Freeze at the bottom. Each band is the same seating chart with that activity's codes in it, and the sheet shrinks itself so they all fit one page."><input type="checkbox" id="seatPrintMultiAct"> Several on one page</label>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem"><input type="checkbox" id="seatPrintShowPoints"> Points</label>
       <label id="seatPrintRebbiViewRow" style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="Flips the chart 180° — front of room at the bottom, left/right mirrored — matching what you actually see facing the class. Names stay right-side-up and readable."><input type="checkbox" id="seatPrintRebbiView"> Rebbi's view</label>
@@ -3352,6 +3353,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div class="card pad no-print" id="seatPrintMultiActCard" style="margin-bottom:12px;display:none">
       <p class="view-note" style="margin-top:0">Tick an activity to give it its own chart on the sheet. They print <b>top to bottom in this order</b> — use ▲ / ▼ to move one. Every band is your same seating chart, so a boy sits in the same desk in all of them; only the code in his card changes. The whole sheet shrinks itself to fit one page.</p>
       <div class="row-list" id="seatPrintMultiActList"></div>
+    </div>
+    <div class="card pad no-print" id="seatPrintMultiPrizeCard" style="margin-bottom:12px;display:none">
+      <p class="view-note" style="margin-top:0">Tick a prize to give it its own chart on the sheet. They print <b>top to bottom in this order</b> — use ▲ / ▼ to move one. Every band is your same seating chart, so a boy sits in the same desk in all of them; only the prize in his card changes. The whole sheet shrinks itself to fit one page.</p>
+      <div class="row-list" id="seatPrintMultiPrizeList"></div>
     </div>
     <div class="card pad no-print" id="seatPrintCodesCard" style="margin-bottom:12px;display:none">
       <p class="view-note" style="margin-top:0">Which codes you use, and how they're grouped. This one list governs all of them — the class sheet, the activity menu, and the codes under the seating chart. Drag a code to reorder it within a section, or into a different section; ✕ takes it off everywhere and it waits in the tray below. <b>The sections are yours:</b> rename one by typing in its heading, add your own with <b>+ Section</b>, or remove one with its ✕ — its codes move to the first section rather than disappearing. A code you turn off is still fully usable by tapping it on the Dashboard.</p>
@@ -5476,7 +5481,7 @@ function setupRoster() {
     //
     // Discoverability is fixed by putting the checkbox on a page rebbeim
     // actually reach, not by flipping a setting under them.
-    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", prizeId:"", multiActivity:false, activityIds:[], actGrouped:true, actCols:2, iconScale:1 },
+    seatPrintOpts: { layout:"seating", avatarMode:"qr", showPoints:false, rebbiView:false, showActivities:true, activityId:"", prizeId:"", multiActivity:false, activityIds:[], multiPrize:false, prizeIds:[], actGrouped:true, actCols:2, iconScale:1 },
     // Mini Contest — the contest whose totals are stored rather than derived.
     // See the MINI CONTEST block above award() for why that distinction is the
     // whole feature. null = nothing running; [] = no contests have closed yet.
@@ -25373,6 +25378,16 @@ nameLine
   $("seatPrintAvatarMode").addEventListener("change", function(){ data.seatPrintOpts.avatarMode=this.value; save(); seatPrintSyncActivityRow(); renderSeatChartPrint(); });
   $("seatPrintActivityPicker").addEventListener("change", function(){ data.seatPrintOpts.activityId=this.value; save(); renderSeatChartPrint(); });
   $("seatPrintPrizePicker").addEventListener("change", function(){ data.seatPrintOpts.prizeId=this.value; save(); renderSeatChartPrint(); });
+  $("seatPrintMultiPrize").addEventListener("change", function(){
+    data.seatPrintOpts.multiPrize=this.checked;
+    // Turning it on with nothing ticked yet carries the single picker's prize
+    // across, so the sheet the rebbi was looking at becomes the first band
+    // rather than going blank and asking him to pick again.
+    if(this.checked && !seatPrintChosenPrizes().length && data.seatPrintOpts.prizeId){
+      data.seatPrintOpts.prizeIds=[data.seatPrintOpts.prizeId];
+    }
+    save(); seatPrintSyncActivityRow(); renderSeatChartPrint();
+  });
   $("seatPrintMultiAct").addEventListener("change", function(){
     data.seatPrintOpts.multiActivity=this.checked;
     // Ticking it for the first time carries the activity he already had into the
@@ -25579,8 +25594,17 @@ nameLine
   function seatPrintSyncPrizeRow(){
     var isPrize = seatPrintCodeKind($("seatPrintAvatarMode").value)==="prize";
     var row=$("seatPrintPrizeRow"); if(!row) return;
-    row.style.display = isPrize ? "flex" : "none";
-    if(!isPrize) return;
+    // "Several on one page" REPLACES the single picker rather than sitting
+    // beside it — same rule the activity row follows, and for the same reason:
+    // two controls both claiming to say which prize prints is how a rebbi ends
+    // up staring at a sheet that ignores the one he just set.
+    var multi = isPrize && seatPrintMultiPrize();
+    row.style.display = (isPrize && !multi) ? "flex" : "none";
+    $("seatPrintMultiPrizeRow").style.display = isPrize ? "flex" : "none";
+    $("seatPrintMultiPrize").checked = seatPrintMultiPrize();
+    $("seatPrintMultiPrizeCard").style.display = multi ? "block" : "none";
+    if(multi) renderSeatPrintMultiPrizeList();
+    if(!isPrize || multi) return;
     var sel=$("seatPrintPrizePicker"), cur=sel.value || data.seatPrintOpts.prizeId;
     var opts=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
     sel.innerHTML="";
@@ -25890,6 +25914,88 @@ nameLine
    * and back again does not silently forget it.
    */
   var SEAT_PRINT_MAX_BANDS=6;
+  /* THE PRIZE HALF OF THE BAND MODEL. Deliberately a mirror of the four
+   * activity functions below rather than a generalisation of them: the two
+   * differ in what they read (data.store.items vs armableActivities()), in what
+   * a band's label says (a cost vs a point value), and in nothing else, so a
+   * shared abstraction would be two branches wearing one name. Keeping them
+   * parallel means a change to how bands work is visibly two edits, not one
+   * edit and a forgotten case.
+   */
+  function seatPrintMultiPrize(){ return data.seatPrintOpts.multiPrize===true; }
+  function seatPrintChosenPrizes(){
+    var byId={};
+    ((data.store && Array.isArray(data.store.items)) ? data.store.items : []).forEach(function(it){ byId[it.id]=it; });
+    var out=[], seen={};
+    (data.seatPrintOpts.prizeIds||[]).forEach(function(id){
+      // seen[] for the same reason the activity version has it: a hand-edited
+      // or restored save could carry an id twice, and two identical bands is a
+      // wasted third of a page.
+      if(byId[id] && !seen[id]){ seen[id]=1; out.push(byId[id]); }
+    });
+    return out.slice(0, SEAT_PRINT_MAX_BANDS);
+  }
+  function seatPrintToggleMultiPrize(id, on){
+    var ids=(data.seatPrintOpts.prizeIds||[]).filter(function(x){ return x!==id; });
+    // Newly ticked goes to the BOTTOM, so ▲ is one press and no band the rebbi
+    // has already positioned moves under him.
+    if(on) ids.push(id);
+    data.seatPrintOpts.prizeIds=ids;
+    save(); renderSeatPrintMultiPrizeList(); renderSeatChartPrint();
+  }
+  function seatPrintMoveMultiPrize(id, dir){
+    // Swap with the nearest VISIBLE neighbour inside the full stored list —
+    // rewriting the list to just the visible ones would drop ids for prizes
+    // that have since been deleted but may yet be re-added.
+    var stored=(data.seatPrintOpts.prizeIds||[]).slice();
+    var vis=seatPrintChosenPrizes().map(function(it){ return it.id; });
+    var vi=vis.indexOf(id); if(vi<0) return;
+    var vj=vi+dir; if(vj<0 || vj>=vis.length) return;
+    var i=stored.indexOf(id), j=stored.indexOf(vis[vj]);
+    if(i<0 || j<0) return;
+    stored[i]=vis[vj]; stored[j]=id;
+    data.seatPrintOpts.prizeIds=stored;
+    save(); renderSeatPrintMultiPrizeList(); renderSeatChartPrint();
+  }
+  function renderSeatPrintMultiPrizeList(){
+    var box=$("seatPrintMultiPrizeList"); if(!box) return;
+    box.innerHTML="";
+    var opts=(data.store && Array.isArray(data.store.items)) ? data.store.items : [];
+    if(!opts.length){
+      box.appendChild(el("div","empty-state","No prizes to print codes for yet — add one on the Store tab."));
+      return;
+    }
+    var chosen=seatPrintChosenPrizes(), chosenIds={};
+    chosen.forEach(function(it){ chosenIds[it.id]=1; });
+    var full = chosen.length>=SEAT_PRINT_MAX_BANDS;
+    var rows=chosen.concat(opts.filter(function(it){ return !chosenIds[it.id]; }));
+    rows.forEach(function(it){
+      var on=!!chosenIds[it.id], pos=on ? chosen.indexOf(it) : -1;
+      var row=el("div","erow");
+      var cb=el("input"); cb.type="checkbox"; cb.checked=on;
+      // Same cap and same reason as the activity bands: every band redraws a QR
+      // per student, so a dozen ticked on a class of 30 is thousands of codes
+      // and a visibly frozen page.
+      cb.disabled = !on && full;
+      if(cb.disabled) cb.title="Six charts is the most one sheet will take — untick one first.";
+      cb.addEventListener("change", function(){ seatPrintToggleMultiPrize(it.id, cb.checked); });
+      row.appendChild(cb);
+      row.appendChild(el("span","grow", (on ? (pos+1)+". " : "")+(it.emoji||"🎁")+" "+it.name));
+      row.appendChild(el("span","code", fmtVal(it.cost)));
+      if(on){
+        var up=el("button","btn btn-sm","▲"); up.type="button";
+        up.title="Print this chart higher up the sheet";
+        up.disabled = pos<=0;
+        up.addEventListener("click", function(){ seatPrintMoveMultiPrize(it.id,-1); });
+        var dn=el("button","btn btn-sm","▼"); dn.type="button";
+        dn.title="Print this chart lower down the sheet";
+        dn.disabled = pos>=chosen.length-1;
+        dn.addEventListener("click", function(){ seatPrintMoveMultiPrize(it.id,1); });
+        row.appendChild(up); row.appendChild(dn);
+      }
+      box.appendChild(row);
+    });
+  }
   function seatPrintMultiAct(){ return data.seatPrintOpts.multiActivity===true; }
   function seatPrintChosenActivities(){
     var byId={};
@@ -26254,8 +26360,11 @@ nameLine
         // Same personal codes renderPersonalPages() prints per student, laid
         // out in the grid instead — one scan applies this exact activity, or
         // sells this exact prize, to this exact student.
+        // The BAND's prize, not the stored picker value — with several charts
+        // on one sheet those differ, and reading the stored one would print six
+        // identical bands under six different titles.
         var qrText = (kind==="activity") ? ("PA:"+s.id+":"+act.id)
-                   : (kind==="prize")    ? ("PP:"+s.id+":"+(data.seatPrintOpts.prizeId||""))
+                   : (kind==="prize")    ? ("PP:"+s.id+":"+((act && act.id) || data.seatPrintOpts.prizeId || ""))
                    : s.id;
         try{ new QRCode(holder,{text:qrText,width:95,height:95,correctLevel:QRCode.CorrectLevel.M}); }
         catch(e){ qrw.appendChild(document.createTextNode("QR?")); }
@@ -26349,14 +26458,34 @@ nameLine
         ? seatPrintChosenActivities()
         : [actById(data.seatPrintOpts.activityId)].filter(function(a){ return !!a; });
     }
+    /* Prize mode fills the band list the same way — and note it does so even
+     * for a SINGLE prize, where the activity path also carries one entry. That
+     * is what gives every prize chart its own title badge: a band with an item
+     * in it gets labelled, so one prize and six behave identically. */
+    if(actKind==="prize"){
+      actList = seatPrintMultiPrize()
+        ? seatPrintChosenPrizes()
+        : [storeItemById(data.seatPrintOpts.prizeId)].filter(function(p){ return !!p; });
+    }
     var multiBands = actList.length>1;
-    if(actKind==="activity" && !actList.length){
+    if((actKind==="activity" || actKind==="prize") && !actList.length){
       wrap.appendChild(el("div","seat-print-title", seatPrintTitle()));
-      wrap.appendChild(el("div","empty-state", !data.activities.length
-        ? "Add an activity first, on the Activities tab."
-        : (seatPrintMultiAct()
-            ? "Tick the activities you want a chart for, above."
-            : "Pick an activity above to print its seating chart.")));
+      var noneMsg;
+      if(actKind==="prize"){
+        var anyPrize=!!(data.store && Array.isArray(data.store.items) && data.store.items.length);
+        noneMsg = !anyPrize
+          ? "Add a prize first, on the Store tab."
+          : (seatPrintMultiPrize()
+              ? "Tick the prizes you want a chart for, above."
+              : "Pick a prize above to print its seating chart.");
+      } else {
+        noneMsg = !data.activities.length
+          ? "Add an activity first, on the Activities tab."
+          : (seatPrintMultiAct()
+              ? "Tick the activities you want a chart for, above."
+              : "Pick an activity above to print its seating chart.");
+      }
+      wrap.appendChild(el("div","empty-state", noneMsg));
       if($("seatPrintFitWarning")) $("seatPrintFitWarning").style.display="none";
       seatPrintFitScale=seatPrintIconScale();
       seatPrintSyncIconSize();
@@ -26394,8 +26523,13 @@ nameLine
     // of their own.
     if(act){
       var badgeWrap=el("div","seat-print-activity-badge-wrap");
-      var badge=el("div","seat-print-activity-badge",
-        act.name+" · "+(reroutedActivity(act) ? personalActionSub(act) : fmtDelta(act.pts)));
+      // A prize band says what the card COSTS, not what it is worth — the same
+      // badge, reading the other half of the store. activityPrintColor() hashes
+      // id-or-name, so a prize gets its own stable colour with no extra field.
+      var badgeText = (actKind==="prize")
+        ? ((act.emoji||"🎁")+" "+act.name+" · "+fmtDeltaBare(-act.cost))
+        : (act.name+" · "+(reroutedActivity(act) ? personalActionSub(act) : fmtDelta(act.pts)));
+      var badge=el("div","seat-print-activity-badge", badgeText);
       var actColor=activityPrintColor(act);
       badge.style.borderColor=actColor; badge.style.color=actColor;
       badgeWrap.appendChild(badge);
@@ -28193,6 +28327,10 @@ nameLine
     // default; seatPrintSyncPrizeRow() fills it in from the store the first
     // time one of those modes is picked.
     if(typeof data.seatPrintOpts.prizeId!=="string") data.seatPrintOpts.prizeId="";
+    // "Several on one page" for prizes, and the prizes it prints. Both additive
+    // and inert until a rebbi ticks the box.
+    if(typeof data.seatPrintOpts.multiPrize!=="boolean") data.seatPrintOpts.multiPrize=false;
+    if(!Array.isArray(data.seatPrintOpts.prizeIds)) data.seatPrintOpts.prizeIds=[];
     // SEVERAL ACTIVITY CHARTS ON ONE SHEET. Both fields are purely additive and
     // default to the single-chart behaviour every existing save already has, so
     // a rebbi's Monday sheet is unchanged until he asks for the stack himself.
