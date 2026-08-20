@@ -75,11 +75,31 @@ function gh(cmdArgs) {
   }
 }
 
-const repoRoot = git(["rev-parse", "--show-toplevel"]);
-if (!repoRoot) {
+/* THE SHARED CHECKOUT, and it must be derived from --git-common-dir.
+ *
+ * `rev-parse --show-toplevel` returns the CURRENT worktree, not the main
+ * repository — so when this script runs from inside a worktree (which is
+ * nearly always, since every change happens in one), the filter below excluded
+ * the wrong directory and left `C:\Dev\yeshiva-points-scanner` itself in the
+ * stale list. `--stale` then printed
+ *
+ *     git worktree remove "C:/Dev/yeshiva-points-scanner"
+ *
+ * as a suggestion, and the summary line counted the shared checkout among the
+ * worktrees that are "dead". Caught on 2026-08-20 during the first real sweep,
+ * by a separate pruner that used --git-common-dir and refused it.
+ *
+ * --git-common-dir is the one form that answers "which repository is this?"
+ * identically from the main checkout and from every worktree. */
+const commonDir = git(["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+if (!commonDir) {
   console.error("Not a git repository.");
   process.exit(1);
 }
+const repoRoot = require("path").dirname(commonDir.replace(/\\/g, "/"));
+// Where this script is running. Removing the worktree you are standing in
+// fails, so it is never a candidate.
+const selfPath = (git(["rev-parse", "--show-toplevel"]) || process.cwd()).replace(/\\/g, "/");
 
 if (!NO_FETCH) git(["fetch", "origin", "main", "--quiet"]);
 
@@ -164,10 +184,10 @@ function parseWorktrees() {
   return out;
 }
 
-const mainPath = repoRoot.replace(/\\/g, "/");
-const worktrees = parseWorktrees().filter(
-  (w) => w.path.replace(/\\/g, "/").toLowerCase() !== mainPath.toLowerCase()
-);
+const norm = (p) => String(p).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+const MAIN_PATH = norm(repoRoot);
+const SELF_PATH = norm(selfPath);
+const worktrees = parseWorktrees().filter((w) => norm(w.path) !== MAIN_PATH);
 
 // A worktree directory encodes its ORIGINAL branch name, which may differ from
 // the branch it carries now: EnterWorktree creates `worktree-feat+x`, and
@@ -267,7 +287,16 @@ for (const w of worktrees) {
   if (orphanCommits > 0) orphaned.push(rec);
 
   // The CLAUDE.md removal test, exactly: landed, unlocked, clean, nothing loose.
-  if (landed && !w.locked && !hasLooseWork) staleWorktrees.push(rec);
+  /* Two guards beyond the landed/clean/unlocked test, both defence in depth
+   * against the exact defect fixed above: never propose removing the shared
+   * checkout, and never propose removing the worktree this script is running
+   * in. Either would be a command that destroys the caller's working
+   * directory, and `--stale` prints these as ready-to-paste commands. A
+   * `main` branch is excluded on top of the path check, so a repository whose
+   * checkout sits somewhere unexpected is still safe. */
+  const isMain = norm(w.path) === MAIN_PATH || w.branch === "main";
+  const isSelf = norm(w.path) === SELF_PATH;
+  if (landed && !w.locked && !hasLooseWork && !isMain && !isSelf) staleWorktrees.push(rec);
   else activeWorktrees.push(rec);
 }
 
