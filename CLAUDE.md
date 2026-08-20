@@ -336,6 +336,104 @@ for good:
 export MENCHMARK_REAP_SKIP_PORTS=8080,9000   # or -SkipPorts 8080,9000
 ```
 
+## 🧯 FINISHING WORK (the WIP cap and the ship-tail)
+
+**Added 2026-08-20 by Ben, after an audit of what this repo actually looked
+like underneath.** Everything above governs *starting* work — worktrees,
+branches, drafts — and it works: ~100 PRs merged in the preceding fortnight.
+Nothing governed *finishing*, and the residue was invisible: **92 worktrees of
+which 85 were dead, 9 branches whose content had never landed (4 never even
+proposed as a PR), 7 PRs closed without merging after the work was done, and 4
+worktrees holding uncommitted changes no list anywhere mentioned.** None of
+that appeared in `docs/NOW.md`, which had grown to 4,554 words of history in a
+doc whose own header says "keep it short."
+
+The rules below exist so that residue cannot accumulate silently again.
+
+### The WIP cap: 5 open PRs, hard
+
+**Never open a PR that would make the sixth.** Merge or close one first.
+
+This is not tidiness. `app.html` is one 22,000-line file, so **any two open PRs
+that touch it conflict by construction** — the pile does not sit there, it
+compounds, and every day a PR stays open makes the next rebase worse. Open PRs
+are inventory that rots.
+
+Corollary, and the more important half: **only one `app.html`-touching feature
+PR open at a time per area of the app.** Docs, scripts, skills and workflow PRs
+can run in parallel freely — they do not collide.
+
+When the cap is reached, the answer is never "hurry up." It is **stop
+starting.** Finish something.
+
+### Run `/wip` before `docs/NOW.md`, not after
+
+`docs/NOW.md` answers *what's next*. It structurally cannot answer *what's
+already half-baked* — and that question outranks it at the start of a session.
+
+```bash
+node scripts/wip-audit.js        # or the `wip` skill
+```
+
+It reads only, and it prints the lanes NOW.md has no way to see: PRs against
+the cap, uncommitted worktrees, unpushed commits, PRs closed without merging,
+branches that may never have landed, and dead worktrees. See
+`.claude/skills/wip/SKILL.md` for what to do about each lane.
+
+### Merged is not done — the ship ladder
+
+A merge climbs **one** rung of five, not all five. Recording rung 1 as rung 5
+is exactly how "it looked good on the surface" becomes "it had real untested
+issues in a classroom."
+
+1. **Merged** to `main`.
+2. **Verified live** — the `curl -sL … | grep -c` check at the top of this
+   file, run against the merge timestamp, after a minute, with `-L`.
+3. **Browser-passed on the real deploy** — not on localhost, not on the branch.
+4. **Docs restamped** — the design doc's status line says SHIPPED (rule 5).
+5. **Announced or linked**, if a rebbi would otherwise never find it.
+
+Rungs 2-5 are the **ship-tail**, and it is where this repo's real backlog
+hides: Video A shipped and is linked nowhere; #244's re-download message can
+only ever be sent by a person; `CACHE_VERSION` never moved for `0.10.0`; five
+design docs sat stale for days. **Everything owed above rung 1 goes in
+`docs/NOW.md` → "Merged, not done."** It is not "next" — it is *owed*, and the
+two must not share a list.
+
+### Every third UI PR is a subtraction
+
+Features only ever add surface. Menus fill, dashboards fill, and nothing in the
+process ever pushes the other way — hide-until-ready and the tab audit are good
+instincts, but the ledger still only adds.
+
+So: **every third UI-facing PR must remove or consolidate something**, not add.
+Removal never feels like progress, which is precisely why it needs a quota
+rather than good intentions. The standing candidate is **#227's tab removal** —
+its write side is already complete and it deletes four whole tabs, de-cluttering
+more than any single feature adds.
+
+### Spike before you plan
+
+Hours of planning that end in a revert (Lean mode, #121/PR #150) have a cheap
+antidote this repo has already used well — `spikes/drive-oauth-spike.html`, the
+ArUco sandbox. **Before a design doc gets hours, build the throwaway**: a
+`spikes/` page or a rough browser mock, 30 minutes, deliberately disposable.
+
+If it feels wrong in the hand, you saved the planning, not just the build. This
+applies to anything where the doubt is "will this feel right?" rather than
+"will this work?" — a feel question cannot be settled on paper.
+
+### End a session finished, not merely stopped
+
+Before a session ends, every change it made is either **pushed with a draft PR
+open**, or **deliberately discarded and said so**. Never left dirty in a
+worktree: that worktree is invisible to `gh`, invisible to NOW.md, and a
+stale-worktree sweep will delete it without anyone knowing what was lost.
+
+If the work is genuinely unfinished, push it anyway and say plainly in the PR
+what is missing. A draft PR that admits it is half-built is finished *work
+tracking*, even when the feature is not.
+
 ## Critical rules — read before writing any code
 
 ### 1. Never break saved data
