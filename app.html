@@ -14921,7 +14921,17 @@ function setupRoster() {
   });
   SHELVES.forEach(function(side){
     var h=shelfHandleEl(side);
-    if(h) h.addEventListener("click", function(e){ e.stopPropagation(); setShelfOpen(side, !isShelfOpen(side)); });
+    if(h) h.addEventListener("click", function(e){
+      e.stopPropagation();
+      // A plain "!isShelfOpen(side)" toggle is wrong for a same-edge pair:
+      // pressing Leaderboard while it's open but buried behind Recent scans
+      // is already open, so the naive toggle would CLOSE it — the opposite of
+      // "bring it forward," which is what pressing a shelf you can't currently
+      // see should do. Only close on a second press of the shelf that's
+      // actually the one on screen; every other press (closed, or open-but-
+      // behind) opens/raises instead.
+      setShelfOpen(side, !shelfIsFront(side));
+    });
   });
   document.querySelectorAll("[data-shelf-close]").forEach(function(b){
     b.addEventListener("click", function(e){ e.stopPropagation(); setShelfOpen(b.dataset.shelfClose, false); });
@@ -15012,10 +15022,26 @@ function setupRoster() {
         vs.style.transition="transform .32s cubic-bezier(.2,.85,.25,1), opacity .28s ease";
         vs.style.transform="none";
         vs.style.opacity="1";
-        setTimeout(function(){ vs.style.transition=""; vs.style.transform=""; vs.style.opacity=""; }, 380);
+        setTimeout(function(){
+          vs.style.transition=""; vs.style.transform=""; vs.style.opacity="";
+          // Re-measure now that the FLIP scale transform is gone. The
+          // requestAnimationFrame call below fires one frame after the
+          // animation STARTS, while `vs` is still mid-transform — a scaled-
+          // down ancestor makes getBoundingClientRect() report a squashed
+          // #seatsBody top, and fitNoScrollSection() locks that bad number
+          // into an inline height. Harmless while the CSS rule below it
+          // still carried !important (it always overrode the inline value
+          // anyway); once that override was removed the stale mid-animation
+          // height started sticking, showing up as a half-height chart with
+          // its own unwanted scrollbar.
+          fitNoScrollSection("seatsBody");
+        }, 380);
       }
     }
     setTimeout(function(){ $("seatsScanInput") && $("seatsScanInput").focus(); },50);
+    // Correct immediately for the no-animation paths (reduced motion, or no
+    // FLIP rect to animate from) — the setTimeout above is the one that
+    // matters when a flip transform is actually running.
     requestAnimationFrame(function(){ fitNoScrollSection("seatsBody"); });
   });
   function closeSeatsPopout(){
@@ -17393,6 +17419,28 @@ function setupRoster() {
       var e=shelfEl(s); if(e) e.style.zIndex=String(136+idx);
     });
   }
+  // The other half of shelfRaise(): a closed shelf must leave the stack
+  // entirely, not just lose its own inline z-index — left in the array, the
+  // NEXT shelfRaise() elsewhere would iterate over it via the forEach above
+  // and hand it a fresh z-index again, silently undoing the clear below and
+  // putting a closed shelf back above whatever's actually open.
+  function shelfLower(side){
+    var i=shelfStack.indexOf(side);
+    if(i>=0) shelfStack.splice(i,1);
+    var e=shelfEl(side); if(e) e.style.zIndex="";
+  }
+  // Only the two shelves sharing an edge can ever visually cover one another
+  // (left/left2, right/right2) — left and right never compete. True only when
+  // `side` is open AND is the higher one of that pair in shelfStack, i.e. it's
+  // the one actually on screen right now, not just "open" (its same-edge peer
+  // can be open too, buried behind it).
+  var SHELF_PEER={left:"left2", left2:"left", right:"right2", right2:"right"};
+  function shelfIsFront(side){
+    if(!isShelfOpen(side)) return false;
+    var peer=SHELF_PEER[side];
+    if(!isShelfOpen(peer)) return true;
+    return shelfStack.indexOf(side) > shelfStack.indexOf(peer);
+  }
   // Measured, never a guessed calc(): the scan bar wraps to two lines on narrow
   // screens and disappears entirely on tabs that hide it, and it is sticky, so
   // its bottom edge moves as the page scrolls.
@@ -17407,6 +17455,13 @@ function setupRoster() {
     var was=s.classList.contains("open");
     s.classList.toggle("open", !!on);
     if(on && !was) shelfRaise(side);
+    // A shelf that just closed must give up whatever z-index shelfRaise() left
+    // on it — an inline style outranks the stylesheet's own ".shelf:not(.open)
+    // {z-index:150}" rule regardless of specificity, so without this a shelf
+    // raised once then closed could sit ABOVE a shelf opened after it, on the
+    // same edge, for the rest of the session: exactly backwards from "a closed
+    // shelf's handle always stays reachable above whatever's open."
+    if(!on && was) shelfLower(side);
     syncShelfTop();
     if(on) refreshShelfFallbacks();
     updateShelfHandles();
