@@ -28670,6 +28670,24 @@ nameLine
     // below still needs it.
     function seatRedraw(){ renderTapPanel(); renderSeatChartPrint(); }
 
+    /* Hoisted above the band loop for exactly the reason seatRedraw is: the
+     * unplaced-tray check in the tail below runs AFTER the loop closes and
+     * still reads tablesMode, so a `var` declared inside the loop is out of
+     * scope there — a ReferenceError that only fires when the sheet actually
+     * renders, which no static check catches. Both values are loop-invariant,
+     * so there is nothing to gain from computing them per band anyway.
+     *
+     * Putting the toolbar here also means it is drawn once per SHEET rather
+     * than once per band, with no bandIdx gate needed. Multi-band print landed
+     * on main after tables were written, so neither side of the rebase
+     * conflict covered this case.
+     *
+     * The !isList guard matters: `lay` is null in List mode, and
+     * renderSeatTablesBar would be handed nothing to draw. List has no room
+     * geometry to attach a table to, so it never has a tables mode. */
+    var tablesMode = !isList && !!data.seatTablesMode && !rebbiView;
+    if(tablesMode) renderSeatTablesBar(wrap, lay, seatRedraw);
+
     /* ONE PASS PER BAND — normally exactly one, and then `host` IS `wrap` and
      * the sheet is built into the page precisely as it always was. Everything
      * inside reads the class, the layout and the settings from the closure, so
@@ -28763,19 +28781,8 @@ nameLine
      * something: above the topmost chart normally, and below the bottom one in
      * Rebbi's view, where the front of the room is at the foot of every band. */
     var showFront = !multiBands || (rebbiView ? bandIdx===actList.length-1 : bandIdx===0);
-    // Held off under Rebbi's view for the same reason the live chart holds it
-    // off — a table is stored by its position in the room, and editing one
-    // through a mirrored chart is how you move the wrong block. Tables still
-    // DRAW under Rebbi's view (and print that way); it is only editing them
-    // that waits for the checkbox to come off.
-    var tablesMode = !!data.seatTablesMode && !rebbiView;
-    /* MERGE DECISION (rebase onto main, 2026-08-20): one tables toolbar per
-     * SHEET, for exactly the reason the label above is one per sheet. The bar
-     * goes on `wrap` (the whole sheet), not `host` (one band), so without this
-     * gate the multi-band pass appends a duplicate toolbar for every band.
-     * Multi-band print landed on main AFTER this feature was written, so
-     * neither side of the conflict spoke to the case. */
-    if(tablesMode && (!multiBands || bandIdx===0)) renderSeatTablesBar(wrap, lay, seatRedraw);
+    // tablesMode (and its toolbar) are computed once above the band loop —
+    // both are loop-invariant, and the tail after the loop reads tablesMode.
     if(!rebbiView && showFront) host.appendChild(el("div","seat-front","Front of room"));
     var grid=el("div","seat-grid print-seat-grid arranging"+(tablesMode?" tables-mode":""));
     grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
