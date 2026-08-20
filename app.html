@@ -16478,11 +16478,19 @@ function setupRoster() {
   // or not, so nothing is ever stranded and un-shelving lands a section back
   // exactly where it was. `place` is an overlay on top of that: where the
   // section is actually drawn. `widths` is one flex-grow per column.
+  // Activities top-left, seating chart top-right, Recent scans bottom-left,
+  // Leaderboard bottom-right. The two things a rebbi actually touches mid-shiur
+  // sit side by side on the top row — pick an activity on the left, tap the boy
+  // on the right — and the two he only reads sit under them.
   function defaultScanLayout(){
-    return {cols:2, columns:[["activities","recent"],["leaderboard","tappanel"],[]],
+    return {cols:2, columns:[["activities","recent"],["tappanel","leaderboard"],[]],
             widths:[1,1,1], place:{activities:"col",recent:"col",leaderboard:"col",tappanel:"col"},
             open:{left:false,right:false}};
   }
+  // The arrangement that WAS the default before the row above. Kept only so
+  // adoptNewDefaultLayout() can recognise a rebbi who is still sitting on it
+  // and has therefore never arranged anything himself. Do not reuse it.
+  var PREV_DEFAULT_COLUMNS=[["activities","recent"],["leaderboard","tappanel"],[]];
   // Valid only if every known panel appears exactly once across the *active*
   // columns and none sit in a hidden column — so applyScanLayout() can never
   // lose, duplicate, or strand a panel. A corrupted pref falls back to default.
@@ -16555,6 +16563,58 @@ function setupRoster() {
     Object.keys(L2.place).forEach(function(k){ if(SCAN_PANELS.indexOf(k)<0) delete L2.place[k]; });
     if(!L2.open || typeof L2.open!=="object" || Array.isArray(L2.open)) L2.open={left:false,right:false};
     L2.open.left=!!L2.open.left; L2.open.right=!!L2.open.right;
+    L2.touched=!!L2.touched;
+    adoptNewDefaultLayout(L2);
+  }
+  // Do two column arrays hold the same panels in the same order?
+  function sameColumns(a, b){
+    for(var c=0;c<3;c++){
+      var x=a[c]||[], y=b[c]||[];
+      if(x.length!==y.length) return false;
+      for(var i=0;i<x.length;i++) if(x[i]!==y[i]) return false;
+    }
+    return true;
+  }
+  /* One-shot: move a rebbi who has never arranged anything onto the new default
+   * arrangement, and leave everyone else exactly where they are.
+   *
+   * "Never arranged anything" is answered two ways, and BOTH must agree:
+   *   - `touched` is false. Every mutator below sets it, so from this build on
+   *     the question has a direct answer and no future default change has to
+   *     guess. It is absent on every save written before this shipped, which is
+   *     why the second test exists at all.
+   *   - the arrangement is still character-for-character the previous default,
+   *     with no width, shelf or hide choice on top of it. A rebbi who moved one
+   *     panel and moved it back reads as untouched here, which is correct: what
+   *     he is looking at is the old default, and that is what this replaces.
+   *
+   * Only `cols`/`columns` are rewritten. Widths, placements and open shelves are
+   * left alone — the pristine test already proved the first two are default, and
+   * an open shelf is a live piece of screen state, not an arrangement choice.
+   *
+   * Deliberately NOT seeded in `defaults`, for the same reason the navHidden
+   * seeds aren't: it has to fire for saves that already exist, which is the
+   * entire point. A fresh install gets the new default from defaultScanLayout()
+   * and this then no-ops.
+   */
+  function adoptNewDefaultLayout(L){
+    if(L.defaultGen===2) return;
+    L.defaultGen=2;
+    if(L.touched) return;
+    if(L.cols!==2 || !sameColumns(L.columns, PREV_DEFAULT_COLUMNS)) return;
+    if(L.widths[0]!==1 || L.widths[1]!==1 || L.widths[2]!==1) return;
+    for(var i=0;i<SCAN_PANELS.length;i++){
+      if((L.place[SCAN_PANELS[i]]||"col")!=="col") return;
+    }
+    var NEW=defaultScanLayout();
+    L.cols=NEW.cols;
+    L.columns=NEW.columns;
+  }
+  // Called by every arrangement change, so "has this rebbi customized his
+  // Dashboard?" stops being a thing anyone has to infer from the shape of the
+  // data. Reset layout deliberately clears it by replacing the whole object.
+  function markLayoutTouched(){
+    if(data.scanLayout) data.scanLayout.touched=true;
   }
   function panelPlace(id){ ensureScanLayout(); return data.scanLayout.place[id] || "col"; }
   function panelLabel(id){
@@ -16742,7 +16802,7 @@ function setupRoster() {
     var arr=data.scanLayout.columns[c], i=arr.indexOf(id), j=i+dir;
     if(j<0||j>=arr.length) return;
     arr[i]=arr[j]; arr[j]=id;
-    save(); applyScanLayout();
+    markLayoutTouched(); save(); applyScanLayout();
   }
   function panelSwapCol(id){
     // Cycle a panel to the next visible column (wraps around).
@@ -16751,7 +16811,7 @@ function setupRoster() {
     var to=(c+1)%data.scanLayout.cols;
     var arr=data.scanLayout.columns[c], i=arr.indexOf(id);
     arr.splice(i,1); data.scanLayout.columns[to].push(id);
-    save(); applyScanLayout();
+    markLayoutTouched(); save(); applyScanLayout();
   }
   // Width lives on the COLUMN, not the panel — the columns are what divide the
   // page. The button sits on the tile because that is where a rebbi is looking
@@ -16765,7 +16825,7 @@ function setupRoster() {
     w=Math.max(SCAN_W_MIN, Math.min(SCAN_W_MAX, Math.round(w*100)/100));
     if(w===data.scanLayout.widths[c]) return;
     data.scanLayout.widths[c]=w;
-    save(); applyScanLayout();
+    markLayoutTouched(); save(); applyScanLayout();
   }
   function setPanelPlace(id, pl){
     ensureScanLayout();
@@ -16773,7 +16833,7 @@ function setupRoster() {
     if((pl==="left"||pl==="right") && SHELVABLE.indexOf(id)<0) return;
     if(pl!=="col" && pl!=="left" && pl!=="right" && pl!=="hidden") return;
     data.scanLayout.place[id]=pl;
-    save(); applyScanLayout();
+    markLayoutTouched(); save(); applyScanLayout();
   }
   function updatePanelTools(){
     ensureScanLayout();
@@ -16836,14 +16896,14 @@ function setupRoster() {
     var tc=panelColIndex(targetId);
     if(tc<0){ data.scanLayout.columns[0].push(dragId); }
     else { var ti=data.scanLayout.columns[tc].indexOf(targetId); data.scanLayout.columns[tc].splice(ti,0,dragId); }
-    save(); applyScanLayout();
+    markLayoutTouched(); save(); applyScanLayout();
   }
   function panelAppendToCol(dragId, colIndex){
     ensureScanLayout();
     if(colIndex<0||colIndex>=data.scanLayout.cols) return;
     data.scanLayout.columns.forEach(function(a){ var i=a.indexOf(dragId); if(i>=0) a.splice(i,1); });
     data.scanLayout.columns[colIndex].push(dragId);
-    save(); applyScanLayout();
+    markLayoutTouched(); save(); applyScanLayout();
   }
   function setScanCols(n){
     ensureScanLayout();
@@ -16859,7 +16919,7 @@ function setupRoster() {
       }
     }
     data.scanLayout.cols=n;
-    save(); applyScanLayout();
+    markLayoutTouched(); save(); applyScanLayout();
   }
   function updateScanColsToggle(){
     var t=$("scanColsToggle"); if(!t||!data.scanLayout) return;
