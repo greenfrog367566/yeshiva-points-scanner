@@ -14098,12 +14098,31 @@ function setupRoster() {
    * has no such problem: it names its own class, which is why the scan path
    * keeps working from any class selection.
    */
+  /* The button's own label carries the class's running total — "🏆 Class 34 pts"
+   * — so the number is on the thing you press rather than only up in the header
+   * pill. On the seating chart especially that matters: the chart is often the
+   * only thing on screen (full-screen pop-out, projector), and a rebbi about to
+   * award the class wants to see what it already has without looking away.
+   *
+   * Built as text + a styled <span> rather than one string so the value keeps
+   * the same brass weighting it has in the pill, and so it goes through
+   * fmtScoreShort() — which is what makes it read as coins in Shulchani mode
+   * instead of a bare pruta count.
+   */
+  function classPointsBtnLabel(btn){
+    btn.textContent="";
+    btn.appendChild(document.createTextNode("🏆 Class "));
+    btn.appendChild(el("span","cp-val", fmtScoreShort(classPoolKey(data.currentClass))));
+  }
   function renderClassPointsBtn(){
     var b=$("classPointsBtn");
     if(!b) return;
     var usable = classPointsOn() && (data.currentClass || !groups().length);
     b.style.display = usable ? "" : "none";
-    if(usable) b.title="Give the armed activity to "+classPoolLabel(data.currentClass)+"'s class pool — one award to the class, not one to each boy";
+    if(usable){
+      classPointsBtnLabel(b);
+      b.title="Give the armed activity to "+classPoolLabel(data.currentClass)+"'s class pool — one award to the class, not one to each boy";
+    }
     /* Exactly ONE of the pair carries the auto margin at any time. Both
      * carrying it splits the free space between them and strands 🏆 Class in
      * the middle of the bar; neither carrying it leaves the pair jammed
@@ -14111,6 +14130,15 @@ function setupRoster() {
      * comes first and is actually visible. */
     var g=$("giveAllBtn");
     if(g) g.style.marginLeft = usable ? "0" : "auto";
+    /* The seating chart's own copies carry the same label, and an award made
+     * FROM one of them must not leave it showing the total from before the
+     * press. Relabelled in place rather than by re-rendering the panel:
+     * renderTapPanel() rebuilds the whole chart (and would drop any drag or
+     * drawer state with it) which is far too much for one number. Nothing
+     * needs adding when the feature is off or unusable — the buttons are not
+     * built at all in that case, so this finds none.
+     */
+    document.querySelectorAll(".seat-classbtn").forEach(function(btn){ classPointsBtnLabel(btn); });
   }
 
   /* #128 — GIVE THE ARMED ACTIVITY TO THE WHOLE CLASS.
@@ -15941,7 +15969,8 @@ function setupRoster() {
      * charge and guessing would put points on the wrong class's board.
      */
     if(classPointsOn() && (data.currentClass || !groups().length)){
-      var cpBtn=el("button","seat-modebtn seat-classbtn","🏆 Class");
+      var cpBtn=el("button","seat-modebtn seat-classbtn");
+      classPointsBtnLabel(cpBtn);   // "🏆 Class 34 pts" — same label as the Record tab's copy
       cpBtn.title="Give the armed activity to "+classPoolLabel(data.currentClass)+"'s class pool — one award to the class, not one to each boy";
       cpBtn.addEventListener("click", function(){ awardArmedToClass(data.currentClass); });
       toolbar.appendChild(cpBtn);
