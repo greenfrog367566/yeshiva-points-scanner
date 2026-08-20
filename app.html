@@ -862,9 +862,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      shape in the warning colour, for a drop seatTableMove would refuse (off
      the grid, or onto another table) — a zone that lit up regardless would
      promise a move that then silently does nothing. */
-  /* A seat in a collapsed (nobody in it) column. No label, so nothing can push
-     the track wider, and the padding comes down to match the narrower box. */
-  .seat.col-blank{padding-left:4px;padding-right:4px;overflow:hidden}
+  /* A seat in a collapsed track — a column or a row with nobody in it and no
+     table over it. No label, so nothing holds the track open, and the padding
+     and min-height come down so the fraction actually governs the size. The
+     22px floor is deliberate: it keeps a blank row reading as a row of desks
+     rather than a hairline, on a printed sheet where rows are auto-sized and
+     would otherwise shrink to padding alone. */
+  .seat.cell-collapsed{padding:4px;overflow:hidden;min-height:22px}
   .seat-grid.arranging .seat.tbl-drop{border-color:var(--brass);background:var(--brass-soft)}
   .seat-grid.arranging .seat.tbl-drop-bad{border-color:var(--bad);background:var(--bad-soft)}
   .seat.dragging{opacity:.4}
@@ -16904,23 +16908,28 @@ function setupRoster() {
    *
    * A chart nobody has been placed into yet keeps equal columns rather than
    * collapsing to a row of slivers. */
-  function seatBlankCols(lay, rebbiView){
-    var cols = lay.cols, used = [], i, k;
-    for(i=0;i<cols;i++) used.push(false);
+  function seatUsedAxes(lay, rebbiView){
+    var cols = lay.cols, rows = lay.rows, uc = [], ur = [], i, k;
+    for(i=0;i<cols;i++) uc.push(false);
+    for(i=0;i<rows;i++) ur.push(false);
     // Display order is built the same way both charts build theirs — the flat
     // seat list, reversed under Rebbi's view — so it is derived here rather
-    // than passed in, and the live chart can call this before it needs its own.
+    // than passed in, and a chart can call this before it needs its own.
     var seats = lay.seats.slice();
     if(rebbiView) seats.reverse();
-    seats.forEach(function(sid, idx){ if(sid) used[idx % cols] = true; });
-    seatTablesArr(lay).forEach(function(t){
-      var c = rebbiView ? (lay.cols - t.c - t.w) : t.c;
-      for(k=0;k<t.w;k++) if(c+k>=0 && c+k<cols) used[c+k] = true;
+    seats.forEach(function(sid, idx){
+      if(sid){ uc[idx % cols] = true; ur[Math.floor(idx / cols)] = true; }
     });
-    // A chart nobody has been placed into yet has every column blank. Collapse
-    // them all and the sheet is a row of slivers, so it keeps equal columns.
-    if(!used.some(function(u){ return u; })) return null;
-    return used;
+    seatTablesArr(lay).forEach(function(t){
+      var c = rebbiView ? (cols - t.c - t.w) : t.c;
+      var r = rebbiView ? (rows - t.r - t.h) : t.r;
+      for(k=0;k<t.w;k++) if(c+k>=0 && c+k<cols) uc[c+k] = true;
+      for(k=0;k<t.h;k++) if(r+k>=0 && r+k<rows) ur[r+k] = true;
+    });
+    // A chart nobody has been placed into yet has every track blank. Collapse
+    // them all and it is a grid of slivers, so that case keeps equal tracks.
+    var any = function(a){ return a.some(function(u){ return u; }); };
+    return { cols: any(uc) ? uc : null, rows: any(ur) ? ur : null };
   }
   /* NOT `auto` for the blank tracks, which is the obvious choice and is wrong.
    * `auto` sizes a track to its CONTENT, and an empty seat says "Empty seat" —
@@ -16935,11 +16944,10 @@ function setupRoster() {
    * column is then always the wider of the two by construction — its own `1fr`
    * is `minmax(auto, 1fr)`, whose floor is its content, so it can only ever be
    * pushed wider, never squeezed below a blank one. */
-  var SEAT_BLANK_COL = "minmax(0, 0.35fr)";
-  function seatColTemplate(lay, rebbiView){
-    var used = seatBlankCols(lay, rebbiView);
-    if(!used) return "repeat("+lay.cols+", 1fr)";
-    return used.map(function(u){ return u ? "1fr" : SEAT_BLANK_COL; }).join(" ");
+  var SEAT_BLANK_TRACK = "minmax(0, 0.35fr)";
+  function seatTrackTemplate(used, n){
+    if(!used) return "repeat("+n+", 1fr)";
+    return used.map(function(u){ return u ? "1fr" : SEAT_BLANK_TRACK; }).join(" ");
   }
   function renderSeatTables(grid, lay, rebbiView, interactive, redraw){
     seatTablesArr(lay).forEach(function(t){
@@ -18086,9 +18094,12 @@ function setupRoster() {
 
     if(!data.seatLiveRebbiView) body.appendChild(el("div","seat-front","Front of room"));
     var grid=el("div","seat-grid"+(arranging?" arranging":"")+(tablesMode?" tables-mode":""));
-    var blankCols=seatBlankCols(lay, !!data.seatLiveRebbiView);
-    grid.style.gridTemplateColumns=seatColTemplate(lay, !!data.seatLiveRebbiView);
-    grid.style.gridTemplateRows="repeat("+lay.rows+", 1fr)";
+    var axes=seatUsedAxes(lay, !!data.seatLiveRebbiView), blankCols=axes.cols, blankRows=axes.rows;
+    grid.style.gridTemplateColumns=seatTrackTemplate(axes.cols, lay.cols);
+    // Rows were `repeat(N, 1fr)` — dead equal — so in the full-screen chart,
+    // where the grid's height IS definite, a row with nobody in it took as much
+    // of the screen as a full one. Same rule as the columns now.
+    grid.style.gridTemplateRows=seatTrackTemplate(axes.rows, lay.rows);
     // BEFORE the seats, so the tabletops sit under them in paint order as well
     // as by z-index. Mirrored here when Rebbi's view is on — see renderSeatTables.
     renderSeatTables(grid, lay, !!data.seatLiveRebbiView, tablesMode, renderTapPanel);
@@ -18142,12 +18153,14 @@ function setupRoster() {
           clearBtn.addEventListener("click", function(ev){ ev.stopPropagation(); lay.seats[trueIdx]=null; save(); renderTapPanel(); });
           seat.appendChild(clearBtn);
         }
-      } else if(blankCols && blankCols[dispIdx % lay.cols]===false){
-        // A collapsed column is too narrow for "Empty seat" — the words would
-        // wrap down the cell and push every row in the chart taller, undoing
-        // the space the collapse just saved. The box alone still shows the
-        // desk is there.
-        seat.classList.add("col-blank");
+      } else if((blankCols && blankCols[dispIdx % lay.cols]===false) ||
+                (blankRows && blankRows[Math.floor(dispIdx / lay.cols)]===false)){
+        /* A collapsed cell drops the "Empty seat" label, for both axes and for
+         * the same reason: the words are what stop the track shrinking. In a
+         * narrow column they wrap down the cell and push every row taller; in a
+         * short row they are the content `auto` sizes the printed row to. The
+         * box alone still shows the desk is there. */
+        seat.classList.add("cell-collapsed");
       } else {
         seat.textContent="Empty seat";
       }
@@ -28938,8 +28951,12 @@ nameLine
     // both are loop-invariant, and the tail after the loop reads tablesMode.
     if(!rebbiView && showFront) host.appendChild(el("div","seat-front","Front of room"));
     var grid=el("div","seat-grid print-seat-grid arranging"+(tablesMode?" tables-mode":""));
-    var blankCols=seatBlankCols(lay, rebbiView);
-    grid.style.gridTemplateColumns=seatColTemplate(lay, rebbiView);
+    var axes=seatUsedAxes(lay, rebbiView), blankCols=axes.cols, blankRows=axes.rows;
+    grid.style.gridTemplateColumns=seatTrackTemplate(axes.cols, lay.cols);
+    /* Rows are left auto-sized on the SHEET, deliberately — the print grid has
+     * never set gridTemplateRows, and a printed page's height is what it is.
+     * A blank row still gets thinner here, because its cells drop the "Empty
+     * seat" label below and auto follows the content down. */
     renderSeatTables(grid, lay, rebbiView, tablesMode, seatRedraw);
     displayOrder.forEach(function(item, dispIdx){
       var sid=item.sid, trueIdx=item.trueIdx;
@@ -28964,12 +28981,14 @@ nameLine
           ev.stopPropagation(); lay.seats[trueIdx]=null; save(); seatRedraw();
         });
         seat.appendChild(clearBtn);
-      } else if(blankCols && blankCols[dispIdx % lay.cols]===false){
-        // A collapsed column is too narrow for "Empty seat" — the words would
-        // wrap down the cell and push every row in the chart taller, undoing
-        // the space the collapse just saved. The box alone still shows the
-        // desk is there.
-        seat.classList.add("col-blank");
+      } else if((blankCols && blankCols[dispIdx % lay.cols]===false) ||
+                (blankRows && blankRows[Math.floor(dispIdx / lay.cols)]===false)){
+        /* A collapsed cell drops the "Empty seat" label, for both axes and for
+         * the same reason: the words are what stop the track shrinking. In a
+         * narrow column they wrap down the cell and push every row taller; in a
+         * short row they are the content `auto` sizes the printed row to. The
+         * box alone still shows the desk is there. */
+        seat.classList.add("cell-collapsed");
       } else {
         seat.textContent="Empty seat";
       }
