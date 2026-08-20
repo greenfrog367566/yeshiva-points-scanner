@@ -563,10 +563,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .tap-btn .tile-track-badge.ok,.seat .tile-track-badge.ok{color:var(--good)}
   .tap-btn .tile-track-badge.warn,.seat .tile-track-badge.warn{color:var(--bad)}
   .tap-btn .tile-track-badge.late,.seat .tile-track-badge.late{color:var(--amber)}
-  /* TILE MODES — status chip look, attendance only (trackedTileBadgeEl() adds
-     .chip when the armed item is ti-attendance). Everything else stays the
-     plain muted line above: a badge with only two or three enumerated states
-     reads well as a pill, a "last: 4d"/"never" recency line does not. */
+  /* TILE MODES — status chip look, for a badge with only a couple of
+     enumerated states (a "last: 4d"/"never" recency line stays the plain
+     muted style above instead). Attendance no longer draws one of these —
+     it has its own tappable present/late/absent picker, .seat-att-toggle
+     below, borrowed from the segmented buttons on the Attendance tab's own
+     rows — but the class stays for any other badge that wants a pill look. */
   .tap-btn .tile-track-badge.chip,.seat .tile-track-badge.chip{
     display:inline-block;border-radius:999px;padding:2px 9px;margin-top:3px;
     background:#fff;border:1px dashed #c8cedb;color:#9aa1b4;
@@ -574,6 +576,26 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .tap-btn .tile-track-badge.chip.ok,.seat .tile-track-badge.chip.ok{background:var(--good-soft);border:1px solid var(--good);color:var(--good)}
   .tap-btn .tile-track-badge.chip.warn,.seat .tile-track-badge.chip.warn{background:var(--bad-soft);border:1px solid var(--bad);color:var(--bad)}
   .tap-btn .tile-track-badge.chip.late,.seat .tile-track-badge.chip.late{background:var(--amber-soft);border:1px solid var(--amber);color:var(--amber)}
+  /* THE SEATING CHART'S OWN PRESENT/LATE/ABSENT PICKER. Three small taps
+     instead of one blind cycling tap on the whole card — set a boy's status
+     directly rather than having to remember which way ATT_CYCLE_* walks.
+     Deliberately plain <span>s, not <button>s: in List mode the card this
+     sits inside (.tap-btn) is itself a <button>, and a real <button> nested
+     inside another is invalid HTML that some browsers mangle — spans with a
+     click handler match the .seat-chip/.grp-tag pattern already used
+     elsewhere in this file for the same reason. */
+  .tap-btn .seat-att-toggle,.seat .seat-att-toggle{
+    display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:3px;
+  }
+  .seat-att-toggle .sat-btn{
+    padding:2px 6px;font-size:.7rem;font-weight:800;line-height:1.4;
+    color:var(--muted);border-right:1px solid var(--line);cursor:pointer;
+  }
+  .seat-att-toggle .sat-btn:last-child{border-right:none}
+  .seat-att-toggle .sat-btn:active{opacity:.7}
+  .seat-att-toggle .sat-btn.active.present{background:var(--good-soft);color:var(--good)}
+  .seat-att-toggle .sat-btn.active.late{background:var(--amber-soft);color:var(--amber)}
+  .seat-att-toggle .sat-btn.active.absent{background:var(--bad-soft);color:var(--bad)}
   /* TILE MODES — "also show points": a small secondary figure once a tracked
      item's badge has taken over as the tile's primary content (fillSeatLiveCard). */
   .tap-btn .ts.also-pts,.seat .ts.also-pts{color:var(--brass)}
@@ -13174,11 +13196,59 @@ function setupRoster() {
   function trackedTileBadgeEl(s){
     var b=trackedTileBadge(s);
     if(!b || !b.text) return null;
-    // Chip look for attendance only — a two/three-state status reads as a
-    // pill; everything else (recency text, "N of cap used", …) stays the
-    // plain muted line it always was. See the .chip CSS rule for why.
-    var cls="tile-track-badge "+(b.tone||"todo")+(b.itemId==="ti-attendance" ? " chip" : "");
-    return el("span", cls, b.text);
+    // Attendance gets a tappable present/late/absent picker instead of a
+    // read-only line — see seatAttToggleEl(). Built here, not appended
+    // alongside, so this stays the one entry point trackedTileBadge()
+    // documents: refreshTrackedBadges() calls this same function on every
+    // repaint, so the picker and the plain badge can never drift apart into
+    // two different things shown for the same item.
+    if(b.itemId==="ti-attendance") return seatAttToggleEl(s, b.text);
+    return el("span", "tile-track-badge "+(b.tone||"todo"), b.text);
+  }
+  /* THE SEATING CHART'S OWN PRESENT/LATE/ABSENT PICKER — borrowed from the
+   * segmented Present/Late/Absent buttons on the Attendance tab's own rows
+   * (renderAttendance()), so marking attendance from the chart no longer
+   * means blind-tapping the whole card and trusting ATT_CYCLE_* order. `cur`
+   * is the badge's own status text: one of "present"/"late"/"absent", or
+   * "unmarked" for a boy nobody has touched today — which matches nothing
+   * below, so nothing lights up, same as an untouched row on the tab.
+   *
+   * ALWAYS TODAY, same rule TRACKED_LEGACY's own ti-attendance hook follows:
+   * this chart has no day on screen, so a direct pick here writes real today
+   * regardless of what date the Attendance TAB happens to be parked on.
+   *
+   * stopPropagation is load-bearing — this sits inside the same card whose
+   * own click handler (tapClick → award → recordTrackedScan) would otherwise
+   * also fire and cycle the status a second time on top of the pick just
+   * made.
+   */
+  function seatAttToggleEl(s, cur){
+    var wrap=el("span","tile-track-badge seat-att-toggle");
+    ["present","late","absent"].forEach(function(st){
+      var btn=el("span","sat-btn "+st+(cur===st?" active":""), ATT_LABEL[st].charAt(0));
+      btn.title="Mark "+s.name+" "+ATT_LABEL[st];
+      btn.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        var dk=todayKey();
+        var day=attDayRecord(dk), prevRec=day[s.id];
+        var changed=setAttendance(s.id, st, dk);
+        flash(st!=="absent", s.name, ATT_LABEL[st], changed ? "Marked "+ATT_LABEL[st].toLowerCase() : "Already "+ATT_LABEL[st].toLowerCase(), "tracked");
+        beep(st!=="absent");
+        // Same undo descriptor TRACKED_LEGACY's ti-attendance hook builds, so
+        // "Undo last scan" reverses a direct pick exactly as it reverses a
+        // cycling tap or a scanner scan — see reverseTrackedWrite().
+        if(changed) lastTrackedScan={legacy:"attendance", sid:s.id, dk:dk,
+          recordId:day[s.id]&&day[s.id].id, prevStatus:prevRec&&prevRec.status, ts:Date.now()};
+        if($("view-attendance") && $("view-attendance").classList.contains("active")){
+          if(attViewMode==="student") renderAttStudentView(); else renderAttendance();
+        }
+        refreshTrackedBadges();
+        refreshAttEmailBtn();
+        refreshLiveViews();
+      });
+      wrap.appendChild(btn);
+    });
+    return wrap;
   }
   /* Repaint just the badges — the refreshFreezeTile() approach, and for the same
    * reason. Arming an item changes one line on each card; a full
