@@ -18011,7 +18011,16 @@ function setupRoster() {
   //
   // trueIdx, never the display position: Rebbi's view reverses the DISPLAY
   // order only, so writing by display index would move the wrong boy.
-  function wireSeatArrange(seat, lay, trueIdx, redraw){
+  /* SPIKE (tables + arranging together): `dragOnly` attaches the drag half of
+   * this wiring and skips the tap-to-place half, so it can be layered UNDER
+   * Tables mode without the two fighting over the click.
+   *
+   * The drag half composes safely with wireSeatTablesCell by construction —
+   * the two drop handlers discriminate on disjoint payloads (`from`/`sid` here,
+   * `tbl` there) and each returns early on the other's, so both can be attached
+   * to one seat and every drop still routes exactly once. Only `click` genuinely
+   * collides, which is the half this flag leaves off. */
+  function wireSeatArrange(seat, lay, trueIdx, redraw, dragOnly){
     seat.draggable=true;
     seat.addEventListener("dragstart", function(ev){
       seat.classList.add("dragging");
@@ -18051,6 +18060,7 @@ function setupRoster() {
     // drag now does — the sitting boy is displaced to the tray. The ✕ clear
     // button inside an occupied seat calls stopPropagation(), so removing a boy
     // never trips this.
+    if(dragOnly) return;
     seat.addEventListener("click", function(){
       if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); redraw(); }
     });
@@ -18058,10 +18068,17 @@ function setupRoster() {
   // "Not yet seated" tray, shared by the live chart and the class sheet for the
   // same reason wireSeatArrange() is: a boy with no seat has to be placeable
   // from whichever chart the rebbi is actually looking at.
-  function renderUnplacedTray(body, unplaced, redraw){
+  function renderUnplacedTray(body, unplaced, redraw, dragOnly){
     var trayWrap=el("div","seat-unplaced no-print");
+    /* SPIKE: in Tables mode the tap-a-name-then-tap-a-seat path is off, because
+     * each seat's own click is busy selecting seats into a table. Say so, rather
+     * than describing a gesture that will do nothing — the previous answer was
+     * to hide this tray entirely for exactly that reason, and a tray you can
+     * drag out of is strictly more useful than no tray at all. */
     trayWrap.appendChild(el("div","seat-unplaced-label", unplaced.length
-      ? "Not yet seated — drag into any seat, or tap a name then tap a seat. Drop onto a taken seat and that boy comes back here:"
+      ? (dragOnly
+          ? "Not yet seated — drag into any seat. Drop onto a taken seat and that boy comes back here. (Tap a name, then a seat, works once Tables is off.):"
+          : "Not yet seated — drag into any seat, or tap a name then tap a seat. Drop onto a taken seat and that boy comes back here:")
       : "Everyone has a seat."));
     var tray=el("div","seat-tray");
     unplaced.forEach(function(s){
@@ -18071,11 +18088,15 @@ function setupRoster() {
         ev.dataTransfer.setData("text/plain", JSON.stringify({sid:s.id}));
         ev.dataTransfer.effectAllowed="move";
       });
-      chip.addEventListener("click", function(){
-        seatGridPending = (seatGridPending===s.id) ? null : s.id;
-        redraw();
-      });
-      if(seatGridPending===s.id) chip.style.borderColor="var(--ink)";
+      // No tap-to-pick in Tables mode: the seat it would be placed into is not
+      // listening, so a highlighted chip would be a promise nothing keeps.
+      if(!dragOnly){
+        chip.addEventListener("click", function(){
+          seatGridPending = (seatGridPending===s.id) ? null : s.id;
+          redraw();
+        });
+      }
+      if(!dragOnly && seatGridPending===s.id) chip.style.borderColor="var(--ink)";
       tray.appendChild(chip);
     });
     trayWrap.appendChild(tray);
@@ -18181,6 +18202,10 @@ function setupRoster() {
 
       if(tablesMode){
         wireSeatTablesCell(seat, lay, trueIdx, renderTapPanel);
+        // SPIKE: layer the DRAG half of arranging underneath, so a boy can be
+        // moved without leaving Tables. Safe to stack — the two drop handlers
+        // read disjoint payloads and each ignores the other's.
+        wireSeatArrange(seat, lay, trueIdx, renderTapPanel, true);
       } else if(arranging){
         wireSeatArrange(seat, lay, trueIdx, renderTapPanel);
       } else if(s){
@@ -18204,15 +18229,20 @@ function setupRoster() {
     // only way to fix a mis-scan is to leave the view he is working in.
     renderScanUndoRow(body);
 
-    // Not in Tables mode: the tray's tap-a-name-then-tap-a-seat path writes
-    // through seatGridPending, which the seats are not listening for while
-    // they are being selected into tables. Offering a control that does
-    // nothing is worse than not offering it.
-    if(arranging && !tablesMode){
-      renderUnplacedTray(body, unplaced, renderTapPanel);
+    /* SPIKE: the tray now shows in Tables mode too, in drag-only form. It used
+     * to be hidden here because its tap-a-name-then-tap-a-seat path writes
+     * through seatGridPending, which the seats are not listening for while
+     * they are being selected into tables — and a control that does nothing is
+     * worse than no control. Dragging out of it does work, so the tray is no
+     * longer doing nothing; only the tap half is off, and the label says so. */
+    if(arranging){
+      renderUnplacedTray(body, unplaced, renderTapPanel, tablesMode);
     } else {
       seatGridPending=null;
     }
+    // Any half-finished tap-to-place is abandoned on entering Tables mode —
+    // there is no seat listening to complete it.
+    if(tablesMode) seatGridPending=null;
   }
   var seatGridPending=null;
 
@@ -29011,7 +29041,12 @@ nameLine
       // a boy. This page is where you set the sheet up — there is no lesson
       // running on it, and making the mock-up the thing you edit is the point.
       // Tables mode takes the seat over for the duration; see wireSeatTablesCell.
-      if(tablesMode) wireSeatTablesCell(seat, lay, trueIdx, seatRedraw);
+      // SPIKE: same layering as the live chart — the class sheet's seats are
+      // draggable too, so Tables mode must not take that away here either.
+      if(tablesMode){
+        wireSeatTablesCell(seat, lay, trueIdx, seatRedraw);
+        wireSeatArrange(seat, lay, trueIdx, seatRedraw, true);
+      }
       else wireSeatArrange(seat, lay, trueIdx, seatRedraw);
       grid.appendChild(seat);
     });
@@ -29033,7 +29068,8 @@ nameLine
       // on the sheet, so a tray would be offering to place boys who are printed
       // three inches above it. Nor in Tables mode, where the seats are not
       // listening for the tray's tap-to-place — see renderSeatGrid's copy.
-      if(!isList && !tablesMode) renderUnplacedTray(unplacedBox, unplaced, seatRedraw);
+      // SPIKE: shown in Tables mode too now, drag-only — see renderSeatGrid's copy.
+      if(!isList) renderUnplacedTray(unplacedBox, unplaced, seatRedraw, tablesMode);
     }
     /* Non-blocking fit check.
      *
