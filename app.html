@@ -404,9 +404,19 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     background:var(--paper); margin:0; padding:6px 16px 0; overflow:auto;
     will-change:transform,opacity;
   }
+  /* Fallback only — a same-frame value for the instant between the class
+     toggling on and fitNoScrollSection("seatsBody")'s requestAnimationFrame
+     actually measuring and setting the real inline height (see the comment
+     above #seatsBody's rule block). Deliberately NOT !important: this rule's
+     own flat "-46px" is exactly the guessed offset that comment warns
+     against — the chrome above #seatsBody (the header, the List/Seating
+     chart toggle, the Rows/Cols/Print row) is taller than 46px and grows
+     with screen width and whatever controls are showing, so an !important
+     here silently overrode the accurate measurement and forced a scrollbar
+     on the whole overlay even when the seat grid itself would have fit. */
   #view-seats.seats-fullscreen #seatsBody,
   #view-seats.seats-shrinking #seatsBody{
-    height:calc(100vh - var(--seats-fs-top, 110px) - 46px)!important;
+    height:calc(100vh - var(--seats-fs-top, 110px) - 46px);
   }
   /* Fullscreen chrome trim — every px of chrome is a px the chart loses.
      The instruction sentence is redundant once you're here; the close button
@@ -15907,12 +15917,10 @@ function setupRoster() {
       row.appendChild(sc);
       body.appendChild(row);
     });
-    if(list.length>BOARD_CAP){
-      var seeAll=el("button","btn btn-sm","See all "+list.length+" in Standings →");
-      seeAll.style.cssText="width:100%;margin-top:6px";
-      seeAll.addEventListener("click", function(){ router.go({ classId: LOCAL_CLASS_ID, tab: "standings" }); });
-      body.appendChild(seeAll);
-    }
+    // A "See all N in Standings →" link used to sit here past BOARD_CAP, but
+    // it was a second way to reach the Standings tab beside the shelf's own
+    // "Open tab →" (and the main nav for the Dashboard panel) — removed as
+    // redundant, per Ben.
   }
   $("boardToggle").addEventListener("click", function(){
     data.scanBoardOpen = !(data.scanBoardOpen!==false);
@@ -18052,21 +18060,11 @@ function setupRoster() {
         dd.appendChild(b);
       });
     }
-    /* PRIZES, in the same dropdown as the activities — which is the whole point
-     * of them being armable at all. The seating chart is where the rebbi is
-     * standing when a boy asks to spend, so arming the prize and tapping the boy
-     * is the shortest path there is: the cost comes off that boy's own balance
-     * and the prize lands on his pickup list.
-     *
-     * The cost is shown as the DEDUCTION it is (negative, red), so the row reads
-     * the same way a demerit row does — nothing here has to explain that buying
-     * costs something.
-     *
-     * Not filtered by class or by actVisibleOnScreen: prizes are one shared
-     * store for every class, not per-class activities, so there is nothing to
-     * narrow to. An empty store simply prints no section.
-     */
-    if(appendPrizeRows(dd, function(){ closeFn(); var f=$(focusInputId); if(f) f.focus(); }, true)){ /* rows appended */ }
+    // PRIZES used to be appended here too, but this dropdown is only ever the
+    // Activities shelf's fallback content now (see populateActivityDropdown()'s
+    // one call site) and prizes have their own dedicated Prize Store shelf
+    // right below it — listing them in both places was pure duplication, not
+    // two genuinely different jobs the way the picker/Activity-Menu split is.
     dd.appendChild(el("div","hd-divider"));
     var customBtn=el("button","hd-custom-btn"); customBtn.type="button";
     customBtn.appendChild(el("span",null,"✏️ Custom…"));
