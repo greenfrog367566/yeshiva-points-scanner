@@ -82,11 +82,16 @@ Found by the 2026-08-20 worktree audit. **These are not stale — they are
 built work that never landed**, invisible to every list until now. Verify each
 with the `branch-merge-audit` skill before concluding either way.
 
-- **`docs/seating-tables-proposal` holds 749 uncommitted lines** — 550 in
-  `app.html`, 99 of `test-migration.html` assertions, a CHANGELOG entry. A real
-  implementation of seating tables (`lay.tables` parallel to `lay.seats`). Its
-  proposal PR #337 already merged, so **nothing is protecting this**: no
-  commit, no branch, no remote copy. **Commit it before any worktree sweep.**
+- ✅ **Seating tables — RECOVERED 2026-08-20, commit `8159f8f`, pushed.** It was
+  749 uncommitted lines (550 in `app.html`, 99 of `test-migration.html`
+  assertions, a CHANGELOG entry) with no commit, no branch and no remote copy —
+  one `rm` from gone, since its proposal PR #337 had already merged. Real,
+  finished work: `lay.tables` parallel to `lay.seats`, a table never owns a
+  student, 5,625 exhaustive move-permutation cases, 9 harness tests. Validated
+  before committing (JS OK, `migrateData`/`load2fix` in sync, CSS balanced).
+  **Still owed: it is 93 commits behind `main` and needs a rebase — it will
+  conflict in `app.html` — and it has no PR yet**, deliberately, because the
+  cap was full when it was recovered.
 - **`feat/board-fab`** — removes the redundant "Close board" pill on a solo
   box. `main` still shows it twice.
 - **`fix/seats-fullscreen-topbar`** — shrink-to-fit grid so full-screen seating
