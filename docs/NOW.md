@@ -320,7 +320,9 @@ Roughly in the order of what they unblock. Nothing here is a task Claude can tak
    including Ben's own school. `privacy@menchmark.app` is live and tested.
 2. **A yes on the offline resync proposal** before the dedup-fix PR is built.
 3. **Q3: what a school signs.** Gates onboarding school #2; blocks no code.
-4. **A yes on clearing the 10 dead worktrees** (`node scripts/wip-audit.js
+4. **A yes on clearing the dead worktrees** (14 of 26 as of 2026-08-21 — see
+   "Unfinished, and nothing was tracking it" above; re-check with
+   `node scripts/wip-audit.js
    --stale` for the list). Stop-and-ask by policy. The seating-tables lines
    this item used to name are resolved — committed, rebased, and merged as
    #364.
