@@ -101,9 +101,9 @@ including the live-project setup and the console-only gaps that cost a day.
   — no staged MVP. Full parity adds three new `state/*` docs (seating,
   raffle, settings) beyond the original four collections, first-draft only
   and flagged for review before building, plus a `firestore.rules` change
-  the narrow scope wouldn't have needed. One real open question left: does
-  step 8 also wait on the Prize Ledger feature (Phase 4, 0-of-3, unbuilt),
-  or does that join once Phase 4 ships on its own schedule? Not yet
+  the narrow scope wouldn't have needed. **Prize Ledger sync is the one
+  named exception — joins once Phase 4 (0-of-3, unbuilt) ships on its own
+  schedule, not a blocker for step 8.** Nothing left open. Not yet
   built — this is design only.
 
 ---
@@ -186,14 +186,8 @@ Roughly in the order of what they unblock. Nothing here is a task Claude can tak
    the whole sign-in plan** — it blocks self-serve signup in *either* tier,
    including Ben's own school. `privacy@menchmark.app` is live and tested.
 2. **A yes on the offline resync proposal** before the dedup-fix PR is built.
-3. **One leftover question on `docs/Firebase_TierOne_WriteSync_Design_Proposal.md`**
-   — the main design is decided (full parity, SDK client, build fully
-   before step 8), but does "fully" also mean step 8 waits on the Prize
-   Ledger feature (Phase 4, 0-of-3, unbuilt), or does prizeLedger sync join
-   this design once Phase 4 ships separately? The doc recommends the
-   latter. Everything else in it is buildable now.
-4. **Q3: what a school signs.** Gates onboarding school #2; blocks no code.
-5. **A yes on clearing the 10 dead worktrees** (`node scripts/wip-audit.js
+3. **Q3: what a school signs.** Gates onboarding school #2; blocks no code.
+4. **A yes on clearing the 10 dead worktrees** (`node scripts/wip-audit.js
    --stale` for the list). Stop-and-ask by policy. The seating-tables lines
    this item used to name are resolved — committed, rebased, and merged as
    #364.

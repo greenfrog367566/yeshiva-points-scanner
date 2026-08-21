@@ -4,8 +4,10 @@
 
 **✅ DECIDED 2026-08-21 by Ben** on all four open questions — full parity
 (not the narrow scope this doc originally recommended), the SDK client for
-writes, build the complete design before step 8 (no staged MVP), and the
-verification harness stays deferred. Not one of the original 8 build-order
+writes, build the complete design before step 8 (no staged MVP) except
+Prize Ledger sync, which can join later once Phase 4 exists, and the
+verification harness stays deferred. **Nothing left open — ready to build.**
+Not one of the original 8 build-order
 steps — it's a gap step 7 found and explicitly punted on: *"tier-1's
 suppression branch … needs a live Firestore write-sync path from a rebbi's
 own scans that doesn't exist anywhere yet — building that is out of scope
@@ -114,8 +116,8 @@ shapes below:**
   `firestore.rules` already has its `allow read, write: if isOwner(...) ||
   isSuperadmin()` block live. **But nothing writes a ledger entry anywhere
   in the app yet** — Phase 4 (Prize Ledger, Store/Auction/Raffle unification)
-  is 0-of-3, unbuilt. This is a real sequencing question, not a detail —
-  see "Open questions for Ben" below.
+  is 0-of-3, unbuilt. **Decided: this one joins later, on Phase 4's own
+  schedule — not a blocker for the rest of this design or for step 8.**
 
 **New `firestore.rules` work, unlike the narrow scope.** The `state`
 subcollection above doesn't exist in the live rules file — it needs its own
@@ -213,28 +215,26 @@ existing REST-based reads (`fetchClassFromFirestore` etc.) exactly as they
 are — migrating reads to the SDK client is separable scope, not a
 prerequisite, and shouldn't ride along with this PR.
 
-## Decided: build the complete design before step 8 — no staged MVP
+## Decided: build the complete design before step 8 — except Prize Ledger
 
 The original draft of this doc raised whether `log` + `students.score`
 sync alone (the "Recognize" headline feature) could unblock step 8 early,
 with the rest following as a fast follow. **Ben's call: no — build fully
 first.** Step 8 (migrating the real beta cohort) waits on all of this,
-including the first-draft `state/*` pieces above, not a partial slice.
-
-**This surfaces a real sequencing tension worth flagging rather than
-silently resolving:** "build fully first" and "prizeLedger sync is gated on
-the Prize Ledger feature existing" (Phase 4, currently 0-of-3, unbuilt)
-can't both be satisfied without either (a) building Phase 4 first — a whole
-separate feature, not part of this design — or (b) reading "fully" as
-"everything that has somewhere to write today," which excludes prizeLedger
-until Phase 4 lands regardless of how this write-sync design is staged.
-**Recommend (b)**, since Phase 4 was never in this doc's scope and gating
-step 8 on an unrelated, unbuilt feature would be a scope creep this doc
-didn't ask for — but this needs an explicit yes, not an assumption. See
-"Open questions for Ben" below.
+including the first-draft `state/*` pieces above — with one named
+exception: **prizeLedger sync can be added later.** Phase 4 (the Prize
+Ledger feature itself) is currently 0-of-3, unbuilt, and was never in this
+doc's scope — gating step 8 on an unrelated, unbuilt feature would have
+been scope creep this doc didn't ask for. **Decided: prizeLedger sync joins
+this design once Phase 4 ships on its own schedule; everything else here
+(`log`, `students`, `trackedEntries`, `activities`, `trackedItems`, and the
+three `state/*` docs) is what step 8 actually waits on.**
 
 ## Explicitly deferred (do not let these creep in)
 
+- **Prize Ledger sync.** Joins once Phase 4 (the feature itself) exists —
+  not a blocker for anything else in this design, and not a blocker for
+  step 8. See above.
 - **Two-device same-record conflicts.** Already flagged in the locked data
   model as "not urgent, build after the core works" — this design doesn't
   need to solve it either; `FieldValue.increment()` on scores sidesteps the
@@ -246,21 +246,20 @@ didn't ask for — but this needs an explicit yes, not an assumption. See
   SDK (decided above); reads stay REST for now — separable scope.
 - **A verification harness.** Deferred per Ben — see below, not dropped.
 
-## Open questions for Ben
+## Left for the build to catch, not for Ben to decide
 
-1. **The Phase-4 sequencing tension above.** Does "build fully first" mean
-   step 8 also waits on Prize Ledger (Phase 4, 0-of-3, unbuilt) existing as
-   a feature, or does prizeLedger sync simply join this design once Phase 4
-   ships on its own schedule, with step 8 gated on everything *else* here?
-   Recommend the latter.
-2. **The three first-draft `state/*` shapes** (seating, raffle, settings) —
-   sketched above to make full parity buildable, but not run through the
-   same design-panel scrutiny step 1's four collections got, and the
-   settings doc's exact field list is explicitly unenumerated pending a
-   pass against `defaults`. Worth a dedicated look before building, or is
-   the sketch above sufficient to start from?
-3. **Verification harness — deferred, per Ben's answer ("figure out
-   later"), but flagging the same "before it reaches the beta cohort" line
-   every other write path in this rebuild held to** (converter tool, step
-   3b's cohort upload each shipped with count-parity/spot-check/idempotence
-   passes). Revisit before step 8, not before build starts.
+Everything that needed a decision now has one. Two things worth a second
+look at build time rather than review time, since they're detail work, not
+open scope questions:
+
+- **The three first-draft `state/*` shapes** (seating, raffle, settings) —
+  sketched above to make full parity buildable, but not run through the
+  same design-panel scrutiny step 1's four collections got, and the
+  settings doc's exact field list is explicitly unenumerated pending a pass
+  against `defaults`. Worth confirming the field list against real code
+  while building, not a blocker to starting.
+- **Verification harness — deferred, per Ben's answer, revisit before step
+  8** (not before build starts), matching the same "before it reaches the
+  beta cohort" line every other write path in this rebuild held to
+  (converter tool, step 3b's cohort upload each shipped with
+  count-parity/spot-check/idempotence passes).
