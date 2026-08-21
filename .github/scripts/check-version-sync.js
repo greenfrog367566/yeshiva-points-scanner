@@ -33,15 +33,34 @@ const headingMatch = changelog.match(/^## \[(\d+\.\d+\.\d+)\]/m);
 if (!headingMatch) fail("couldn't find a dated `## [x.y.z]` release heading in CHANGELOG.md");
 const changelogVersion = headingMatch && headingMatch[1];
 
+// sw.js's CACHE_VERSION joined this gate after 0.10.0 shipped still reading
+// the hand-written "v1" it had carried since the PWA landed — the same drift
+// class as the three above, lapsed the same way: a convention living in a
+// comment that nothing prompts anyone to honour. Worth being exact about what
+// a lapse costs, because it is NOT "installed rebbeim run a stale app
+// offline" — app.html is network-first and re-cached on every online load. It
+// is the cache-first assets (manifest, icons, vendor/firebase/*.js) that stay
+// pinned until the cache NAME changes, so a vendored SDK file replaced in
+// place would never reach an already-installed rebbi. Unfalsifiable in a
+// browser once it happens, and free to check here.
+const sw = fs.readFileSync("sw.js", "utf8");
+const swMatch = sw.match(/var CACHE_VERSION\s*=\s*"([^"]+)"/);
+if (!swMatch) fail("couldn't find `var CACHE_VERSION = \"...\"` in sw.js");
+const swVersion = swMatch && swMatch[1];
+
 console.log("app.html APP_VERSION : " + appVersion);
 console.log("version.json version : " + jsonVersion);
 console.log("CHANGELOG.md newest  : " + changelogVersion);
+console.log("sw.js CACHE_VERSION  : " + swVersion);
 
 if (appVersion && jsonVersion && appVersion !== jsonVersion) {
   fail("app.html (" + appVersion + ") and version.json (" + jsonVersion + ") disagree");
 }
 if (appVersion && changelogVersion && appVersion !== changelogVersion) {
   fail("app.html (" + appVersion + ") and CHANGELOG.md's newest release heading (" + changelogVersion + ") disagree — did you cut a release without running scripts/bump-version.js, or vice versa?");
+}
+if (appVersion && swVersion && appVersion !== swVersion) {
+  fail("app.html (" + appVersion + ") and sw.js's CACHE_VERSION (" + swVersion + ") disagree — scripts/bump-version.js moves both; a hand-edited version number is the usual cause.");
 }
 
 if (!process.exitCode) console.log("IN SYNC");
