@@ -18041,15 +18041,19 @@ function setupRoster() {
       colsIn.addEventListener("change", applyDims);
       setupRow.appendChild(dims);
 
-      // "Face size" — the −/+ that dial SEAT_ARRANGE_AVATAR_PX up and down
-      // while arranging (see seatArrangeAvatarScale() above). Only shown when
-      // arranging is actually drawing a photo: effSeatCardMode() forces one on
-      // for any QR-kind mode the instant arranging starts, but a chart set to
-      // "None" still shows no avatar at all, and a size dial for a picture
-      // nobody sees would just be a control that does nothing.
+      // "Face size" — the −/+ that dial seatArrangeAvatarScale() up and down.
+      // Lives inside Setup & arrange (it's a sizing decision, same family as
+      // Rows/Cols), but the scale it sets is READ EVERYWHERE this chart draws
+      // a photo — List, Grid, and arranging — not only while Setup is open;
+      // see the note on fillSeatLiveCard()'s avatarPx below for why that
+      // matters. Only shown when arranging is actually drawing a photo right
+      // now: effSeatCardMode() forces one on for any QR-kind mode the instant
+      // arranging starts, but a chart set to "None" still shows no avatar at
+      // all, and a size dial for a picture nobody sees would just be a
+      // control that does nothing.
       if(seatPrintWantsPhoto(effSeatCardMode())){
         var faceSize=el("span","seat-size");
-        faceSize.title="How big each boy's photo draws on this chart while you're arranging seats.";
+        faceSize.title="How big each boy's photo draws on this chart — in the seating grid, the list, and while arranging.";
         faceSize.appendChild(document.createTextNode("Face size"));
         var faceSmaller=el("button","btn btn-sm","−"); faceSmaller.type="button";
         faceSmaller.title="Smaller";
@@ -18167,7 +18171,7 @@ function setupRoster() {
       // else branch below, so every student in List mode rendered twice over
       // (and once in scan mode, above his QR). One card per boy — now built by
       // the one shared builder rather than by two branches that could drift.
-      fillSeatLiveCard(b, s, listMode, listShowPts, 38);
+      fillSeatLiveCard(b, s, listMode, listShowPts, Math.round(38*seatArrangeAvatarScale()));
       b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
@@ -18235,14 +18239,22 @@ function setupRoster() {
     if(data.seatArranging && seatPrintCodeKind(data.seatCardMode)==="qr") return "photo";
     return data.seatCardMode;
   }
-  /* How big a face draws on the LIVE chart while arranging (Setup & arrange's
-   * "Face size" −/+ buttons, below). Separate from seatPrintOpts.iconScale —
-   * that one is print's own setting and multiplies CSS caps that only exist
-   * on the printed sheet, never seen on screen; this one multiplies the
-   * SEAT_ARRANGE_AVATAR_PX constant fillSeatLiveCard() is handed while
-   * arranging. Same 0.5–1.5 range and step list as print's Code size, purely
-   * so the two controls feel like the same idiom — there's no other
-   * relationship between them. */
+  /* How big a face draws on the LIVE chart (Setup & arrange's "Face size"
+   * −/+ buttons, below). Separate from seatPrintOpts.iconScale — that one is
+   * print's own setting and multiplies CSS caps that only exist on the
+   * printed sheet, never seen on screen; this one multiplies every avatarPx
+   * fillSeatLiveCard() is handed from the live chart — List, Grid, and
+   * arranging alike, see renderSeatGrid()/renderTapPanelInto() below. Same
+   * 0.5–1.5 range and step list as print's Code size, purely so the two
+   * controls feel like the same idiom — there's no other relationship
+   * between them.
+   *
+   * IT MUST APPLY OUTSIDE ARRANGING TOO, and that used to be the bug: an
+   * earlier version multiplied only the arranging branch's own base size, so
+   * tapping "Done arranging" dropped straight back to the flat, undialled
+   * 56/34px — every step a rebbi had just clicked, thrown away the moment he
+   * finished setting up the room. A size he dials in is a decision about
+   * this chart, not a temporary state of Setup being open. */
   var SEAT_ARRANGE_AVATAR_PX=72;
   function seatArrangeAvatarScale(){
     var v=parseFloat(data.seatArrangeAvatarScale);
@@ -18629,11 +18641,18 @@ function setupRoster() {
          * shared-cell size left arranging stuck at 34px even though a photo is
          * now the ONLY way you are telling boys apart while dragging them —
          * exactly backwards, and exactly what a rebbi flagged as still too
-         * small after the first pass at this. Also the one size a rebbi can
-         * dial himself — see the "Face size" −/+ buttons in Setup & arrange —
-         * because 72px still wasn't the right call for every screen and every
-         * boy's photo. */
-        fillSeatLiveCard(seat, s, cardMode, showPts, arranging ? Math.round(SEAT_ARRANGE_AVATAR_PX*seatArrangeAvatarScale()) : (scanMode ? 56 : 34));
+         * small after the first pass at this.
+         *
+         * seatArrangeAvatarScale() MULTIPLIES EVERY BRANCH, not only the
+         * arranging one — "Face size" in Setup & arrange used to scale just
+         * the 72px arranging case, which meant dialing it up and then tapping
+         * "Done arranging" silently threw it away: the chart fell straight
+         * back to a flat 56 or 34, no bigger than before the dial existed at
+         * all. A rebbi who sized his faces once should not have to redo it
+         * every time he leaves Setup — the dial is now "how big faces are on
+         * THIS chart", full stop, and arranging staying the biggest base
+         * (72 vs 56/34) is just that same rule applied to a bigger number. */
+        fillSeatLiveCard(seat, s, cardMode, showPts, Math.round((arranging ? SEAT_ARRANGE_AVATAR_PX : (scanMode ? 56 : 34)) * seatArrangeAvatarScale()));
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
