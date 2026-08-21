@@ -8066,17 +8066,38 @@ function setupRoster() {
 
   // `forget` true drops the remembered backups folder as well, so this machine
   // keeps no pointer at all to where the class went — the shared-computer case.
-  function signinEraseThisComputer(forget){
-    var r = signinEraseReadiness();
-    if (!r.ready) { renderAccountSection(); return; }
+  // One erase at a time, and only while the rebbi is still asking for it.
+  // Backing up takes real time — a Drive round trip, or a write to a folder on
+  // a USB stick — and during that window he can hit Cancel, or Go back, or the
+  // button again. Every one of those used to end in the class being erased
+  // anyway, because nothing between "the backup resolved" and "delete
+  // everything" ever re-checked that the erase was still wanted.
+  var eraseBusy = false;
 
+  // The erase is still wanted only if this screen is still the one on show.
+  // Cancel moves the step to "idle" and Go back to "needsSignOutChoice", so a
+  // single check covers every way out rather than one flag per exit.
+  function eraseStillRequested(){ return signinState.step === "needsEraseChoice"; }
+
+  function signinEraseThisComputer(forget){
+    if (eraseBusy) return Promise.resolve(false);
+    var r = signinEraseReadiness();
+    if (!r.ready) { renderAccountSection(); return Promise.resolve(false); }
+
+    eraseBusy = true;
     signinState.error = "Backing up before erasing…";
     renderAccountSection();
 
     var backedUp = (r.via === "drive") ? driveWriteBackup(true) : fbWrite(true);
 
+    function abandon(){ eraseBusy = false; return false; }
+
     return Promise.resolve(backedUp).then(function(ok){
+      // Checked BEFORE the failure message too: telling a rebbi who already
+      // cancelled that his backup failed would be alarming and untrue.
+      if (!eraseStillRequested()) return abandon();
       if (!ok) {
+        eraseBusy = false;
         signinState.error = "Couldn't back up just now, so nothing was erased — your class is still here. " +
           "Check your connection (or the backups folder) and try again.";
         renderAccountSection();
@@ -8084,9 +8105,19 @@ function setupRoster() {
       }
       var done = forget ? Promise.resolve(fbClearHandle())["catch"](function(){}) : Promise.resolve();
       return done.then(function(){
+        // Re-checked after forgetting the folder as well: that step is itself
+        // asynchronous, and it is the last moment anything is recoverable.
+        if (!eraseStillRequested()) return abandon();
         eraseThisComputer();
         return true;
       });
+    })["catch"](function(){
+      // Never leave the guard latched — a stuck eraseBusy would silently
+      // disable the button for the rest of the session with no explanation.
+      eraseBusy = false;
+      signinState.error = "Something went wrong before anything was erased — your class is still here.";
+      renderAccountSection();
+      return false;
     });
   }
 
