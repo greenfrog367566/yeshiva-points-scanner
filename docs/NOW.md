@@ -93,6 +93,20 @@ including the live-project setup and the console-only gaps that cost a day.
   **Migrating the real beta cohort (step 8) before this exists moves their
   accounts, not their safety** — real auth and security rules, but their
   actual class data is exactly as fragile as it is today.
+  **Design decided 2026-08-21 by Ben:**
+  `docs/Firebase_TierOne_WriteSync_Design_Proposal.md`. Checked with the two
+  other sessions in this repo first — neither was working on it, no
+  duplicate effort. Full parity (every class-data field Drive backup
+  carries, not just roster + scores + tracked entries), writing through the
+  vendored Firestore SDK client (inherits offline queue/retry for free)
+  instead of hand-rolled REST, and build the complete design before step 8
+  — no staged MVP. Full parity adds three new `state/*` docs (seating,
+  raffle, settings) beyond the original four collections, first-draft only
+  and flagged for review before building, plus a `firestore.rules` change
+  the narrow scope wouldn't have needed. **Prize Ledger sync is the one
+  named exception — joins once Phase 4 (0-of-3, unbuilt) ships on its own
+  schedule, not a blocker for step 8.** Nothing left open. Not yet
+  built — this is design only.
 
 ---
 
