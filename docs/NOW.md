@@ -125,7 +125,17 @@ either way.
 - **`steinerman/hadroom-camera-test`** (same worktree as the old
   `steinerman/chazaroom` entry, branch renamed since) — 4 commits of Chazaroom
   PTZ work, including "the PTZ tick now tells the truth, continuously." This is
-  what #240 actually contains.
+  what #240 actually contains. **It is two separable things, and only one of
+  them is owed work** (verified 2026-08-21): the **PTZ bridge improvements**
+  are finished and landable on their own — `insta360-ptz/ptz-bridge.ps1` is
+  138 lines on the branch against 107 on `main`, a stale-camera-handle
+  self-heal plus no longer trusting a bare HTTP 200, in a standalone file that
+  touches no `app.html`. The **room map** (corner codes + tilt to aim the
+  gimbal at a named boy) is *not* landable: its own commit message says
+  `INCOMPLETE - pan is wrong`, and `cornerCode`/`roomMap`/`tiltFor` all return
+  zero on `main`. Land the bridge; land
+  `docs/Chazaroom_Room_Map_Spec.md` so the thinking survives; leave the
+  room-map code as a decision, not a debt.
 - **`fix/backup-label-mismatch-live`** — 1 commit, PR #329 closed unmerged.
   **Content-dead: nothing is owed here.** Verified 2026-08-21 by grepping
   `main` — `app.html` and `setup.html` both contain **zero** occurrences of
@@ -165,6 +175,25 @@ code. The `docs/claude-md-trim` case is the sharp one — it trims `CLAUDE.md`
 as it stood on 2026-08-03, so **replaying that patch would delete the entire
 WIP-cap and ship-ladder section added on 2026-08-20.**
 
+**Suggested order, if these are picked up.** The binding constraint is not the
+5-PR cap (there is room) but the one-`app.html`-feature-PR-at-a-time rule:
+**(1)** the "Send standings now" removal — six lines, no data model, and it
+pays into the every-third-PR-is-a-subtraction quota nothing has been paying
+into; **(2)** in parallel, because neither touches `app.html` — the
+`CLAUDE.md` retrim and the Chazaroom PTZ-bridge half; **(3)** the ⚙ Customize
+wizard last, alone, and only after a yes, since it is the one item here that
+touches `app.html` *and* adds stored fields.
+
+- **⏳ UNCOMMITTED, and the most perishable thing on this page:**
+  `docs/claude-md-firebase-status-restamp`, in
+  `.claude/worktrees/docs+now-tier1-sync-gap`, holds **1 changed file that is
+  committed nowhere** — no branch, no PR, invisible to `gh`. The worktree name
+  ties it to the tier-1 write-sync work that shipped as #385, so this looks
+  like a `CLAUDE.md` Firebase restamp that PR left behind. **A stale-worktree
+  sweep would delete it and nobody would know what was lost.** Either commit
+  it or discard it deliberately — but do not sweep that directory until
+  someone has looked. Noted 2026-08-21; this lane turns over fast, so re-run
+  `node scripts/wip-audit.js` rather than trusting this bullet's age.
 - **10 of 18 worktrees are dead** and safe to clear (landed, unlocked, clean) —
   down sharply from 81-of-92, so the 2026-08-20 cleanup mostly happened.
   Removal is a stop-and-ask action — `node scripts/wip-audit.js --stale` prints
