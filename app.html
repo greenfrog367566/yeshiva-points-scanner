@@ -4496,6 +4496,17 @@ function setupRoster() {
         <p>Wipes everything — institution &amp; class name, students, activities, scores, scan log, raffle history, and the saved Google Sheet link. Use this to start completely fresh (a new class, a new year). Download a backup first if you're not sure.</p>
         <button class="btn btn-bad" id="clearAllData">Clear ALL data…</button>
       </details>
+      <!-- The same erase the Account section offers, reachable without an
+           account. A rebbi who borrowed a colleague's computer and never
+           signed in is the likeliest person to need it, and everything in the
+           Account section is gated behind being signed in. -->
+      <details class="card pad bk-card danger-zone">
+        <summary>Erase from this computer</summary>
+        <p>Backs your class up, then removes it from this computer and returns it to the setup screen — for a computer that isn't yours. Your backup is not touched, and this is only offered once your class is safely backed up somewhere.</p>
+        <p id="eraseCardStatus" class="view-note"></p>
+        <button class="btn btn-bad" id="eraseThisComputerBtn">This is my computer — erase, keep the folder…</button>
+        <button class="btn btn-bad" id="eraseForgetBtn">Someone else's — erase and forget…</button>
+      </details>
     </div>
   </section>
 
@@ -5298,6 +5309,7 @@ function setupRoster() {
           </select>
           <button class="btn btn-primary" id="serialConnectBtn">🔌 Connect scanner…</button>
           <button class="btn btn-sm btn-bad" id="serialDisconnectBtn" style="display:none">Disconnect</button>
+          <button class="btn btn-sm" id="serialHelpBtn" type="button">❓ COM setup codes</button>
         </div>
         <div id="serialStatus" class="pill-note" style="margin-top:8px">Not connected.</div>
       </div>
@@ -6953,11 +6965,15 @@ function setupRoster() {
     var t = GB_FIXED_TONES[String(v).trim().toLowerCase()];
     return t==="warn" || t==="bad";
   }
-  // What a History row shows in the points column. A tracked row has no points
-  // to show, so it shows what was actually recorded instead of a misleading
-  // "+0" that reads as a scan worth nothing.
+  // What a History row shows in the points column. A tracked row usually has
+  // no points to show, so it shows what was actually recorded instead of a
+  // misleading "+0" that reads as a scan worth nothing — UNLESS this is one
+  // of the few tracked activities a rebbi has given a real point value (see
+  // syncHwPoints()), in which case the row genuinely did move a score and
+  // hiding that number would be the opposite mistake.
   function logEntryValueText(e){
-    return isTrackedEntry(e) ? (e.tval || "logged") : fmt(e.delta);
+    if(isTrackedEntry(e)) return e.delta ? (fmt(e.delta)+" · "+(e.tval||"logged")) : (e.tval || "logged");
+    return fmt(e.delta);
   }
   function groups(){ var set={}; data.students.forEach(function(s){ if(s.group) set[s.group]=1; }); return Object.keys(set).sort(); }
   function activeStudents(){ return data.currentClass ? data.students.filter(function(s){ return (s.group||"")===data.currentClass; }) : data.students.slice(); }
@@ -8091,54 +8107,6 @@ function setupRoster() {
     if (typeof renderAccountSection === "function") renderAccountSection();
   }
 
-  // Back up FIRST, and only wipe if that provably succeeded. A rebbi choosing
-  // this is on someone else's computer, which is exactly where "it'll be in
-  // Drive" must not be an assumption — if the backup cannot be written, the
-  // class stays put and he is told why. Losing a class here would be the
-  // worst possible outcome of a button whose whole purpose is tidiness.
-  function signinSignOutAndRemove(){
-    signinState.error = null;
-    if (!(data.driveBackupEnabled && driveSupported())) {
-      signinState.error = "Google Drive isn't connected on this computer, so there's nowhere safe to put your class first. " +
-        "Download a backup file (Settings → Backup & Restore) or connect Drive, then sign out again.";
-      if (typeof renderAccountSection === "function") renderAccountSection();
-      return;
-    }
-    signinState.error = "Backing up your class to Drive…";
-    if (typeof renderAccountSection === "function") renderAccountSection();
-    return driveWriteBackup(true).then(function(ok){
-      if (!ok) {
-        signinState.error = "Couldn't back up to Drive just now, so nothing was removed — your class is still here. " +
-          "Check your connection and try again.";
-        if (typeof renderAccountSection === "function") renderAccountSection();
-        return false;
-      }
-      wipeLocalClass();
-      signinSignOutKeepingData(); // account cleared last, after the class is gone
-      notice("Signed out. Your class was backed up and removed from this computer.");
-      return true;
-    });
-  }
-
-  // Returns the device to a clean slate WITHOUT touching the Drive backup —
-  // the copy in Drive is the whole point, and is what the next sign-in on the
-  // rebbi's own computer restores from.
-  function wipeLocalClass(){
-    data = migrateData(JSON.parse(JSON.stringify(defaults)));
-    load2fix();
-    save();
-    $("schoolName").textContent = data.school;
-    syncClassNameField();
-    $("sheetUrl").value = data.sheetUrl || "";
-    $("autoSheet").checked = (data.autoSheet !== false);
-    renderActButtons(); renderRecent(); renderStudents(); renderActivities();
-    renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-    showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
-    if (typeof window._refreshTimerPanel === "function") window._refreshTimerPanel();
-    renderShulchaniStatus();
-    refreshLiveViews();
-    if (typeof refreshTrackedBadges === "function") refreshTrackedBadges();
-  }
 
   function renderAccountSignOutStep(box){
     var p = el("p", "view-note");
@@ -8148,8 +8116,8 @@ function setupRoster() {
     var detail = el("p", "view-note");
     detail.textContent = "\"" + (data.className || "Your class") + "\" — " +
       data.students.length + " " + (data.students.length === 1 ? "boy" : "boys") +
-      ". If this is someone else's computer, remove it: it will be backed up to your Drive first, " +
-      "and comes back the next time you sign in on your own.";
+      ". On someone else's computer, erase it: it is backed up first, and this computer " +
+      "goes back to the way it was before anyone set it up.";
     box.appendChild(detail);
 
     if (signinState.error) {
@@ -8160,15 +8128,236 @@ function setupRoster() {
     keepBtn.addEventListener("click", signinSignOutKeepingData);
     box.appendChild(keepBtn);
 
-    var removeBtn = el("button", "btn btn-sm", "Back up and remove it");
-    removeBtn.style.marginLeft = "8px";
-    removeBtn.addEventListener("click", signinSignOutAndRemove);
-    box.appendChild(removeBtn);
+    var eraseBtn = el("button", "btn btn-sm", "Erase it from this computer…");
+    eraseBtn.style.marginLeft = "8px";
+    eraseBtn.addEventListener("click", function(){
+      signinState.step = "needsEraseChoice";
+      signinState.error = null;
+      renderAccountSection();
+    });
+    box.appendChild(eraseBtn);
 
     var cancelBtn = el("button", "btn btn-sm", "Cancel");
     cancelBtn.style.marginLeft = "8px";
     cancelBtn.addEventListener("click", signinCancelSignOut);
     box.appendChild(cancelBtn);
+  }
+
+  // Erasing is only offered once the class provably exists somewhere else.
+  // Two proofs are accepted, and both are things that HAPPENED rather than
+  // things that were configured: Drive connected (the write is attempted and
+  // must succeed before anything is deleted), or a folder backup that already
+  // wrote to disk in this session.
+  //
+  // A plain downloaded file is deliberately NOT a proof. The browser hands the
+  // page no path and no handle for a download, so the app can neither confirm
+  // it happened nor ever offer it back — accepting it would mean deleting a
+  // class on the strength of something unverifiable.
+  function signinEraseReadiness(){
+    if (data.driveBackupEnabled && driveSupported()) {
+      return { ready: true, via: "drive" };
+    }
+    if (fbHandle && fbWroteThisSession) {
+      return { ready: true, via: "folder", folderName: fbHandle.name };
+    }
+    if (fbHandle) {
+      return { ready: false, reason: "folder-not-written", folderName: fbHandle.name };
+    }
+    return { ready: false, reason: "nothing" };
+  }
+
+  function renderAccountEraseStep(box){
+    var r = signinEraseReadiness();
+
+    var p = el("p", "view-note");
+    p.textContent = "Erase \"" + (data.className || "your class") + "\" from this computer?";
+    box.appendChild(p);
+
+    if (!r.ready) {
+      var why = el("p", "view-note");
+      why.textContent = r.reason === "folder-not-written"
+        ? "Your backups folder (“" + r.folderName + "”) hasn't been written to yet in this session. " +
+          "Back up to it now and the erase will unlock."
+        : "Nothing here is backed up yet, so there is nothing to erase safely from. " +
+          "Connect Google Drive, or choose a backups folder on this computer.";
+      box.appendChild(why);
+
+      var note = el("p", "view-note");
+      note.textContent = "A downloaded backup file can't be used for this: once the browser downloads it, " +
+        "Menchmark can't find it again — so it can't check it exists, and can't offer it back to you later. " +
+        "A backups folder can do both.";
+      box.appendChild(note);
+
+      if (signinState.error) {
+        var e1 = el("p", "pill-note"); e1.textContent = signinState.error; box.appendChild(e1);
+      }
+      var backBtn = el("button", "btn btn-primary", "Go back");
+      backBtn.addEventListener("click", function(){
+        signinState.step = "needsSignOutChoice"; signinState.error = null; renderAccountSection();
+      });
+      box.appendChild(backBtn);
+      return;
+    }
+
+    var okLine = el("p", "view-note");
+    okLine.textContent = r.via === "drive"
+      ? "Your class will be backed up to Google Drive first, and only erased if that works."
+      : "Your class is backed up in “" + r.folderName + "” on this computer.";
+    box.appendChild(okLine);
+
+    // The "whose computer" question is only worth asking when there is a
+    // backups folder to keep or forget. Backed up to Drive with no folder,
+    // both answers do exactly the same thing — and offering to "remember my
+    // backups folder" when none exists promises a way back that will never
+    // appear on the setup screen.
+    var hasFolder = !!fbHandle;
+
+    if (!hasFolder) {
+      var soleNote = el("p", "view-note");
+      soleNote.textContent = "Your class comes back by signing in again on your own computer.";
+      box.appendChild(soleNote);
+
+      if (signinState.error) {
+        var e3 = el("p", "pill-note"); e3.textContent = signinState.error; box.appendChild(e3);
+      }
+      var onlyBtn = el("button", "btn btn-primary", "Erase it from this computer");
+      onlyBtn.addEventListener("click", function(){ signinEraseThisComputer(true); });
+      box.appendChild(onlyBtn);
+
+      var cancel3 = el("button", "btn btn-sm", "Cancel");
+      cancel3.style.marginLeft = "8px";
+      cancel3.addEventListener("click", signinCancelSignOut);
+      box.appendChild(cancel3);
+      return;
+    }
+
+    var choose = el("p", "view-note");
+    choose.textContent = "Whose computer is this?";
+    box.appendChild(choose);
+
+    if (signinState.error) {
+      var e2 = el("p", "pill-note"); e2.textContent = signinState.error; box.appendChild(e2);
+    }
+
+    // "Mine" keeps the remembered backups folder, which is what lets setup
+    // offer the class straight back. IndexedDB is where that handle lives, so
+    // it survives the localStorage wipe on its own — remembering is the
+    // default state, and forgetting is the deliberate extra step.
+    var mineBtn = el("button", "btn btn-primary", "Mine — erase, but remember “" + fbHandle.name + "”");
+    mineBtn.addEventListener("click", function(){ signinEraseThisComputer(false); });
+    box.appendChild(mineBtn);
+
+    var sharedBtn = el("button", "btn btn-sm", "Someone else's — erase and forget everything");
+    sharedBtn.style.marginLeft = "8px";
+    sharedBtn.addEventListener("click", function(){ signinEraseThisComputer(true); });
+    box.appendChild(sharedBtn);
+
+    var cancel2 = el("button", "btn btn-sm", "Cancel");
+    cancel2.style.marginLeft = "8px";
+    cancel2.addEventListener("click", signinCancelSignOut);
+    box.appendChild(cancel2);
+  }
+
+  // `forget` true drops the remembered backups folder as well, so this machine
+  // keeps no pointer at all to where the class went — the shared-computer case.
+  // One erase at a time, and only while the rebbi is still asking for it.
+  // Backing up takes real time — a Drive round trip, or a write to a folder on
+  // a USB stick — and during that window he can hit Cancel, or Go back, or the
+  // button again. Every one of those used to end in the class being erased
+  // anyway, because nothing between "the backup resolved" and "delete
+  // everything" ever re-checked that the erase was still wanted.
+  var eraseBusy = false;
+
+  // The erase is still wanted only if this screen is still the one on show.
+  // Cancel moves the step to "idle" and Go back to "needsSignOutChoice", so a
+  // single check covers every way out rather than one flag per exit.
+  function eraseStillRequested(){ return signinState.step === "needsEraseChoice"; }
+
+  // `stillWanted` lets a second entry point supply its own liveness test. The
+  // Backup & Restore card confirms up front with a blocking prompt and shows
+  // no cancel afterwards, so for it the answer is simply yes — the step-based
+  // check would read false there and abandon every erase.
+  function signinEraseThisComputer(forget, stillWanted){
+    var wanted = stillWanted || eraseStillRequested;
+    if (eraseBusy) return Promise.resolve(false);
+    var r = signinEraseReadiness();
+    if (!r.ready) { renderAccountSection(); return Promise.resolve(false); }
+
+    eraseBusy = true;
+    signinState.error = "Backing up before erasing…";
+    renderAccountSection();
+
+    // Folder: a LOCKED snapshot, because this copy is taken precisely because
+    // the class is about to be removed, and must not sit in the file every
+    // automatic write rewrites. There are two copies at this point either way
+    // — folder readiness already required a successful rolling write this
+    // session, and the erase no longer touches that file.
+    //
+    // Drive: still the ordinary backup write. A locked Drive snapshot is a
+    // separate change, deliberately not shipped alongside this one: it would
+    // be the only fresh copy for a rebbi with Drive and no folder, and an
+    // unexercised write is the wrong thing to stake a class on.
+    var backedUp = (r.via === "drive") ? driveWriteBackup(true) : fbWriteSnapshot();
+
+    function abandon(){ eraseBusy = false; return false; }
+
+    return Promise.resolve(backedUp).then(function(ok){
+      // Checked BEFORE the failure message too: telling a rebbi who already
+      // cancelled that his backup failed would be alarming and untrue.
+      if (!wanted()) return abandon();
+      if (!ok) {
+        eraseBusy = false;
+        signinState.error = "Couldn't back up just now, so nothing was erased — your class is still here. " +
+          "Check your connection (or the backups folder) and try again.";
+        renderAccountSection();
+        return false;
+      }
+      var done = forget ? Promise.resolve(fbClearHandle())["catch"](function(){}) : Promise.resolve();
+      return done.then(function(){
+        // Re-checked after forgetting the folder as well: that step is itself
+        // asynchronous, and it is the last moment anything is recoverable.
+        if (!wanted()) return abandon();
+        eraseThisComputer();
+        return true;
+      });
+    })["catch"](function(){
+      // Never leave the guard latched — a stuck eraseBusy would silently
+      // disable the button for the rest of the session with no explanation.
+      eraseBusy = false;
+      signinState.error = "Something went wrong before anything was erased — your class is still here.";
+      renderAccountSection();
+      return false;
+    });
+  }
+
+  // The actual wipe. Clears the class AND the setup flag, which is what sends
+  // the next visit through the wizard rather than into an empty app — a
+  // computer someone else picks up should look untouched, not like a Menchmark
+  // that lost its class. The Drive backup and (unless forgotten) the backups
+  // folder are never deleted: they are the way back.
+  function eraseThisComputer(){
+    // Prefix sweep rather than a hand-written list of keys. A list is only as
+    // good as someone's memory of every key the app has ever written, and the
+    // one thing this must not do is leave a stray copy of a class on a
+    // computer whose owner was told it had been erased. Anything Menchmark
+    // wrote starts with the storage key or "menchmark"; nothing else is
+    // touched, so a shared origin keeps its own unrelated keys.
+    try {
+      var doomed = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k) continue;
+        if (k.indexOf(KEY) === 0 || k.toLowerCase().indexOf("menchmark") === 0) doomed.push(k);
+      }
+      doomed.forEach(function(k){ try { localStorage.removeItem(k); } catch (e) {} });
+    } catch (e) {}
+    try { sessionStorage.clear(); } catch (e) {}
+    if (window.firebase && window.firebase.auth) {
+      try { window.firebase.auth().signOut(); } catch (e) {}
+    }
+    // A deliberate navigation to the wizard, not a reload-to-re-render: the
+    // whole point is that this computer starts over.
+    location.href = "setup.html";
   }
 
   // ---------- Step 3b: self-serve backup-upload restore ----------
@@ -10548,7 +10737,7 @@ function setupRoster() {
     return third ? ("records "+nm) : ("record "+nm);
   }
   function personalActionSub(a){
-    if(homeworkActivity(a)) return "marks homework checked";
+    if(homeworkActivity(a)) return "marks homework checked"+(a.pts?" · "+fmtDeltaBare(a.pts):"");
     if(attendanceActivity(a)) return "cycles their attendance";
     if(freezeActivity(a)) return "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze";
     if(passActivity(a)) return "uses their weekly pass";
@@ -10971,6 +11160,59 @@ function setupRoster() {
    * cannot, and writing the stronger one would put words in his mouth.
    */
   function hwMirrorValue(checked){ return checked ? "full credit" : "unchecked"; }
+  /* Homework Checked may optionally also move points — the "Homework Checked"
+   * activity's own `pts` field, 0 by default and hidden in the editor for
+   * every other tracked activity (see renderActivities()). When a rebbi sets
+   * it, points are CONTINGENT ON TODAY'S CHECKED STATE, not on the scan: they
+   * land the moment a day's record first reads checked===true, and they come
+   * back off the moment that record no longer does — whether that flip comes
+   * from a scan, the Homework tab's own toggle, or a Gradebook correction to a
+   * past day, because all three funnel through setHw()/markHwCheckedToday()/
+   * clearHomework(), the only three places a day's record ever changes.
+   *
+   * This is deliberately NOT event-sourced (award N points per scan): a
+   * repeat scan of an already-checked folder must not double-award, and
+   * un-checking a mark days later must give the points back rather than
+   * leaving them stranded. State-sync gets both for free — `want` is
+   * recomputed from the record every time, compared against what was applied
+   * last time, and only the DIFFERENCE is ever written or reversed.
+   *
+   * `prevApplied` and `prevChecked` have to be passed in by the caller (read
+   * off the record that's about to be overwritten or deleted) rather than
+   * looked up here, because by the time this runs the old record is already
+   * gone. `prevChecked` becomes this write's own `tprev` — the same field
+   * undoTrackedLogEntry() already reads for a plain ti-homework row — so a ↩
+   * pressed directly on THIS row in History (not the immediate "Undo last
+   * scan") restores the exact prior state rather than always clearing the
+   * record, the same as any other tracked row's own undo button.
+   *
+   * A past-day correction (dk !== today) is deliberately NOT contest-tagged —
+   * same reason applyScore()'s opts.noContest exists: a fix to last Tuesday's
+   * mark has no business landing in whatever contest happens to be running
+   * today.
+   */
+  function syncHwPoints(sid, dk, checked, recId, prevApplied, prevChecked){
+    var a=data.activities.filter(homeworkActivity)[0];
+    var pts=(a && typeof a.pts==="number") ? a.pts : 0;
+    var want = pts!==0 && checked===true;
+    if(want===!!prevApplied) return want;
+    var s=studentById(sid);
+    if(!s) return want;
+    var delta = want ? pts : -pts;
+    var isToday = dk===todayKey();
+    var tag = isToday ? contestTagForScan() : {scoreToMain:true, contestId:null, contestOnly:false};
+    var mcId = isToday ? mcTagForScan() : null;
+    if(mcId){ mcAdd(sid, delta, mcId); tag.scoreToMain=false; }
+    if(tag.scoreToMain) data.scores[sid]=score(sid)+delta;
+    if(delta>0 && tag.scoreToMain) recordEarn(sid, "Homework Checked", delta);
+    addLogEntry({ts:Date.now(), sid:sid, label:"Homework Checked", delta:delta, kind:"tracked",
+      titem:"ti-homework", tval:(want?"full credit":"unchecked"), about:dk, src:recId,
+      tprev:(prevChecked===undefined||prevChecked===null)?undefined:String(prevChecked),
+      contestId:tag.contestId, contestOnly:tag.contestOnly, mcId:mcId||undefined});
+    if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:"Homework Checked", delta:delta, total:score(sid), id:newId()}); }
+    refreshStudentTiles(sid, tag.scoreToMain?delta:undefined);
+    return want;
+  }
   function setHw(sid, checked, dateKey){
     // dateKey (#227 slice 2): optional, so every existing caller — the tab's own
     // toggle button, the scan path — keeps writing hwDate exactly as before.
@@ -10999,6 +11241,7 @@ function setupRoster() {
     if(trackedValueIsNotable(hwMirrorValue(checked)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
       addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(checked), about:dk, src:day[sid].id, itemId:"ti-homework", prev:hwPrev?hwPrev.checked:undefined});
     }
+    day[sid].ptsApplied = syncHwPoints(sid, dk, checked, day[sid].id, hwPrev && hwPrev.ptsApplied, hwPrev?hwPrev.checked:undefined);
     save();
     var s=studentById(sid);
     if(data.autoSheet && s){ pushToSheet({type:"hw", ts:day[sid].ts, date:dk, name:s.name, group:s.group||"", checked:checked}); }
@@ -11013,6 +11256,7 @@ function setupRoster() {
     delete day[sid];
     unmirrorTracked("ti-homework", sid, function(m){ return m.src===recordId; });
     markTrackedLogUndoneBySrc(recordId);
+    syncHwPoints(sid, dk, false, recordId, rec.ptsApplied, rec.checked);
     save();
     if($("view-homework").classList.contains("active")){
       if(hwViewMode==="student") renderHwStudentView(); else renderHomework();
@@ -11029,7 +11273,12 @@ function setupRoster() {
     var today=todayKey();
     var day=hwDayRecord(today);
     var hwPrev=day[sid];
-    day[sid]={checked:true, ts:Date.now(), id:newId()};
+    // Same record id when the state doesn't actually change (already checked
+    // today) — only ts moves, so "last touched" still updates. A fresh id on
+    // every idempotent re-scan would silently strand any row that pointed
+    // back at the OLD id via `src` — including a syncHwPoints() points row's
+    // own ↩, which matches on this exact id in reverseTrackedWrite().
+    day[sid]={checked:true, ts:Date.now(), id:(hwPrev && hwPrev.checked===true && hwPrev.id) || newId()};
     mirrorTracked("ti-homework", sid, {value:hwMirrorValue(true), ts:day[sid].ts, date:today, src:day[sid].id});
     /* Only ever writes "full credit", so the left half can never fire — the
      * right half is the live one, catching a boy who was marked no/partial
@@ -11040,6 +11289,7 @@ function setupRoster() {
     if(trackedValueIsNotable(hwMirrorValue(true)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
       addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(true), about:today, src:day[sid].id, itemId:"ti-homework", prev:hwPrev?hwPrev.checked:undefined});
     }
+    day[sid].ptsApplied = syncHwPoints(sid, today, true, day[sid].id, hwPrev && hwPrev.ptsApplied, hwPrev?hwPrev.checked:undefined);
     save();
     var s=studentById(sid);
     if(data.autoSheet && s){ pushToSheet({type:"hw", ts:Date.now(), date:today, name:s.name, group:s.group||"", checked:true}); }
@@ -12520,6 +12770,7 @@ function setupRoster() {
     if (signinState.step === "needsDriveRestore") { renderAccountDriveRestoreStep(box); return; }
     if (signinState.step === "needsRoster") { renderAccountRosterStep(box); return; }
     if (signinState.step === "needsSignOutChoice") { renderAccountSignOutStep(box); return; }
+    if (signinState.step === "needsEraseChoice") { renderAccountEraseStep(box); return; }
 
     if (data.account) {
       // Forced Drive connect: every rebbi, either tier, must connect Google
@@ -12672,6 +12923,17 @@ function setupRoster() {
     var connectBtn = el("button", "btn btn-primary", "Connect Google Drive");
     connectBtn.addEventListener("click", driveConnect);
     box.appendChild(connectBtn);
+
+    // The gate exists to make a rebbi back up before he carries on WORKING —
+    // it must not also trap him here. Signing out is the way off a borrowed
+    // computer, and erasing lives behind it; a rebbi standing at a colleague's
+    // desk with no Drive account could otherwise reach neither, which is the
+    // exact situation the erase flow was built for. Signing out grants no
+    // access, so nothing is bypassed by offering it.
+    var outBtn = el("button", "btn btn-sm", "Sign out");
+    outBtn.style.marginLeft = "8px";
+    outBtn.addEventListener("click", signinSignOut);
+    box.appendChild(outBtn);
   }
   // Step 3b's Drive-restore offer — only ever shown after same-device
   // adoption found no local match at all (signinMaybeOfferDriveRestore()'s
@@ -13800,10 +14062,14 @@ function setupRoster() {
     b.type="button";
     b.dataset.label=a.name; b.dataset.delta=a.pts;
     b.appendChild(el("span","an",a.name));
-    // Homework Checked earns no points, so it shows no value line at all — a
-    // "+0" would read as "scanning this gives nothing". Name only. Both .an and
-    // .av are display:block, so omitting .av just makes a shorter card.
-    if(!reroutedActivity(a)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
+    // A tracked activity earns no points by default, so it shows no value
+    // line at all — a "+0" would read as "scanning this gives nothing". Name
+    // only. Both .an and .av are display:block, so omitting .av just makes a
+    // shorter card. Homework Checked is the one exception once a rebbi gives
+    // it a real a.pts (syncHwPoints()) — hiding that would leave the one
+    // tracked activity that DOES move a score looking exactly like the ones
+    // that don't.
+    if(!reroutedActivity(a) || (homeworkActivity(a) && a.pts)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
     b.addEventListener("click", function(){ setArmed(a.name, a.pts, a); $("seatsScanInput").focus(); });
     return b;
   }
@@ -14159,8 +14425,18 @@ function setupRoster() {
       // hwDate, the date the Homework tab is showing.
       var dk=todayKey();
       var day=hwDayRecord(dk), prevRec=day[s.id];
+      var wasApplied = !!(prevRec && prevRec.ptsApplied);
       markHwCheckedToday(s.id);
-      flash(true, s.name, "HW Checked", "Homework marked checked (today)", "tracked");
+      // Only worth a mention the first time a day's mark actually earns the
+      // points — an idempotent re-scan of an already-checked folder is a
+      // no-op for points too (see syncHwPoints()), and a flash claiming "+2"
+      // on a scan that moved nothing would be exactly the kind of mismatch
+      // between what the toast says and what was written that 2d exists to
+      // rule out.
+      var hwAct=data.activities.filter(homeworkActivity)[0];
+      var hwPts=(hwAct && typeof hwAct.pts==="number") ? hwAct.pts : 0;
+      var justEarned = hwPts && !wasApplied;
+      flash(true, s.name, "HW Checked", "Homework marked checked (today)"+(justEarned?" · "+fmtDeltaBare(hwPts):""), "tracked");
       beep(true);
       // "checked" in the old boolean store IS "full credit" in the four-state
       // preset. Mirroring the preset's own vocabulary rather than `true` keeps
@@ -27310,9 +27586,31 @@ nameLine
         classBadge.title=a.groups.length ? "Only shown for: "+classBadgeText : "Shown for every class";
       }
       if(a.tracked){
-        var trkBadge=el("span",null, freezeActivity(a) ? ("❄️ Freeze — "+fmtFreezeDuration(a.freezeSeconds)) : "No points");
-        trkBadge.style.cssText="font-size:.72rem;font-weight:700;color:#6b4d18;background:var(--brass-soft);border-radius:999px;padding:2px 9px;white-space:nowrap";
-        row.appendChild(name); row.appendChild(trkBadge);
+        row.appendChild(name);
+        // Homework Checked is the one tracked activity that can also move
+        // points (syncHwPoints() — contingent on today's checked state, not
+        // the scan), so it gets a real stepper instead of the "No points"
+        // badge. Every other tracked activity stays locked at 0: each has
+        // its own correction/cycle semantics (attendance's status cycle,
+        // the pass's weekly reset) that a plain "add points on write" rule
+        // doesn't yet account for.
+        if(homeworkActivity(a)){
+          var hstp=el("span","stepper");
+          var hminus=el("button",null,"–");
+          var hpts=el("input","field"); hpts.type="number"; hpts.step="1"; hpts.value=a.pts; hpts.style.width="68px"; hpts.style.textAlign="center";
+          var hplus=el("button",null,"+");
+          function setHwPts(v){ a.pts=v; hpts.value=v; save(); renderActButtons(); refreshArmed(a); }
+          hminus.addEventListener("click", function(){ setHwPts((parseInt(hpts.value,10)||0)-1); });
+          hplus.addEventListener("click", function(){ setHwPts((parseInt(hpts.value,10)||0)+1); });
+          hpts.addEventListener("change", function(){ setHwPts(parseInt(hpts.value,10)||0); });
+          hstp.appendChild(hminus); hstp.appendChild(hpts); hstp.appendChild(hplus);
+          var hLbl=el("span",null,(isShulchani()?"prutot":"pts")+" if checked"); hLbl.style.color="var(--muted)"; hLbl.style.fontSize=".85rem";
+          row.appendChild(hstp); row.appendChild(hLbl);
+        } else {
+          var trkBadge=el("span",null, freezeActivity(a) ? ("❄️ Freeze — "+fmtFreezeDuration(a.freezeSeconds)) : "No points");
+          trkBadge.style.cssText="font-size:.72rem;font-weight:700;color:#6b4d18;background:var(--brass-soft);border-radius:999px;padding:2px 9px;white-space:nowrap";
+          row.appendChild(trkBadge);
+        }
         if(classBadge) row.appendChild(classBadge);
         // Homework, Attendance and Bathroom Pass are hideable, never deletable
         // — see coreTrackedActivity(). The "Show" checkbox at the head of this
@@ -30457,6 +30755,10 @@ nameLine
    */
   var FB_DB="menchmarkBackupFS", FB_STORE="handles", FB_KEY="dir";
   var fbHandle=null, fbBusy=false;
+  // Set only by a folder write that actually succeeded this session — read by
+  // the erase gate (signinEraseReadiness) as one of the two proofs that this
+  // rebbi's class exists somewhere other than the machine he is about to wipe.
+  var fbWroteThisSession=false;
   /* "Has anything changed since the last folder write?", counted rather than
    * timed. The closing write used to be skipped for 60 seconds after any other
    * write, which sounds like a debounce but silently dropped the commonest
@@ -30506,12 +30808,56 @@ nameLine
     if($("folderBackupNow")) $("folderBackupNow").style.display = fbHandle ? "" : "none";
     if($("folderBackupStop")) $("folderBackupStop").style.display = fbHandle ? "" : "none";
     if($("folderBackupPick")) $("folderBackupPick").textContent = fbHandle ? "Choose a different folder" : "Choose a folder";
+    // Every folder-backup state change is also a change to whether erasing is
+    // safe yet, and this runs on all of them (chosen, written, failed, forgotten).
+    if(typeof renderEraseCard==="function") renderEraseCard();
   }
   function fbFileName(){ return "menchmark-backup-"+todayKey()+".json"; }
   /* Writes the same JSON the Download button produces, so a folder backup and a
    * downloaded one are the same thing and restore through the same path.
    * `silent` suppresses the success line for the automatic writes, which should
    * not shout every time the app opens. */
+  // The folder twin of driveMaybeAutoWrite()'s guard, and it matters more here
+  // because fbInit()'s write fires on EVERY boot the moment permission is
+  // granted. The sequence that costs a rebbi his class: erase this computer,
+  // land on setup, press "Skip & Start Now", and the blank class that creates
+  // is written straight over menchmark-backup-*.json in the folder that was
+  // being kept precisely so he could restore from it. An empty roster is never
+  // worth preserving, so no automatic write may carry one.
+  //
+  // Only the AUTOMATIC writes are gated. "Back up now" is an explicit
+  // instruction and still does what it says, and the erase path's own write is
+  // deliberate too.
+  function fbAutoWriteAllowed(){
+    return Array.isArray(data.students) && data.students.length > 0;
+  }
+
+  /* ---------- locked pre-erase snapshots ----------
+   * The rolling backup is a moving target: it is rewritten on open, on tab
+   * hide, and by "Back up now", and every one of those had to be taught not
+   * to carry an empty roster over it. A backup taken because a rebbi is about
+   * to wipe this computer must not live in that file. It gets its own name,
+   * with a timestamp, and nothing in the app ever writes to it again — so the
+   * class as it was when he left that computer simply stays there, and two
+   * erases keep two snapshots instead of the second erasing the first. */
+  var SNAPSHOT_PREFIX = "menchmark-saved-";
+  function snapshotStamp(){
+    var d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16).replace("T", "-").replace(":", "");
+  }
+  function snapshotFileName(){ return SNAPSHOT_PREFIX + snapshotStamp() + ".json"; }
+
+  // Resolves true only once the bytes are on disk — the erase waits on this.
+  function fbWriteSnapshot(){
+    if (!fbHandle) return Promise.resolve(false);
+    var payload = JSON.stringify(data);
+    return fbHandle.getFileHandle(snapshotFileName(), { create: true })
+      .then(function(fh){ return fh.createWritable(); })
+      .then(function(w){ return w.write(payload).then(function(){ return w.close(); }); })
+      .then(function(){ return true; })
+      ["catch"](function(){ return false; });
+  }
+
   function fbWrite(silent){
     if(!fbHandle || fbBusy) return Promise.resolve(false);
     fbBusy=true;
@@ -30533,6 +30879,11 @@ nameLine
         // here: the bytes are already on disk by this point, so letting a
         // broken status line throw would drop us into the failure branch and
         // tell the rebbi nothing was backed up when it just was.
+        // Proof, not intent: the erase gate below only accepts a backup that
+        // actually reached the disk in THIS session, so it can never be
+        // satisfied by a folder that was chosen once and has been failing
+        // quietly ever since.
+        fbWroteThisSession = true;
         try{
           if(!silent) fbStatus("Backed up to “"+fbHandle.name+"” just now.", "good");
           else fbStatus("Backing up automatically to “"+fbHandle.name+"”. Last saved just now.", "good");
@@ -30579,7 +30930,10 @@ nameLine
         if(p==="granted"){
           fbHandle=h;
           fbStatus("Backing up automatically to “"+h.name+"”.", "good");
-          fbWrite(true);
+          // Never on an empty roster — see fbAutoWriteAllowed(). This is the
+          // exact boot that follows an erase, and the folder it would write to
+          // is the one holding the class.
+          if(fbAutoWriteAllowed()) fbWrite(true);
         } else {
           fbStatus("Menchmark still remembers the folder “"+h.name+"”, but this browser is asking for permission again. Press “Choose a folder” and pick it once more.", "bad");
         }
@@ -30655,6 +31009,7 @@ nameLine
     if(document.visibilityState!=="hidden") return;
     if(!fbHandle) return;
     if(fbWrittenSeq===(fbSaveSeq||0)) return;
+    if(!fbAutoWriteAllowed()) return; // same guard as the open-time write
     fbWrite(true);
   });
 
@@ -30979,6 +31334,7 @@ nameLine
   }
 
   function renderDriveBackupCard(){
+    if (typeof renderEraseCard === "function") renderEraseCard(); // Drive state gates the erase too
     var card = $("driveBackupCard"); if (!card) return;
     if (!driveSupported()) { card.style.display = "none"; return; }
     card.style.display = "";
@@ -32508,6 +32864,63 @@ nameLine
   // Full wipe — institution/class name, roster, activities, scores, log, raffle
   // history, and the saved Sheet link. Type-to-confirm since this is the one
   // action here with no way back short of a backup file.
+  // Second entry point for the erase, for a rebbi with no account. Same gate,
+  // same backup-then-wipe, same return to setup — only the door is different.
+  // It always offers the "forget everything" variant: someone erasing from
+  // here has no account to come back through, so a remembered folder would be
+  // a pointer he cannot use and the next person can.
+  function renderEraseCard(){
+    var el2 = $("eraseCardStatus"); if (!el2) return;
+    var btn = $("eraseThisComputerBtn");
+    var r = signinEraseReadiness();
+    if (r.ready) {
+      el2.textContent = r.via === "drive"
+        ? "Ready — your class will be backed up to Google Drive first."
+        : "Ready — your class is backed up in “" + r.folderName + "”.";
+      if (btn) btn.disabled = false;
+      if ($("eraseForgetBtn")) $("eraseForgetBtn").disabled = false;
+    } else {
+      // driveSupported() is false without an account, so a signed-out rebbi
+      // cannot connect Drive at all — telling him to would be advice he can't
+      // act on, and he is the person this card exists for.
+      var canUseDrive = !!(data.account && data.account.email);
+      el2.textContent = r.reason === "folder-not-written"
+        ? "Back up to “" + r.folderName + "” first — then this unlocks."
+        : ("Choose a backups folder (above)" + (canUseDrive ? " or connect Google Drive" : "") +
+           " first. A downloaded file can't be used: Menchmark can't find it again afterwards, so it can't check it exists.");
+      if (btn) btn.disabled = true;
+      if ($("eraseForgetBtn")) $("eraseForgetBtn").disabled = true;
+    }
+  }
+
+  // `forget` decides whether the backups folder is remembered afterwards, and
+  // it must be asked here too. An earlier version always forgot, reasoning
+  // that someone erasing without an account has no way back — which had it
+  // backwards: the remembered folder IS the way back for exactly that rebbi,
+  // and it is what puts "Restore from this computer" on the setup screen.
+  function eraseFromCard(forget){
+    var r = signinEraseReadiness();
+    if (!r.ready) { renderEraseCard(); return; }
+    var where = r.via === "drive" ? "Google Drive" : "“" + r.folderName + "”";
+    var typed = prompt(
+      "This backs your class up to " + where + ", then removes it from this computer " +
+      "and returns it to the setup screen." +
+      (forget
+        ? "\n\nThis computer will not remember your backups folder afterwards."
+        : "\n\nThis computer will still remember your backups folder, so the setup screen can offer your class straight back.") +
+      "\n\nYour backup itself is not touched.\n\nType ERASE to confirm:");
+    if (typed === null) return;
+    if (typed.trim().toUpperCase() !== "ERASE") { notice("Not erased — typed text didn't match “ERASE”."); return; }
+    $("eraseCardStatus").textContent = "Backing up before erasing…";
+    signinEraseThisComputer(forget, function(){ return true; }).then(function(ok){
+      if (!ok) $("eraseCardStatus").textContent =
+        "Couldn't back up just now, so nothing was erased — your class is still here. Try again.";
+    });
+  }
+
+  if ($("eraseThisComputerBtn")) $("eraseThisComputerBtn").addEventListener("click", function(){ eraseFromCard(false); });
+  if ($("eraseForgetBtn")) $("eraseForgetBtn").addEventListener("click", function(){ eraseFromCard(true); });
+
   $("clearAllData").addEventListener("click", function(){
     var typed=prompt("This permanently erases the institution name, class name, students, activities, scores, scan log, raffle history, and your saved Google Sheet link on this device. This cannot be undone.\n\nType CLEAR to confirm:");
     if(typed===null) return;
@@ -34044,11 +34457,17 @@ Two different resets, matching the two sections of the scanner's manual — try 
 | Scans appear duplicated or garbled | Wrong baud rate selected — check your scanner's manual for its default |
 `;
 
-    function openHelp(tab) {
+    function openHelp(tab, anchor) {
       currentTab = tab || 'guide';
       renderHelpTab();
       document.getElementById('helpModal').style.display = 'block';
       document.body.style.overflow = 'hidden';
+      if (anchor) {
+        requestAnimationFrame(function(){
+          var el = document.getElementById(anchor);
+          if (el) el.scrollIntoView({block:'start'});
+        });
+      }
     }
 
     function closeHelp() {
@@ -34070,10 +34489,12 @@ Two different resets, matching the two sections of the scanner's manual — try 
     }
 
     document.addEventListener('DOMContentLoaded', function(){
-      var helpBtn   = document.getElementById('helpBtn');
-      var helpClose = document.getElementById('helpClose');
-      var helpModal = document.getElementById('helpModal');
+      var helpBtn      = document.getElementById('helpBtn');
+      var helpClose    = document.getElementById('helpClose');
+      var helpModal    = document.getElementById('helpModal');
+      var serialHelpBtn = document.getElementById('serialHelpBtn');
       if (helpBtn)   helpBtn.addEventListener('click', function(){ openHelp('guide'); });
+      if (serialHelpBtn) serialHelpBtn.addEventListener('click', function(){ openHelp('scanner', 'help-switching-a-tera-scanner-into-usb-com-mode'); });
       if (helpClose) helpClose.addEventListener('click', closeHelp);
       if (helpModal) helpModal.addEventListener('click', function(e){ if(e.target===this) closeHelp(); });
       ['helpTabGuide','helpTabScanner','helpTabAbout'].forEach(function(id, i){

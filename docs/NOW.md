@@ -20,27 +20,41 @@ spec, not here.
 
 ## Doing now
 
-**Open PRs — 4 of 5** (`CLAUDE.md` → "Finishing work"). #370 and #371 (both
-listed here 2026-08-20) have since merged — checked 2026-08-21, **none of the
-current 4 are actually mergeable yet**, each is waiting on something only Ben
-can supply:
+**Open PRs — 2 of 5** (`CLAUDE.md` → "Finishing work"). #373, #377 and #379
+(all listed here earlier 2026-08-21) have since merged — checked 2026-08-21
+evening:
 
 | PR | What | Owed before ready |
 |---|---|---|
-| #377 | Chavrusa Dashboard integration (Phase 8 slice 3): target-confirmation toast, shared-color group rings, unresolved-points strip, tables-flash fix, "From tables" button | **Closest to done.** CI green, zero merge conflicts, browser-verified end to end per its own checklist, no data-model change. Body says: "Owed before ready: your review/click-through." |
 | #378 | Homework Checked can optionally also move points | Not ready per its own checklist — untested against a live contest/mini-contest or Shulchani (prutot) mode running concurrently. Also amends CLAUDE.md's "tracked activities never award points" hard rule, which is PROPOSE-FIRST territory on its own. |
-| #379 | docs: propose the tier-1 Firestore write-sync design | No code change. **Design fully decided by Ben** (full parity, SDK client, build fully before step 8 except Prize Ledger) — nothing left open. Rebased onto main (was conflicting on NOW.md/CHANGELOG, resolved). Ready once CI runs on the merge commit. |
-| #373 | Erase a class off a borrowed computer, and restore it back from this computer | Draft, **conflicting with main** (touches app.html/CHANGELOG), needs a rebase. Its own body flags "Not verified": the real `showDirectoryPicker()` grant needs a user gesture and a real folder, only faked in-memory for the automated tests — one manual pass owed (pick a real backups folder, back up, erase as "Mine", restore). |
+| #383 | COM setup codes shortcut on the Settings scanner card | Not reviewed this session — check its own body/checklist before acting on it. |
 
-**Phase 8 (Chavrusa Mode) is the active build.** Slices 1 and 2 have both
-merged: manual/automatic group-building, Past Chavrusas, and Individual point
-mode (slice 1); Entire Group / Group Entity point-target modes + Resolve
-(slice 2, #358, merged 2026-08-21). **Slice 3 (Dashboard visual integration)
-is built and sitting in #377 above, not yet merged.** Once it lands, **the
-rule editor is the only piece left** (planned as a full tag-based system —
-freeform per-student tags + rules referencing them, not just a never-pair
-blocklist). See `Menchmark_Phased_Build_Plan.md` → Phase 8 for the full status
-line.
+**Ready to start now that #373 merged: a locked Drive snapshot for the erase
+feature (#373's one deferred piece).** #373 shipped the erase-and-restore
+feature with a **locked snapshot** (`menchmark-saved-…`, never rewritten
+again) for the **folder** backup path — the safety property Ben found was
+missing by testing it himself, and has now hardware-verified twice. Erasing
+via **Google Drive** still writes the ordinary rolling backup, because a
+parallel `driveWriteSnapshot()` was written and found to be completely
+unexercised — no one has ever run it against a real account — and was cut
+rather than shipped untested. Open a **fresh** PR against `main` (never stack)
+adding it back: create a new Drive file (never PATCH) before an erase, **plus
+a read-back** — fetch the file after writing and confirm it parses with the
+expected student count — before the erase is allowed to proceed, the same
+verify-after-write discipline `writeClassAndVerify()` already uses
+server-side. Until this lands, a rebbi with Drive connected and no backups
+folder has only the ordinary rolling Drive backup protecting an erase, not a
+locked one.
+
+**Phase 8 (Chavrusa Mode) is the active build.** Slices 1, 2, and now 3 have
+all merged: manual/automatic group-building, Past Chavrusas, and Individual
+point mode (slice 1); Entire Group / Group Entity point-target modes + Resolve
+(slice 2, #358); Dashboard visual integration — shared-color group rings,
+target-confirmation toast, unresolved-points strip, "From tables" button
+(slice 3, #377, merged 2026-08-21). **The rule editor is the only piece
+left** (planned as a full tag-based system — freeform per-student tags +
+rules referencing them, not just a never-pair blocklist). See
+`Menchmark_Phased_Build_Plan.md` → Phase 8 for the full status line.
 
 **The Firebase/Firestore rebuild is built and deployed.** All 8 build-order
 steps merged (PRs #290, #292, #300, #303, #309) and `firebase deploy` is live
@@ -82,6 +96,16 @@ including the live-project setup and the console-only gaps that cost a day.
 > `CACHE_VERSION` has not moved, so an *offline* copy is still serving 0.10.0's
 > files. One command: `node scripts/bump-version.js 0.11.0`.
 
+- **#373 (erase a class off a borrowed computer, restore it back) — merged
+  2026-08-21T18:14:07Z, rung 2 done, rung 3 owed.** Verified live the same
+  session (`eraseThisComputerBtn` present on `menchmark.app/app.html`,
+  `this-computer-block` present on `setup.html` — checked ~3 minutes after
+  merge, `-L` and `--ssl-no-revoke`). **Never browser-tested against the real
+  deployed site** — every click-through this session was on localhost. Owed:
+  pick a real backups folder, back up, erase as "Mine," restore from this
+  computer, on `menchmark.app` itself. Doc restamp already done inline in the
+  PR (`Firebase_SignIn_UI_Design_Proposal.md` §4).
+
 - ✅ **Link the onboarding video — DONE (#382).** Video A had shipped
   2026-08-05 and was linked from nowhere, so as far as the cohort was concerned
   it had not shipped at all. It now plays **in a viewer on `quick-start.html`**
@@ -103,6 +127,34 @@ including the live-project setup and the console-only gaps that cost a day.
 - **Announce the print fix and the Apps Script redeploy instruction.** Pasting
   new Apps Script code is not enough; teachers must trigger "Manage deployments
   → New version" themselves, and nobody has told them.
+- **#370 (photo crop wizard, Choose photo… button, bigger avatars, seating
+  chart Face size dial, Avatar-defaults-to-None-until-a-photo-exists) —
+  merged and verified live 2026-08-21, but the browser pass on the real
+  deploy was deliberately partial.** Confirmed against `menchmark.app` on
+  Ben's own live account (30 real students): the **Choose photo…** button
+  and the bigger avatar sizes render correctly on the Students tab, and the
+  seating chart's toolbar (Setup & arrange, Give to all, Display) matches
+  local testing exactly. **Not exercised live**, on purpose — every other
+  path touches real data or a real persisted setting: uploading an actual
+  photo through the crop wizard, dragging/resizing the crop circle, the
+  Face size −/+ dial, toggling Setup & arrange, and switching Avatar modes.
+  All of that was verified thoroughly against local dev-server test data
+  earlier in the same session (drag/resize/save, every Face-size step 50%
+  through 150% in both a wide and a narrow layout, the None→photo one-shot
+  auto-turn-on and its manual-override respect) — just never against Ben's
+  own roster. Low risk (nothing destructive; worst case is a photo or a
+  display setting that needs re-editing), but still genuinely un-run on the
+  one dataset that matters. **One real interactive pass — upload a photo
+  for a real student, confirm the crop lands where expected, nudge Face
+  size — closes this.**
+- **Same PR, a scope decision flagged for Ben, not a bug: should the
+  printed seating sheet's photo size also go up?** The live-chart sizes
+  went up (¹⁄₂×–1¹⁄₂× dial, new default = old dial's former max) but the
+  **printed** sheet's photo caps (60/96/64/76px) were deliberately left
+  untouched — `app.html`'s own CSS comments document raising them as a
+  *pagination* change (a photo sheet gets taller), requiring the
+  maintainer's say-so first, same as the last time this exact cap moved.
+  Still open; no PR started.
 - **Tier-1 classes have no live Firestore sync — the rebuild's headline
   promise ("becomes a real multi-user product with … a real database") isn't
   true yet for day-to-day use.** Verified 2026-08-20 by grepping `app.html`:
@@ -166,6 +218,35 @@ either way.
   content that reached `main` by another route — a limit the `wip` skill flags
   itself. Safe to delete whenever the branch list gets swept; it is here only
   so nobody re-derives this a third time.
+- **`worktree-feat+print-footer-same-grid` — the biggest thing on this list, and
+  it was hiding behind a correctly-closed PR.** The branch holds two commits.
+  The first is PR #179, which Ben closed with "included in #181" — that content
+  landed and nothing is owed for it. The second, **`718565f`, was never
+  proposed at all**: the **⚙ Customize** grid wizard on the seating-chart
+  toolbar — per-section 1/2/3 widths, codes draggable between sections, a
+  🗑 Removed bin, writing the one shared arrangement so the chart and the
+  printed sheet agree. 180 lines, a finished CHANGELOG entry in the house
+  voice, and two additive fields backfilled in `load2fix()`
+  (`data.actFooterSectionCols`, `data.actFooterCustomizing`, no
+  `DATA_VERSION` bump). Verified absent from `main` 2026-08-21 — all four of
+  its identifiers return zero. **Re-landing it is PROPOSE FIRST**, not
+  execute-freely: it is a UI feature with new stored fields that has been
+  absent three weeks, and #344's layout customizer now covers adjacent ground.
+- **`docs/claude-md-trim`** — 453 insertions across `CLAUDE.md` plus two new
+  skills (`verify-deploy`, `worktree-audit`). **No PR was ever opened.** Both
+  skill directories are absent from `main`. Worth redoing rather than
+  restoring — see the replay hazard below — and check first whether
+  `worktree-audit` is now redundant against `scripts/wip-audit.js`, which did
+  not exist when the branch was written.
+
+**⚠️ Do not rebase or cherry-pick anything in this lane.** Measured
+2026-08-21: these branches are **398 to 735 commits behind `main`**, on an
+`app.html` that has grown by roughly 14,000 lines since the oldest was cut.
+Read each commit's diff as a *specification* and reimplement against current
+code. The `docs/claude-md-trim` case is the sharp one — it trims `CLAUDE.md`
+as it stood on 2026-08-03, so **replaying that patch would delete the entire
+WIP-cap and ship-ladder section added on 2026-08-20.**
+
 - **14 of 26 worktrees are dead** and safe to clear (landed, unlocked, clean) —
   re-counted 2026-08-21. Still far below the 81-of-92 the cleanup started from,
   but climbing again: 26 worktrees where there were 18, because `testbench.js`
@@ -188,6 +269,16 @@ tabs, and **that is much bigger than adding a column** — the trap in this item
 The Attendance tab especially: its Sheet push, the seating-chart badges and
 "Mark the rest Present" all read the legacy store directly, and each has to
 move to the mirror first or it fails **silently**.
+
+**A second Attendance-tab gap found 2026-08-21, not yet in this issue's own
+plan:** the "✉ Email this day…" panel (`attEmailBtn`/`attEmailPanel`) also
+reads `data.attendance[dateKey]` directly and has no home in the removal plan
+— #227 only ever names `sendAttendance()` (the Sheets push) as needing one.
+Proposed fix, posted as a comment on #227: keep a slimmed-down Attendance tab
+that drops the per-student correction grid (the Gradebook owns that now) but
+keeps Email-this-day and the Sheets push as a reporting/sending surface — both
+can keep reading `data.attendance` unchanged, since that store and its setter
+stay alive regardless of which UI writes to it.
 
 When a tab finally goes, delete its `TRACKED_LEGACY` row, its badge-table row,
 **and** that store's `mirrorTracked()` call together. Pass is editable for the
@@ -214,7 +305,7 @@ next draw instead of staying sticky? Not the behavior ladder — that stays in
 separators) is blocked on #227 — pull it once that lands. ⚠️ Re-check this
 count against `fix/theory-audit-batch-1` above, which never landed.
 
-**7. Homework tab: still a boolean, not the four-state credit cycle (#361).** `ti-homework` is already seeded with `unchecked / full credit / partial credit / no credit`, and the mirror write, the History "notable exception" gate, and `GB_FIXED_TONES` cell-tinting are all already written generically against all four states — but the Homework tab's own UI (`renderHomework()`) still only offers a "Mark checked / Mark unchecked" toggle, so "partial credit" and "no credit" have no writer anywhere. **Not the same thing as #227** (the Gradebook's *own* homework cell editor, shipped in #227 slice 2, is deliberately two-state pending this). Three `app.html` comments previously cited the wrong, unrelated, closed issue #122 (Phase 2c's tab-retirement/data-migration work) for this — corrected 2026-08-20 to point at #361, the real tracking issue.
+**5. Homework tab: still a boolean, not the four-state credit cycle (#361).** `ti-homework` is already seeded with `unchecked / full credit / partial credit / no credit`, and the mirror write, the History "notable exception" gate, and `GB_FIXED_TONES` cell-tinting are all already written generically against all four states — but the Homework tab's own UI (`renderHomework()`) still only offers a "Mark checked / Mark unchecked" toggle, so "partial credit" and "no credit" have no writer anywhere. **Not the same thing as #227** (the Gradebook's *own* homework cell editor, shipped in #227 slice 2, is deliberately two-state pending this). Three `app.html` comments previously cited the wrong, unrelated, closed issue #122 (Phase 2c's tab-retirement/data-migration work) for this — corrected 2026-08-20 to point at #361, the real tracking issue.
 
 ---
 
