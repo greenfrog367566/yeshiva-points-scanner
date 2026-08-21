@@ -91,6 +91,14 @@ including the live-project setup and the console-only gaps that cost a day.
   **Migrating the real beta cohort (step 8) before this exists moves their
   accounts, not their safety** — real auth and security rules, but their
   actual class data is exactly as fragile as it is today.
+  **A design proposal for the fix is written and waiting on Ben:**
+  `docs/Firebase_TierOne_WriteSync_Design_Proposal.md`. Checked with the two
+  other sessions in this repo 2026-08-21 — neither was working on it, no
+  duplicate effort. Two decisions in it gate the build: narrow scope (roster
+  + scores + tracked entries, Drive stays the full-fidelity copy) vs. full
+  `data.*` parity, and writing through the vendored Firestore SDK client
+  (inherits offline queue/retry for free) instead of the hand-rolled REST
+  calls the rest of the Firestore code uses today.
 
 ---
 
@@ -172,8 +180,12 @@ Roughly in the order of what they unblock. Nothing here is a task Claude can tak
    the whole sign-in plan** — it blocks self-serve signup in *either* tier,
    including Ben's own school. `privacy@menchmark.app` is live and tested.
 2. **A yes on the offline resync proposal** before the dedup-fix PR is built.
-3. **Q3: what a school signs.** Gates onboarding school #2; blocks no code.
-4. **A yes on clearing the 10 dead worktrees** (`node scripts/wip-audit.js
+3. **A yes on `docs/Firebase_TierOne_WriteSync_Design_Proposal.md`** — the
+   tier-1 write-sync gap above. Two decisions gate the build: narrow scope
+   vs. full `data.*` parity, and the Firestore SDK client vs. hand-rolled
+   REST for writes. Gates step 8 (the beta cohort migration).
+4. **Q3: what a school signs.** Gates onboarding school #2; blocks no code.
+5. **A yes on clearing the 10 dead worktrees** (`node scripts/wip-audit.js
    --stale` for the list). Stop-and-ask by policy. The seating-tables lines
    this item used to name are resolved — committed, rebased, and merged as
    #364.
