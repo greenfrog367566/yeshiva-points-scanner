@@ -103,6 +103,34 @@ including the live-project setup and the console-only gaps that cost a day.
 - **Announce the print fix and the Apps Script redeploy instruction.** Pasting
   new Apps Script code is not enough; teachers must trigger "Manage deployments
   → New version" themselves, and nobody has told them.
+- **#370 (photo crop wizard, Choose photo… button, bigger avatars, seating
+  chart Face size dial, Avatar-defaults-to-None-until-a-photo-exists) —
+  merged and verified live 2026-08-21, but the browser pass on the real
+  deploy was deliberately partial.** Confirmed against `menchmark.app` on
+  Ben's own live account (30 real students): the **Choose photo…** button
+  and the bigger avatar sizes render correctly on the Students tab, and the
+  seating chart's toolbar (Setup & arrange, Give to all, Display) matches
+  local testing exactly. **Not exercised live**, on purpose — every other
+  path touches real data or a real persisted setting: uploading an actual
+  photo through the crop wizard, dragging/resizing the crop circle, the
+  Face size −/+ dial, toggling Setup & arrange, and switching Avatar modes.
+  All of that was verified thoroughly against local dev-server test data
+  earlier in the same session (drag/resize/save, every Face-size step 50%
+  through 150% in both a wide and a narrow layout, the None→photo one-shot
+  auto-turn-on and its manual-override respect) — just never against Ben's
+  own roster. Low risk (nothing destructive; worst case is a photo or a
+  display setting that needs re-editing), but still genuinely un-run on the
+  one dataset that matters. **One real interactive pass — upload a photo
+  for a real student, confirm the crop lands where expected, nudge Face
+  size — closes this.**
+- **Same PR, a scope decision flagged for Ben, not a bug: should the
+  printed seating sheet's photo size also go up?** The live-chart sizes
+  went up (¹⁄₂×–1¹⁄₂× dial, new default = old dial's former max) but the
+  **printed** sheet's photo caps (60/96/64/76px) were deliberately left
+  untouched — `app.html`'s own CSS comments document raising them as a
+  *pagination* change (a photo sheet gets taller), requiring the
+  maintainer's say-so first, same as the last time this exact cap moved.
+  Still open; no PR started.
 - **Tier-1 classes have no live Firestore sync — the rebuild's headline
   promise ("becomes a real multi-user product with … a real database") isn't
   true yet for day-to-day use.** Verified 2026-08-20 by grepping `app.html`:
