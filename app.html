@@ -8806,6 +8806,10 @@ function setupRoster() {
           if(!removed) return;
           if(lastChavPoolAdd && lastChavPoolAdd.entryId===removed.id) lastChavPoolAdd=null;
           save(); renderChavrusa();
+          // The "🧩 N pooled" tile badge and the unresolved-pool strip both
+          // read this same total -- an undo that only re-rendered this tab
+          // would leave the Dashboard showing the pre-undo amount.
+          renderScanBoard(); renderTapPanel();
         });
         card.appendChild(undoPoolBtn);
       }
@@ -8940,12 +8944,18 @@ function setupRoster() {
     var first=chavStudentName((group.studentIds||[])[0]).split(" ")[0];
     return first+"’s group";
   }
-  // Gates every Dashboard visual touchpoint (§2 of Menchmark_UI_Redesign_
-  // Summary.md). Individual mode is spec'd as "no Dashboard changes" even
-  // with groups on the books -- a rebbi pairing students up just to organize
-  // seating, not to route points, sees a plain Dashboard exactly as before.
-  function chavDashboardActive(){
-    return data.chavrusaSession.groups.length>0 && data.chavrusaSession.pointTargetMode!=="individual";
+  // Gates the purely-organizational Dashboard touchpoints -- List mode
+  // clustering and the tile ring (§2's "List mode grouping" bullet: "when a
+  // Chavrusa session is active"). Any point-target mode, Individual
+  // included: pairing students up is useful to SEE on the Dashboard whether
+  // or not points are routed through the pairing. The scoring-specific
+  // touchpoints (the target toast, the unresolved-pool strip) are narrower
+  // by construction instead -- the toast only fires from inside
+  // awardGroupTarget/awardGroupEntity, which award() only ever reaches when
+  // pointTargetMode isn't "individual", and the strip keys off an actual
+  // pool existing, which only Entity mode ever creates.
+  function chavGroupingActive(){
+    return data.chavrusaSession.groups.length>0;
   }
   // Same 6-color palette the seating-tables feature uses (SEAT_TABLE_COLORS),
   // reused here as a plain index rather than sharing its CSS classes -- a
@@ -8955,6 +8965,15 @@ function setupRoster() {
   function chavGroupColorIdx(group){
     var idx=data.chavrusaSession.groups.indexOf(group);
     return idx<0 ? 0 : idx%6;
+  }
+  // Entity mode only -- Group and Individual modes never create a pool, so
+  // showing "0 pooled" there would just be noise about a number that can
+  // never move. Reads data.chavrusaPools fresh (never cached), so a full
+  // re-render after any pool change (award, resolve, undo) always agrees.
+  function chavPoolLineFor(group){
+    if(!group || data.chavrusaSession.pointTargetMode!=="entity") return "";
+    var pool=data.chavrusaPools[group.id];
+    return "🧩 "+fmtVal(pool?pool.total:0)+" pooled";
   }
   // List mode's grouping: bracket by group (in group-creation order), every
   // ungrouped student after all of them, alphabetical within each bucket.
@@ -9028,10 +9047,12 @@ function setupRoster() {
     lastChavPoolAdd={groupId:group.id, entryId:entry.id, ts:entry.ts};
     save();
     renderChavrusa();
-    // Also refreshes the Dashboard's unresolved-pool strip (touchpoint #4) --
-    // this is the scan that just grew or created the pool it warns about, so
-    // the strip needs to catch it as promptly as a real award does.
+    // Also refreshes the Dashboard's unresolved-pool strip (touchpoint #4)
+    // and every member's tile (the "🧩 N pooled" line, fillSeatLiveCard) --
+    // this is the scan that just grew or created the pool both read, so they
+    // need to catch it as promptly as a real award does.
     renderScanBoard();
+    renderTapPanel();
     var gname="🎯 Target: "+chavGroupLabel(group)+" ("+(group.studentIds||[]).length+")";
     flash(delta>=0, gname, fmtDeltaBare(delta), "🧩 Added to pool · now "+fmtVal(pool.total), delta>=0?"positive":"negative");
     beep(delta>=0);
@@ -9062,6 +9083,11 @@ function setupRoster() {
     if(!removed) return false;
     save();
     renderChavrusa();
+    // Same reason as the "Undo last pooled scan" button above: the
+    // top-bar "↩ Undo" reaches this path too, and the Dashboard's pool
+    // badge/strip must not go stale just because the undo came from there
+    // instead of from the Chavrusa Mode tab.
+    renderScanBoard(); renderTapPanel();
     return true;
   }
   // Splits a pool's total evenly across its group's members (integer division,
@@ -18171,7 +18197,7 @@ function setupRoster() {
     // alphabetical (the sort just above, untouched) the moment no session is
     // active. Class view is deliberately left out of this: a seat's position
     // is furniture the rebbi arranged, not something a group should reorder.
-    if(chavDashboardActive()) studs=chavClusterStuds(studs);
+    if(chavGroupingActive()) studs=chavClusterStuds(studs);
 
     // Says why this is a list when the toolbar was set to Seating chart, and
     // carries the only way in. Shown ONLY on the fallback — a rebbi who chose
@@ -18282,8 +18308,9 @@ function setupRoster() {
   function fillSeatLiveCard(card, s, mode, showPts, avatarPx){
     // Dashboard touchpoint #2 (§2): the shared choke point for both List
     // mode's .tap-btn and Class view's .seat, so one check reaches both.
-    if(chavDashboardActive()){
-      var chavGrp=chavActiveGroupFor(s.id);
+    var chavGrp=null;
+    if(chavGroupingActive()){
+      chavGrp=chavActiveGroupFor(s.id);
       if(chavGrp) card.classList.add("chav-grp", "chav-c"+chavGroupColorIdx(chavGrp));
     }
     var kind=seatPrintCodeKind(mode), wantPhoto=seatPrintWantsPhoto(mode);
@@ -18337,6 +18364,16 @@ function setupRoster() {
        */
       var mcHeld=mcHeldFor(s.id);
       if(mcHeld) card.appendChild(el("span","ts-mc", mcHeld));
+      // Dashboard touchpoint: Group Entity's shared pool, same "held, not on
+      // your own score" idea mcHeld already renders -- without this, a scan
+      // in Entity mode moves a number a rebbi can't see anywhere on the
+      // tile he is looking at, since his own score line is frozen by
+      // design (see awardGroupEntity). Shown even at 0 once grouped, same
+      // restraint mcHeld does NOT take, deliberately: "0 pooled" tells a
+      // rebbi this tile's score is not where his next scan will land, which
+      // matters before the first scan as much as after it.
+      var poolLine=chavPoolLineFor(chavGrp);
+      if(poolLine) card.appendChild(el("span","ts-mc", poolLine));
     } else if(showPts && trkBadge){
       // Also-show: a small secondary figure (see .also-pts) — held aside
       // rather than shown as the primary number the badge now is.
