@@ -6801,11 +6801,15 @@ function setupRoster() {
     var t = GB_FIXED_TONES[String(v).trim().toLowerCase()];
     return t==="warn" || t==="bad";
   }
-  // What a History row shows in the points column. A tracked row has no points
-  // to show, so it shows what was actually recorded instead of a misleading
-  // "+0" that reads as a scan worth nothing.
+  // What a History row shows in the points column. A tracked row usually has
+  // no points to show, so it shows what was actually recorded instead of a
+  // misleading "+0" that reads as a scan worth nothing — UNLESS this is one
+  // of the few tracked activities a rebbi has given a real point value (see
+  // syncHwPoints()), in which case the row genuinely did move a score and
+  // hiding that number would be the opposite mistake.
   function logEntryValueText(e){
-    return isTrackedEntry(e) ? (e.tval || "logged") : fmt(e.delta);
+    if(isTrackedEntry(e)) return e.delta ? (fmt(e.delta)+" · "+(e.tval||"logged")) : (e.tval || "logged");
+    return fmt(e.delta);
   }
   function groups(){ var set={}; data.students.forEach(function(s){ if(s.group) set[s.group]=1; }); return Object.keys(set).sort(); }
   function activeStudents(){ return data.currentClass ? data.students.filter(function(s){ return (s.group||"")===data.currentClass; }) : data.students.slice(); }
@@ -10258,7 +10262,7 @@ function setupRoster() {
     return third ? ("records "+nm) : ("record "+nm);
   }
   function personalActionSub(a){
-    if(homeworkActivity(a)) return "marks homework checked";
+    if(homeworkActivity(a)) return "marks homework checked"+(a.pts?" · "+fmtDeltaBare(a.pts):"");
     if(attendanceActivity(a)) return "cycles their attendance";
     if(freezeActivity(a)) return "starts a "+fmtFreezeDuration(a.freezeSeconds)+" freeze";
     if(passActivity(a)) return "uses their weekly pass";
@@ -10681,6 +10685,59 @@ function setupRoster() {
    * cannot, and writing the stronger one would put words in his mouth.
    */
   function hwMirrorValue(checked){ return checked ? "full credit" : "unchecked"; }
+  /* Homework Checked may optionally also move points — the "Homework Checked"
+   * activity's own `pts` field, 0 by default and hidden in the editor for
+   * every other tracked activity (see renderActivities()). When a rebbi sets
+   * it, points are CONTINGENT ON TODAY'S CHECKED STATE, not on the scan: they
+   * land the moment a day's record first reads checked===true, and they come
+   * back off the moment that record no longer does — whether that flip comes
+   * from a scan, the Homework tab's own toggle, or a Gradebook correction to a
+   * past day, because all three funnel through setHw()/markHwCheckedToday()/
+   * clearHomework(), the only three places a day's record ever changes.
+   *
+   * This is deliberately NOT event-sourced (award N points per scan): a
+   * repeat scan of an already-checked folder must not double-award, and
+   * un-checking a mark days later must give the points back rather than
+   * leaving them stranded. State-sync gets both for free — `want` is
+   * recomputed from the record every time, compared against what was applied
+   * last time, and only the DIFFERENCE is ever written or reversed.
+   *
+   * `prevApplied` and `prevChecked` have to be passed in by the caller (read
+   * off the record that's about to be overwritten or deleted) rather than
+   * looked up here, because by the time this runs the old record is already
+   * gone. `prevChecked` becomes this write's own `tprev` — the same field
+   * undoTrackedLogEntry() already reads for a plain ti-homework row — so a ↩
+   * pressed directly on THIS row in History (not the immediate "Undo last
+   * scan") restores the exact prior state rather than always clearing the
+   * record, the same as any other tracked row's own undo button.
+   *
+   * A past-day correction (dk !== today) is deliberately NOT contest-tagged —
+   * same reason applyScore()'s opts.noContest exists: a fix to last Tuesday's
+   * mark has no business landing in whatever contest happens to be running
+   * today.
+   */
+  function syncHwPoints(sid, dk, checked, recId, prevApplied, prevChecked){
+    var a=data.activities.filter(homeworkActivity)[0];
+    var pts=(a && typeof a.pts==="number") ? a.pts : 0;
+    var want = pts!==0 && checked===true;
+    if(want===!!prevApplied) return want;
+    var s=studentById(sid);
+    if(!s) return want;
+    var delta = want ? pts : -pts;
+    var isToday = dk===todayKey();
+    var tag = isToday ? contestTagForScan() : {scoreToMain:true, contestId:null, contestOnly:false};
+    var mcId = isToday ? mcTagForScan() : null;
+    if(mcId){ mcAdd(sid, delta, mcId); tag.scoreToMain=false; }
+    if(tag.scoreToMain) data.scores[sid]=score(sid)+delta;
+    if(delta>0 && tag.scoreToMain) recordEarn(sid, "Homework Checked", delta);
+    addLogEntry({ts:Date.now(), sid:sid, label:"Homework Checked", delta:delta, kind:"tracked",
+      titem:"ti-homework", tval:(want?"full credit":"unchecked"), about:dk, src:recId,
+      tprev:(prevChecked===undefined||prevChecked===null)?undefined:String(prevChecked),
+      contestId:tag.contestId, contestOnly:tag.contestOnly, mcId:mcId||undefined});
+    if(data.autoSheet){ pushToSheet({type:"scan", ts:Date.now(), name:s.name, group:s.group||"", label:"Homework Checked", delta:delta, total:score(sid), id:newId()}); }
+    refreshStudentTiles(sid, tag.scoreToMain?delta:undefined);
+    return want;
+  }
   function setHw(sid, checked, dateKey){
     // dateKey (#227 slice 2): optional, so every existing caller — the tab's own
     // toggle button, the scan path — keeps writing hwDate exactly as before.
@@ -10709,6 +10766,7 @@ function setupRoster() {
     if(trackedValueIsNotable(hwMirrorValue(checked)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
       addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(checked), about:dk, src:day[sid].id, itemId:"ti-homework", prev:hwPrev?hwPrev.checked:undefined});
     }
+    day[sid].ptsApplied = syncHwPoints(sid, dk, checked, day[sid].id, hwPrev && hwPrev.ptsApplied, hwPrev?hwPrev.checked:undefined);
     save();
     var s=studentById(sid);
     if(data.autoSheet && s){ pushToSheet({type:"hw", ts:day[sid].ts, date:dk, name:s.name, group:s.group||"", checked:checked}); }
@@ -10723,6 +10781,7 @@ function setupRoster() {
     delete day[sid];
     unmirrorTracked("ti-homework", sid, function(m){ return m.src===recordId; });
     markTrackedLogUndoneBySrc(recordId);
+    syncHwPoints(sid, dk, false, recordId, rec.ptsApplied, rec.checked);
     save();
     if($("view-homework").classList.contains("active")){
       if(hwViewMode==="student") renderHwStudentView(); else renderHomework();
@@ -10739,7 +10798,12 @@ function setupRoster() {
     var today=todayKey();
     var day=hwDayRecord(today);
     var hwPrev=day[sid];
-    day[sid]={checked:true, ts:Date.now(), id:newId()};
+    // Same record id when the state doesn't actually change (already checked
+    // today) — only ts moves, so "last touched" still updates. A fresh id on
+    // every idempotent re-scan would silently strand any row that pointed
+    // back at the OLD id via `src` — including a syncHwPoints() points row's
+    // own ↩, which matches on this exact id in reverseTrackedWrite().
+    day[sid]={checked:true, ts:Date.now(), id:(hwPrev && hwPrev.checked===true && hwPrev.id) || newId()};
     mirrorTracked("ti-homework", sid, {value:hwMirrorValue(true), ts:day[sid].ts, date:today, src:day[sid].id});
     /* Only ever writes "full credit", so the left half can never fire — the
      * right half is the live one, catching a boy who was marked no/partial
@@ -10750,6 +10814,7 @@ function setupRoster() {
     if(trackedValueIsNotable(hwMirrorValue(true)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
       addTrackedLogEntry(sid, trackedLogLabel("ti-homework","Homework"), {ts:day[sid].ts, value:hwMirrorValue(true), about:today, src:day[sid].id, itemId:"ti-homework", prev:hwPrev?hwPrev.checked:undefined});
     }
+    day[sid].ptsApplied = syncHwPoints(sid, today, true, day[sid].id, hwPrev && hwPrev.ptsApplied, hwPrev?hwPrev.checked:undefined);
     save();
     var s=studentById(sid);
     if(data.autoSheet && s){ pushToSheet({type:"hw", ts:Date.now(), date:today, name:s.name, group:s.group||"", checked:true}); }
@@ -13510,10 +13575,14 @@ function setupRoster() {
     b.type="button";
     b.dataset.label=a.name; b.dataset.delta=a.pts;
     b.appendChild(el("span","an",a.name));
-    // Homework Checked earns no points, so it shows no value line at all — a
-    // "+0" would read as "scanning this gives nothing". Name only. Both .an and
-    // .av are display:block, so omitting .av just makes a shorter card.
-    if(!reroutedActivity(a)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
+    // A tracked activity earns no points by default, so it shows no value
+    // line at all — a "+0" would read as "scanning this gives nothing". Name
+    // only. Both .an and .av are display:block, so omitting .av just makes a
+    // shorter card. Homework Checked is the one exception once a rebbi gives
+    // it a real a.pts (syncHwPoints()) — hiding that would leave the one
+    // tracked activity that DOES move a score looking exactly like the ones
+    // that don't.
+    if(!reroutedActivity(a) || (homeworkActivity(a) && a.pts)) b.appendChild(el("span","av "+(a.pts<0?"neg":"pos"), fmtDelta(a.pts)));
     b.addEventListener("click", function(){ setArmed(a.name, a.pts, a); $("seatsScanInput").focus(); });
     return b;
   }
@@ -13869,8 +13938,18 @@ function setupRoster() {
       // hwDate, the date the Homework tab is showing.
       var dk=todayKey();
       var day=hwDayRecord(dk), prevRec=day[s.id];
+      var wasApplied = !!(prevRec && prevRec.ptsApplied);
       markHwCheckedToday(s.id);
-      flash(true, s.name, "HW Checked", "Homework marked checked (today)", "tracked");
+      // Only worth a mention the first time a day's mark actually earns the
+      // points — an idempotent re-scan of an already-checked folder is a
+      // no-op for points too (see syncHwPoints()), and a flash claiming "+2"
+      // on a scan that moved nothing would be exactly the kind of mismatch
+      // between what the toast says and what was written that 2d exists to
+      // rule out.
+      var hwAct=data.activities.filter(homeworkActivity)[0];
+      var hwPts=(hwAct && typeof hwAct.pts==="number") ? hwAct.pts : 0;
+      var justEarned = hwPts && !wasApplied;
+      flash(true, s.name, "HW Checked", "Homework marked checked (today)"+(justEarned?" · "+fmtDeltaBare(hwPts):""), "tracked");
       beep(true);
       // "checked" in the old boolean store IS "full credit" in the four-state
       // preset. Mirroring the preset's own vocabulary rather than `true` keeps
@@ -26838,9 +26917,31 @@ nameLine
         classBadge.title=a.groups.length ? "Only shown for: "+classBadgeText : "Shown for every class";
       }
       if(a.tracked){
-        var trkBadge=el("span",null, freezeActivity(a) ? ("❄️ Freeze — "+fmtFreezeDuration(a.freezeSeconds)) : "No points");
-        trkBadge.style.cssText="font-size:.72rem;font-weight:700;color:#6b4d18;background:var(--brass-soft);border-radius:999px;padding:2px 9px;white-space:nowrap";
-        row.appendChild(name); row.appendChild(trkBadge);
+        row.appendChild(name);
+        // Homework Checked is the one tracked activity that can also move
+        // points (syncHwPoints() — contingent on today's checked state, not
+        // the scan), so it gets a real stepper instead of the "No points"
+        // badge. Every other tracked activity stays locked at 0: each has
+        // its own correction/cycle semantics (attendance's status cycle,
+        // the pass's weekly reset) that a plain "add points on write" rule
+        // doesn't yet account for.
+        if(homeworkActivity(a)){
+          var hstp=el("span","stepper");
+          var hminus=el("button",null,"–");
+          var hpts=el("input","field"); hpts.type="number"; hpts.step="1"; hpts.value=a.pts; hpts.style.width="68px"; hpts.style.textAlign="center";
+          var hplus=el("button",null,"+");
+          function setHwPts(v){ a.pts=v; hpts.value=v; save(); renderActButtons(); refreshArmed(a); }
+          hminus.addEventListener("click", function(){ setHwPts((parseInt(hpts.value,10)||0)-1); });
+          hplus.addEventListener("click", function(){ setHwPts((parseInt(hpts.value,10)||0)+1); });
+          hpts.addEventListener("change", function(){ setHwPts(parseInt(hpts.value,10)||0); });
+          hstp.appendChild(hminus); hstp.appendChild(hpts); hstp.appendChild(hplus);
+          var hLbl=el("span",null,(isShulchani()?"prutot":"pts")+" if checked"); hLbl.style.color="var(--muted)"; hLbl.style.fontSize=".85rem";
+          row.appendChild(hstp); row.appendChild(hLbl);
+        } else {
+          var trkBadge=el("span",null, freezeActivity(a) ? ("❄️ Freeze — "+fmtFreezeDuration(a.freezeSeconds)) : "No points");
+          trkBadge.style.cssText="font-size:.72rem;font-weight:700;color:#6b4d18;background:var(--brass-soft);border-radius:999px;padding:2px 9px;white-space:nowrap";
+          row.appendChild(trkBadge);
+        }
         if(classBadge) row.appendChild(classBadge);
         // Homework, Attendance and Bathroom Pass are hideable, never deletable
         // — see coreTrackedActivity(). The "Show" checkbox at the head of this
