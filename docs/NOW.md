@@ -344,6 +344,18 @@ Roughly in the order of what they unblock. Nothing here is a task Claude can tak
    for the current list). Stop-and-ask by policy. The seating-tables lines
    this item used to name are resolved — committed, rebased, and merged as
    #364.
+5. **A look at the seating-chart insert/delete row-column prototype.**
+   Interactive spike, not built into `app.html` — no PR, no PROPOSE-FIRST
+   ask yet, just explored to see whether the interaction feels right (per
+   "Spike before you plan"). Hover a gap between seats and a **+** fades in
+   to insert a new row/column right there, thin until a seat lands in it and
+   eases open once it does; hovering the strip at a row's left edge or a
+   column's top edge reveals a **−** that removes it. Published as a Claude
+   Artifact (private to Ben's account, not in the repo):
+   https://claude.ai/code/artifact/8617a45f-3766-44c8-a917-18cc2fc65935 —
+   needs a look before this becomes an actual design doc or PR. One open
+   question the prototype ducks: it removes an occupied row/column instantly,
+   with no warning that students get unseated.
 
 ✅ **Cleared 2026-08-21 — Ben told the rebbeim on old offline copies to
 re-download** (#244). That was the one item on this page with real classroom
