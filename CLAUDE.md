@@ -433,6 +433,32 @@ design docs sat stale for days. **Everything owed above rung 1 goes in
 `docs/NOW.md` → "Merged, not done."** It is not "next" — it is *owed*, and the
 two must not share a list.
 
+### Cutting a release is part of the tail, and it now tells you
+
+`scripts/release-drift.js` runs on `SessionStart` and **says nothing at all
+until a release is actually due** — then one block naming how far behind the
+number is and what to run. Silence is the design: a warning that prints every
+session is wallpaper within a week, and worse than none, because you would
+believe you were being told.
+
+Two thresholds, whichever comes first, because two different things go wrong
+in two different seasons: **30 merges** (the burst guard — a school holiday
+did 48 merges in two days, and time says nothing then) or **7 days** (the
+quiet guard — in term time the count would never trip, and this is what would
+have caught the month-long 0.9.0 gap about four days in). Both are constants
+at the top of the file; raise `MERGES` if a heavy stretch starts to nag.
+
+It **only reports.** It never bumps anything — `bump-version.js` stays a
+thing a person runs, because CI must never hold write access to `main`, and
+because only a person knows whether a change is a patch or a minor to a rebbi.
+
+**Why it matters at all, given `sw.js` serves HTML network-first:** an *online*
+rebbi already has every merge the moment it deploys, so this is not about
+getting changes to anyone. It is about the two things the number really drives
+— the **"Check for updates"** card, which otherwise tells a rebbi he is current
+when he is not, and **`CACHE_VERSION`**, which is what clears a stale *offline*
+copy. Neither is urgent; both are quietly wrong until a release is cut.
+
 ### Every third UI PR is a subtraction
 
 Features only ever add surface. Menus fill, dashboards fill, and nothing in the
