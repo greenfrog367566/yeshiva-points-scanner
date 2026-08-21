@@ -20,25 +20,25 @@ spec, not here.
 
 ## Doing now
 
-⚠️ **Open PRs — 6, one OVER the cap of 5** (`CLAUDE.md` → "Finishing work").
-All drafts. **Merge or close one before opening anything new** — and note the
-three that touch `app.html` (#358, #360, #364) conflict with each other by
-construction, so the order they land in matters.
+**Open PRs — 2 of 5** (`CLAUDE.md` → "Finishing work"). Well under the cap —
+#358/#359/#360/#362/#363/#364, everything the 2026-08-20 table listed, has
+since merged.
 
 | PR | What | Owed before ready |
 |---|---|---|
-| #358 | Chavrusa: Entire Group / Group Entity point-target modes + Resolve | browser pass |
-| #359 | Tie `sw.js` `CACHE_VERSION` to the release number, gate it in CI | review |
-| #360 | Seating chart: move "Close full screen" next to Setup & arrange | unblock CI |
-| #362 | Fix stale #122 references for the Homework four-state work | review |
-| #363 | This: the WIP audit, the cap, the ship-tail | review of the rules |
-| #364 | Seating tables (recovered + rebased 93 commits) | browser pass on the feature |
+| #370 | Photo crop wizard, Choose photo button, bigger avatars | review |
+| #371 | Release-drift check that stays quiet until a release is due | review |
 
-**Phase 8 (Chavrusa Mode) is the active build.** Slice 1 (manual/automatic
-group-building, Past Chavrusas, Individual point mode) has merged; #358 is the
-point-target modes. Still to come as separate slices: the rule editor and the
-Dashboard visual integration (confirmed *not* blocked by the rest of Phase 3 —
-see `Menchmark_Phased_Build_Plan.md`).
+**Phase 8 (Chavrusa Mode) is the active build.** Slices 1 and 2 have both
+merged: manual/automatic group-building, Past Chavrusas, and Individual point
+mode (slice 1); Entire Group / Group Entity point-target modes + Resolve
+(slice 2, #358, merged 2026-08-21). **Two slices left, in build order agreed
+2026-08-20: Dashboard visual integration next** (grouping in List + Class
+view, scan-bar target indicator, multi-tile flash, unresolved-points strip —
+confirmed *not* blocked by the rest of Phase 3), **then the rule editor last**
+(planned as a full tag-based system — freeform per-student tags + rules
+referencing them, not just a never-pair blocklist). See
+`Menchmark_Phased_Build_Plan.md` → Phase 8 for the full status line.
 
 **The Firebase/Firestore rebuild is built and deployed.** All 8 build-order
 steps merged (PRs #290, #292, #300, #303, #309) and `firebase deploy` is live
@@ -100,31 +100,26 @@ including the live-project setup and the console-only gaps that cost a day.
 
 ## Unfinished, and nothing was tracking it
 
-Found by the 2026-08-20 worktree audit. **These are not stale — they are
-built work that never landed**, invisible to every list until now. Verify each
-with the `branch-merge-audit` skill before concluding either way.
+Originally found by the 2026-08-20 worktree audit; re-run 2026-08-21 —
+**seating tables (#364) and `feat/board-fab`/`fix/seats-fullscreen-topbar`
+have since landed** (as #364, #331, and #351 respectively) and are off this
+list. What the re-run still shows, plus two new ones the same audit surfaced.
+Verify each with the `branch-merge-audit` skill before concluding either way.
 
-- ✅ **Seating tables — RECOVERED, REBASED AND PROPOSED 2026-08-20, now PR #364.**
-  It was 749 uncommitted lines with no commit, no branch and no remote copy —
-  one `rm` from gone, since its proposal PR #337 had already merged. Recovered
-  as `8159f8f` on `docs/seating-tables-proposal` (left there as a recovery
-  point), then rebased 93 commits onto `main` as `feat/seating-tables`.
-  Harness re-run in a browser on the rebased tree: **371 passed, 0 failed**,
-  all 9 `tables→` tests green. **One judgment call to confirm by eye:**
-  multi-band print landed on `main` after this feature was written, so neither
-  side of the `app.html` conflict spoke to it — the tables toolbar is gated to
-  one per sheet rather than one per band. **Still owed: a real browser pass on
-  the feature's interaction**, which is why it is still a draft.
-- **`feat/board-fab`** — removes the redundant "Close board" pill on a solo
-  box. `main` still shows it twice.
-- **`fix/seats-fullscreen-topbar`** — shrink-to-fit grid so full-screen seating
-  rows are not cut off. Not on `main`.
 - **`fix/theory-audit-batch-1`** — removes Backup's "Send standings now"
   button. Still on `main`. **This is a tab-audit item counted as closed.**
-- **`steinerman/chazaroom`** — 4 commits of Chazaroom PTZ work, including "the
-  PTZ tick now tells the truth, continuously." This is what #240 actually
-  contains.
-- **81 of 92 worktrees are dead** and safe to clear (landed, unlocked, clean).
+- **`steinerman/hadroom-camera-test`** (same worktree as the old
+  `steinerman/chazaroom` entry, branch renamed since) — 4 commits of Chazaroom
+  PTZ work, including "the PTZ tick now tells the truth, continuously." This is
+  what #240 actually contains.
+- **`feat/shelves-toggle`** — 1 commit pushed *after* PR #354 merged: 3 fixes
+  from a code review (a stale-hint bug, a dropdown that didn't close, an
+  un-truncated name) that never made it in.
+- **`fix/backup-label-mismatch-live`** — 1 commit, PR #329 closed unmerged.
+  Finishes the "Backup & Sheets" → "Backup & Restore" rename in the places
+  PR #301 missed (toast/status text, the embedded user guide, setup.html).
+- **10 of 18 worktrees are dead** and safe to clear (landed, unlocked, clean) —
+  down sharply from 81-of-92, so the 2026-08-20 cleanup mostly happened.
   Removal is a stop-and-ask action — `node scripts/wip-audit.js --stale` prints
   the list and the commands; it never runs them.
 
@@ -184,8 +179,10 @@ Roughly in the order of what they unblock. Nothing here is a task Claude can tak
    including Ben's own school. `privacy@menchmark.app` is live and tested.
 3. **A yes on the offline resync proposal** before the dedup-fix PR is built.
 4. **Q3: what a school signs.** Gates onboarding school #2; blocks no code.
-5. **Commit or discard the 749 uncommitted seating-tables lines**, and a yes on
-   clearing the 81 dead worktrees. Both are stop-and-ask by policy.
+5. **A yes on clearing the 10 dead worktrees** (`node scripts/wip-audit.js
+   --stale` for the list). Stop-and-ask by policy. The seating-tables lines
+   this item used to name are resolved — committed, rebased, and merged as
+   #364.
 
 ✅ **Cleared 2026-08-12 — six decisions taken, don't re-ask.** The rule-3 /
 Firebase SDK call (vendored, same-origin, tier 1 only), deterministic write
