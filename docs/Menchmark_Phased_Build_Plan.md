@@ -16,7 +16,7 @@
 > the first-run tab-visibility seed — the part of Phase 1's Lean-mode revert
 > left unsolved).
 
-> **Status stamps verified against the code on 2026-08-04.** Before that sweep this plan had no status at all and the Firebase doc's version of it was wrong in four places. If you are reading a stamp much later than that date, re-verify rather than trust it.
+> **Status stamps verified against the code on 2026-08-04, and Phases 2, 4 and 7 re-verified 2026-08-21.** Before the first sweep this plan had no status at all and the Firebase doc's version of it was wrong in four places. If you are reading a stamp much later than its own date, re-verify rather than trust it — the 2026-08-21 pass found Phase 4 still reading "NOT STARTED" more than two weeks after one of its three items shipped, and Phase 7c still naming an external blocker that had been lifted six days earlier. **A stamp goes stale in days at this repo's merge rate, not months.**
 
 ---
 
@@ -66,7 +66,7 @@ The lowest-risk high-visibility change: move existing tabs into the new 5-group 
 
 ## Phase 2 — The Gradebook engine + Tracked Items *(the keystone — everything academic depends on it)*
 
-> **Status (2026-08-18):** 2a SHIPPED (#107) · 2b SHIPPED (#115) · 2c **PARTIAL** — data done (attendance converted #138; tracker and passes answered by #219; homework resets); Gradebook write path now shipped for 2 of 4 tabs — Attendance (#248, slice 1) and Homework (PR #285, slice 2); Pass and Tracker remain read-only, tracked under #227 · 2d **SHIPPED in two parts** — the armed-item scan mechanic (#208) and the tile badges (this PR). Contest is un-hidden again (#210). **The Gradebook is UN-HIDDEN (#185)** — 2d plus the mirror-gap fix cleared both reasons it was hidden, and Phase 2 is now complete end to end. 2d has now cleared the Firebase rebuild's step 1 of its one blocking input, the count value shape.
+> **Status (2026-08-21):** 2a SHIPPED (#107) · 2b SHIPPED (#115) · 2c **PARTIAL** — data done (attendance converted #138; tracker and passes answered by #219; homework resets); Gradebook write path now shipped for **all 4 tabs** — Attendance (#248), Homework (#285), Tracker (#339) and Pass (#341, today-only because `data.passCount` keeps no per-day history). `gbCanEdit()` is the single gate. **#227's write side is complete; only the tab removals remain** · 2d **SHIPPED in two parts** — the armed-item scan mechanic (#208) and the tile badges (this PR). Contest is un-hidden again (#210). **The Gradebook is UN-HIDDEN (#185)** — 2d plus the mirror-gap fix cleared both reasons it was hidden, and Phase 2 is now complete end to end. 2d has now cleared the Firebase rebuild's step 1 of its one blocking input, the count value shape.
 
 The biggest single lift, and the one the most other things wait on. Built in testable sub-slices:
 
@@ -119,7 +119,7 @@ Now that tabs are reorganized and the armed-item mechanic exists (2d), refine th
 
 ## Phase 4 — Rewards consolidation + Shulchani Coin tools *(mostly independent)*
 
-> **Status (2026-08-04):** NOT STARTED — 0 of 3. Prize Ledger, the Auction audit-log fix and Coin Deposit/Withdraw are all absent from `app.html`. The **Shulchani coin engine** is done, but that predates this phase and is not one of its items; the Firebase doc previously read the engine's completion as Phase 4 being done. Prize Ledger carries transaction-integrity data — decide its Firestore shape during the rebuild's step 1 rather than bolting it on after.
+> **Status (2026-08-21):** 1 of 3, with the second well advanced. **Coin Deposit/Withdraw SHIPPED** — live in `app.html`, its own modal plus a recent-transactions board; this stamp read "absent" for over two weeks after it landed. The **Raffle/Auction/Store polish** item has moved a long way too: scannable prize codes (#336), Class Points with its own QR card and class prizes (#340), a Prizes print page and student prize cards (#350), and a Prize Store setup step (#345). **Still absent: Prize Ledger and the Auction audit-log fix** — both return zero references. The **Shulchani coin engine** is done, but that predates this phase and is not one of its items; the Firebase doc previously read the engine's completion as Phase 4 being done. Prize Ledger carries transaction-integrity data — decide its Firestore shape during the rebuild's step 1 rather than bolting it on after.
 
 - Prize Ledger (unify Store/Auction/Raffle wins; the Auction audit-log fix).
 - Raffle/Auction/Store UI polish.
@@ -165,7 +165,7 @@ Now that tabs are reorganized and the armed-item mechanic exists (2d), refine th
 
 ## Phase 7 — Print Wizard + No-Computer workflow *(depends on Phase 1 print reorg + Phase 4 coins)*
 
-> **Status (2026-08-04):** 7a **NOT BUILT** — no guided print entry point exists; what shipped instead is a de-facto one, the renamed "Seating chart & print" tab plus a setup wizard that ends at the class sheet. 7b **SHIPPED** for denomination coin cards and the printable Coin Guide (#197 / #201 / #203), but **per-student coin codes were never built**. 7c **SHIPPED**, reference-only, no Tera barcodes reproduced. 7d **NOT STARTED but UNBLOCKED** — the scanner timestamp format is confirmed. **Secretary Mode is now folded into the Firebase rebuild** (locked 2026-08-04): it is the app's first multi-user feature, so it waits for real accounts rather than being built twice. Offline Mode and the Batch Import parser stay independent and are free to build now.
+> **Status (2026-08-04):** 7a **NOT BUILT** — no guided print entry point exists; what shipped instead is a de-facto one, the renamed "Seating chart & print" tab plus a setup wizard that ends at the class sheet. 7b **SHIPPED** for denomination coin cards and the printable Coin Guide (#197 / #201 / #203), but **per-student coin codes were never built**. 7c **SHIPPED, and no longer reference-only** — Tera gave written permission on 2026-08-15 (see `CLAUDE.md` rule 7), and nine cropped images from Tera's own manual now ship in the Help modal's Scanner Setup tab, sourced from `docs/tera-scanner-codes/`. The external blocker this line was written around is gone. 7d **NOT STARTED but UNBLOCKED** — the scanner timestamp format is confirmed. **Secretary Mode is now folded into the Firebase rebuild** (locked 2026-08-04): it is the app's first multi-user feature, so it waits for real accounts rather than being built twice. Offline Mode and the Batch Import parser stay independent and are free to build now.
 
 - **7a. Print Wizard shell** — one guided entry point; re-home the (already-relocated in Phase 1) print pages into it; class-list printable; big double-sided student card.
 - **7b. Shulchani coin cards** — color-matched coin QR backgrounds (uses existing `COINS` colors), per-student coin codes. *Depends on Phase 4's Shulchani work being settled.*

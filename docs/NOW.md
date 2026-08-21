@@ -136,6 +136,35 @@ either way.
   content that reached `main` by another route — a limit the `wip` skill flags
   itself. Safe to delete whenever the branch list gets swept; it is here only
   so nobody re-derives this a third time.
+- **`worktree-feat+print-footer-same-grid` — the biggest thing on this list, and
+  it was hiding behind a correctly-closed PR.** The branch holds two commits.
+  The first is PR #179, which Ben closed with "included in #181" — that content
+  landed and nothing is owed for it. The second, **`718565f`, was never
+  proposed at all**: the **⚙ Customize** grid wizard on the seating-chart
+  toolbar — per-section 1/2/3 widths, codes draggable between sections, a
+  🗑 Removed bin, writing the one shared arrangement so the chart and the
+  printed sheet agree. 180 lines, a finished CHANGELOG entry in the house
+  voice, and two additive fields backfilled in `load2fix()`
+  (`data.actFooterSectionCols`, `data.actFooterCustomizing`, no
+  `DATA_VERSION` bump). Verified absent from `main` 2026-08-21 — all four of
+  its identifiers return zero. **Re-landing it is PROPOSE FIRST**, not
+  execute-freely: it is a UI feature with new stored fields that has been
+  absent three weeks, and #344's layout customizer now covers adjacent ground.
+- **`docs/claude-md-trim`** — 453 insertions across `CLAUDE.md` plus two new
+  skills (`verify-deploy`, `worktree-audit`). **No PR was ever opened.** Both
+  skill directories are absent from `main`. Worth redoing rather than
+  restoring — see the replay hazard below — and check first whether
+  `worktree-audit` is now redundant against `scripts/wip-audit.js`, which did
+  not exist when the branch was written.
+
+**⚠️ Do not rebase or cherry-pick anything in this lane.** Measured
+2026-08-21: these branches are **398 to 735 commits behind `main`**, on an
+`app.html` that has grown by roughly 14,000 lines since the oldest was cut.
+Read each commit's diff as a *specification* and reimplement against current
+code. The `docs/claude-md-trim` case is the sharp one — it trims `CLAUDE.md`
+as it stood on 2026-08-03, so **replaying that patch would delete the entire
+WIP-cap and ship-ladder section added on 2026-08-20.**
+
 - **10 of 18 worktrees are dead** and safe to clear (landed, unlocked, clean) —
   down sharply from 81-of-92, so the 2026-08-20 cleanup mostly happened.
   Removal is a stop-and-ask action — `node scripts/wip-audit.js --stale` prints
