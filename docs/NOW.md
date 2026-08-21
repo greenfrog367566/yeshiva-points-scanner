@@ -20,27 +20,35 @@ spec, not here.
 
 ## Doing now
 
-**Open PRs — 4 of 5** (`CLAUDE.md` → "Finishing work"). #370 and #371 (both
-listed here 2026-08-20) have since merged — checked 2026-08-21, **none of the
-current 4 are actually mergeable yet**, each is waiting on something only Ben
-can supply:
+**Open PRs — 3 of 5** (`CLAUDE.md` → "Finishing work"). #377 and #379 (both
+listed here earlier 2026-08-21) have since merged — checked 2026-08-21 evening:
 
 | PR | What | Owed before ready |
 |---|---|---|
-| #377 | Chavrusa Dashboard integration (Phase 8 slice 3): target-confirmation toast, shared-color group rings, unresolved-points strip, tables-flash fix, "From tables" button | **Closest to done.** CI green, zero merge conflicts, browser-verified end to end per its own checklist, no data-model change. Body says: "Owed before ready: your review/click-through." |
+| #373 | Erase a class off a borrowed computer, restore it back from this computer | **Draft, CI green, MERGEABLE.** Rebased onto `main` four times in one session as other PRs landed underneath it — nothing stacked, `main` was just busy. Scope was deliberately narrowed mid-session: Ben found (by testing it himself) that the pre-erase backup could get silently overwritten by the app's own automatic writes, so the fix is a **locked snapshot** (`menchmark-saved-…`) that nothing in Menchmark ever rewrites — but only for the **folder** path, which Ben has now hardware-verified twice. A parallel **Drive**-side locked snapshot was written, found to be completely unexercised (no one has ever run it against a real account), and deliberately cut rather than shipped untested — erasing via Drive still writes the ordinary rolling backup for now. That follow-up is tracked below, not in this PR. Owed: Ben's review/click-through of the final shape. |
 | #378 | Homework Checked can optionally also move points | Not ready per its own checklist — untested against a live contest/mini-contest or Shulchani (prutot) mode running concurrently. Also amends CLAUDE.md's "tracked activities never award points" hard rule, which is PROPOSE-FIRST territory on its own. |
-| #379 | docs: propose the tier-1 Firestore write-sync design | No code change. **Design fully decided by Ben** (full parity, SDK client, build fully before step 8 except Prize Ledger) — nothing left open. Rebased onto main (was conflicting on NOW.md/CHANGELOG, resolved). Ready once CI runs on the merge commit. |
-| #373 | Erase a class off a borrowed computer, and restore it back from this computer | Draft, **conflicting with main** (touches app.html/CHANGELOG), needs a rebase. Its own body flags "Not verified": the real `showDirectoryPicker()` grant needs a user gesture and a real folder, only faked in-memory for the automated tests — one manual pass owed (pick a real backups folder, back up, erase as "Mine", restore). |
+| #383 | COM setup codes shortcut on the Settings scanner card | Not reviewed this session — check its own body/checklist before acting on it. |
 
-**Phase 8 (Chavrusa Mode) is the active build.** Slices 1 and 2 have both
-merged: manual/automatic group-building, Past Chavrusas, and Individual point
-mode (slice 1); Entire Group / Group Entity point-target modes + Resolve
-(slice 2, #358, merged 2026-08-21). **Slice 3 (Dashboard visual integration)
-is built and sitting in #377 above, not yet merged.** Once it lands, **the
-rule editor is the only piece left** (planned as a full tag-based system —
-freeform per-student tags + rules referencing them, not just a never-pair
-blocklist). See `Menchmark_Phased_Build_Plan.md` → Phase 8 for the full status
-line.
+**New, not yet started: a locked Drive snapshot for the erase feature (#373's
+one deferred piece).** Once #373 merges, open a fresh PR (never stack — see
+CLAUDE.md) adding a `driveWriteSnapshot()` that creates a new Drive file
+(never PATCHes) before an erase, mirroring the folder-side fix already
+shipped. **Must include a read-back** after the write — fetch the file back
+and confirm it parses with the expected student count — before the erase is
+allowed to proceed, the same verify-after-write discipline
+`writeClassAndVerify()` already uses server-side. This is what closes the gap:
+right now a rebbi with Drive connected and no backups folder has only the
+ordinary rolling Drive backup protecting an erase, not a locked one.
+
+**Phase 8 (Chavrusa Mode) is the active build.** Slices 1, 2, and now 3 have
+all merged: manual/automatic group-building, Past Chavrusas, and Individual
+point mode (slice 1); Entire Group / Group Entity point-target modes + Resolve
+(slice 2, #358); Dashboard visual integration — shared-color group rings,
+target-confirmation toast, unresolved-points strip, "From tables" button
+(slice 3, #377, merged 2026-08-21). **The rule editor is the only piece
+left** (planned as a full tag-based system — freeform per-student tags +
+rules referencing them, not just a never-pair blocklist). See
+`Menchmark_Phased_Build_Plan.md` → Phase 8 for the full status line.
 
 **The Firebase/Firestore rebuild is built and deployed.** All 8 build-order
 steps merged (PRs #290, #292, #300, #303, #309) and `firebase deploy` is live
