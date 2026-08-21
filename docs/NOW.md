@@ -20,28 +20,27 @@ spec, not here.
 
 ## Doing now
 
-**Open PRs — 3 of 5** (`CLAUDE.md` → "Finishing work"). Under the cap.
+**Open PRs — 4 of 5** (`CLAUDE.md` → "Finishing work"). #370 and #371 (both
+listed here 2026-08-20) have since merged — checked 2026-08-21, **none of the
+current 4 are actually mergeable yet**, each is waiting on something only Ben
+can supply:
 
 | PR | What | Owed before ready |
 |---|---|---|
-| #370 | Photo crop wizard, Choose photo button, bigger avatars | review |
-| #371 | Release-drift check that stays quiet until a release is due | review |
-| #377 | Chavrusa Dashboard integration (Phase 8 slice 3) + tables-flash fix + From tables | Ben's click-through |
+| #377 | Chavrusa Dashboard integration (Phase 8 slice 3): target-confirmation toast, shared-color group rings, unresolved-points strip, tables-flash fix, "From tables" button | **Closest to done.** CI green, zero merge conflicts, browser-verified end to end per its own checklist, no data-model change. Body says: "Owed before ready: your review/click-through." |
+| #378 | Homework Checked can optionally also move points | Not ready per its own checklist — untested against a live contest/mini-contest or Shulchani (prutot) mode running concurrently. Also amends CLAUDE.md's "tracked activities never award points" hard rule, which is PROPOSE-FIRST territory on its own. |
+| #379 | docs: propose the tier-1 Firestore write-sync design | No code change — waiting on **Ben's decision** on 2 open questions (scope: roster+scores+tracked entries vs full `data.*` parity; SDK-vs-REST for the write calls). Conflicting with main (touches NOW.md/CHANGELOG, which moved under it) — needs a rebase once the decision is made. |
+| #373 | Erase a class off a borrowed computer, and restore it back from this computer | Draft, **conflicting with main** (touches app.html/CHANGELOG), needs a rebase. Its own body flags "Not verified": the real `showDirectoryPicker()` grant needs a user gesture and a real folder, only faked in-memory for the automated tests — one manual pass owed (pick a real backups folder, back up, erase as "Mine", restore). |
 
 **Phase 8 (Chavrusa Mode) is the active build.** Slices 1 and 2 have both
 merged: manual/automatic group-building, Past Chavrusas, and Individual point
 mode (slice 1); Entire Group / Group Entity point-target modes + Resolve
 (slice 2, #358, merged 2026-08-21). **Slice 3 (Dashboard visual integration)
-is open as PR #377** — target confirmation, grouped-tile rings in List +
-Class view (List mode also clusters into brackets), and a dismissible
-unresolved-pool strip, all gated on point-target mode not being Individual.
-Also in #377: a "🪑 From tables" quick group-builder, and a fix for an
-unrelated CSS-specificity bug where a scan's award flash never showed its
-color on a student seated at a seating-tables table. **The rule editor is the
-last slice left after #377 lands** (planned as a full tag-based system —
+is built and sitting in #377 above, not yet merged.** Once it lands, **the
+rule editor is the only piece left** (planned as a full tag-based system —
 freeform per-student tags + rules referencing them, not just a never-pair
-blocklist). See `Menchmark_Phased_Build_Plan.md` → Phase 8 for the full
-status line.
+blocklist). See `Menchmark_Phased_Build_Plan.md` → Phase 8 for the full status
+line.
 
 **The Firebase/Firestore rebuild is built and deployed.** All 8 build-order
 steps merged (PRs #290, #292, #300, #303, #309) and `firebase deploy` is live
@@ -100,10 +99,11 @@ including the live-project setup and the console-only gaps that cost a day.
 ## Unfinished, and nothing was tracking it
 
 Originally found by the 2026-08-20 worktree audit; re-run 2026-08-21 —
-**seating tables (#364) and `feat/board-fab`/`fix/seats-fullscreen-topbar`
-have since landed** (as #364, #331, and #351 respectively) and are off this
-list. What the re-run still shows, plus two new ones the same audit surfaced.
-Verify each with the `branch-merge-audit` skill before concluding either way.
+**seating tables (#364), `feat/board-fab`/`fix/seats-fullscreen-topbar`, and
+`feat/shelves-toggle`'s 3 stranded fixes have since landed** (as #364, #331,
+#351, and #376 respectively) and are off this list. What the re-run still
+shows. Verify each with the `branch-merge-audit` skill before concluding
+either way.
 
 - **`fix/theory-audit-batch-1`** — removes Backup's "Send standings now"
   button. Still on `main`. **This is a tab-audit item counted as closed.**
@@ -111,9 +111,6 @@ Verify each with the `branch-merge-audit` skill before concluding either way.
   `steinerman/chazaroom` entry, branch renamed since) — 4 commits of Chazaroom
   PTZ work, including "the PTZ tick now tells the truth, continuously." This is
   what #240 actually contains.
-- **`feat/shelves-toggle`** — 1 commit pushed *after* PR #354 merged: 3 fixes
-  from a code review (a stale-hint bug, a dropdown that didn't close, an
-  un-truncated name) that never made it in.
 - **`fix/backup-label-mismatch-live`** — 1 commit, PR #329 closed unmerged.
   Finishes the "Backup & Sheets" → "Backup & Restore" rename in the places
   PR #301 missed (toast/status text, the embedded user guide, setup.html).
