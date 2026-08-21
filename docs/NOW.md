@@ -20,25 +20,31 @@ spec, not here.
 
 ## Doing now
 
-**Open PRs — 3 of 5** (`CLAUDE.md` → "Finishing work"). #377 and #379 (both
-listed here earlier 2026-08-21) have since merged — checked 2026-08-21 evening:
+**Open PRs — 2 of 5** (`CLAUDE.md` → "Finishing work"). #373, #377 and #379
+(all listed here earlier 2026-08-21) have since merged — checked 2026-08-21
+evening:
 
 | PR | What | Owed before ready |
 |---|---|---|
-| #373 | Erase a class off a borrowed computer, restore it back from this computer | **Draft, CI green, MERGEABLE.** Rebased onto `main` four times in one session as other PRs landed underneath it — nothing stacked, `main` was just busy. Scope was deliberately narrowed mid-session: Ben found (by testing it himself) that the pre-erase backup could get silently overwritten by the app's own automatic writes, so the fix is a **locked snapshot** (`menchmark-saved-…`) that nothing in Menchmark ever rewrites — but only for the **folder** path, which Ben has now hardware-verified twice. A parallel **Drive**-side locked snapshot was written, found to be completely unexercised (no one has ever run it against a real account), and deliberately cut rather than shipped untested — erasing via Drive still writes the ordinary rolling backup for now. That follow-up is tracked below, not in this PR. Owed: Ben's review/click-through of the final shape. |
 | #378 | Homework Checked can optionally also move points | Not ready per its own checklist — untested against a live contest/mini-contest or Shulchani (prutot) mode running concurrently. Also amends CLAUDE.md's "tracked activities never award points" hard rule, which is PROPOSE-FIRST territory on its own. |
 | #383 | COM setup codes shortcut on the Settings scanner card | Not reviewed this session — check its own body/checklist before acting on it. |
 
-**New, not yet started: a locked Drive snapshot for the erase feature (#373's
-one deferred piece).** Once #373 merges, open a fresh PR (never stack — see
-CLAUDE.md) adding a `driveWriteSnapshot()` that creates a new Drive file
-(never PATCHes) before an erase, mirroring the folder-side fix already
-shipped. **Must include a read-back** after the write — fetch the file back
-and confirm it parses with the expected student count — before the erase is
-allowed to proceed, the same verify-after-write discipline
-`writeClassAndVerify()` already uses server-side. This is what closes the gap:
-right now a rebbi with Drive connected and no backups folder has only the
-ordinary rolling Drive backup protecting an erase, not a locked one.
+**Ready to start now that #373 merged: a locked Drive snapshot for the erase
+feature (#373's one deferred piece).** #373 shipped the erase-and-restore
+feature with a **locked snapshot** (`menchmark-saved-…`, never rewritten
+again) for the **folder** backup path — the safety property Ben found was
+missing by testing it himself, and has now hardware-verified twice. Erasing
+via **Google Drive** still writes the ordinary rolling backup, because a
+parallel `driveWriteSnapshot()` was written and found to be completely
+unexercised — no one has ever run it against a real account — and was cut
+rather than shipped untested. Open a **fresh** PR against `main` (never stack)
+adding it back: create a new Drive file (never PATCH) before an erase, **plus
+a read-back** — fetch the file after writing and confirm it parses with the
+expected student count — before the erase is allowed to proceed, the same
+verify-after-write discipline `writeClassAndVerify()` already uses
+server-side. Until this lands, a rebbi with Drive connected and no backups
+folder has only the ordinary rolling Drive backup protecting an erase, not a
+locked one.
 
 **Phase 8 (Chavrusa Mode) is the active build.** Slices 1, 2, and now 3 have
 all merged: manual/automatic group-building, Past Chavrusas, and Individual
@@ -67,6 +73,16 @@ including the live-project setup and the console-only gaps that cost a day.
 **Shipped code that has not finished shipping.** A merge is rung 1 of 5 — see
 `CLAUDE.md` → "Merged is not done." Nothing here is *next*; all of it is
 **owed**, and mixing the two lists is what let these sit.
+
+- **#373 (erase a class off a borrowed computer, restore it back) — merged
+  2026-08-21T18:14:07Z, rung 2 done, rung 3 owed.** Verified live the same
+  session (`eraseThisComputerBtn` present on `menchmark.app/app.html`,
+  `this-computer-block` present on `setup.html` — checked ~3 minutes after
+  merge, `-L` and `--ssl-no-revoke`). **Never browser-tested against the real
+  deployed site** — every click-through this session was on localhost. Owed:
+  pick a real backups folder, back up, erase as "Mine," restore from this
+  computer, on `menchmark.app` itself. Doc restamp already done inline in the
+  PR (`Firebase_SignIn_UI_Design_Proposal.md` §4).
 
 - ✅ **Link the onboarding video — DONE.** Video A had shipped 2026-08-05 and
   was linked from nowhere, so as far as the cohort was concerned it had not
