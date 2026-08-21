@@ -18041,6 +18041,27 @@ function setupRoster() {
       colsIn.addEventListener("change", applyDims);
       setupRow.appendChild(dims);
 
+      // "Face size" — the −/+ that dial SEAT_ARRANGE_AVATAR_PX up and down
+      // while arranging (see seatArrangeAvatarScale() above). Only shown when
+      // arranging is actually drawing a photo: effSeatCardMode() forces one on
+      // for any QR-kind mode the instant arranging starts, but a chart set to
+      // "None" still shows no avatar at all, and a size dial for a picture
+      // nobody sees would just be a control that does nothing.
+      if(seatPrintWantsPhoto(effSeatCardMode())){
+        var faceSize=el("span","seat-size");
+        faceSize.title="How big each boy's photo draws on this chart while you're arranging seats.";
+        faceSize.appendChild(document.createTextNode("Face size"));
+        var faceSmaller=el("button","btn btn-sm","−"); faceSmaller.type="button";
+        faceSmaller.title="Smaller";
+        var faceVal=el("span","seat-size-val", Math.round(seatArrangeAvatarScale()*100)+"%");
+        var faceBigger=el("button","btn btn-sm","+"); faceBigger.type="button";
+        faceBigger.title="Bigger";
+        faceSmaller.addEventListener("click", function(){ seatArrangeNudgeAvatarScale(-1); });
+        faceBigger.addEventListener("click", function(){ seatArrangeNudgeAvatarScale(1); });
+        faceSize.appendChild(faceSmaller); faceSize.appendChild(faceVal); faceSize.appendChild(faceBigger);
+        setupRow.appendChild(faceSize);
+      }
+
       var printWrap=el("span","seat-print-shortcut");
       var printBtn=el("button","btn btn-sm","🖨 Print seating chart");
       var printOpts=el("span","seat-print-opts"); printOpts.style.display="none";
@@ -18213,6 +18234,33 @@ function setupRoster() {
     // for faces while you drag boys into seats.
     if(data.seatArranging && seatPrintCodeKind(data.seatCardMode)==="qr") return "photo";
     return data.seatCardMode;
+  }
+  /* How big a face draws on the LIVE chart while arranging (Setup & arrange's
+   * "Face size" −/+ buttons, below). Separate from seatPrintOpts.iconScale —
+   * that one is print's own setting and multiplies CSS caps that only exist
+   * on the printed sheet, never seen on screen; this one multiplies the
+   * SEAT_ARRANGE_AVATAR_PX constant fillSeatLiveCard() is handed while
+   * arranging. Same 0.5–1.5 range and step list as print's Code size, purely
+   * so the two controls feel like the same idiom — there's no other
+   * relationship between them. */
+  var SEAT_ARRANGE_AVATAR_PX=72;
+  function seatArrangeAvatarScale(){
+    var v=parseFloat(data.seatArrangeAvatarScale);
+    return (v>=0.5 && v<=1.5) ? v : 1;
+  }
+  function seatArrangeNudgeAvatarScale(dir){
+    var cur=seatArrangeAvatarScale(), i=0;
+    // NEAREST step, not indexOf — same reasoning as seatPrintNudgeIconScale:
+    // a value can arrive here from an older save without being one of the
+    // steps, and indexOf's -1 would silently drop it to the smallest size.
+    SEAT_ICON_STEPS.forEach(function(v,n){
+      if(Math.abs(v-cur) < Math.abs(SEAT_ICON_STEPS[i]-cur)) i=n;
+    });
+    i+=dir;
+    if(i<0) i=0;
+    if(i>SEAT_ICON_STEPS.length-1) i=SEAT_ICON_STEPS.length-1;
+    data.seatArrangeAvatarScale=SEAT_ICON_STEPS[i];
+    save(); renderTapPanel();
   }
 
   /* ONE LIVE CARD — the screen's answer to fillSeatPrintCard(), shared by the
@@ -18581,8 +18629,11 @@ function setupRoster() {
          * shared-cell size left arranging stuck at 34px even though a photo is
          * now the ONLY way you are telling boys apart while dragging them —
          * exactly backwards, and exactly what a rebbi flagged as still too
-         * small after the first pass at this. */
-        fillSeatLiveCard(seat, s, cardMode, showPts, arranging ? 72 : (scanMode ? 56 : 34));
+         * small after the first pass at this. Also the one size a rebbi can
+         * dial himself — see the "Face size" −/+ buttons in Setup & arrange —
+         * because 72px still wasn't the right call for every screen and every
+         * boy's photo. */
+        fillSeatLiveCard(seat, s, cardMode, showPts, arranging ? Math.round(SEAT_ARRANGE_AVATAR_PX*seatArrangeAvatarScale()) : (scanMode ? 56 : 34));
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
@@ -31520,6 +31571,13 @@ nameLine
     if(typeof data.seatActivitiesMode!=="boolean") data.seatActivitiesMode=false;
     if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
     if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
+    // How big a face draws on the LIVE chart while arranging — independent of
+    // seatPrintOpts.iconScale, which is print's own setting and never seen on
+    // screen. Same 0.5–1.5 guard for the same reason: a value can arrive here
+    // from a restored backup without ever having passed through the nudge
+    // function's clamp.
+    var seatArrangeScale=parseFloat(data.seatArrangeAvatarScale);
+    if(!(seatArrangeScale>=0.5 && seatArrangeScale<=1.5)) data.seatArrangeAvatarScale=1;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
     if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
     /* USB vendor/product ids of the serial scanner last connected, so
