@@ -60,12 +60,13 @@ including the live-project setup and the console-only gaps that cost a day.
 `CLAUDE.md` → "Merged is not done." Nothing here is *next*; all of it is
 **owed**, and mixing the two lists is what let these sit.
 
-- **Link the onboarding video.** Video A shipped 2026-08-05 and is linked from
-  nowhere — not `quick-start.html`, not `index.html`, not the app. A rebbi
-  cannot find it, so as far as the cohort is concerned it did not ship.
-- **`docs/user-guide.md` still says "Backup & Sheets" in 6 places** (lines 229,
-  679, 685, 700, 712, 739 — including two image captions). The in-app rename is
-  complete; the guide still names a tab that no longer exists.
+- ✅ **Link the onboarding video — DONE.** Video A had shipped 2026-08-05 and
+  was linked from nowhere, so as far as the cohort was concerned it had not
+  shipped at all. It now plays **in a viewer on `quick-start.html`** (Drive's
+  `/preview` in a modal, loaded only when opened and stopped on close) and is
+  linked from `index.html` under the four setup steps. **Still not in the app
+  itself** — that is `app.html`, and adding it there would collide with the
+  open PRs that touch it; worth a small follow-up when that file is quiet.
 - **Managed-Chromebook verification runs** for build step 0c (folder backup,
   #249) and step 7 (fragile-storage warning). Cannot be simulated — Ben's own
   hardware. **Step 7 must not reach beta rebbeim until this passes.**
@@ -93,6 +94,20 @@ including the live-project setup and the console-only gaps that cost a day.
   **Migrating the real beta cohort (step 8) before this exists moves their
   accounts, not their safety** — real auth and security rules, but their
   actual class data is exactly as fragile as it is today.
+  **Design decided 2026-08-21 by Ben:**
+  `docs/Firebase_TierOne_WriteSync_Design_Proposal.md`. Checked with the two
+  other sessions in this repo first — neither was working on it, no
+  duplicate effort. Full parity (every class-data field Drive backup
+  carries, not just roster + scores + tracked entries), writing through the
+  vendored Firestore SDK client (inherits offline queue/retry for free)
+  instead of hand-rolled REST, and build the complete design before step 8
+  — no staged MVP. Full parity adds three new `state/*` docs (seating,
+  raffle, settings) beyond the original four collections, first-draft only
+  and flagged for review before building, plus a `firestore.rules` change
+  the narrow scope wouldn't have needed. **Prize Ledger sync is the one
+  named exception — joins once Phase 4 (0-of-3, unbuilt) ships on its own
+  schedule, not a blocker for step 8.** Nothing left open. Not yet
+  built — this is design only.
 
 ---
 
@@ -112,8 +127,15 @@ either way.
   PTZ work, including "the PTZ tick now tells the truth, continuously." This is
   what #240 actually contains.
 - **`fix/backup-label-mismatch-live`** — 1 commit, PR #329 closed unmerged.
-  Finishes the "Backup & Sheets" → "Backup & Restore" rename in the places
-  PR #301 missed (toast/status text, the embedded user guide, setup.html).
+  **Content-dead: nothing is owed here.** Verified 2026-08-21 by grepping
+  `main` — `app.html` and `setup.html` both contain **zero** occurrences of
+  "Backup & Sheets", so the rename this branch would have done (toast/status
+  text, the embedded user guide, `setup.html`) already landed via the
+  Backup & Restore redesign, PR #325. The branch shows up in this lane because
+  `wip-audit.js` compares commit *dates* against the merge, which cannot see
+  content that reached `main` by another route — a limit the `wip` skill flags
+  itself. Safe to delete whenever the branch list gets swept; it is here only
+  so nobody re-derives this a third time.
 - **10 of 18 worktrees are dead** and safe to clear (landed, unlocked, clean) —
   down sharply from 81-of-92, so the 2026-08-20 cleanup mostly happened.
   Removal is a stop-and-ask action — `node scripts/wip-audit.js --stale` prints
