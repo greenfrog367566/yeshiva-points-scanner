@@ -358,12 +358,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .shelf .hsb-dropdown{position:static;border:none;box-shadow:none;padding:0;max-height:none;min-width:0;background:transparent}
   .shelf .seats-hist-row{font-size:.82rem;padding:7px 6px}
   .shelf .seats-hist-row .btn{flex:0 0 auto}
-  /* A shelf is narrower than the Dashboard column this board was drawn for, so
-     a long name plus its class tag wraps onto two lines and the rows lose their
-     rhythm. Ellipsize instead — the full name is on the Leader Board tab, one
-     press of "Open tab →" away. */
-  .shelf .mini-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-  .shelf .mini-row{gap:6px}
+  /* A shelf (or the shelves-off scan-bar dropdown that shows the same rows,
+     .bar-fallback) is narrower than the Dashboard column this board was drawn
+     for, so a long name plus its class tag wraps onto two lines and the rows
+     lose their rhythm. Ellipsize instead — the full name is on the Leader
+     Board tab, one press of "Open tab →" away. */
+  .shelf .mini-name,.bar-fallback .mini-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .shelf .mini-row,.bar-fallback .mini-row{gap:6px}
   /* A shelf lies OVER the page — it never reflows it. An earlier revision
      shifted `main` aside on wide screens so nothing was covered, but that
      moves every tile sideways the moment a shelf opens, which is exactly the
@@ -803,6 +804,19 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-live-pair{display:flex;align-items:center;justify-content:center;gap:6px;
     flex-wrap:wrap;width:100%}
   .seat-live-pair .avatar,.seat-live-pair .seat-qr{margin:0}
+  /* SHRINKS THE FACE TO FIT ITS CELL — the wrap above only decides whether the
+     photo and the QR share a row or fall onto their own; it does nothing once
+     an avatar's own requested px (see seatArrangeAvatarScale()) is wider than
+     the cell it landed in on its own line, and .seat's overflow:hidden then
+     crops a circle into a lens shape instead of shrinking it. Same fix the
+     printed sheet already uses for the identical problem (see the note above
+     .seat-print-photo): width is the REQUESTED size, max-width:100% clamps it
+     down to whatever room the cell actually has, and the avatar inside fills
+     whatever that resolves to. aspect-ratio:1 keeps it a circle at any size in
+     between — this is why height:auto is safe here despite avatarEl() setting
+     an explicit height inline; !important is what lets it win over that. */
+  .seat-avatar-wrap{max-width:100%}
+  .seat-avatar-wrap .avatar{width:100%!important;height:auto!important;aspect-ratio:1}
   /* A List tile is a plain block, not the seat's flex column, so the code and
      the face need their own centring there. */
   .tap-btn .seat-qr{margin:0 auto 5px}
@@ -1102,6 +1116,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .avatar.editable:hover{outline:2px solid var(--brass);outline-offset:2px}
   .avatar.dragover{outline:3px dashed var(--brass);outline-offset:2px}
   .avatar-x{position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:var(--bad);color:#fff;border:none;font-size:10px;line-height:16px;padding:0;cursor:pointer}
+  /* Crop wizard (openPhotoCropModal): the wrap is sized exactly to the
+     displayed image (no letterboxing), and the circle is a real element —
+     not a mask — so its own box is what the drag/resize listeners are on.
+     The 9999px shadow darkens everything outside it without needing a
+     second overlay element. */
+  .crop-wrap{position:relative;overflow:hidden;border-radius:8px;background:#111;touch-action:none}
+  .crop-wrap img{display:block;user-select:none;pointer-events:none}
+  .crop-circle{position:absolute;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 9999px rgba(0,0,0,.55);cursor:grab;touch-action:none}
+  .crop-circle:active{cursor:grabbing}
   .nav-vis-group{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
   .nav-vis-head{display:flex;align-items:center;gap:8px;font-weight:700;cursor:pointer}
   .nav-vis-subs{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0 0 24px}
@@ -6336,28 +6359,127 @@ function setupRoster() {
     return null;
   }
   function el(tag, cls, txt){ var e=document.createElement(tag); if(cls) e.className=cls; if(txt!=null) e.textContent=txt; return e; }
-  // Shrinks any uploaded/dropped photo down to a small JPEG data URL before it
-  // ever touches localStorage — keeps a whole roster of photos well under a
-  // few hundred KB total. External Photo URLs (e.g. from a Sheet) skip this
-  // and are stored as-is, since they're just a link, not image bytes.
-  function readImageResized(file, maxDim, quality, cb){
+  // Opens a small crop wizard over an uploaded/dropped photo: drag the circle
+  // onto the boy's face, use the slider to grow or shrink it, then bake the
+  // selection into a fixed-size JPEG data URL. Doing the crop here — instead
+  // of a blind center-crop — is what lets the face land inside the circle
+  // instead of wherever object-fit:cover happened to center it. cb(dataUrl)
+  // fires only on "Use this photo", never on Cancel, so a caller that only
+  // acts inside cb is safe either way. Output is square: every avatar is
+  // drawn as a circle over it via CSS (.avatar{border-radius:50%}), same as
+  // before. CROP_OUT (256, up from the old flat 128) is bigger than any
+  // on-screen avatar today so a later size bump doesn't need a re-upload.
+  var CROP_OUT = 256;
+  function openPhotoCropModal(file, cb){
+    if(!file || file.type.indexOf("image/")!==0) return;
     var reader=new FileReader();
     reader.onload=function(ev){
       var img=new Image();
-      img.onload=function(){
-        var w=img.width, h=img.height;
-        var scale=Math.min(1, maxDim/Math.max(w,h));
-        var cw=Math.max(1, Math.round(w*scale)), ch=Math.max(1, Math.round(h*scale));
-        var canvas=document.createElement("canvas");
-        canvas.width=cw; canvas.height=ch;
-        canvas.getContext("2d").drawImage(img,0,0,cw,ch);
-        try{ cb(canvas.toDataURL("image/jpeg", quality)); }catch(e){ cb(null); }
-      };
-      img.onerror=function(){ cb(null); };
+      img.onload=function(){ buildCropModal(img); };
       img.src=ev.target.result;
     };
-    reader.onerror=function(){ cb(null); };
     reader.readAsDataURL(file);
+
+    function buildCropModal(img){
+      var boxSize=Math.max(220, Math.min(360, (window.innerWidth||360)-80));
+      // ,1 at the end: never upscale a small photo past its own resolution
+      // just to fill the box — a stretched preview would lie about the crop.
+      var fitScale=Math.min(boxSize/img.naturalWidth, boxSize/img.naturalHeight, 1);
+      var dispW=Math.max(1,Math.round(img.naturalWidth*fitScale)), dispH=Math.max(1,Math.round(img.naturalHeight*fitScale));
+      var minD=Math.max(20, Math.round(Math.min(dispW,dispH)*0.25)), maxD=Math.min(dispW,dispH);
+      var circle={ d:maxD, x:(dispW-maxD)/2, y:(dispH-maxD)/2 };
+
+      var overlay=el("div","modal-overlay");
+      var card=el("div","modal-card"); card.style.maxWidth=(dispW+40)+"px";
+      var head=el("div","modal-head");
+      head.appendChild(el("div","modal-title","Crop photo"));
+      var closeBtn=el("button","modal-close","✕"); closeBtn.type="button"; closeBtn.title="Cancel";
+      head.appendChild(closeBtn);
+      card.appendChild(head);
+
+      var hint=el("div","pill-note"); hint.style.margin="0 0 10px";
+      hint.textContent="Drag the circle onto his face, and use the slider to make it bigger or smaller.";
+      card.appendChild(hint);
+
+      var wrapOuter=el("div"); wrapOuter.style.cssText="margin:0 auto;width:"+dispW+"px";
+      var wrap=el("div","crop-wrap"); wrap.style.width=dispW+"px"; wrap.style.height=dispH+"px";
+      var imgEl=el("img"); imgEl.src=img.src; imgEl.alt=""; imgEl.draggable=false;
+      imgEl.style.width=dispW+"px"; imgEl.style.height=dispH+"px";
+      wrap.appendChild(imgEl);
+      var circleEl=el("div","crop-circle");
+      wrap.appendChild(circleEl);
+      wrapOuter.appendChild(wrap);
+      card.appendChild(wrapOuter);
+
+      function clampXY(){
+        circle.x=Math.max(0, Math.min(dispW-circle.d, circle.x));
+        circle.y=Math.max(0, Math.min(dispH-circle.d, circle.y));
+      }
+      function paint(){
+        circleEl.style.width=circle.d+"px"; circleEl.style.height=circle.d+"px";
+        circleEl.style.left=circle.x+"px"; circleEl.style.top=circle.y+"px";
+      }
+      paint();
+
+      var dragging=null;
+      circleEl.addEventListener("pointerdown", function(e){
+        e.preventDefault();
+        dragging={ startX:e.clientX, startY:e.clientY, origX:circle.x, origY:circle.y };
+        try{ circleEl.setPointerCapture(e.pointerId); }catch(err){}
+      });
+      circleEl.addEventListener("pointermove", function(e){
+        if(!dragging) return;
+        circle.x=dragging.origX + (e.clientX-dragging.startX);
+        circle.y=dragging.origY + (e.clientY-dragging.startY);
+        clampXY(); paint();
+      });
+      function endDrag(){ dragging=null; }
+      circleEl.addEventListener("pointerup", endDrag);
+      circleEl.addEventListener("pointercancel", endDrag);
+
+      var sizeRow=el("div"); sizeRow.style.cssText="margin:12px 0 4px;display:flex;align-items:center;gap:8px";
+      var smallLbl=el("span",null,"Small"); smallLbl.style.cssText="font-size:.78rem;color:var(--muted)";
+      var bigLbl=el("span",null,"Large"); bigLbl.style.cssText="font-size:.78rem;color:var(--muted)";
+      var slider=el("input"); slider.type="range"; slider.min=String(minD); slider.max=String(maxD); slider.value=String(circle.d); slider.style.flex="1";
+      sizeRow.appendChild(smallLbl); sizeRow.appendChild(slider); sizeRow.appendChild(bigLbl);
+      card.appendChild(sizeRow);
+      slider.addEventListener("input", function(){
+        var newD=parseInt(slider.value,10)||maxD;
+        var cx=circle.x+circle.d/2, cy=circle.y+circle.d/2;
+        circle.d=newD; circle.x=cx-newD/2; circle.y=cy-newD/2;
+        clampXY(); paint();
+      });
+
+      var btnRow=el("div","toolbar"); btnRow.style.margin="14px 0 0";
+      var saveBtn=el("button","btn btn-primary","Use this photo");
+      var cancelBtn=el("button","btn","Cancel");
+      btnRow.appendChild(saveBtn); btnRow.appendChild(cancelBtn);
+      card.appendChild(btnRow);
+
+      function close(){
+        if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        document.removeEventListener("keydown", onKey);
+      }
+      function onKey(e){ if(e.key==="Escape") close(); }
+      closeBtn.addEventListener("click", close);
+      cancelBtn.addEventListener("click", close);
+      overlay.addEventListener("click", function(e){ if(e.target===overlay) close(); });
+      document.addEventListener("keydown", onKey);
+
+      saveBtn.addEventListener("click", function(){
+        var sx=circle.x/fitScale, sy=circle.y/fitScale, sSize=circle.d/fitScale;
+        var canvas=document.createElement("canvas");
+        canvas.width=CROP_OUT; canvas.height=CROP_OUT;
+        canvas.getContext("2d").drawImage(img, sx, sy, sSize, sSize, 0, 0, CROP_OUT, CROP_OUT);
+        var url=null;
+        try{ url=canvas.toDataURL("image/jpeg", 0.85); }catch(e){}
+        close();
+        if(url) cb(url);
+      });
+
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+    }
   }
   function initials(name){
     var parts=(name||"").trim().split(/\s+/);
@@ -15945,6 +16067,11 @@ function setupRoster() {
     // Only the fallback picker is the pill's business. A shelf a rebbi
     // deliberately parked his Activities section in stays where he put it.
     if(isShelfOpen("left") && !shelfPanelIds("left").length) setShelfOpen("left", false);
+    // Shelves off: same job, for the pill's small anchored dropdown instead
+    // of the shelf. Without this, leaving "Points" context (renderSeatsScanBar's
+    // only caller) left the dropdown open over content it no longer matched.
+    var af=$("seatsActivityFallback");
+    if(af && af.style.display!=="none") af.style.display="none";
   }
   $("seatsArmedPill").addEventListener("click", function(e){
     e.stopPropagation();
@@ -17762,8 +17889,10 @@ function setupRoster() {
     data.seatLiveRebbiView=false;
     // Codes off for arranging — see effSeatCardMode(). Written through the
     // setter rather than by poking seatScanMode, so the mode the picker shows
-    // and the legacy flag can never disagree.
-    if(seatPrintCodeKind(data.seatCardMode)==="qr") setSeatCardMode("photo");
+    // and the legacy flag can never disagree. Falls to "photo" only if there
+    // is one to show — see anyStudentHasPhoto() — otherwise "none", so
+    // dropping out of QR here doesn't hand back a chart of empty initials.
+    if(seatPrintCodeKind(data.seatCardMode)==="qr") setSeatCardMode(anyStudentHasPhoto() ? "photo" : "none");
     save(); renderTapPanel();
   }
 
@@ -18116,6 +18245,31 @@ function setupRoster() {
       colsIn.addEventListener("change", applyDims);
       setupRow.appendChild(dims);
 
+      // "Face size" — the −/+ that dial seatArrangeAvatarScale() up and down.
+      // Lives inside Setup & arrange (it's a sizing decision, same family as
+      // Rows/Cols), but the scale it sets is READ EVERYWHERE this chart draws
+      // a photo — List, Grid, and arranging — not only while Setup is open;
+      // see the note on fillSeatLiveCard()'s avatarPx below for why that
+      // matters. Only shown when arranging is actually drawing a photo right
+      // now: effSeatCardMode() forces one on for any QR-kind mode the instant
+      // arranging starts, but a chart set to "None" still shows no avatar at
+      // all, and a size dial for a picture nobody sees would just be a
+      // control that does nothing.
+      if(seatPrintWantsPhoto(effSeatCardMode())){
+        var faceSize=el("span","seat-size");
+        faceSize.title="How big each boy's photo draws on this chart — in the seating grid, the list, and while arranging.";
+        faceSize.appendChild(document.createTextNode("Face size"));
+        var faceSmaller=el("button","btn btn-sm","−"); faceSmaller.type="button";
+        faceSmaller.title="Smaller";
+        var faceVal=el("span","seat-size-val", Math.round(seatArrangeAvatarScale()*100)+"%");
+        var faceBigger=el("button","btn btn-sm","+"); faceBigger.type="button";
+        faceBigger.title="Bigger";
+        faceSmaller.addEventListener("click", function(){ seatArrangeNudgeAvatarScale(-1); });
+        faceBigger.addEventListener("click", function(){ seatArrangeNudgeAvatarScale(1); });
+        faceSize.appendChild(faceSmaller); faceSize.appendChild(faceVal); faceSize.appendChild(faceBigger);
+        setupRow.appendChild(faceSize);
+      }
+
       var printWrap=el("span","seat-print-shortcut");
       var printBtn=el("button","btn btn-sm","🖨 Print seating chart");
       var printOpts=el("span","seat-print-opts"); printOpts.style.display="none";
@@ -18228,7 +18382,11 @@ function setupRoster() {
       // else branch below, so every student in List mode rendered twice over
       // (and once in scan mode, above his QR). One card per boy — now built by
       // the one shared builder rather than by two branches that could drift.
-      fillSeatLiveCard(b, s, listMode, listShowPts, 30);
+      // 57, not 38 — the base sizes were raised across the board (List/Grid/
+      // paired all ×1.5) so that a rebbi who never touches "Face size" gets
+      // what used to be its 150% setting by default; see the note at the
+      // Grid call site below for the fuller reasoning.
+      fillSeatLiveCard(b, s, listMode, listShowPts, Math.round(57*seatArrangeAvatarScale()));
       b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
@@ -18284,6 +18442,17 @@ function setupRoster() {
     data.seatCardMode = m;
     data.seatScanMode = seatPrintCodeKind(m)==="qr";
   }
+  // Shared by every place that falls the live chart's Avatar back to "photo"
+  // (the fresh-install default, the one-shot auto-turn-on, and the two
+  // boot-time/entry-time QR disarms below) — one answer to "is there
+  // actually a face to show", so a rebbi with no photos yet gets a clean
+  // "None" chart instead of a row of coloured-initials circles standing in
+  // for pictures nobody has taken. Global across every class, not just the
+  // one currently selected, because seatCardMode itself is one setting for
+  // the whole roster, not a per-class one.
+  function anyStudentHasPhoto(){
+    return data.students.some(function(s){ return !!s.photo; });
+  }
   /* Arranging never shows codes, whatever the mode says: dragging boys around a
    * grid where every cell is a QR you cannot read is how one ends up in the
    * wrong seat. Same exclusion the old Show-codes button enforced by turning
@@ -18295,6 +18464,50 @@ function setupRoster() {
     // for faces while you drag boys into seats.
     if(data.seatArranging && seatPrintCodeKind(data.seatCardMode)==="qr") return "photo";
     return data.seatCardMode;
+  }
+  /* How big a face draws on the LIVE chart (Setup & arrange's "Face size"
+   * −/+ buttons, below). Separate from seatPrintOpts.iconScale — that one is
+   * print's own setting and multiplies CSS caps that only exist on the
+   * printed sheet, never seen on screen; this one multiplies every avatarPx
+   * fillSeatLiveCard() is handed from the live chart — List, Grid, and
+   * arranging alike, see renderSeatGrid()/renderTapPanelInto() below. Same
+   * 0.5–1.5 range and step list as print's Code size, purely so the two
+   * controls feel like the same idiom — there's no other relationship
+   * between them.
+   *
+   * IT MUST APPLY OUTSIDE ARRANGING TOO, and that used to be the bug: an
+   * earlier version multiplied only the arranging branch's own base size, so
+   * tapping "Done arranging" dropped straight back to the flat, undialled
+   * 56/34px — every step a rebbi had just clicked, thrown away the moment he
+   * finished setting up the room. A size he dials in is a decision about
+   * this chart, not a temporary state of Setup being open.
+   *
+   * ARRANGING NO LONGER HAS A BIGGER BASE OF ITS OWN, either — a second bug
+   * in the same family. It used to read a dedicated 72px constant, bigger
+   * than the 56/34 the finished chart shows, on the theory that a rebbi
+   * dragging boys around wants the biggest faces available. A rebbi flagged
+   * that as backwards too: Setup should show what scanning will actually
+   * look like, not a preview exaggerated past it. See the "finalWantsQr"
+   * note at the arranging call site (renderSeatGrid) — the one difference
+   * between arranging and the finished chart is now just the QR itself
+   * being hidden, never the size of the face beside where it would be. */
+  function seatArrangeAvatarScale(){
+    var v=parseFloat(data.seatArrangeAvatarScale);
+    return (v>=0.5 && v<=1.5) ? v : 1;
+  }
+  function seatArrangeNudgeAvatarScale(dir){
+    var cur=seatArrangeAvatarScale(), i=0;
+    // NEAREST step, not indexOf — same reasoning as seatPrintNudgeIconScale:
+    // a value can arrive here from an older save without being one of the
+    // steps, and indexOf's -1 would silently drop it to the smallest size.
+    SEAT_ICON_STEPS.forEach(function(v,n){
+      if(Math.abs(v-cur) < Math.abs(SEAT_ICON_STEPS[i]-cur)) i=n;
+    });
+    i+=dir;
+    if(i<0) i=0;
+    if(i>SEAT_ICON_STEPS.length-1) i=SEAT_ICON_STEPS.length-1;
+    data.seatArrangeAvatarScale=SEAT_ICON_STEPS[i];
+    save(); renderTapPanel();
   }
 
   /* ONE LIVE CARD — the screen's answer to fillSeatPrintCard(), shared by the
@@ -18322,7 +18535,18 @@ function setupRoster() {
     var host = both ? el("div","seat-live-pair") : card;
     if(isFrozen(s.id)) card.appendChild(freezeBadgeEl(s.id));
     // Face first, code second: you find the boy by looking, then scan him.
-    if(wantPhoto) host.appendChild(avatarEl(s, avatarPx));
+    // Wrapped in .seat-avatar-wrap (see its CSS) so a bigger requested size —
+    // Face size can dial well past what a tight cell has room for — shrinks
+    // to fit instead of getting cropped into a lens shape by .seat's own
+    // overflow:hidden. Applies whether or not a code is paired alongside it:
+    // arranging always renders solo (see the finalWantsQr note below), and a
+    // solo photo can overflow its cell just as easily as a paired one can.
+    if(wantPhoto){
+      var avWrap=el("div","seat-avatar-wrap");
+      avWrap.style.width=avatarPx+"px";
+      avWrap.appendChild(avatarEl(s, avatarPx));
+      host.appendChild(avWrap);
+    }
     if(kind==="qr"){
       // Same payload the PRINTED sheet encodes — s.id, nothing else — so a
       // code scanned off the screen is indistinguishable from one scanned off
@@ -18662,13 +18886,38 @@ function setupRoster() {
       if(s){
         seat.dataset.sid=s.id;
         /* BIGGER, not smaller, when it is sharing the cell with a code. The
-         * 26px avatar is a marker beside a name you are already reading; next
+         * 51px avatar is a marker beside a name you are already reading; next
          * to a QR it is the whole point of the mode — you are meant to
-         * recognise the boy and scan him off the one card, from across a room.
-         * 44 against a 68px code is roughly the printed sheet's 76-against-95
-         * proportion, and still leaves the pair side by side in a full-screen
-         * cell (it wraps in the narrow Dashboard panel, by design). */
-        fillSeatLiveCard(seat, s, cardMode, showPts, scanMode ? 44 : 26);
+         * recognise the boy and scan him off the one card, from across a room
+         * or off a projected board. Both bases (51 solo, 84 paired with a
+         * 68px code) are ×1.5 over an earlier pass at this — a rebbi found
+         * even the bigger sizing still too small day to day, and asked that
+         * the DEFAULT (Face size 100%) be what used to take dialling the
+         * "Face size" control up to its own max (150%) to see. The dial's
+         * own 50%–150% range is unchanged; it now swings around this bigger
+         * base instead of the old one. The pair still leaves the two boxes
+         * side by side in a full-screen cell (it wraps in the narrow
+         * Dashboard panel, by design).
+         *
+         * ARRANGING READS THE SAME BASE THE CHART WILL SHOW ONCE YOU LEAVE
+         * SETUP — not a bigger one of its own. `scanMode` is unconditionally
+         * false while arranging (effSeatCardMode() strips the QR so you are
+         * not dragging boys around a grid of unreadable codes), so it cannot
+         * be asked here what the FINISHED chart looks like; `finalWantsQr`
+         * answers that directly from `data.seatCardMode`, arranging's own
+         * override aside. A rebbi arranging seats is deciding where boys sit,
+         * not previewing a different, exaggerated chart — Setup should look
+         * like the chart he is about to hand the room, just without a QR he
+         * cannot use mid-drag. An earlier version gave arranging its own
+         * fixed 72px base specifically to be bigger than normal viewing, and
+         * a rebbi flagged exactly that: arranging read differently from what
+         * scanning actually looked like afterward. seatArrangeAvatarScale()
+         * (the "Face size" −/+ in Setup & arrange) still lets him size it up
+         * or down from here — but now the SAME dialled size shows in Setup
+         * and out of it, because both read off the one true base instead of
+         * two different ones. */
+        var finalWantsQr = seatPrintCodeKind(data.seatCardMode)==="qr";
+        fillSeatLiveCard(seat, s, cardMode, showPts, Math.round((finalWantsQr ? 84 : 51) * seatArrangeAvatarScale()));
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
@@ -19126,6 +19375,24 @@ function setupRoster() {
     SHELVES.forEach(function(side){ applyShelfOpen(side, !scanCustomizing && shelvesFeatureOn() && L.open[side]); });
     updateScanColsToggle();
     updatePanelTools();
+    // The Side Shelves setting can change while customize mode is still open
+    // (toggled from Settings, then back to the Scan tab without pressing
+    // Done) — refresh the two bits of customize UI that setScanCustomize()
+    // otherwise only computes once, on entry. Without this, "Seating chart
+    // only" could stay clickable — and still write shelf placements into
+    // data.scanLayout.place — after shelves had already been turned off.
+    if(scanCustomizing) updateCustomizeShelfBits();
+  }
+  // The hint text and the "Seating chart only" preset both depend on whether
+  // shelves are on — shared by setScanCustomize() (entering/leaving customize
+  // mode) and applyScanLayout() (the setting can also change while customize
+  // mode is already open, from the Settings tab).
+  function updateCustomizeShelfBits(){
+    var hint=$("scanCustomizeHint");
+    hint.innerHTML = shelvesFeatureOn()
+      ? 'Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / ◧ / ◨ / ▤ / 🚫 decide where it lives: on the page, in the left shelf, in the top-right shelf, in the bottom-right shelf, or hidden. The three shelves are always there on the screen edges whatever you choose here — a section on the page just means it is on the page <em>as well</em>. Everything shows here while you\'re customizing: a hidden section appears faded and marked 🚫 Hidden, and its button reads 👁 Show, which puts it back. Tap "Done" when finished.'
+      : 'Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / 🚫 decide whether it\'s on the page or hidden — side shelves are off (Settings → Side Shelves to turn them back on and park a section in one). Everything shows here while you\'re customizing: a hidden section appears faded and marked 🚫 Hidden, and its button reads 👁 Show, which puts it back. Tap "Done" when finished.';
+    $("scanLayoutSeatsOnly").style.display = (scanCustomizing && shelvesFeatureOn()) ? "" : "none";
   }
   /* ---------- Side shelves ---------- */
   function shelfEl(side){ return $(SHELF_EL[side]); }
@@ -19226,6 +19493,15 @@ function setupRoster() {
   }
   function renderShelves(){
     ensureScanLayout();
+    // Shelves off: they're hidden outright (body.no-shelves), and panelPlace()
+    // already coerces every placement to "col" — the columns loop just above,
+    // in applyScanLayout() (this function's only caller), has therefore
+    // already appendChild()'d every panel to its real column, which moves it
+    // out of a shelf body if it happened to still be sitting in one from
+    // before the setting was turned off. Nothing here would do anything but
+    // build four fallback lists (activity picker, prize rows, history,
+    // leaderboard) purely to sit invisible.
+    if(!shelvesFeatureOn()) return;
     SHELVES.forEach(function(side){
       var body=shelfBody(side); if(!body) return;
       // Rescue any real panels back into the pool BEFORE clearing, or emptying
@@ -19469,16 +19745,12 @@ function setupRoster() {
     btn.textContent = scanCustomizing ? "✓ Done" : "⚙ Customize layout";
     btn.classList.toggle("btn-primary", scanCustomizing);
     $("scanLayoutReset").style.display = scanCustomizing ? "" : "none";
-    var hint=$("scanCustomizeHint");
-    hint.style.display = scanCustomizing ? "" : "none";
+    $("scanCustomizeHint").style.display = scanCustomizing ? "" : "none";
     // "Seating chart only" parks the other three sections in their shelves —
     // meaningless with shelves off (they'd just stack back onto the same
     // single column), so it and the hint's shelf sentence both drop out.
-    hint.innerHTML = shelvesFeatureOn()
-      ? 'Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / ◧ / ◨ / ▤ / 🚫 decide where it lives: on the page, in the left shelf, in the top-right shelf, in the bottom-right shelf, or hidden. The three shelves are always there on the screen edges whatever you choose here — a section on the page just means it is on the page <em>as well</em>. Everything shows here while you\'re customizing: a hidden section appears faded and marked 🚫 Hidden, and its button reads 👁 Show, which puts it back. Tap "Done" when finished.'
-      : 'Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / 🚫 decide whether it\'s on the page or hidden — side shelves are off (Settings → Side Shelves to turn them back on and park a section in one). Everything shows here while you\'re customizing: a hidden section appears faded and marked 🚫 Hidden, and its button reads 👁 Show, which puts it back. Tap "Done" when finished.';
+    updateCustomizeShelfBits();
     $("scanColsToggle").style.display = scanCustomizing ? "" : "none";
-    $("scanLayoutSeatsOnly").style.display = (scanCustomizing && shelvesFeatureOn()) ? "" : "none";
     $("scanFullWidthWrap").style.display = scanCustomizing ? "" : "none";
     if(scanCustomizing){ updateScanColsToggle(); $("scanFullWidth").checked = !!data.fullWidth; }
     SCAN_PANELS.forEach(function(id){ var p=$("panel-"+id); if(p) p.setAttribute("draggable", scanCustomizing?"true":"false"); });
@@ -20428,7 +20700,7 @@ function setupRoster() {
   function renderPodiumCard(item, rankIndex){
     var card=el("div","lb-podium-card place-"+(rankIndex+1));
     card.appendChild(el("div","lb-medal", medalForRank(rankIndex)));
-    card.appendChild(avatarEl(item.s, rankIndex===0?64:52));
+    card.appendChild(avatarEl(item.s, rankIndex===0?84:68));
     card.appendChild(el("div","lb-podium-name", item.s.name));
     card.appendChild(el("div","lb-podium-score", isShulchani()?formatCoins(item.score,{abbr:coinAbbr(item.score,24)}):item.score+" pts"));
     card.appendChild(el("div","lb-podium-group", item.s.group ? item.s.group : rankTitle(rankIndex)));
@@ -26475,13 +26747,14 @@ nameLine
         renderStudBatchBar();
       });
       row.appendChild(pick);
-      var avatar=avatarEl(s, 40); avatar.classList.add("editable");
+      var avatar=avatarEl(s, 56); avatar.classList.add("editable");
       avatar.title="Click to upload a photo, or drag one here";
       var fileIn=el("input"); fileIn.type="file"; fileIn.accept="image/*"; fileIn.style.display="none";
+      function cropAndSet(f){
+        openPhotoCropModal(f, function(url){ if(url){ s.photo=url; save(); renderStudents(); } });
+      }
       fileIn.addEventListener("change", function(){
-        if(this.files && this.files[0]) readImageResized(this.files[0], 128, 0.72, function(url){
-          if(url){ s.photo=url; save(); renderStudents(); }
-        });
+        if(this.files && this.files[0]) cropAndSet(this.files[0]);
         this.value="";
       });
       avatar.appendChild(fileIn);
@@ -26491,7 +26764,7 @@ nameLine
       avatar.addEventListener("drop", function(e){
         e.preventDefault(); avatar.classList.remove("dragover");
         var f=e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-        if(f && f.type.indexOf("image/")===0) readImageResized(f, 128, 0.72, function(url){ if(url){ s.photo=url; save(); renderStudents(); } });
+        if(f && f.type.indexOf("image/")===0) cropAndSet(f);
       });
       if(s.photo){
         var xBtn=el("button","avatar-x","✕"); xBtn.title="Remove photo";
@@ -26558,6 +26831,9 @@ nameLine
         if(clash && clash.id!==s.id && !confirm("Another student is already named “"+clash.name+"”"+(clash.group?" in "+clash.group:"")+".\n\nRename this one to the same name anyway?")) return;
         s.name=nn||s.name; save(); renderStudents(); renderClassSel();
       });
+      var choosePhotoBtn=el("button","btn btn-sm","Choose photo…");
+      choosePhotoBtn.title="Pick an image file from this device";
+      choosePhotoBtn.addEventListener("click", function(){ fileIn.click(); });
       var photoUrlBtn=el("button","btn btn-sm","Photo URL…");
       photoUrlBtn.title="Paste a link to a photo (e.g. from Google Drive/Sheets) instead of uploading";
       photoUrlBtn.addEventListener("click", function(){
@@ -26584,12 +26860,15 @@ nameLine
           delete data.scores[s.id]; delete studentBreakdownOpen[s.id]; save(); renderStudents();
         }
       });
-      row.appendChild(avatar); row.appendChild(name); row.appendChild(classPicker); row.appendChild(code); row.appendChild(step); row.appendChild(bdBtn); row.appendChild(edit); row.appendChild(photoUrlBtn);
-      // NOTE (row width): this row now carries a checkbox plus 8-9 controls. See
+      row.appendChild(avatar); row.appendChild(name); row.appendChild(classPicker); row.appendChild(code); row.appendChild(step); row.appendChild(bdBtn); row.appendChild(edit); row.appendChild(choosePhotoBtn); row.appendChild(photoUrlBtn);
+      // NOTE (row width): this row now carries a checkbox plus 9-10 controls. See
       // the PR discussion — Rename / Photo URL / Delete are the candidates for
       // folding behind a per-row menu, deliberately NOT done here. classPicker
       // replaces the old static grp-tag <span> in place, so it isn't a net-new
-      // control despite the row-width note above.
+      // control despite the row-width note above. Choose photo… is new (the
+      // avatar click/drag still works too — this is the explicit, discoverable
+      // version of the same action, for a rebbi who doesn't know a small circle
+      // is clickable).
       if(removePhotoBtn) row.appendChild(removePhotoBtn);
       row.appendChild(del);
       list.appendChild(row);
@@ -31580,12 +31859,44 @@ nameLine
      * PURELY ADDITIVE, AND NOTHING CAN BE LOST: seatScanMode is still written
      * and still backfilled above, it just stopped being what the chart reads.
      * An old save arrives here with only the boolean, so the mode is derived
-     * from it — and since the boot-time disarm below turns a code mode back
-     * into "photo" anyway, every existing save opens on exactly the chart it
-     * opens on today: faces, names and scores.
-     */
+     * from it. This branch only fires once, ever, for any save — the moment
+     * it writes a valid string here, every later load finds one already and
+     * never re-enters it — so it only shapes what a genuinely fresh install
+     * (or a save from before seatCardMode existed) opens on, never a save
+     * that already picked something.
+     *
+     * "none", NOT "photo", ON THE NON-SCANNING BRANCH — changed on a rebbi's
+     * ask: a class with nobody's photo taken yet has nothing to show inside
+     * an avatar circle except two-letter initials standing in for a face
+     * nobody uploaded, and "none" reads as the class it actually is. The
+     * one-shot check right below promotes this to "photo" in the same pass
+     * if photos already exist on this very first load (a roster imported
+     * with Photo URLs, say) — and keeps watching for the first photo ever
+     * added after that, so this default is never stale for more than a day
+     * the way this one-time branch alone would leave it. */
     if(["qr","qrphoto","photo","none"].indexOf(data.seatCardMode)<0){
-      data.seatCardMode = data.seatScanMode ? "qr" : "photo";
+      data.seatCardMode = data.seatScanMode ? "qr" : "none";
+    }
+    // ONE-SHOT: the moment ANY student ever has a photo, turn the live
+    // seating chart's Avatar on to show it — a rebbi who has never touched
+    // this setting and has just added his first photo should not need to
+    // know "Display" exists to see it appear. Fires only while the chart is
+    // still on the "no photos yet" default ("none") and only once per save
+    // (seatPhotoAutoOn) — a rebbi who later picks something else himself,
+    // including switching back to "none" on purpose, is never overruled by
+    // a photo added afterward. Deliberately NOT in `defaults`, same reason
+    // the navHidden one-shots aren't: it has to fire for saves that already
+    // exist today, not only ones created after this shipped.
+    //
+    // Checked inline rather than through anyStudentHasPhoto() (its sibling
+    // in the main IIFE) — load2fix() is mirrored verbatim into
+    // test-migration.html, which has no other app helpers to call, so
+    // everything this function needs has to live inside it.
+    if(typeof data.seatPhotoAutoOn!=="boolean") data.seatPhotoAutoOn=false;
+    if(!data.seatPhotoAutoOn && data.seatCardMode==="none"
+       && data.students.some(function(s){ return !!s.photo; })){
+      data.seatCardMode="photo";
+      data.seatPhotoAutoOn=true;
     }
     /* Scores on the live cards. Defaults ON because that is what every chart
      * shows today in the state it boots into — the old code drew the score
@@ -31599,6 +31910,13 @@ nameLine
     if(typeof data.seatActivitiesMode!=="boolean") data.seatActivitiesMode=false;
     if(typeof data.seatSetupOpen!=="boolean") data.seatSetupOpen=false;
     if(typeof data.seatLiveRebbiView!=="boolean") data.seatLiveRebbiView=false;
+    // How big a face draws on the LIVE chart while arranging — independent of
+    // seatPrintOpts.iconScale, which is print's own setting and never seen on
+    // screen. Same 0.5–1.5 guard for the same reason: a value can arrive here
+    // from a restored backup without ever having passed through the nudge
+    // function's clamp.
+    var seatArrangeScale=parseFloat(data.seatArrangeAvatarScale);
+    if(!(seatArrangeScale>=0.5 && seatArrangeScale<=1.5)) data.seatArrangeAvatarScale=1;
     if([9600,19200,38400,57600,115200].indexOf(data.serialBaud)<0) data.serialBaud=9600;
     if(typeof data.serialAutoConnect!=="boolean") data.serialAutoConnect=false;
     /* USB vendor/product ids of the serial scanner last connected, so
@@ -32584,8 +32902,14 @@ nameLine
   // so are left alone; they are a way of looking at the class, not an armed
   // state. setSeatCardMode keeps seatScanMode in step, so the stored boolean
   // still cannot disagree with how the app is behaving.
+  // "photo" ONLY IF A PHOTO EXISTS (anyStudentHasPhoto()) — falling back to a
+  // chart of coloured-initials circles for a roster nobody has photographed
+  // is not "the chart a rebbi expects to find in front of a room" either;
+  // "none" is. A photo added later still turns this on by itself, through
+  // the one-shot seatPhotoAutoOn check in load2fix() — this fallback firing
+  // again on a later boot just needs to agree with what that already decided.
   if(seatPrintCodeKind(data.seatCardMode)==="qr"){
-    setSeatCardMode("photo"); save();
+    setSeatCardMode(anyStudentHasPhoto() ? "photo" : "none"); save();
   } else if(data.seatScanMode){ data.seatScanMode = false; save(); }
   // Same contract, same reason — independent toggle, see seatActivitiesMode above.
   if(data.seatActivitiesMode){ data.seatActivitiesMode = false; save(); }

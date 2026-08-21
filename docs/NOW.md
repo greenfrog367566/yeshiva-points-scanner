@@ -61,10 +61,6 @@ including the live-project setup and the console-only gaps that cost a day.
 `CLAUDE.md` → "Merged is not done." Nothing here is *next*; all of it is
 **owed**, and mixing the two lists is what let these sit.
 
-- **Tell rebbeim on old offline copies to re-download** (#244). A `file://`
-  copy has no update path, and the #252 update check cannot reach a file
-  downloaded before the check existed. **Only a person can do this**, and it is
-  the one item on this page with real classroom data at risk.
 - **Link the onboarding video.** Video A shipped 2026-08-05 and is linked from
   nowhere — not `quick-start.html`, not `index.html`, not the app. A rebbi
   cannot find it, so as far as the cohort is concerned it did not ship.
@@ -173,19 +169,24 @@ count against `fix/theory-audit-batch-1` above, which never landed.
 
 Roughly in the order of what they unblock. Nothing here is a task Claude can take.
 
-1. **The re-download message** (#244) — see "Merged, not done." Most urgent
-   thing on this page.
-2. **The privacy note** — `docs/Account_Privacy_Note.md`. Drafted; all six
+1. **The privacy note** — `docs/Account_Privacy_Note.md`. Drafted; all six
    blanks decided 2026-08-13 and filled in. Owed: a read-through of the prose
    and the three flagged judgment calls, nothing else. **The earliest gate in
    the whole sign-in plan** — it blocks self-serve signup in *either* tier,
    including Ben's own school. `privacy@menchmark.app` is live and tested.
-3. **A yes on the offline resync proposal** before the dedup-fix PR is built.
-4. **Q3: what a school signs.** Gates onboarding school #2; blocks no code.
-5. **A yes on clearing the 10 dead worktrees** (`node scripts/wip-audit.js
+2. **A yes on the offline resync proposal** before the dedup-fix PR is built.
+3. **Q3: what a school signs.** Gates onboarding school #2; blocks no code.
+4. **A yes on clearing the 10 dead worktrees** (`node scripts/wip-audit.js
    --stale` for the list). Stop-and-ask by policy. The seating-tables lines
    this item used to name are resolved — committed, rebased, and merged as
    #364.
+
+✅ **Cleared 2026-08-21 — Ben told the rebbeim on old offline copies to
+re-download** (#244). That was the one item on this page with real classroom
+data at risk, and the only fix for it — a `file://` copy has no update path,
+so no code change could ever have reached it. Don't re-add this to the queue;
+if a rebbi turns up still on a stale copy, that's a one-off follow-up, not a
+reopening of this item.
 
 ✅ **Cleared 2026-08-12 — six decisions taken, don't re-ask.** The rule-3 /
 Firebase SDK call (vendored, same-origin, tier 1 only), deterministic write
