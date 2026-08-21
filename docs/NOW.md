@@ -207,7 +207,16 @@ either way.
 - **`steinerman/hadroom-camera-test`** (same worktree as the old
   `steinerman/chazaroom` entry, branch renamed since) — 4 commits of Chazaroom
   PTZ work, including "the PTZ tick now tells the truth, continuously." This is
-  what #240 actually contains.
+  what #240 actually contains. **It is two separable things, and only one is
+  owed work** (verified 2026-08-21): the **PTZ bridge improvements** are
+  finished and landable on their own — `insta360-ptz/ptz-bridge.ps1` is 138
+  lines on the branch against 107 on `main` (a stale-camera-handle self-heal,
+  and no longer trusting a bare HTTP 200), in a standalone file that touches
+  no `app.html`. The **room map** is not landable: its own commit message says
+  `INCOMPLETE - pan is wrong`, and `cornerCode` / `roomMap` / `tiltFor` all
+  return zero on `main`. Land the bridge, land
+  `docs/Chazaroom_Room_Map_Spec.md` so the thinking survives, and leave the
+  room-map code as a decision rather than a debt.
 - **`fix/backup-label-mismatch-live`** — 1 commit, PR #329 closed unmerged.
   **Content-dead: nothing is owed here.** Verified 2026-08-21 by grepping
   `main` — `app.html` and `setup.html` both contain **zero** occurrences of
@@ -246,6 +255,15 @@ Read each commit's diff as a *specification* and reimplement against current
 code. The `docs/claude-md-trim` case is the sharp one — it trims `CLAUDE.md`
 as it stood on 2026-08-03, so **replaying that patch would delete the entire
 WIP-cap and ship-ladder section added on 2026-08-20.**
+
+**Suggested order, if these are picked up.** The binding constraint is not the
+5-PR cap (there is room) but the one-`app.html`-feature-PR-at-a-time rule:
+**(1)** the "Send standings now" removal — six lines, no data model, and it
+pays into the every-third-UI-PR-is-a-subtraction quota nothing has been paying
+into; **(2)** in parallel, since neither touches `app.html` — the `CLAUDE.md`
+retrim and the Chazaroom PTZ-bridge half; **(3)** the ⚙ Customize wizard last,
+alone, and only after a yes, since it is the one item here that touches
+`app.html` *and* adds stored fields.
 
 - **14 of 26 worktrees are dead** and safe to clear (landed, unlocked, clean) —
   re-counted 2026-08-21. Still far below the 81-of-92 the cleanup started from,

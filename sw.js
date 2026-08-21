@@ -29,7 +29,7 @@
  *    yet — the SDK was added, never modified — which is precisely why it is
  *    worth making automatic before something does.
  */
-var CACHE_VERSION = "0.10.0";
+var CACHE_VERSION = "0.11.0";
 var CACHE_NAME = "menchmark-" + CACHE_VERSION;
 var PRECACHE = [
   "./app.html",
