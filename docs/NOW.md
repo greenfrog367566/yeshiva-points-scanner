@@ -60,13 +60,37 @@ including the live-project setup and the console-only gaps that cost a day.
 `CLAUDE.md` → "Merged is not done." Nothing here is *next*; all of it is
 **owed**, and mixing the two lists is what let these sit.
 
-- ✅ **Link the onboarding video — DONE.** Video A had shipped 2026-08-05 and
-  was linked from nowhere, so as far as the cohort was concerned it had not
-  shipped at all. It now plays **in a viewer on `quick-start.html`** (Drive's
-  `/preview` in a modal, loaded only when opened and stopped on close) and is
-  linked from `index.html` under the four setup steps. **Still not in the app
-  itself** — that is `app.html`, and adding it there would collide with the
+> **Re-verified 2026-08-21, at the close of the finishing-system session.**
+> Every item below was checked against `main` rather than carried forward on
+> trust, because a list of owed work that is itself stale is the problem it
+> exists to solve. What was checked, and what it said:
+>
+> | claim | how it was checked | verdict |
+> |---|---|---|
+> | `[0.10.0]` has 8 headings | counted `### ` in that section on `main` | **8 — still true** |
+> | `fix/theory-audit-batch-1` never landed | grepped `main` for "Send standings now" | **2 hits — still on main** |
+> | release is drifting | `scripts/release-drift.js` | **70 merges past 0.10.0** |
+> | video A linked | shipped as #382 | **done, struck below** |
+> | `user-guide.md` rename | shipped as #381 | **done, removed** |
+> | #244 re-download message | marked sent by #375 | **done, removed** |
+>
+> **The single loudest thing owed is a release cut.** 0.10.0 was cut on
+> 2026-08-19 and **70 merges** have landed since — everything from the tables
+> work to Chavrusa Dashboard integration. An *online* rebbi already has all of
+> it (`sw.js` serves HTML network-first), so nothing is broken; but the
+> "Check for updates" card tells him he is current when he is not, and
+> `CACHE_VERSION` has not moved, so an *offline* copy is still serving 0.10.0's
+> files. One command: `node scripts/bump-version.js 0.11.0`.
+
+- ✅ **Link the onboarding video — DONE (#382).** Video A had shipped
+  2026-08-05 and was linked from nowhere, so as far as the cohort was concerned
+  it had not shipped at all. It now plays **in a viewer on `quick-start.html`**
+  (Drive's `/preview` in a modal, loaded only when opened and stopped on close)
+  and is linked from `index.html` under the four setup steps. **Still not in the
+  app itself** — that is `app.html`, and adding it there would collide with the
   open PRs that touch it; worth a small follow-up when that file is quiet.
+- **Cut 0.11.0.** See the box above — 70 merges deep, and `release-drift.js`
+  now says so at the start of every session until it is done.
 - **Managed-Chromebook verification runs** for build step 0c (folder backup,
   #249) and step 7 (fragile-storage warning). Cannot be simulated — Ben's own
   hardware. **Step 7 must not reach beta rebbeim until this passes.**
@@ -91,6 +115,12 @@ including the live-project setup and the console-only gaps that cost a day.
   keeps it current afterward. `Firebase_Rebuild_Scope.md`'s step 7 text already
   names this ("tier-1 … needs a live Firestore write-sync path from a rebbi's
   own scans that doesn't exist anywhere yet"), but it was never carried here.
+  - **It has a DESIGN now — `docs/Firebase_TierOne_WriteSync_Design_Proposal.md`,
+    merged 2026-08-21 as #379.** That changes the shape of this item but not its
+    size: **nothing is built.** This is still the largest piece of unfinished
+    work in the repo, and the only one recorded anywhere as "shipped" when it
+    is not. Everything else on this page is a check, a click-through, or a
+    tidy-up; this is a build.
   **Migrating the real beta cohort (step 8) before this exists moves their
   accounts, not their safety** — real auth and security rules, but their
   actual class data is exactly as fragile as it is today.
@@ -136,8 +166,12 @@ either way.
   content that reached `main` by another route — a limit the `wip` skill flags
   itself. Safe to delete whenever the branch list gets swept; it is here only
   so nobody re-derives this a third time.
-- **10 of 18 worktrees are dead** and safe to clear (landed, unlocked, clean) —
-  down sharply from 81-of-92, so the 2026-08-20 cleanup mostly happened.
+- **14 of 26 worktrees are dead** and safe to clear (landed, unlocked, clean) —
+  re-counted 2026-08-21. Still far below the 81-of-92 the cleanup started from,
+  but climbing again: 26 worktrees where there were 18, because `testbench.js`
+  now makes one per open PR and per spike on purpose. That is the system
+  working, not sprawl returning — the set is bounded by what is alive, so it
+  cannot run away the way it did before.
   Removal is a stop-and-ask action — `node scripts/wip-audit.js --stale` prints
   the list and the commands; it never runs them.
 
