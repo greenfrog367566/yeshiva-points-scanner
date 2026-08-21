@@ -58,9 +58,13 @@ including the live-project setup and the console-only gaps that cost a day.
 `CLAUDE.md` → "Merged is not done." Nothing here is *next*; all of it is
 **owed**, and mixing the two lists is what let these sit.
 
-- **Link the onboarding video.** Video A shipped 2026-08-05 and is linked from
-  nowhere — not `quick-start.html`, not `index.html`, not the app. A rebbi
-  cannot find it, so as far as the cohort is concerned it did not ship.
+- ✅ **Link the onboarding video — DONE.** Video A had shipped 2026-08-05 and
+  was linked from nowhere, so as far as the cohort was concerned it had not
+  shipped at all. It now plays **in a viewer on `quick-start.html`** (Drive's
+  `/preview` in a modal, loaded only when opened and stopped on close) and is
+  linked from `index.html` under the four setup steps. **Still not in the app
+  itself** — that is `app.html`, and adding it there would collide with the
+  open PRs that touch it; worth a small follow-up when that file is quiet.
 - **`docs/user-guide.md` still says "Backup & Sheets" in 6 places** (lines 229,
   679, 685, 700, 712, 739 — including two image captions). The in-app rename is
   complete; the guide still names a tab that no longer exists.
