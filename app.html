@@ -802,6 +802,19 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-live-pair{display:flex;align-items:center;justify-content:center;gap:6px;
     flex-wrap:wrap;width:100%}
   .seat-live-pair .avatar,.seat-live-pair .seat-qr{margin:0}
+  /* SHRINKS THE FACE TO FIT ITS CELL — the wrap above only decides whether the
+     photo and the QR share a row or fall onto their own; it does nothing once
+     an avatar's own requested px (see seatArrangeAvatarScale()) is wider than
+     the cell it landed in on its own line, and .seat's overflow:hidden then
+     crops a circle into a lens shape instead of shrinking it. Same fix the
+     printed sheet already uses for the identical problem (see the note above
+     .seat-print-photo): width is the REQUESTED size, max-width:100% clamps it
+     down to whatever room the cell actually has, and the avatar inside fills
+     whatever that resolves to. aspect-ratio:1 keeps it a circle at any size in
+     between — this is why height:auto is safe here despite avatarEl() setting
+     an explicit height inline; !important is what lets it win over that. */
+  .seat-avatar-wrap{max-width:100%}
+  .seat-avatar-wrap .avatar{width:100%!important;height:auto!important;aspect-ratio:1}
   /* A List tile is a plain block, not the seat's flex column, so the code and
      the face need their own centring there. */
   .tap-btn .seat-qr{margin:0 auto 5px}
@@ -18171,7 +18184,11 @@ function setupRoster() {
       // else branch below, so every student in List mode rendered twice over
       // (and once in scan mode, above his QR). One card per boy — now built by
       // the one shared builder rather than by two branches that could drift.
-      fillSeatLiveCard(b, s, listMode, listShowPts, Math.round(38*seatArrangeAvatarScale()));
+      // 57, not 38 — the base sizes were raised across the board (List/Grid/
+      // paired all ×1.5) so that a rebbi who never touches "Face size" gets
+      // what used to be its 150% setting by default; see the note at the
+      // Grid call site below for the fuller reasoning.
+      fillSeatLiveCard(b, s, listMode, listShowPts, Math.round(57*seatArrangeAvatarScale()));
       b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
@@ -18302,7 +18319,18 @@ function setupRoster() {
     var host = both ? el("div","seat-live-pair") : card;
     if(isFrozen(s.id)) card.appendChild(freezeBadgeEl(s.id));
     // Face first, code second: you find the boy by looking, then scan him.
-    if(wantPhoto) host.appendChild(avatarEl(s, avatarPx));
+    // Wrapped in .seat-avatar-wrap (see its CSS) so a bigger requested size —
+    // Face size can dial well past what a tight cell has room for — shrinks
+    // to fit instead of getting cropped into a lens shape by .seat's own
+    // overflow:hidden. Applies whether or not a code is paired alongside it:
+    // arranging always renders solo (see the finalWantsQr note below), and a
+    // solo photo can overflow its cell just as easily as a paired one can.
+    if(wantPhoto){
+      var avWrap=el("div","seat-avatar-wrap");
+      avWrap.style.width=avatarPx+"px";
+      avWrap.appendChild(avatarEl(s, avatarPx));
+      host.appendChild(avWrap);
+    }
     if(kind==="qr"){
       // Same payload the PRINTED sheet encodes — s.id, nothing else — so a
       // code scanned off the screen is indistinguishable from one scanned off
@@ -18632,14 +18660,18 @@ function setupRoster() {
       if(s){
         seat.dataset.sid=s.id;
         /* BIGGER, not smaller, when it is sharing the cell with a code. The
-         * 34px avatar is a marker beside a name you are already reading; next
+         * 51px avatar is a marker beside a name you are already reading; next
          * to a QR it is the whole point of the mode — you are meant to
          * recognise the boy and scan him off the one card, from across a room
-         * or off a projected board. 56 against a 68px code is close to the
-         * printed sheet's 76-against-95 proportion (bumped up from 44, per a
-         * rebbi's ask that the live chart's faces were too small to read at a
-         * distance), and still leaves the pair side by side in a full-screen
-         * cell (it wraps in the narrow Dashboard panel, by design).
+         * or off a projected board. Both bases (51 solo, 84 paired with a
+         * 68px code) are ×1.5 over an earlier pass at this — a rebbi found
+         * even the bigger sizing still too small day to day, and asked that
+         * the DEFAULT (Face size 100%) be what used to take dialling the
+         * "Face size" control up to its own max (150%) to see. The dial's
+         * own 50%–150% range is unchanged; it now swings around this bigger
+         * base instead of the old one. The pair still leaves the two boxes
+         * side by side in a full-screen cell (it wraps in the narrow
+         * Dashboard panel, by design).
          *
          * ARRANGING READS THE SAME BASE THE CHART WILL SHOW ONCE YOU LEAVE
          * SETUP — not a bigger one of its own. `scanMode` is unconditionally
@@ -18655,11 +18687,11 @@ function setupRoster() {
          * a rebbi flagged exactly that: arranging read differently from what
          * scanning actually looked like afterward. seatArrangeAvatarScale()
          * (the "Face size" −/+ in Setup & arrange) still lets him size it up
-         * if 56/34 genuinely is too small for his room — but now the SAME
-         * dialled size shows in Setup and out of it, because both read off
-         * the one true base instead of two different ones. */
+         * or down from here — but now the SAME dialled size shows in Setup
+         * and out of it, because both read off the one true base instead of
+         * two different ones. */
         var finalWantsQr = seatPrintCodeKind(data.seatCardMode)==="qr";
-        fillSeatLiveCard(seat, s, cardMode, showPts, Math.round((finalWantsQr ? 56 : 34) * seatArrangeAvatarScale()));
+        fillSeatLiveCard(seat, s, cardMode, showPts, Math.round((finalWantsQr ? 84 : 51) * seatArrangeAvatarScale()));
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
