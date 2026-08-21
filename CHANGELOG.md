@@ -10,6 +10,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Thi
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-08-21
 ### Added
 
 - **Homework Checked can now optionally also move points — set a value in Run → Settings → Activities and it stays contingent on today's checked state, not on the scan.** Until now, tracked activities (Homework, Attendance, Bathroom Pass, Freeze, a rebbi's own Tracker items) never touched a boy's score at all — CLAUDE.md called this "still true" as recently as the last audit. Homework Checked is the first opt-in exception: its `pts` field, previously locked at 0 and hidden behind a "No points" badge in the Activities editor, is now a real editable stepper there, and a nonzero value earns (or, for a deduction, costs) points the moment a day's mark first reads checked, giving back exactly that amount the moment it doesn't.
