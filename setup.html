@@ -106,6 +106,24 @@ tailwind.config = {
         <p class="text-slate-500 mt-1 text-sm">Run Your Classroom Like a Mensch</p>
       </div>
 
+      <!-- Shown only when this computer still remembers a backups folder —
+           i.e. right after an erase that kept it. It sits ABOVE the three
+           paths on purpose: the failure it prevents is a rebbi pressing
+           "Skip & Start Now", landing in a blank class, and that blank class
+           being what the folder holds next. -->
+      <div id="entry-restore-block" class="w-full max-w-md mb-5 hidden">
+        <button id="entry-restore-btn"
+                class="w-full flex items-center gap-4 bg-white hover:bg-slate-50 border-2 border-gold-400 text-navy-700 rounded-2xl px-6 py-5 text-left transition-colors group shadow-lg shadow-gold-400/10">
+          <span class="text-2xl">💾</span>
+          <div class="flex-1">
+            <p class="font-bold text-base">Your class is backed up on this computer</p>
+            <p id="entry-restore-line" class="text-slate-500 text-xs"></p>
+          </div>
+          <i data-lucide="arrow-right" class="w-5 h-5 opacity-40 group-hover:translate-x-1 transition-transform"></i>
+        </button>
+        <p id="entry-restore-status" class="text-xs mt-2 hidden"></p>
+      </div>
+
       <!-- 3 Paths -->
       <div class="w-full max-w-md space-y-3">
 
@@ -576,6 +594,8 @@ document.addEventListener('DOMContentLoaded', function () {
   initThisComputerOption();
   var localBtn = document.getElementById('btn-restore-local');
   if (localBtn) localBtn.addEventListener('click', restoreFromThisComputer);
+  var entryBtn = document.getElementById('entry-restore-btn');
+  if (entryBtn) entryBtn.addEventListener('click', restoreFromThisComputer);
 
   // If a previous setup actually completed, this is a fresh visit —
   // never resume old in-progress data over it (e.g. someone clicking
@@ -1090,16 +1110,28 @@ function initThisComputerOption() {
     if (line) line.textContent = 'Backups folder: “' + h.name + '”';
     if (block) block.classList.remove('hidden');
     if (divider) divider.classList.remove('hidden');
+
+    // Same offer, surfaced on the very first screen — see the markup comment.
+    var entryBlock = document.getElementById('entry-restore-block');
+    var entryLine = document.getElementById('entry-restore-line');
+    if (entryLine) entryLine.textContent = 'Restore it from “' + h.name + '” on this computer';
+    if (entryBlock) entryBlock.classList.remove('hidden');
+
     if (typeof lucide !== 'undefined') lucide.createIcons();
   });
 }
 
+// Writes to both status lines: the same restore can be started from the entry
+// screen or from Restore/Import, and a permission prompt or a missing file has
+// to be readable from whichever one the rebbi is actually looking at.
 function localRestoreStatus(msg, ok) {
-  var el = document.getElementById('local-restore-status');
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.remove('hidden', 'text-red-500', 'text-emerald-600', 'text-slate-400');
-  el.classList.add(ok === true ? 'text-emerald-600' : ok === false ? 'text-red-500' : 'text-slate-400');
+  ['local-restore-status', 'entry-restore-status'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.remove('hidden', 'text-red-500', 'text-emerald-600', 'text-slate-400');
+    el.classList.add(ok === true ? 'text-emerald-600' : ok === false ? 'text-red-500' : 'text-slate-400');
+  });
 }
 
 function restoreFromThisComputer() {

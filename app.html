@@ -30262,6 +30262,21 @@ nameLine
    * downloaded one are the same thing and restore through the same path.
    * `silent` suppresses the success line for the automatic writes, which should
    * not shout every time the app opens. */
+  // The folder twin of driveMaybeAutoWrite()'s guard, and it matters more here
+  // because fbInit()'s write fires on EVERY boot the moment permission is
+  // granted. The sequence that costs a rebbi his class: erase this computer,
+  // land on setup, press "Skip & Start Now", and the blank class that creates
+  // is written straight over menchmark-backup-*.json in the folder that was
+  // being kept precisely so he could restore from it. An empty roster is never
+  // worth preserving, so no automatic write may carry one.
+  //
+  // Only the AUTOMATIC writes are gated. "Back up now" is an explicit
+  // instruction and still does what it says, and the erase path's own write is
+  // deliberate too.
+  function fbAutoWriteAllowed(){
+    return Array.isArray(data.students) && data.students.length > 0;
+  }
+
   function fbWrite(silent){
     if(!fbHandle || fbBusy) return Promise.resolve(false);
     fbBusy=true;
@@ -30334,7 +30349,10 @@ nameLine
         if(p==="granted"){
           fbHandle=h;
           fbStatus("Backing up automatically to “"+h.name+"”.", "good");
-          fbWrite(true);
+          // Never on an empty roster — see fbAutoWriteAllowed(). This is the
+          // exact boot that follows an erase, and the folder it would write to
+          // is the one holding the class.
+          if(fbAutoWriteAllowed()) fbWrite(true);
         } else {
           fbStatus("Menchmark still remembers the folder “"+h.name+"”, but this browser is asking for permission again. Press “Choose a folder” and pick it once more.", "bad");
         }
@@ -30410,6 +30428,7 @@ nameLine
     if(document.visibilityState!=="hidden") return;
     if(!fbHandle) return;
     if(fbWrittenSeq===(fbSaveSeq||0)) return;
+    if(!fbAutoWriteAllowed()) return; // same guard as the open-time write
     fbWrite(true);
   });
 
