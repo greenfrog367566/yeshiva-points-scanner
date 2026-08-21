@@ -20,25 +20,27 @@ spec, not here.
 
 ## Doing now
 
-**Open PRs — 2 of 5** (`CLAUDE.md` → "Finishing work"). Well under the cap —
-#358/#359/#360/#362/#363/#364, everything the 2026-08-20 table listed, has
-since merged.
+**Open PRs — 4 of 5** (`CLAUDE.md` → "Finishing work"). #370 and #371 (both
+listed here 2026-08-20) have since merged — checked 2026-08-21, **none of the
+current 4 are actually mergeable yet**, each is waiting on something only Ben
+can supply:
 
 | PR | What | Owed before ready |
 |---|---|---|
-| #370 | Photo crop wizard, Choose photo button, bigger avatars | review |
-| #371 | Release-drift check that stays quiet until a release is due | review |
+| #377 | Chavrusa Dashboard integration (Phase 8 slice 3): target-confirmation toast, shared-color group rings, unresolved-points strip, tables-flash fix, "From tables" button | **Closest to done.** CI green, zero merge conflicts, browser-verified end to end per its own checklist, no data-model change. Body says: "Owed before ready: your review/click-through." |
+| #378 | Homework Checked can optionally also move points | Not ready per its own checklist — untested against a live contest/mini-contest or Shulchani (prutot) mode running concurrently. Also amends CLAUDE.md's "tracked activities never award points" hard rule, which is PROPOSE-FIRST territory on its own. |
+| #379 | docs: propose the tier-1 Firestore write-sync design | No code change — waiting on **Ben's decision** on 2 open questions (scope: roster+scores+tracked entries vs full `data.*` parity; SDK-vs-REST for the write calls). Conflicting with main (touches NOW.md/CHANGELOG, which moved under it) — needs a rebase once the decision is made. |
+| #373 | Erase a class off a borrowed computer, and restore it back from this computer | Draft, **conflicting with main** (touches app.html/CHANGELOG), needs a rebase. Its own body flags "Not verified": the real `showDirectoryPicker()` grant needs a user gesture and a real folder, only faked in-memory for the automated tests — one manual pass owed (pick a real backups folder, back up, erase as "Mine", restore). |
 
 **Phase 8 (Chavrusa Mode) is the active build.** Slices 1 and 2 have both
 merged: manual/automatic group-building, Past Chavrusas, and Individual point
 mode (slice 1); Entire Group / Group Entity point-target modes + Resolve
-(slice 2, #358, merged 2026-08-21). **Two slices left, in build order agreed
-2026-08-20: Dashboard visual integration next** (grouping in List + Class
-view, scan-bar target indicator, multi-tile flash, unresolved-points strip —
-confirmed *not* blocked by the rest of Phase 3), **then the rule editor last**
-(planned as a full tag-based system — freeform per-student tags + rules
-referencing them, not just a never-pair blocklist). See
-`Menchmark_Phased_Build_Plan.md` → Phase 8 for the full status line.
+(slice 2, #358, merged 2026-08-21). **Slice 3 (Dashboard visual integration)
+is built and sitting in #377 above, not yet merged.** Once it lands, **the
+rule editor is the only piece left** (planned as a full tag-based system —
+freeform per-student tags + rules referencing them, not just a never-pair
+blocklist). See `Menchmark_Phased_Build_Plan.md` → Phase 8 for the full status
+line.
 
 **The Firebase/Firestore rebuild is built and deployed.** All 8 build-order
 steps merged (PRs #290, #292, #300, #303, #309) and `firebase deploy` is live
@@ -58,16 +60,9 @@ including the live-project setup and the console-only gaps that cost a day.
 `CLAUDE.md` → "Merged is not done." Nothing here is *next*; all of it is
 **owed**, and mixing the two lists is what let these sit.
 
-- **Tell rebbeim on old offline copies to re-download** (#244). A `file://`
-  copy has no update path, and the #252 update check cannot reach a file
-  downloaded before the check existed. **Only a person can do this**, and it is
-  the one item on this page with real classroom data at risk.
 - **Link the onboarding video.** Video A shipped 2026-08-05 and is linked from
   nowhere — not `quick-start.html`, not `index.html`, not the app. A rebbi
   cannot find it, so as far as the cohort is concerned it did not ship.
-- **`docs/user-guide.md` still says "Backup & Sheets" in 6 places** (lines 229,
-  679, 685, 700, 712, 739 — including two image captions). The in-app rename is
-  complete; the guide still names a tab that no longer exists.
 - **Managed-Chromebook verification runs** for build step 0c (folder backup,
   #249) and step 7 (fragile-storage warning). Cannot be simulated — Ben's own
   hardware. **Step 7 must not reach beta rebbeim until this passes.**
@@ -95,16 +90,31 @@ including the live-project setup and the console-only gaps that cost a day.
   **Migrating the real beta cohort (step 8) before this exists moves their
   accounts, not their safety** — real auth and security rules, but their
   actual class data is exactly as fragile as it is today.
+  **Design decided 2026-08-21 by Ben:**
+  `docs/Firebase_TierOne_WriteSync_Design_Proposal.md`. Checked with the two
+  other sessions in this repo first — neither was working on it, no
+  duplicate effort. Full parity (every class-data field Drive backup
+  carries, not just roster + scores + tracked entries), writing through the
+  vendored Firestore SDK client (inherits offline queue/retry for free)
+  instead of hand-rolled REST, and build the complete design before step 8
+  — no staged MVP. Full parity adds three new `state/*` docs (seating,
+  raffle, settings) beyond the original four collections, first-draft only
+  and flagged for review before building, plus a `firestore.rules` change
+  the narrow scope wouldn't have needed. **Prize Ledger sync is the one
+  named exception — joins once Phase 4 (0-of-3, unbuilt) ships on its own
+  schedule, not a blocker for step 8.** Nothing left open. Not yet
+  built — this is design only.
 
 ---
 
 ## Unfinished, and nothing was tracking it
 
 Originally found by the 2026-08-20 worktree audit; re-run 2026-08-21 —
-**seating tables (#364) and `feat/board-fab`/`fix/seats-fullscreen-topbar`
-have since landed** (as #364, #331, and #351 respectively) and are off this
-list. What the re-run still shows, plus two new ones the same audit surfaced.
-Verify each with the `branch-merge-audit` skill before concluding either way.
+**seating tables (#364), `feat/board-fab`/`fix/seats-fullscreen-topbar`, and
+`feat/shelves-toggle`'s 3 stranded fixes have since landed** (as #364, #331,
+#351, and #376 respectively) and are off this list. What the re-run still
+shows. Verify each with the `branch-merge-audit` skill before concluding
+either way.
 
 - **`fix/theory-audit-batch-1`** — removes Backup's "Send standings now"
   button. Still on `main`. **This is a tab-audit item counted as closed.**
@@ -112,12 +122,16 @@ Verify each with the `branch-merge-audit` skill before concluding either way.
   `steinerman/chazaroom` entry, branch renamed since) — 4 commits of Chazaroom
   PTZ work, including "the PTZ tick now tells the truth, continuously." This is
   what #240 actually contains.
-- **`feat/shelves-toggle`** — 1 commit pushed *after* PR #354 merged: 3 fixes
-  from a code review (a stale-hint bug, a dropdown that didn't close, an
-  un-truncated name) that never made it in.
 - **`fix/backup-label-mismatch-live`** — 1 commit, PR #329 closed unmerged.
-  Finishes the "Backup & Sheets" → "Backup & Restore" rename in the places
-  PR #301 missed (toast/status text, the embedded user guide, setup.html).
+  **Content-dead: nothing is owed here.** Verified 2026-08-21 by grepping
+  `main` — `app.html` and `setup.html` both contain **zero** occurrences of
+  "Backup & Sheets", so the rename this branch would have done (toast/status
+  text, the embedded user guide, `setup.html`) already landed via the
+  Backup & Restore redesign, PR #325. The branch shows up in this lane because
+  `wip-audit.js` compares commit *dates* against the merge, which cannot see
+  content that reached `main` by another route — a limit the `wip` skill flags
+  itself. Safe to delete whenever the branch list gets swept; it is here only
+  so nobody re-derives this a third time.
 - **10 of 18 worktrees are dead** and safe to clear (landed, unlocked, clean) —
   down sharply from 81-of-92, so the 2026-08-20 cleanup mostly happened.
   Removal is a stop-and-ask action — `node scripts/wip-audit.js --stale` prints
@@ -170,19 +184,24 @@ count against `fix/theory-audit-batch-1` above, which never landed.
 
 Roughly in the order of what they unblock. Nothing here is a task Claude can take.
 
-1. **The re-download message** (#244) — see "Merged, not done." Most urgent
-   thing on this page.
-2. **The privacy note** — `docs/Account_Privacy_Note.md`. Drafted; all six
+1. **The privacy note** — `docs/Account_Privacy_Note.md`. Drafted; all six
    blanks decided 2026-08-13 and filled in. Owed: a read-through of the prose
    and the three flagged judgment calls, nothing else. **The earliest gate in
    the whole sign-in plan** — it blocks self-serve signup in *either* tier,
    including Ben's own school. `privacy@menchmark.app` is live and tested.
-3. **A yes on the offline resync proposal** before the dedup-fix PR is built.
-4. **Q3: what a school signs.** Gates onboarding school #2; blocks no code.
-5. **A yes on clearing the 10 dead worktrees** (`node scripts/wip-audit.js
+2. **A yes on the offline resync proposal** before the dedup-fix PR is built.
+3. **Q3: what a school signs.** Gates onboarding school #2; blocks no code.
+4. **A yes on clearing the 10 dead worktrees** (`node scripts/wip-audit.js
    --stale` for the list). Stop-and-ask by policy. The seating-tables lines
    this item used to name are resolved — committed, rebased, and merged as
    #364.
+
+✅ **Cleared 2026-08-21 — Ben told the rebbeim on old offline copies to
+re-download** (#244). That was the one item on this page with real classroom
+data at risk, and the only fix for it — a `file://` copy has no update path,
+so no code change could ever have reached it. Don't re-add this to the queue;
+if a rebbi turns up still on a stale copy, that's a one-off follow-up, not a
+reopening of this item.
 
 ✅ **Cleared 2026-08-12 — six decisions taken, don't re-ask.** The rule-3 /
 Firebase SDK call (vendored, same-origin, tier 1 only), deterministic write

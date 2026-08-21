@@ -226,7 +226,7 @@ Then tap "Add all."
 If your roster already lives in a Google Sheet, you can pull it in directly instead of retyping everything:
 
 
-- Set up the Google Sheet connection once on the Backup & Sheets tab (Chapter 20).
+- Set up the Google Sheet connection once on the Backup & Restore tab (Chapter 20).
 
 
 - In your sheet, add a tab named Roster with columns Name, Class, and optionally Photo URL (a direct, publicly-viewable image link).
@@ -250,7 +250,7 @@ Use the search box and class filter at the top of the Students tab to quickly fi
 Each student can have a photo instead of just initials — this shows up on the Students tab, the tap panel, the leader board, the floating scanner, and (new) on printed seating charts.
 
 
-- Click a student's avatar circle to upload a photo, or drag an image onto it.
+- Click "Choose photo…" (or the student's avatar circle, or drag an image onto it) to upload a photo. A small crop wizard opens first — drag the circle onto his face and use the slider to grow or shrink it, then "Use this photo" saves it.
 
 
 - Prefer a link instead of a file? Use "Photo URL…" to paste a direct image link (for example, one from a Google Sheet or Drive).
@@ -676,13 +676,13 @@ Tools → Brachos is a quick-reference screen for after snack — Al Hamichya fo
 # 20. Syncing to Google Sheets
 
 
-This is optional, but very useful if you want a permanent record you can view from any device, or share with an administrator. Setup now lives on the combined Backup & Sheets tab.
+This is optional, but very useful if you want a permanent record you can view from any device, or share with an administrator. Setup now lives on the combined Backup & Restore tab.
 
 
 Once connected, every scan and the live standings are automatically sent to your own Google Sheet.
 
 
-- Go to Backup & Sheets and follow the setup instructions there — it involves pasting a small script into a blank Google Sheet (a one-time setup).
+- Go to Backup & Restore and follow the setup instructions there — it involves pasting a small script into a blank Google Sheet (a one-time setup).
 
 
 - Once set up, you can also use the same sheet for your Roster tab (see Chapter 4.3).
@@ -697,7 +697,7 @@ Once connected, every scan and the live standings are automatically sent to your
 > **TIP**  Ask a tech-comfortable colleague to help with the one-time Google Sheets setup if this section looks unfamiliar — after that first setup, everything else happens automatically.
 
 
-*The Backup & Sheets tab, with setup instructions.*
+*The Backup & Restore tab, with setup instructions.*
 
 
 # 21. Backup, Data Safety & Offline Use
@@ -709,7 +709,7 @@ Your scores and settings save automatically to the computer/browser you're using
 ## 21.1  Making a Backup
 
 
-On the Backup & Sheets tab, tap the button to download a backup file. This saves a copy of everything — students, activities, scores, and settings — as a file you can keep safe (for example, in an email to yourself or a shared drive).
+On the Backup & Restore tab, tap the button to download a backup file. This saves a copy of everything — students, activities, scores, and settings — as a file you can keep safe (for example, in an email to yourself or a shared drive).
 
 
 ## 21.2  Restoring a Backup
@@ -736,7 +736,7 @@ If you need to move to a new computer, or something went wrong, use "Restore fro
 > **NOTE**  This downloaded copy is a snapshot, not a live mirror — changes made inside it later won't sync back to your regular online version, or vice versa. Treat it as a point-in-time backup that happens to also work offline, and keep track of which copy is the "real" one if you ever use it during an actual outage.
 
 
-*The Backup & Sheets tab — download a backup, restore one, or download an offline copy.*
+*The Backup & Restore tab — download a backup, restore one, or download an offline copy.*
 
 
 # 22. Settings
