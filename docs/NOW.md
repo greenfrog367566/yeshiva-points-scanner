@@ -163,6 +163,16 @@ The Attendance tab especially: its Sheet push, the seating-chart badges and
 "Mark the rest Present" all read the legacy store directly, and each has to
 move to the mirror first or it fails **silently**.
 
+**A second Attendance-tab gap found 2026-08-21, not yet in this issue's own
+plan:** the "✉ Email this day…" panel (`attEmailBtn`/`attEmailPanel`) also
+reads `data.attendance[dateKey]` directly and has no home in the removal plan
+— #227 only ever names `sendAttendance()` (the Sheets push) as needing one.
+Proposed fix, posted as a comment on #227: keep a slimmed-down Attendance tab
+that drops the per-student correction grid (the Gradebook owns that now) but
+keeps Email-this-day and the Sheets push as a reporting/sending surface — both
+can keep reading `data.attendance` unchanged, since that store and its setter
+stay alive regardless of which UI writes to it.
+
 When a tab finally goes, delete its `TRACKED_LEGACY` row, its badge-table row,
 **and** that store's `mirrorTracked()` call together. Pass is editable for the
 current week only, by decision — `data.passCount` has no per-day history.
@@ -188,7 +198,7 @@ next draw instead of staying sticky? Not the behavior ladder — that stays in
 separators) is blocked on #227 — pull it once that lands. ⚠️ Re-check this
 count against `fix/theory-audit-batch-1` above, which never landed.
 
-**7. Homework tab: still a boolean, not the four-state credit cycle (#361).** `ti-homework` is already seeded with `unchecked / full credit / partial credit / no credit`, and the mirror write, the History "notable exception" gate, and `GB_FIXED_TONES` cell-tinting are all already written generically against all four states — but the Homework tab's own UI (`renderHomework()`) still only offers a "Mark checked / Mark unchecked" toggle, so "partial credit" and "no credit" have no writer anywhere. **Not the same thing as #227** (the Gradebook's *own* homework cell editor, shipped in #227 slice 2, is deliberately two-state pending this). Three `app.html` comments previously cited the wrong, unrelated, closed issue #122 (Phase 2c's tab-retirement/data-migration work) for this — corrected 2026-08-20 to point at #361, the real tracking issue.
+**5. Homework tab: still a boolean, not the four-state credit cycle (#361).** `ti-homework` is already seeded with `unchecked / full credit / partial credit / no credit`, and the mirror write, the History "notable exception" gate, and `GB_FIXED_TONES` cell-tinting are all already written generically against all four states — but the Homework tab's own UI (`renderHomework()`) still only offers a "Mark checked / Mark unchecked" toggle, so "partial credit" and "no credit" have no writer anywhere. **Not the same thing as #227** (the Gradebook's *own* homework cell editor, shipped in #227 slice 2, is deliberately two-state pending this). Three `app.html` comments previously cited the wrong, unrelated, closed issue #122 (Phase 2c's tab-retirement/data-migration work) for this — corrected 2026-08-20 to point at #361, the real tracking issue.
 
 ---
 
