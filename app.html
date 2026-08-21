@@ -18254,8 +18254,17 @@ function setupRoster() {
    * tapping "Done arranging" dropped straight back to the flat, undialled
    * 56/34px — every step a rebbi had just clicked, thrown away the moment he
    * finished setting up the room. A size he dials in is a decision about
-   * this chart, not a temporary state of Setup being open. */
-  var SEAT_ARRANGE_AVATAR_PX=72;
+   * this chart, not a temporary state of Setup being open.
+   *
+   * ARRANGING NO LONGER HAS A BIGGER BASE OF ITS OWN, either — a second bug
+   * in the same family. It used to read a dedicated 72px constant, bigger
+   * than the 56/34 the finished chart shows, on the theory that a rebbi
+   * dragging boys around wants the biggest faces available. A rebbi flagged
+   * that as backwards too: Setup should show what scanning will actually
+   * look like, not a preview exaggerated past it. See the "finalWantsQr"
+   * note at the arranging call site (renderSeatGrid) — the one difference
+   * between arranging and the finished chart is now just the QR itself
+   * being hidden, never the size of the face beside where it would be. */
   function seatArrangeAvatarScale(){
     var v=parseFloat(data.seatArrangeAvatarScale);
     return (v>=0.5 && v<=1.5) ? v : 1;
@@ -18632,27 +18641,25 @@ function setupRoster() {
          * distance), and still leaves the pair side by side in a full-screen
          * cell (it wraps in the narrow Dashboard panel, by design).
          *
-         * ARRANGING GETS THE BIGGEST SIZE OF ALL, and needs its own branch —
-         * scanMode is unconditionally false here. effSeatCardMode() forces any
-         * QR-kind mode to "photo" the moment arranging turns on (dragging boys
-         * around a grid of unreadable codes helps nobody), so cardMode's kind
-         * can never be "qr" while arranging, and scanMode (derived from
-         * cardMode) can therefore never be true. Falling through to the
-         * shared-cell size left arranging stuck at 34px even though a photo is
-         * now the ONLY way you are telling boys apart while dragging them —
-         * exactly backwards, and exactly what a rebbi flagged as still too
-         * small after the first pass at this.
-         *
-         * seatArrangeAvatarScale() MULTIPLIES EVERY BRANCH, not only the
-         * arranging one — "Face size" in Setup & arrange used to scale just
-         * the 72px arranging case, which meant dialing it up and then tapping
-         * "Done arranging" silently threw it away: the chart fell straight
-         * back to a flat 56 or 34, no bigger than before the dial existed at
-         * all. A rebbi who sized his faces once should not have to redo it
-         * every time he leaves Setup — the dial is now "how big faces are on
-         * THIS chart", full stop, and arranging staying the biggest base
-         * (72 vs 56/34) is just that same rule applied to a bigger number. */
-        fillSeatLiveCard(seat, s, cardMode, showPts, Math.round((arranging ? SEAT_ARRANGE_AVATAR_PX : (scanMode ? 56 : 34)) * seatArrangeAvatarScale()));
+         * ARRANGING READS THE SAME BASE THE CHART WILL SHOW ONCE YOU LEAVE
+         * SETUP — not a bigger one of its own. `scanMode` is unconditionally
+         * false while arranging (effSeatCardMode() strips the QR so you are
+         * not dragging boys around a grid of unreadable codes), so it cannot
+         * be asked here what the FINISHED chart looks like; `finalWantsQr`
+         * answers that directly from `data.seatCardMode`, arranging's own
+         * override aside. A rebbi arranging seats is deciding where boys sit,
+         * not previewing a different, exaggerated chart — Setup should look
+         * like the chart he is about to hand the room, just without a QR he
+         * cannot use mid-drag. An earlier version gave arranging its own
+         * fixed 72px base specifically to be bigger than normal viewing, and
+         * a rebbi flagged exactly that: arranging read differently from what
+         * scanning actually looked like afterward. seatArrangeAvatarScale()
+         * (the "Face size" −/+ in Setup & arrange) still lets him size it up
+         * if 56/34 genuinely is too small for his room — but now the SAME
+         * dialled size shows in Setup and out of it, because both read off
+         * the one true base instead of two different ones. */
+        var finalWantsQr = seatPrintCodeKind(data.seatCardMode)==="qr";
+        fillSeatLiveCard(seat, s, cardMode, showPts, Math.round((finalWantsQr ? 56 : 34) * seatArrangeAvatarScale()));
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
