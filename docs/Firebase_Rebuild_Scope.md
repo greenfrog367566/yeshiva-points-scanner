@@ -411,3 +411,56 @@ That's "make it real."
 **Design phase complete as of 2026-08-14; build phase complete as of 2026-08-18.** All 8 build-order steps (0 through 7) now have an approved, locked design — every open question from `Firebase_Rebuild_Scope.md`'s original "Open questions for step 1" list is resolved — and steps 0 through 7 are all **merged to `main`** (PRs #290, #292, #300, #303, #309). Step 8 is the only step left, and it is pure execution: prove each merged step on throwaway accounts per its own staged-rollout/verification plan (the managed-Chromebook sessions step 0c and step 7 each still owe are part of that), get a real `firebase deploy` out (nothing has reached the live project yet), then migrate the real beta cohort last.
 
 Each step is a branch or a session. One at a time, same as always.
+
+⚠️ **That paragraph's parenthetical — "nothing has reached the live project
+yet" — went stale on 2026-08-18 and was not corrected until 2026-08-20.** The
+deploy is done; see the next section. Left visible rather than silently edited,
+because it is a clean example of the ship-tail this repo now tracks explicitly
+(`CLAUDE.md` → "Merged is not done").
+
+## The live project — deployed, and the console-only gaps it hit
+
+**`firebase deploy` ran against the real `menchmark-backend` project on
+2026-08-18** (Blaze plan, upgraded the same day): `firestore.rules` and every
+Cloud Function are live. A `type:"beta"` signup code (`BETA2026`,
+tracking-only, no `schoolId` — each beta rebbi is his own independent school,
+not one shared school) is live for the ~30 beta rebbeim.
+
+Three things had to be fixed in the **Firebase/GCP consoles**, not in code, to
+get there:
+
+- **Google was never enabled as a Firebase Auth sign-in provider.** Enabled.
+- **`menchmark.app` was missing from Authorized domains.** Added.
+- **The first superadmin had to be bootstrapped by hand** in the Firestore
+  console — `accounts/{uid}.role` writes are Cloud-Function-only by design, so
+  there is no other way to create the very first one.
+
+**Three more console-only gaps, found and fixed by Ben on 2026-08-19.** Kept
+here so nobody re-derives them. **None needed a code change** — all three were
+GCP project setup gaps that Firebase's own dashboard neither surfaces nor
+enables for you:
+
+1. **The OAuth consent screen was still in `Testing` publishing status**, so any
+   Google account not added as a test user got a hard `Error 403: access_denied`
+   on **both** Google Sign-In and the Drive "Save to Drive" button — one client
+   (`MENCHMARK_GOOGLE_CLIENT_ID`) backs both, so one setting broke two features.
+   Fixed in Google Cloud Console → OAuth consent screen.
+2. **Automatic Drive backup 403'd** with `Google Drive API has not been used in
+   project 566788715634 before or it is disabled`. The Drive API had simply
+   never been enabled on `menchmark-backend` — **enabling Auth and Firestore
+   through Firebase does not enable it.** One-click Enable in the API console.
+3. **`admin.html`'s view-as failed with a generic `View-as failed: INTERNAL`.**
+   Traced to `auth.createCustomToken()` in `exports.viewAs`
+   (`functions/index.js:391`), which needs the **IAM Service Account Credentials
+   API** enabled *and* the functions runtime service account granted **Service
+   Account Token Creator on itself** — neither is on by default on a fresh Cloud
+   Functions gen-2 project. Fixed and confirmed: view-as now reaches the real
+   Gradebook.
+
+**What step 8 still waits on** is therefore not the deploy: it is the
+**managed-Chromebook verification sessions** that step 0c and step 7 each still
+owe (they cannot be simulated — they need Ben's own hardware), plus one real
+end-to-end sign-in click-through. Step 3b's `already-exists` / `ALREADY_EXISTS`
+status-string shape is also still unconfirmed against a live project — it was
+browser-verified against a mocked `fetch()`, so it is worth one real run before
+step 8 leans on it.

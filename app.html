@@ -737,6 +737,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .chav-group-card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;
     display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .chav-group-members{font-weight:600}
+  /* Group Entity mode's "unresolved pooled points" chip -- same pill family as
+     .ss-act-chip/.seats-pill so a pool reads as the same brass-family "amount
+     waiting on you" language the rest of the app already uses. */
+  .chav-group-pool{font-size:.79rem;font-weight:700;background:var(--brass-soft);color:#6b4d18;
+    border-radius:999px;padding:3px 11px;white-space:nowrap}
 
   /* ---- Seating chart mode ---- */
   /* Brief ring on the sheet after "⚙ Rearrange seats" scrolls to it, so it is
@@ -856,9 +861,94 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-grid.arranging .seat{cursor:grab;border-style:solid;box-shadow:0 1px 3px rgba(27,36,64,.08)}
   .seat-grid.arranging .seat.empty{cursor:default;box-shadow:none}
   .seat-grid.arranging .seat.drag-over{border-color:var(--brass);background:var(--brass-soft)}
+  /* The whole landing zone of a dragged table, not just the cell under the
+     cursor. Brass matches the single-cell drag-over above, so the two read as
+     the same "this is where it goes" language at two sizes. `-bad` is the same
+     shape in the warning colour, for a drop seatTableMove would refuse (off
+     the grid, or onto another table) — a zone that lit up regardless would
+     promise a move that then silently does nothing. */
+  /* A seat in a collapsed track — a column or a row with nobody in it and no
+     table over it. No label, so nothing holds the track open, and the padding
+     and min-height come down so the fraction actually governs the size. The
+     22px floor is deliberate: it keeps a blank row reading as a row of desks
+     rather than a hairline, on a printed sheet where rows are auto-sized and
+     would otherwise shrink to padding alone. */
+  .seat.cell-collapsed{padding:4px;overflow:hidden;min-height:22px}
+  .seat-grid.arranging .seat.tbl-drop{border-color:var(--brass);background:var(--brass-soft)}
+  .seat-grid.arranging .seat.tbl-drop-bad{border-color:var(--bad);background:var(--bad-soft)}
   .seat.dragging{opacity:.4}
   .seat-clear{position:absolute;top:2px;right:4px;font-size:.7rem;color:var(--muted);background:transparent;border:none;padding:2px 4px;line-height:1}
   .seat-clear:hover{color:var(--bad)}
+  /* ---- Tables in the seating chart (docs/Seating_Tables_Proposal.md) ----
+     A table is FURNITURE DRAWN UNDER THE SEATS, never a container that owns
+     them: lay.seats stays the only record of who sits where, and lay.tables is
+     a parallel list of rectangles. So the worst a bug in here can do is lose a
+     rectangle — it has no way to lose a boy.
+
+     One extra grid item per table, placed explicitly over the block of cells it
+     covers. Because an explicitly-placed grid item makes CSS auto-placement
+     skip the cells it occupies, EVERY SEAT IS ALSO PLACED EXPLICITLY (see
+     renderSeatGrid and renderSeatChartPrint) — without that, every seat after
+     the first table would silently slide somewhere new. */
+  /* position:relative is load-bearing, not tidiness: the name caption and the
+     grip are both position:absolute, and without a positioned ancestor here
+     they anchor to the page instead and land in the top-left corner of the
+     whole app. */
+  .seat-table{position:relative;border:2px solid var(--tbl-line,#c3c8d4);border-radius:16px;
+    background:var(--tbl-fill,#f2f4f9);z-index:0;pointer-events:none;
+    /* Half the .seat-grid gap, so the surface runs UNDERNEATH the gutters
+       between its own seats and reads as one continuous table rather than a
+       box drawn around four separate tiles. */
+    margin:-5px}
+  .seat-grid .seat{position:relative;z-index:1}
+  /* A boy at a table sits ON the tabletop, so his card drops its own
+     background and border and lets the surface show through.
+
+     Scoped through .seat-grid deliberately: `.seat-print-preview .seat` sets a
+     border at the same specificity as a bare `.seat.at-table` would and is
+     declared later in this stylesheet, so on the class sheet it won and every
+     boy at a table kept a card border the table was supposed to absorb. */
+  .seat-grid .seat.at-table{background:transparent;border-color:transparent}
+  /* And a vacant chair at a table is just bare tabletop. The dashed "Empty
+     seat" placeholder is right in the middle of a room and wrong in the
+     middle of a table. */
+  .seat-grid .seat.at-table.empty{background:transparent;border-style:solid;color:transparent}
+  /* The six colours are a fixed palette rather than a free picker, for a
+     reason that only shows up on paper: each one has to stay legible when the
+     browser drops the fill (see the print block), so the BORDER is the colour
+     that carries the table and is chosen dark enough to do it alone. */
+  .seat-table.tc-slate{--tbl-line:#8d94a6;--tbl-fill:#f2f4f9}
+  .seat-table.tc-blue{--tbl-line:#5b7fc4;--tbl-fill:#eef3fc}
+  .seat-table.tc-green{--tbl-line:#5b9c6e;--tbl-fill:#eef8f1}
+  .seat-table.tc-amber{--tbl-line:#b98c33;--tbl-fill:#fdf5e7}
+  .seat-table.tc-rose{--tbl-line:#c46b7f;--tbl-fill:#fdeff2}
+  .seat-table.tc-violet{--tbl-line:#8a72c0;--tbl-fill:#f4f0fc}
+  .seat-table-name{position:absolute;top:3px;left:11px;font-size:.62rem;font-weight:700;
+    letter-spacing:.4px;text-transform:uppercase;color:var(--tbl-line,#8d94a6);
+    pointer-events:none;max-width:calc(100% - 22px);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  /* The grip is the ONLY interactive part of a table, which is why the
+     backdrop itself is pointer-events:none — a table must never intercept a
+     tap meant for the boy sitting at it. */
+  .seat-table-grip{position:absolute;top:-9px;left:8px;display:none;align-items:center;gap:4px;
+    pointer-events:auto;background:#fff;border:1px solid var(--tbl-line,#c3c8d4);
+    border-radius:999px;padding:1px 7px;font-size:.68rem;font-weight:700;
+    color:var(--tbl-line,#8d94a6);max-width:calc(100% - 16px);z-index:2}
+  .seat-grid.tables-mode .seat-table-grip{display:inline-flex}
+  .seat-grid.tables-mode .seat-table-name{display:none}
+  .seat-table-grip .tg-drag{cursor:grab}
+  .seat-table-grip input{border:0;background:transparent;font:inherit;color:var(--ink);
+    width:9ch;min-width:4ch;padding:0}
+  .seat-table-grip button{border:0;background:transparent;font:inherit;color:inherit;
+    padding:0 2px;line-height:1;cursor:pointer}
+  .seat-table-grip .tg-x:hover{color:var(--bad)}
+  .seat-table-grip .tg-color{width:11px;height:11px;border-radius:50%;flex:0 0 auto;
+    background:var(--tbl-line,#8d94a6);padding:0}
+  /* Tables mode: seats stop being draggable and become selectable instead. */
+  .seat-grid.tables-mode .seat{cursor:pointer}
+  .seat-grid.tables-mode .seat.tbl-sel{box-shadow:0 0 0 2px var(--brass) inset}
+  .seat-tables-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:8px 14px 0;font-size:.82rem;color:var(--muted);font-weight:600}
   .seat-unplaced{padding:0 14px 14px}
   .seat-unplaced-label{font-size:.78rem;color:var(--muted);font-weight:600;margin:4px 0 8px}
   .seat-tray{display:flex;flex-wrap:wrap;gap:8px}
@@ -1926,6 +2016,20 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
        row edge. Same rule the rest of the print CSS already uses on .label,
        .personal-qr-card, .point-card and .lb-row-compact. */
     body.print-seating .seat{border:1px solid #999;break-inside:avoid;page-break-inside:avoid}
+    /* A TABLE PRINTS BY ITS BORDER, NOT ITS FILL. This print block sets no
+       global print-color-adjust, and browsers drop background colours from
+       print by default — so a table that reads only as a tint prints as
+       nothing at all. The 2px coloured outline and the table's name carry it;
+       the tint is a bonus wherever the hint is honoured.
+       break-inside is best-effort: support for it on a grid item spanning
+       several rows is patchy, and the existing fit warning above the preview
+       stays the real backstop for a sheet that runs onto a second page. */
+    body.print-seating .seat-table{border-width:2px;break-inside:avoid;page-break-inside:avoid;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact}
+    /* Beats the .seat rule above, which would otherwise draw a grey box around
+       every boy sitting at a table. */
+    body.print-seating .seat.at-table{border-color:transparent}
+    body.print-seating .seat-table-grip{display:none!important}
     /* The codes block stays whole. Half a key on each page is worse than none.
        It ALWAYS sits at the bottom, in every case — see the note in
        renderSeatChartPrint() before reordering it. */
@@ -3558,6 +3662,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <span id="seatPrintArrangeRow" style="display:flex;gap:6px">
         <button class="btn btn-sm" id="seatSortByName" title="Seat the whole class alphabetically by last name, filling the desks left to right, front to back. Only where each boy sits changes.">A&ndash;Z by name</button>
         <button class="btn btn-sm" id="seatShuffle" title="Deal the whole class into random desks. Only where each boy sits changes.">🎲 Shuffle</button>
+        <!-- Tables — docs/Seating_Tables_Proposal.md. Sits with the other two
+             whole-room controls because it describes the furniture, not the
+             boys: making, moving or removing a table never changes anyone's
+             score, and removing one leaves every boy exactly where he sits. -->
+        <button class="btn btn-sm" id="seatPrintTablesBtn" title="Group seats into a table, then drag the whole table around. For a room with tables instead of single desks.">🪑 Tables</button>
       </span>
       <label style="display:flex;align-items:center;gap:5px;font-size:.9rem" title="What sits in each boy's card. The two &quot;+ photo&quot; options print his picture and his code SIDE BY SIDE, which costs no extra height on the page — so you can recognise a boy and scan him from the same card. Fewer columns, or Landscape, makes the pictures bigger.">Avatar:
         <select id="seatPrintAvatarMode" class="field" style="width:auto">
@@ -4689,6 +4798,15 @@ function setupRoster() {
       </div>
       <span class="grow"></span>
       <button class="btn btn-sm" id="chavSaveNewBtn" type="button">Save &amp; start new</button>
+    </div>
+
+    <div class="toolbar" style="margin-bottom:16px;gap:8px;flex-wrap:wrap">
+      <label class="lbl" style="margin:0">Point target</label>
+      <div class="seat-segmented" id="chavPointModeSeg">
+        <button class="seat-segbtn active" id="chavPointIndividualBtn" type="button">Individual</button>
+        <button class="seat-segbtn" id="chavPointGroupBtn" type="button">Entire Group</button>
+        <button class="seat-segbtn" id="chavPointEntityBtn" type="button">Group Entity</button>
+      </div>
     </div>
 
     <div id="chavManualPanel" class="card pad" style="margin-bottom:16px">
@@ -6674,7 +6792,7 @@ function setupRoster() {
    * is seeded as a four-state item — unchecked / full credit / partial credit /
    * no credit — but the Homework tab is still the old boolean, so it can only
    * ever produce "full credit" or "unchecked", neither of which is an
-   * exception. The rule is correct and simply has nothing to match. When #122
+   * exception. The rule is correct and simply has nothing to match. When #361
    * converts that tab to the four-state cycle, "partial credit" and "no credit"
    * become reachable and start landing here with no change needed.
    *
@@ -8183,9 +8301,16 @@ function setupRoster() {
     // — a silent data change caused by something the rebbi did on a different
     // page ten minutes earlier. Arranging is a thing you are doing right now,
     // so it ends when you leave the page you were doing it on.
-    if(activeTabName==="printSeats" && tab!=="printSeats" && data.seatArranging){
+    // Tables mode leaves with it, and for the same reason — it is even more
+    // clearly a thing you are doing right now. It is listed separately in the
+    // condition because the class sheet's seats drag without data.seatArranging
+    // ever being set (that page is always in arranging), so tables mode can be
+    // on there while the flag beside it is off.
+    if(activeTabName==="printSeats" && tab!=="printSeats" && (data.seatArranging || data.seatTablesMode)){
       data.seatArranging=false;
       data.seatSetupOpen=false;   // the two are one switch now
+      data.seatTablesMode=false;
+      seatTablesReset();
       save();
       renderTapPanel();
     }
@@ -8566,10 +8691,20 @@ function setupRoster() {
     $("chavModeAutoBtn").classList.toggle("active", chavMode==="auto");
     $("chavManualPanel").style.display = chavMode==="manual" ? "block" : "none";
     $("chavAutoPanel").style.display = chavMode==="auto" ? "block" : "none";
+    chavRenderPointModeSeg();
     chavRenderTiles();
     chavRenderGroups();
     chavRenderHistory();
   }
+  function chavRenderPointModeSeg(){
+    var mode=data.chavrusaSession.pointTargetMode;
+    $("chavPointIndividualBtn").classList.toggle("active", mode==="individual");
+    $("chavPointGroupBtn").classList.toggle("active", mode==="group");
+    $("chavPointEntityBtn").classList.toggle("active", mode==="entity");
+  }
+  $("chavPointIndividualBtn").addEventListener("click", function(){ data.chavrusaSession.pointTargetMode="individual"; save(); renderChavrusa(); });
+  $("chavPointGroupBtn").addEventListener("click", function(){ data.chavrusaSession.pointTargetMode="group"; save(); renderChavrusa(); });
+  $("chavPointEntityBtn").addEventListener("click", function(){ data.chavrusaSession.pointTargetMode="entity"; save(); renderChavrusa(); });
   function chavRenderTiles(){
     var grouped=chavGroupedIds();
     var studs=activeStudents().sort(function(a,b){ return lastFirstKey(a.name).localeCompare(lastFirstKey(b.name)); });
@@ -8614,29 +8749,80 @@ function setupRoster() {
       var card=el("div","chav-group-card");
       var names=(g.studentIds||[]).map(chavStudentName).join(", ");
       card.appendChild(el("span","chav-group-members",names||"(empty group)"));
+      var pool=data.chavrusaPools[g.id];
+      if(pool && pool.total){
+        card.appendChild(el("span","chav-group-pool","🧩 "+fmtVal(pool.total)+" pooled"));
+        var resolveBtn=el("button","btn btn-sm btn-primary","Resolve Group Points");
+        resolveBtn.type="button";
+        resolveBtn.addEventListener("click", function(){ chavResolveGroupPoints(g.id); });
+        card.appendChild(resolveBtn);
+      }
+      // A pool add has no data.log row (see awardGroupEntity()), so it never
+      // gets the ↩ every other scan gets in Recent scans/the strip/History.
+      // This is the one place that undo lives for anything but the single
+      // most recent pool add (which "↩ Undo" up top also reaches, via
+      // lastChavPoolAdd) -- always the group's own newest entry, matching
+      // "Undo last scan"'s one-at-a-time shape rather than a per-row list.
+      if(pool && pool.entries.length){
+        var undoPoolBtn=el("button","btn btn-sm","↩ Undo last pooled scan");
+        undoPoolBtn.type="button";
+        undoPoolBtn.title="Undo “"+pool.entries[0].label+"” "+fmtDeltaBare(pool.entries[0].delta);
+        undoPoolBtn.addEventListener("click", function(){
+          var removed=chavRemovePoolEntry(g.id, pool.entries[0].id);
+          if(!removed) return;
+          if(lastChavPoolAdd && lastChavPoolAdd.entryId===removed.id) lastChavPoolAdd=null;
+          save(); renderChavrusa();
+        });
+        card.appendChild(undoPoolBtn);
+      }
       var removeBtn=el("button","btn btn-sm btn-bad","Remove group");
       removeBtn.type="button";
       removeBtn.addEventListener("click", function(){
+        var p=data.chavrusaPools[g.id];
+        if(p && p.total){
+          alert("This group still has "+fmtVal(p.total)+" pooled — Resolve Group Points first, or those points are lost.");
+          return;
+        }
         data.chavrusaSession.groups=data.chavrusaSession.groups.filter(function(x){return x.id!==g.id;});
+        delete data.chavrusaPools[g.id];
         save(); renderChavrusa();
       });
       card.appendChild(removeBtn);
       list.appendChild(card);
     });
   }
+  // Anything that would orphan an unresolved Group Entity pool is refused
+  // rather than silently losing the points inside it (CLAUDE.md: "ask what
+  // happens when the data is gone or wrong" -- the Contest lesson). The one
+  // way out is Resolve Group Points, per group, from chavRenderGroups() above.
+  function chavUnresolvedGroups(){
+    return data.chavrusaSession.groups.filter(function(g){ var p=data.chavrusaPools[g.id]; return p && p.total; });
+  }
   $("chavClearGroupsBtn").addEventListener("click", function(){
     if(!data.chavrusaSession.groups.length) return;
+    var unresolved=chavUnresolvedGroups();
+    if(unresolved.length){
+      alert("Resolve Group Points for "+unresolved.length+" group"+(unresolved.length===1?"":"s")+" with pooled points before clearing — clearing groups would lose them.");
+      return;
+    }
     if(!confirm("Clear all of this sitting's groups? This does not affect Past Chavrusas.")) return;
+    data.chavrusaSession.groups.forEach(function(g){ delete data.chavrusaPools[g.id]; });
     data.chavrusaSession.groups=[];
     save(); renderChavrusa();
   });
   $("chavSaveNewBtn").addEventListener("click", function(){
+    var unresolved=chavUnresolvedGroups();
+    if(unresolved.length){
+      alert("Resolve Group Points for "+unresolved.length+" group"+(unresolved.length===1?"":"s")+" with pooled points before starting a new sitting — those points would otherwise be lost.");
+      return;
+    }
     // Only worth a history entry if there is anything to remember -- an empty
     // sitting saved and reloaded would just be clutter in Past Chavrusas.
     if(data.chavrusaSession.groups.length){
       data.chavrusaHistory.unshift({id:newId(), savedAt:Date.now(), groups:data.chavrusaSession.groups});
       if(data.chavrusaHistory.length>200) data.chavrusaHistory.length=200;
     }
+    data.chavrusaSession.groups.forEach(function(g){ delete data.chavrusaPools[g.id]; });
     data.chavrusaSession={groups:[], pointTargetMode:"individual"};
     chavSelected=[];
     save();
@@ -8675,6 +8861,159 @@ function setupRoster() {
   }
   $("chavModeManualBtn").addEventListener("click", function(){ chavMode="manual"; renderChavrusa(); });
   $("chavModeAutoBtn").addEventListener("click", function(){ chavMode="auto"; renderChavrusa(); });
+
+  /* ---- Point-target modes: Entire Group / Group Entity ----
+   * docs/Menchmark_UI_Redesign_Summary.md §6/§2. Individual mode needed no
+   * code at all -- award() falls straight through to applyScore() as it
+   * always has. These two intercept at that exact same call site (see the
+   * bottom of award()) so every guard above it there -- class membership,
+   * an activity's own .groups restriction, the tracked-item reroute, freeze
+   * -- still applies exactly as it does for a normal scan. Only WHERE the
+   * points land changes.
+   */
+  function chavActiveGroupFor(sid){
+    var groups=data.chavrusaSession.groups;
+    for(var i=0;i<groups.length;i++){
+      if((groups[i].studentIds||[]).indexOf(sid)>=0) return groups[i];
+    }
+    return null;
+  }
+  // No stored name exists for a group ({id, studentIds} only) -- computed at
+  // render/flash time from whichever member sorts first, matching the spec's
+  // own example ("Dovid's group").
+  function chavGroupLabel(group){
+    var first=chavStudentName((group.studentIds||[])[0]).split(" ")[0];
+    return first+"’s group";
+  }
+  function chavPoolFor(groupId){
+    var p=data.chavrusaPools[groupId];
+    if(!p){ p={total:0, entries:[]}; data.chavrusaPools[groupId]=p; }
+    return p;
+  }
+  // "Entire Group": give the armed activity's full value to every member. Reuses
+  // the exact batch pattern giveArmedToAll() already established (one batchId,
+  // deferSave, one save() at the end) so undoEntryById()'s existing "given to N
+  // students at once" confirm dialog (app.html ~15955) handles group-aware undo
+  // with no new undo code, and awardWith()'s own contest-tagging/freeze checks
+  // apply per member exactly as they do for any other batch award.
+  function awardGroupTarget(group, label, delta){
+    var ids=group.studentIds||[];
+    if(!ids.length) return false;
+    var bid=newId(), done=0;
+    ids.forEach(function(sid){
+      var s=studentById(sid);
+      if(s && awardWith(s, label, delta, {quiet:true, batchId:bid, deferSave:true})){
+        done++;
+        refreshStudentTiles(sid, delta);
+      }
+    });
+    save();
+    renderRecent(); renderScanBoard(); renderTapPanel(); refreshLiveViews();
+    var gname=chavGroupLabel(group);
+    flash(delta>=0, gname, fmtDeltaBare(delta), done+" student"+(done===1?"":"s")+" · "+label, delta>=0?"positive":"negative");
+    beep(delta>=0);
+    return done>0;
+  }
+  // The single most recent Group Entity pool contribution, in enough detail to
+  // reverse it -- not persisted, deliberately just one slot deep. Mirrors
+  // lastTrackedScan exactly, and for the same reason: a pool add is a real
+  // write with no data.log row behind it, so undoMostRecentScan()'s ordinary
+  // log-walk cannot find it. Without this, "Undo last scan" right after an
+  // entity-mode scan silently reversed whatever OLDER log entry it walked
+  // back to instead -- the pool sat untouched and a real, unrelated scan got
+  // reversed with no warning. See undoMostRecentScan() for what reads it.
+  var lastChavPoolAdd = null;
+  // "Group Entity": points accumulate in a shared pool instead of landing on
+  // any individual student's data.scores -- data.chavrusaPools is stored, not
+  // derived (the Contest lesson in CLAUDE.md: a total that's only ever summed
+  // from data.log, which is capped and wipeable, is built on sand). Resolve
+  // Group Points (chavResolveGroupPoints, below) is the only thing that ever
+  // turns a pool into real points.
+  function awardGroupEntity(group, label, delta, actId){
+    var pool=chavPoolFor(group.id);
+    pool.total += delta;
+    var entry={id:newId(), ts:Date.now(), label:label, delta:delta, actId:actId||null};
+    pool.entries.unshift(entry);
+    if(pool.entries.length>50) pool.entries.length=50;
+    lastChavPoolAdd={groupId:group.id, entryId:entry.id, ts:entry.ts};
+    save();
+    renderChavrusa();
+    var gname=chavGroupLabel(group);
+    flash(delta>=0, gname, fmtDeltaBare(delta), "🧩 Added to pool · now "+fmtVal(pool.total), delta>=0?"positive":"negative");
+    beep(delta>=0);
+    return true;
+  }
+  // Removes one entry from a pool by id and un-adds its delta -- the one
+  // primitive both undoMostRecentScan() (via reverseChavPoolAdd, below) and
+  // the Chavrusa Mode tab's own "↩ Undo last" button (chavRenderGroups) share,
+  // so there is exactly one way a pool entry ever goes away. Guarded by id
+  // rather than always popping entries[0]: a stale lastChavPoolAdd (the entry
+  // it names has already been removed some other way) is simply a no-op,
+  // never a wrong removal.
+  function chavRemovePoolEntry(groupId, entryId){
+    var pool=data.chavrusaPools[groupId];
+    if(!pool) return null;
+    var idx=-1;
+    for(var i=0;i<pool.entries.length;i++){ if(pool.entries[i].id===entryId){ idx=i; break; } }
+    if(idx<0) return null;
+    var removed=pool.entries.splice(idx,1)[0];
+    pool.total -= removed.delta;
+    return removed;
+  }
+  // reverseTrackedWrite()'s counterpart for a pending pool add -- same
+  // descriptor-in, bool-out shape, called from undoMostRecentScan() below.
+  function reverseChavPoolAdd(desc){
+    if(!desc) return false;
+    var removed=chavRemovePoolEntry(desc.groupId, desc.entryId);
+    if(!removed) return false;
+    save();
+    renderChavrusa();
+    return true;
+  }
+  // Splits a pool's total evenly across its group's members (integer division,
+  // remainder to the first N in group order) and delivers it through the same
+  // batch pattern as awardGroupTarget() -- one data.log entry per student,
+  // shared batchId, so it's undoable the same way. Reuses awardWith() rather
+  // than writing data.scores directly, which is what makes the freeze guard
+  // below correct for free.
+  //
+  // A FROZEN MEMBER'S SHARE STAYS POOLED, NOT LOST. awardWith() refuses a
+  // frozen student exactly as it does for any other batch award -- freeze has
+  // only ever blocked GIVING, never confiscated points already earned, and a
+  // resolve that quietly dropped a frozen boy's share would be exactly that.
+  // Only the delivered amount is subtracted from the pool; what's left keeps
+  // the group "unresolved" (chavUnresolvedGroups) until it can be delivered.
+  function chavResolveGroupPoints(groupId){
+    var group=null;
+    for(var i=0;i<data.chavrusaSession.groups.length;i++){ if(data.chavrusaSession.groups[i].id===groupId){ group=data.chavrusaSession.groups[i]; break; } }
+    if(!group) return;
+    var pool=data.chavrusaPools[groupId];
+    if(!pool || !pool.total) return;
+    var ids=group.studentIds||[];
+    if(!ids.length) return;
+    var total=pool.total, n=ids.length;
+    var base=Math.trunc(total/n), remainder=total-base*n, sign=remainder<0?-1:1, extra=Math.abs(remainder);
+    var bid=newId(), done=0, delivered=0, skipped=0;
+    ids.forEach(function(sid, idx){
+      var amt=base + (idx<extra ? sign : 0);
+      if(!amt) return;
+      var s=studentById(sid);
+      if(s && awardWith(s, "Chavrusa pool resolved", amt, {quiet:true, batchId:bid, deferSave:true})){
+        done++; delivered+=amt; refreshStudentTiles(sid, amt);
+      } else { skipped++; }
+    });
+    pool.total -= delivered;
+    if(pool.total===0) pool.entries=[];
+    save();
+    renderRecent(); renderScanBoard(); renderTapPanel(); refreshLiveViews(); renderChavrusa();
+    var gname=chavGroupLabel(group);
+    if(skipped>0){
+      flash(delivered>=0, gname, fmtDeltaBare(delivered), skipped+" student"+(skipped===1?"":"s")+" frozen — their share stays pooled", "negative");
+    } else {
+      flash(delivered>=0, gname, fmtDeltaBare(delivered), "Resolved across "+done+" student"+(done===1?"":"s"), delivered>=0?"positive":"negative");
+    }
+    beep(skipped===0);
+  }
 
   // Every pair of students who have ever appeared together in a SAVED (past)
   // group -- walked fresh from data.chavrusaHistory each time rather than
@@ -10370,7 +10709,7 @@ function setupRoster() {
      * store is still the old boolean, so hwMirrorValue() can only say "full
      * credit" or "unchecked" and neither is an exception. That is deliberate —
      * see trackedValueIsNotable(). The gate is written against the four-state
-     * vocabulary the item already carries, so #122 switching this tab to the
+     * vocabulary the item already carries, so #361 switching this tab to the
      * real cycle starts producing rows here without touching this line.
      */
     if(trackedValueIsNotable(hwMirrorValue(checked)) || trackedValueIsNotable(hwPrev && hwMirrorValue(hwPrev.checked))){
@@ -13248,7 +13587,11 @@ function setupRoster() {
     if(band==="tracked") return data.bannerTracked!==false;
     return true;
   }
-  function flash(ok, line1, line2, line3, band){
+  // ms is optional and defaults to the ordinary 1400ms every scan toast has
+  // always used — only a caller with more to say (see the batch-undo warning)
+  // passes a longer one, so every existing flash() call keeps its timing
+  // exactly as it was.
+  function flash(ok, line1, line2, line3, band, ms){
     if(!bannerBandOn(band)) return;
     var f=$("flash");
     // flash-toast must survive this wholesale className write — it is what
@@ -13259,7 +13602,7 @@ function setupRoster() {
     if(line2) f.appendChild(el("div","delta",line2));
     if(line3) f.appendChild(el("div","total",line3));
     clearTimeout(f._t);
-    f._t=setTimeout(function(){ f.classList.remove("show"); }, 1400);
+    f._t=setTimeout(function(){ f.classList.remove("show"); }, ms>0?ms:1400);
   }
 
   // Decides how the CURRENT scan should be tagged for the contest system, and
@@ -14154,6 +14497,18 @@ function setupRoster() {
       flash(false, s.name, "❄️ Frozen", fmtFreezeTime(freezeRemainingMs(s.id))+" left — can't give points");
       beep(false);
       return false;
+    }
+    // Chavrusa Mode point-target modes (Phase 8). Individual is the spec's own
+    // default and needs no branch here at all -- it's exactly the fall-through
+    // below, unchanged. Group/Entity only take over once a scanned student is
+    // actually in an active group this sitting; an ungrouped student always
+    // scores normally regardless of the session's mode.
+    var chavGroup = chavActiveGroupFor(s.id);
+    if(chavGroup && data.chavrusaSession.pointTargetMode==="group"){
+      return awardGroupTarget(chavGroup, armed.label, armed.delta);
+    }
+    if(chavGroup && data.chavrusaSession.pointTargetMode==="entity"){
+      return awardGroupEntity(chavGroup, armed.label, armed.delta, armedAct?armedAct.id:null);
     }
     return applyScore(s, armed.label, armed.delta);
   }
@@ -15928,7 +16283,7 @@ function setupRoster() {
     // either — and it is dropped rather than held, since holding it would let
     // it surface later when the rebbi switches back.
     if(lastTrackedScan && !logEntryInCurrentClass(lastTrackedScan)) lastTrackedScan=null;
-    if(lastTrackedScan && (!candidate || lastTrackedScan.ts>=candidate.ts)){
+    if(lastTrackedScan && (!candidate || lastTrackedScan.ts>=candidate.ts) && (!lastChavPoolAdd || lastTrackedScan.ts>=lastChavPoolAdd.ts)){
       var pending=lastTrackedScan;
       lastTrackedScan=null;
       if(reverseTrackedWrite(pending)){
@@ -15942,9 +16297,45 @@ function setupRoster() {
         refreshTrackedBadges();
         return "scan";
       }
-      // Stale — fall through and try the log-walk candidate instead.
+      // Stale — fall through and try the other candidates instead.
     }
-    if(candidate){ undoEntry(candidateIdx); return "scan"; }
+    // A Group Entity pool add is a third kind of "real write with no data.log
+    // row behind it" (see lastChavPoolAdd's own comment) — checked the same
+    // way as lastTrackedScan, just above the log-walk candidate. Not
+    // class-scoped: a Chavrusa session is one sitting for the whole app, not
+    // per class (see the Chavrusa Mode module's own top comment), so there is
+    // no class filter to apply here the way there is for a tracked scan.
+    if(lastChavPoolAdd && (!candidate || lastChavPoolAdd.ts>=candidate.ts)){
+      var pendingPool=lastChavPoolAdd;
+      lastChavPoolAdd=null;
+      if(reverseChavPoolAdd(pendingPool)) return "scan";
+      // Stale — fall through to the log-walk candidate instead.
+    }
+    if(candidate){
+      undoEntry(candidateIdx);
+      // "One press reverses one scan" (deliberate, see the batch-undo comment
+      // above) means a rebbi undoing a mis-aimed batch from a quick-undo
+      // button only ever takes back the one student it landed on — the other
+      // N-1 keep their points with nothing on screen saying so. Said once,
+      // here, so every quick-undo surface (the pill, the Dashboard button,
+      // the seating chart, CTRL:UNDO) carries the same warning without
+      // duplicating it at each call site. batchSiblings() already excludes
+      // the entry undoEntry() just marked undone, so "remaining" really is
+      // what's still standing.
+      if(candidate.batchId){
+        var remaining=batchSiblings(candidate.batchId).length;
+        if(remaining>0){
+          var bs=subjectById(candidate.sid);
+          // Longer than the ordinary 1400ms scan toast (the default flash()
+          // still uses everywhere else) -- this one has real instructions to
+          // read, not just a number to glance at.
+          flash(false, "⚠️ Only "+(bs?bs.name:"one student")+"'s scan was undone",
+                "", remaining+" other"+(remaining===1?"":"s")+" from this batch still stand — undo from Recent scans or History to reverse them all.", undefined, 4500);
+          return "scanPartial";
+        }
+      }
+      return "scan";
+    }
     return false;
   }
   $("giveAllBtn").addEventListener("click", function(){ giveArmedToAll(); });
@@ -16522,6 +16913,10 @@ function setupRoster() {
     if(!Array.isArray(lay.seats)) lay.seats=[];
     var need=lay.rows*lay.cols;
     if(lay.seats.length!==need) seatResize(lay, lay.rows, lay.cols);
+    // Same repair pass the seats get, for the furniture. seatResize() ends with
+    // this too, so the call above already covers the reshaping case — this is
+    // for the far more common one where the grid was already the right size.
+    seatTablesFit(lay);
     return lay;
   }
   // How tall/wide the Rows and Cols spinners let a rebbi go. Rows is generous
@@ -16599,6 +16994,443 @@ function setupRoster() {
       }
     }
     lay.rows=rows; lay.cols=cols; lay.seats=grid;
+    // Keep the furniture inside the room the reshape just produced. Last,
+    // because it reads the new rows/cols. See seatTablesFit().
+    seatTablesFit(lay);
+  }
+
+  /* ---------- seating chart: tables ----------
+   *
+   * docs/Seating_Tables_Proposal.md. A table is a rectangle of CELLS drawn
+   * underneath the seats — furniture, not a container. `lay.seats` remains the
+   * only record of who sits where, and nothing in this section writes to it
+   * except seatTableMove(), which permutes it and then verifies the
+   * permutation before saving. The practical consequence is worth stating
+   * plainly: the worst a bug in here can do is lose a rectangle.
+   *
+   * Stored as data.seating[class].tables = [{id,name,r,c,w,h,shape,color}].
+   * Purely additive — no DATA_VERSION bump, because nothing converts.
+   */
+  var SEAT_TABLE_COLORS=["slate","blue","green","amber","rose","violet"];
+  function seatTablesArr(lay){
+    if(!Array.isArray(lay.tables)) lay.tables=[];
+    return lay.tables;
+  }
+  function seatRectsOverlap(a,b){
+    return a.r < b.r+b.h && b.r < a.r+a.h && a.c < b.c+b.w && b.c < a.c+a.w;
+  }
+  /* Keep every table inside the room after the room changes shape.
+   *
+   * Called at the END of seatResize(), which covers every caller at once — the
+   * Rows/Cols spinners on both charts and seatLayout()'s own repair pass — so
+   * no caller has to remember. Clamps where it can and dissolves where it
+   * cannot: a table wider than the room has no honest position to be clamped
+   * to.
+   *
+   * This is the ONLY thing a resize is allowed to destroy. seatResize itself
+   * still never drops a boy (see its comment above), and this function never
+   * touches lay.seats at all.
+   */
+  function seatTablesFit(lay){
+    var kept=[];
+    seatTablesArr(lay).forEach(function(t){
+      if(!t||typeof t!=="object") return;
+      if(t.w>lay.cols||t.h>lay.rows) return;        // cannot fit in this room
+      if(t.c+t.w>lay.cols) t.c=lay.cols-t.w;
+      if(t.r+t.h>lay.rows) t.r=lay.rows-t.h;
+      if(t.r<0||t.c<0) return;
+      // Clamping can push two tables into one another; first one keeps its
+      // place, the loser is dissolved rather than left overlapping.
+      if(kept.some(function(o){ return seatRectsOverlap(o,t); })) return;
+      kept.push(t);
+    });
+    lay.tables=kept;
+  }
+  // Which table covers a given (row, col) — in TRUE coordinates, never display
+  // ones. Returns null for a plain desk.
+  function seatTableAtRC(lay, r, c){
+    var tables=seatTablesArr(lay);
+    for(var i=0;i<tables.length;i++){
+      var t=tables[i];
+      if(r>=t.r && r<t.r+t.h && c>=t.c && c<t.c+t.w) return t;
+    }
+    return null;
+  }
+  /* Move a table to (nr,nc), TAKING ITS BOYS WITH IT — and SWAPPING with
+   * whoever is standing in the new spot.
+   *
+   * The swap is the whole reason this is usable. An earlier version refused a
+   * move onto occupied cells, which is safe and, on a real chart, almost
+   * always useless: a class of 24 in a 25-desk room leaves one free cell, so
+   * every direction a rebbi could drag a table was refused and the grip read
+   * as broken. Dragging one SEAT onto another has always swapped the two boys
+   * (see wireSeatArrange), so dragging a table swaps the block. Same idiom,
+   * scaled up.
+   *
+   * This is the one operation in the feature that writes to lay.seats, so it
+   * is written as what it is — a permutation, the same ids at different
+   * indices — and each affected cell is assigned exactly once, computed from
+   * the ORIGINAL array rather than from a partially-updated one. That matters
+   * because the source and destination blocks are allowed to overlap (nudging
+   * a table one column across is the common case), and a naive pairwise swap
+   * clobbers itself the moment they do.
+   *
+   *   destination cells  <- the table's own boys, offset for offset
+   *   vacated cells      <- the boys who were displaced, in reading order
+   *
+   * Those two sets are always the same size (both are |block| - |overlap|), so
+   * nobody is left without a seat. The count check afterwards should therefore
+   * be impossible to trip; it is here because "impossible" is exactly what the
+   * seating code has been bitten by before (see seatResize's comment), and
+   * writing nothing is a free way to be certain.
+   *
+   * Returns true only if the move happened. Refused, with nothing written, if
+   * the block would leave the room or overlap another table — a boy should
+   * never be swapped onto furniture he was not seated at.
+   */
+  function seatTableMove(lay, t, nr, nc){
+    if(nr<0||nc<0||nr+t.h>lay.rows||nc+t.w>lay.cols) return false;
+    if(nr===t.r && nc===t.c) return false;
+    var moved={r:nr,c:nc,w:t.w,h:t.h};
+    if(seatTablesArr(lay).some(function(o){ return o!==t && seatRectsOverlap(o,moved); })) return false;
+    var cols=lay.cols, src=[], dst=[], i, j;
+    for(i=0;i<t.h;i++) for(j=0;j<t.w;j++){
+      src.push((t.r+i)*cols+(t.c+j));
+      dst.push((nr+i)*cols+(nc+j));
+    }
+    var inSrc={}, inDst={};
+    src.forEach(function(x){ inSrc[x]=1; });
+    dst.forEach(function(x){ inDst[x]=1; });
+    var next=lay.seats.slice();
+    // The table's own boys, each keeping his place within the block.
+    for(i=0;i<dst.length;i++) next[dst[i]]=lay.seats[src[i]];
+    // Everyone the table landed on, moved into the cells it left behind.
+    var displaced=dst.filter(function(x){ return !inSrc[x]; }).map(function(x){ return lay.seats[x]; });
+    var vacated=src.filter(function(x){ return !inDst[x]; });
+    for(i=0;i<vacated.length;i++) next[vacated[i]]=displaced[i];
+    function seated(a){ var k=0; a.forEach(function(v){ if(v) k++; }); return k; }
+    if(seated(next)!==seated(lay.seats)) return false;
+    lay.seats=next; t.r=nr; t.c=nc;
+    return true;
+  }
+  /* Make a table over a block of cells. Returns it, or null if the block is
+   * illegal — off the grid, a single cell, or overlapping a table that is
+   * already there.
+   *
+   * `shape` is stored as "rect" and there is no UI to change it: round tables
+   * were considered and deliberately left out of v1 (a round table that reads
+   * properly wants a hollow middle, which is a convention to explain rather
+   * than a feature to build). The field exists so adding them later is a
+   * render change, not a migration.
+   */
+  function seatTableCreate(lay, r, c, w, h){
+    if(w<1||h<1||w*h<2) return null;
+    if(r<0||c<0||r+h>lay.rows||c+w>lay.cols) return null;
+    var rect={r:r,c:c,w:w,h:h};
+    if(seatTablesArr(lay).some(function(o){ return seatRectsOverlap(o,rect); })) return null;
+    var t={ id:newId(), name:"Table "+(lay.tables.length+1), r:r, c:c, w:w, h:h, shape:"rect",
+            color:SEAT_TABLE_COLORS[lay.tables.length%SEAT_TABLE_COLORS.length] };
+    lay.tables.push(t);
+    return t;
+  }
+  /* In-memory only, exactly like seatGridPending above: both describe an
+   * action half-finished on this screen, not a preference, so they store no
+   * field and need no migration.
+   *
+   * seatTableSel holds TRUE flat indices, never display ones, so nothing in
+   * here can be confused by Rebbi's view.
+   */
+  var seatTableSel=[], seatTablePending=null;
+  /* Which table is under the cursor RIGHT NOW, during an HTML5 drag.
+   *
+   * It cannot come from the dataTransfer: a `dragover` handler is forbidden
+   * from reading dataTransfer.getData() (only `drop` may), which is exactly
+   * when the landing zone needs to be drawn. So the id is parked here at
+   * dragstart and cleared at dragend. In-memory only, like seatTablePending —
+   * it describes a gesture in flight, not a preference. */
+  var seatTableDragId=null;
+  // The selection is always the BOUNDING BOX of the cells tapped, which is what
+  // guarantees a table is a rectangle without a fiddly polygon model — and is
+  // predictable enough to explain in one line of helper text.
+  function seatTableSelBox(cols){
+    if(!seatTableSel.length) return null;
+    var r0=1e9,c0=1e9,r1=-1,c1=-1;
+    seatTableSel.forEach(function(idx){
+      var r=Math.floor(idx/cols), c=idx%cols;
+      if(r<r0) r0=r; if(c<c0) c0=c; if(r>r1) r1=r; if(c>c1) c1=c;
+    });
+    return {r:r0, c:c0, w:c1-c0+1, h:r1-r0+1};
+  }
+  function seatTablesReset(){ seatTableSel=[]; seatTablePending=null; }
+  /* Draw the tables into a chart grid. Shared by the live chart and the class
+   * sheet — which is the whole point, since it means paper cannot disagree
+   * with the screen about where the furniture is.
+   *
+   * rebbiView MIRRORS the block, and that line is load-bearing. Both charts
+   * implement Rebbi's view by reversing the flat seats array — a true 180°
+   * rotation — but a table is stored as (r,c) rather than as a flat index, so
+   * it does not come along for free. Without the mirror the boys rotate around
+   * tables that stay put. Render-time only: lay.tables is never written here.
+   */
+  /* A blank COLUMN now costs as little page as a blank ROW already did.
+   *
+   * Rows were always auto-sized — the print sheet sets no gridTemplateRows at
+   * all, and on the Dashboard the grid's height is indefinite — so an empty row
+   * collapses to the height of an empty seat. Columns were `1fr` throughout,
+   * and width is always definite, so an empty column kept a full equal share of
+   * the page while an empty row cost nothing. A room that is 8 wide but only
+   * uses 5 columns wasted three columns' worth of width on every printed sheet.
+   *
+   * "Blank" means no boy AND no table over it: a table spanning empty cells is
+   * still furniture in the room and keeps its width. Coordinates are DISPLAY
+   * ones throughout — seats are placed by display index and tables mirror their
+   * own r/c under Rebbi's view, so both are mirrored consistently here.
+   *
+   * A chart nobody has been placed into yet keeps equal columns rather than
+   * collapsing to a row of slivers. */
+  function seatUsedAxes(lay, rebbiView){
+    var cols = lay.cols, rows = lay.rows, uc = [], ur = [], i, k;
+    for(i=0;i<cols;i++) uc.push(false);
+    for(i=0;i<rows;i++) ur.push(false);
+    // Display order is built the same way both charts build theirs — the flat
+    // seat list, reversed under Rebbi's view — so it is derived here rather
+    // than passed in, and a chart can call this before it needs its own.
+    var seats = lay.seats.slice();
+    if(rebbiView) seats.reverse();
+    seats.forEach(function(sid, idx){
+      if(sid){ uc[idx % cols] = true; ur[Math.floor(idx / cols)] = true; }
+    });
+    seatTablesArr(lay).forEach(function(t){
+      var c = rebbiView ? (cols - t.c - t.w) : t.c;
+      var r = rebbiView ? (rows - t.r - t.h) : t.r;
+      for(k=0;k<t.w;k++) if(c+k>=0 && c+k<cols) uc[c+k] = true;
+      for(k=0;k<t.h;k++) if(r+k>=0 && r+k<rows) ur[r+k] = true;
+    });
+    // A chart nobody has been placed into yet has every track blank. Collapse
+    // them all and it is a grid of slivers, so that case keeps equal tracks.
+    var any = function(a){ return a.some(function(u){ return u; }); };
+    return { cols: any(uc) ? uc : null, rows: any(ur) ? ur : null };
+  }
+  /* NOT `auto` for the blank tracks, which is the obvious choice and is wrong.
+   * `auto` sizes a track to its CONTENT, and an empty seat says "Empty seat" —
+   * two words. The blank columns therefore took their text's width first and
+   * the `1fr` columns split only what was left, so on a sheet with several
+   * blank columns the ones holding actual boys came out NARROWER than the
+   * empty ones. Exactly backwards, and it is what shipped in the first cut.
+   *
+   * An explicit small fraction with a ZERO minimum fixes both halves: the
+   * blank track gets a fixed share of the page rather than bidding for it with
+   * its text, and `minmax(0, …)` stops any content from inflating it. A filled
+   * column is then always the wider of the two by construction — its own `1fr`
+   * is `minmax(auto, 1fr)`, whose floor is its content, so it can only ever be
+   * pushed wider, never squeezed below a blank one. */
+  /* The two axes need DIFFERENT blank sizes to end up looking the same, which
+   * is not obvious and was wrong at first.
+   *
+   * A fraction is a share of that axis, and the two axes are nowhere near the
+   * same size: on a full-screen chart a column's full share runs about 270px
+   * against a row's 135px. The same `0.35fr` therefore drew a blank column
+   * twice as thick as a blank row — the rows looked right and the columns
+   * still looked fat.
+   *
+   * So rows keep the fraction, which reads correctly and scales with how many
+   * rows there are, and blank columns take a FIXED thin width instead. Fixed
+   * also means a blank column does not quietly get fatter on a wider screen,
+   * which is exactly what a fraction would do. */
+  var SEAT_BLANK_ROW = "minmax(0, 0.35fr)";
+  var SEAT_BLANK_COL = "36px";
+  function seatTrackTemplate(used, n, blank){
+    if(!used) return "repeat("+n+", 1fr)";
+    return used.map(function(u){ return u ? "1fr" : blank; }).join(" ");
+  }
+  function renderSeatTables(grid, lay, rebbiView, interactive, redraw){
+    seatTablesArr(lay).forEach(function(t){
+      var r = rebbiView ? (lay.rows - t.r - t.h) : t.r;
+      var c = rebbiView ? (lay.cols - t.c - t.w) : t.c;
+      var back=el("div","seat-table tc-"+(SEAT_TABLE_COLORS.indexOf(t.color)>=0?t.color:"slate"));
+      back.style.gridRow    = (r+1)+" / span "+t.h;
+      back.style.gridColumn = (c+1)+" / span "+t.w;
+      back.appendChild(el("div","seat-table-name", t.name||"Table"));
+      if(interactive) back.appendChild(seatTableGrip(lay, t, redraw));
+      grid.appendChild(back);
+    });
+  }
+  function seatTableGrip(lay, t, redraw){
+    var grip=el("div","seat-table-grip no-print");
+    var handle=el("span","tg-drag","⠿");
+    handle.draggable=true;
+    handle.title="Drag onto the seat where this table's front-left corner should go — the boys at it come with it. On a touch screen, tap this then tap that seat.";
+    handle.addEventListener("dragstart", function(ev){
+      ev.dataTransfer.setData("text/plain", JSON.stringify({tbl:t.id}));
+      ev.dataTransfer.effectAllowed="move";
+      /* Drag the TABLE, not the grip. With no drag image set, the browser
+       * snapshots the element the drag started on — the ⠿ handle — so moving a
+       * six-seat table looked like dragging one small box, giving no sense of
+       * the block about to move. The grip lives inside the tabletop rectangle,
+       * so that rectangle is the right picture.
+       *
+       * The offset is the pointer's position WITHIN the table, so the table
+       * stays under the cursor exactly where it was grabbed instead of
+       * snapping its corner to the pointer. */
+      var back = grip.parentNode;
+      if(back && back.classList && back.classList.contains("seat-table")){
+        var rect = back.getBoundingClientRect();
+        ev.dataTransfer.setDragImage(back, ev.clientX - rect.left, ev.clientY - rect.top);
+      }
+      // The landing-zone paint needs to know WHICH table is moving, and
+      // dragover may not read dataTransfer. See seatTableDragId.
+      seatTableDragId = t.id;
+    });
+    /* Fires however the drag ends — dropped on a seat, dropped nowhere, or
+     * cancelled with Escape — so the landing zone can never be left painted on
+     * a chart with nothing being dragged. */
+    handle.addEventListener("dragend", function(){
+      seatTableDragId = null;
+      var grid = grip.closest ? grip.closest(".seat-grid") : null;
+      seatTableClearDrop(grid);
+    });
+    // Tap-to-move fallback, matching the one the unplaced tray already offers:
+    // a smartboard has no drag.
+    handle.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      seatTablePending = (seatTablePending===t.id) ? null : t.id;
+      redraw();
+    });
+    if(seatTablePending===t.id) grip.style.outline="2px solid var(--brass)";
+    grip.appendChild(handle);
+    var nameIn=el("input"); nameIn.type="text"; nameIn.value=t.name||"";
+    nameIn.title="Rename this table";
+    nameIn.addEventListener("click", function(ev){ ev.stopPropagation(); });
+    // "change", never "input" — redraw() replaces this element, so reacting to
+    // every keystroke would take the focus away mid-word.
+    nameIn.addEventListener("change", function(){
+      t.name=nameIn.value.slice(0,24); save(); redraw();
+    });
+    grip.appendChild(nameIn);
+    var col=el("button","tg-color"); col.type="button";
+    col.title="Change this table's colour";
+    col.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      var i=SEAT_TABLE_COLORS.indexOf(t.color);
+      t.color=SEAT_TABLE_COLORS[(i+1)%SEAT_TABLE_COLORS.length];
+      save(); redraw();
+    });
+    grip.appendChild(col);
+    var x=el("button","tg-x","✕"); x.type="button";
+    // No confirm, deliberately: dissolving a table is non-destructive by
+    // construction — it removes a rectangle and touches nobody's seat.
+    x.title="Remove this table. Everyone stays exactly where he is sitting.";
+    x.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      lay.tables=seatTablesArr(lay).filter(function(o){ return o!==t; });
+      save(); redraw();
+    });
+    grip.appendChild(x);
+    return grip;
+  }
+  function renderSeatTablesBar(host, lay, redraw){
+    var bar=el("div","seat-tables-bar no-print");
+    var box=seatTableSelBox(lay.cols);
+    var clash = box && seatTablesArr(lay).some(function(o){ return seatRectsOverlap(o,box); });
+    var can = !!box && box.w*box.h>=2 && !clash;
+    bar.appendChild(el("span",null, seatTablePending
+      ? "Now tap the seat where that table's front-left corner should go."
+      : "Tap seats to mark out a table, then Make a table. Drag a table's ⠿ grip to move it — the boys at it come too. Seats don't drag while this is on."));
+    var mk=el("button","btn btn-sm"+(can?" btn-primary":""), "Make a table");
+    mk.disabled=!can;
+    if(clash) mk.title="That block overlaps a table you already have.";
+    else if(box && box.w*box.h<2) mk.title="A table needs at least two seats.";
+    mk.addEventListener("click", function(){
+      var b=seatTableSelBox(lay.cols);
+      if(b && seatTableCreate(lay,b.r,b.c,b.w,b.h)){ seatTableSel=[]; save(); redraw(); }
+    });
+    bar.appendChild(mk);
+    if(seatTableSel.length){
+      var clr=el("button","btn btn-sm","Clear selection");
+      clr.addEventListener("click", function(){ seatTableSel=[]; redraw(); });
+      bar.appendChild(clr);
+    }
+    host.appendChild(bar);
+  }
+  /* What a seat does while Tables mode is on. Seat dragging is deliberately
+   * suspended for the duration: dragging a boy onto another boy already means
+   * SWAP, and overloading it to also mean "bond these two into a table" is the
+   * kind of ambiguity that loses a rebbi his seating arrangement.
+   */
+  /* Light up EVERY cell a dragged table would land on, not just the one under
+   * the cursor. Dragging a six-seat table while a single box highlighted gave
+   * no idea where the block was actually going — you had to picture it.
+   *
+   * The paint mirrors seatTableMove's own refusals rather than guessing at
+   * them: out of bounds, or overlapping another table, and the zone is drawn
+   * as refused instead of promising a drop that will silently do nothing.
+   * (`nr===t.r && nc===t.c` — dropping a table back where it started — is left
+   * looking valid on purpose: nothing moves, and flagging "no" for putting a
+   * thing back where it was reads as an error when it isn't.)
+   *
+   * Coordinates are plain true/flat indices here, with no display mirroring,
+   * because tables are only ever EDITABLE with Rebbi's view off — both charts
+   * compute tablesMode as `... && !rebbiView` — so display and true coincide
+   * for every cell this can touch. */
+  function seatTableClearDrop(grid){
+    if(!grid) return;
+    var lit = grid.querySelectorAll(".tbl-drop, .tbl-drop-bad");
+    for(var i=0;i<lit.length;i++) lit[i].classList.remove("tbl-drop","tbl-drop-bad");
+  }
+  function seatTablePaintDrop(grid, lay, t, nr, nc){
+    seatTableClearDrop(grid);
+    if(!grid || !t) return;
+    var fits = nr>=0 && nc>=0 && nr+t.h<=lay.rows && nc+t.w<=lay.cols;
+    var clash = seatTablesArr(lay).some(function(o){
+      return o.id!==t.id && seatRectsOverlap(o, {r:nr,c:nc,w:t.w,h:t.h});
+    });
+    var cls = (fits && !clash) ? "tbl-drop" : "tbl-drop-bad";
+    for(var i=0;i<t.h;i++) for(var j=0;j<t.w;j++){
+      var r=nr+i, c=nc+j;
+      if(r<0||c<0||r>=lay.rows||c>=lay.cols) continue; // off the grid: nothing to paint
+      var cell = grid.querySelector('[data-seatidx="'+(r*lay.cols+c)+'"]');
+      if(cell) cell.classList.add(cls);
+    }
+  }
+  function wireSeatTablesCell(seat, lay, trueIdx, redraw){
+    function drop(nr, nc, id){
+      var t=seatTablesArr(lay).filter(function(o){ return o.id===id; })[0];
+      if(t && seatTableMove(lay, t, nr, nc)) save();
+      redraw();
+    }
+    seat.addEventListener("click", function(){
+      if(seatTablePending){
+        var id=seatTablePending; seatTablePending=null;
+        drop(Math.floor(trueIdx/lay.cols), trueIdx%lay.cols, id);
+        return;
+      }
+      var i=seatTableSel.indexOf(trueIdx);
+      if(i>=0) seatTableSel.splice(i,1); else seatTableSel.push(trueIdx);
+      redraw();
+    });
+    // Lets seatTablePaintDrop find the other cells of the landing zone; a cell
+    // has no other addressable identity once it is in the grid.
+    seat.dataset.seatidx = trueIdx;
+    seat.addEventListener("dragover", function(ev){
+      ev.preventDefault();
+      // Only a TABLE drag gets a footprint. A student being dragged (which the
+      // seat may also be listening for) keeps the plain single-cell highlight.
+      if(!seatTableDragId){ seat.classList.add("drag-over"); return; }
+      var t=seatTablesArr(lay).filter(function(o){ return o.id===seatTableDragId; })[0];
+      seatTablePaintDrop(seat.parentNode, lay, t, Math.floor(trueIdx/lay.cols), trueIdx%lay.cols);
+    });
+    // No repaint on dragleave: leaving one cell means entering the next, and
+    // clearing here would flicker the zone off between them. Each dragover
+    // repaints from scratch, and dragend/drop clear it.
+    seat.addEventListener("dragleave", function(){ seat.classList.remove("drag-over"); });
+    seat.addEventListener("drop", function(ev){
+      ev.preventDefault(); seat.classList.remove("drag-over");
+      seatTableClearDrop(seat.parentNode);
+      var raw=ev.dataTransfer.getData("text/plain"); if(!raw) return;
+      var p; try{ p=JSON.parse(raw); }catch(e){ return; }
+      if(!p.tbl) return;
+      drop(Math.floor(trueIdx/lay.cols), trueIdx%lay.cols, p.tbl);
+    });
   }
   /* Seats any student who has none, so a rebbi who has only imported a roster
    * gets a usable class sheet instead of a page of empty boxes. Returns how
@@ -17050,6 +17882,10 @@ function setupRoster() {
       function setSeatSetup(on){
         data.seatSetupOpen=!!on;
         data.seatArranging=!!on;
+        // Tables mode is a sub-mode of arranging, so it cannot outlive it —
+        // otherwise reopening Setup later lands the rebbi in a mode he left
+        // days ago and did not ask for again.
+        if(!on){ data.seatTablesMode=false; seatTablesReset(); }
         // Rebbi's view and arranging stay strictly mutually exclusive — see
         // rebbiBtn below for why this first pass keeps that as a hard rule.
         if(on) data.seatLiveRebbiView=false;
@@ -17115,6 +17951,22 @@ function setupRoster() {
 
       // (The separate "Arrange seats" button that used to sit here is gone —
       // opening this row IS arranging now. See setSeatSetup() above.)
+
+      // Tables (docs/Seating_Tables_Proposal.md) — for a room with tables
+      // rather than single desks. Inside Setup because it is a way of
+      // describing the room, not a way of using it.
+      var tblBtn=el("button","btn btn-sm"+(data.seatTablesMode?" btn-primary":""),
+                    data.seatTablesMode?"✓ Done with tables":"🪑 Tables");
+      tblBtn.disabled=!!data.seatLiveRebbiView;
+      tblBtn.title=data.seatLiveRebbiView
+        ? "Turn Rebbi's view off to edit tables — a table is stored by where it sits in the room, so editing one through a mirrored chart moves the wrong block."
+        : "Group seats into a table, then drag the whole table around. For a room with tables instead of single desks.";
+      tblBtn.addEventListener("click", function(){
+        data.seatTablesMode=!data.seatTablesMode;
+        seatTablesReset();
+        save(); renderTapPanel();
+      });
+      setupRow.appendChild(tblBtn);
 
       // "Rebbi's view" for the LIVE chart — same 180° flip as the print
       // option, but this one is interactive (click-to-award, drag-to-
@@ -17439,7 +18291,16 @@ function setupRoster() {
   //
   // trueIdx, never the display position: Rebbi's view reverses the DISPLAY
   // order only, so writing by display index would move the wrong boy.
-  function wireSeatArrange(seat, lay, trueIdx, redraw){
+  /* SPIKE (tables + arranging together): `dragOnly` attaches the drag half of
+   * this wiring and skips the tap-to-place half, so it can be layered UNDER
+   * Tables mode without the two fighting over the click.
+   *
+   * The drag half composes safely with wireSeatTablesCell by construction —
+   * the two drop handlers discriminate on disjoint payloads (`from`/`sid` here,
+   * `tbl` there) and each returns early on the other's, so both can be attached
+   * to one seat and every drop still routes exactly once. Only `click` genuinely
+   * collides, which is the half this flag leaves off. */
+  function wireSeatArrange(seat, lay, trueIdx, redraw, dragOnly){
     seat.draggable=true;
     seat.addEventListener("dragstart", function(ev){
       seat.classList.add("dragging");
@@ -17479,6 +18340,7 @@ function setupRoster() {
     // drag now does — the sitting boy is displaced to the tray. The ✕ clear
     // button inside an occupied seat calls stopPropagation(), so removing a boy
     // never trips this.
+    if(dragOnly) return;
     seat.addEventListener("click", function(){
       if(seatGridPending){ lay.seats[trueIdx]=seatGridPending; seatGridPending=null; save(); redraw(); }
     });
@@ -17486,10 +18348,17 @@ function setupRoster() {
   // "Not yet seated" tray, shared by the live chart and the class sheet for the
   // same reason wireSeatArrange() is: a boy with no seat has to be placeable
   // from whichever chart the rebbi is actually looking at.
-  function renderUnplacedTray(body, unplaced, redraw){
+  function renderUnplacedTray(body, unplaced, redraw, dragOnly){
     var trayWrap=el("div","seat-unplaced no-print");
+    /* SPIKE: in Tables mode the tap-a-name-then-tap-a-seat path is off, because
+     * each seat's own click is busy selecting seats into a table. Say so, rather
+     * than describing a gesture that will do nothing — the previous answer was
+     * to hide this tray entirely for exactly that reason, and a tray you can
+     * drag out of is strictly more useful than no tray at all. */
     trayWrap.appendChild(el("div","seat-unplaced-label", unplaced.length
-      ? "Not yet seated — drag into any seat, or tap a name then tap a seat. Drop onto a taken seat and that boy comes back here:"
+      ? (dragOnly
+          ? "Not yet seated — drag into any seat. Drop onto a taken seat and that boy comes back here. (Tap a name, then a seat, works once Tables is off.):"
+          : "Not yet seated — drag into any seat, or tap a name then tap a seat. Drop onto a taken seat and that boy comes back here:")
       : "Everyone has a seat."));
     var tray=el("div","seat-tray");
     unplaced.forEach(function(s){
@@ -17499,11 +18368,15 @@ function setupRoster() {
         ev.dataTransfer.setData("text/plain", JSON.stringify({sid:s.id}));
         ev.dataTransfer.effectAllowed="move";
       });
-      chip.addEventListener("click", function(){
-        seatGridPending = (seatGridPending===s.id) ? null : s.id;
-        redraw();
-      });
-      if(seatGridPending===s.id) chip.style.borderColor="var(--ink)";
+      // No tap-to-pick in Tables mode: the seat it would be placed into is not
+      // listening, so a highlighted chip would be a promise nothing keeps.
+      if(!dragOnly){
+        chip.addEventListener("click", function(){
+          seatGridPending = (seatGridPending===s.id) ? null : s.id;
+          redraw();
+        });
+      }
+      if(!dragOnly && seatGridPending===s.id) chip.style.borderColor="var(--ink)";
       tray.appendChild(chip);
     });
     trayWrap.appendChild(tray);
@@ -17525,10 +18398,26 @@ function setupRoster() {
     // "Front of room" sits above the grid in normal view; in Rebbi's view the
     // seats are reversed (Rebbi faces the class), so the front is at the
     // BOTTOM — same convention the printed chart already uses.
+    /* Tables mode lives INSIDE arranging — it is a way of setting the room up,
+     * not a way of using it — and is held off while Rebbi's view is on. A table
+     * is stored by its position in the room, so editing one through a mirrored
+     * chart is the one reliable way to move the wrong block; the live chart
+     * already disables Rebbi's view during arranging for the same family of
+     * reason (see rebbiBtn), so in practice this is a second layer. */
+    var tablesMode = arranging && !!data.seatTablesMode && !data.seatLiveRebbiView;
+    if(tablesMode) renderSeatTablesBar(body, lay, renderTapPanel);
+
     if(!data.seatLiveRebbiView) body.appendChild(el("div","seat-front","Front of room"));
-    var grid=el("div","seat-grid"+(arranging?" arranging":""));
-    grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
-    grid.style.gridTemplateRows="repeat("+lay.rows+", 1fr)";
+    var grid=el("div","seat-grid"+(arranging?" arranging":"")+(tablesMode?" tables-mode":""));
+    var axes=seatUsedAxes(lay, !!data.seatLiveRebbiView), blankCols=axes.cols, blankRows=axes.rows;
+    grid.style.gridTemplateColumns=seatTrackTemplate(axes.cols, lay.cols, SEAT_BLANK_COL);
+    // Rows were `repeat(N, 1fr)` — dead equal — so in the full-screen chart,
+    // where the grid's height IS definite, a row with nobody in it took as much
+    // of the screen as a full one. Same rule as the columns now.
+    grid.style.gridTemplateRows=seatTrackTemplate(axes.rows, lay.rows, SEAT_BLANK_ROW);
+    // BEFORE the seats, so the tabletops sit under them in paint order as well
+    // as by z-index. Mirrored here when Rebbi's view is on — see renderSeatTables.
+    renderSeatTables(grid, lay, !!data.seatLiveRebbiView, tablesMode, renderTapPanel);
 
     // Rebbi's view for the LIVE chart must never reverse lay.seats itself —
     // arranging mode's drag/drop and clear-seat logic write directly to
@@ -17543,11 +18432,26 @@ function setupRoster() {
     var displayOrder = lay.seats.map(function(sid, trueIdx){ return {sid:sid, trueIdx:trueIdx}; });
     if(data.seatLiveRebbiView) displayOrder = displayOrder.slice().reverse();
 
-    displayOrder.forEach(function(item){
+    displayOrder.forEach(function(item, dispIdx){
       var sid=item.sid, trueIdx=item.trueIdx;
       var s = sid ? byId[sid] : null;
-      var seat=el("div","seat"+(s?"":" empty")+(scanMode&&s?" scan-seat":""));
+      // Which table this seat is at, in TRUE coordinates. Correct under Rebbi's
+      // view too: the seat's display position and the table's rendered block are
+      // mirrored by the same transform, so a true-coordinate lookup still names
+      // the block the seat is drawn inside.
+      var atTable = seatTableAtRC(lay, Math.floor(trueIdx/lay.cols), trueIdx%lay.cols);
+      var seat=el("div","seat"+(s?"":" empty")+(scanMode&&s?" scan-seat":"")+(atTable?" at-table":"")
+                 +(tablesMode&&seatTableSel.indexOf(trueIdx)>=0?" tbl-sel":""));
       seat.dataset.idx=trueIdx;
+      /* EXPLICIT PLACEMENT, and it is not cosmetic. The seats used to rely on
+       * CSS grid auto-placement — appended in order, landing in reading order
+       * by themselves — but a table backdrop is an explicitly-placed grid item,
+       * and auto-placement skips the cells an explicit item occupies. Left
+       * automatic, every seat after the first table would slide somewhere new.
+       * Placing each seat from the index already in hand costs two lines and
+       * makes the chart deterministic instead of order-dependent. */
+      seat.style.gridRow    = Math.floor(dispIdx/lay.cols)+1;
+      seat.style.gridColumn = (dispIdx%lay.cols)+1;
       if(s){
         seat.dataset.sid=s.id;
         /* BIGGER, not smaller, when it is sharing the cell with a code. The
@@ -17564,11 +18468,25 @@ function setupRoster() {
           clearBtn.addEventListener("click", function(ev){ ev.stopPropagation(); lay.seats[trueIdx]=null; save(); renderTapPanel(); });
           seat.appendChild(clearBtn);
         }
+      } else if((blankCols && blankCols[dispIdx % lay.cols]===false) ||
+                (blankRows && blankRows[Math.floor(dispIdx / lay.cols)]===false)){
+        /* A collapsed cell drops the "Empty seat" label, for both axes and for
+         * the same reason: the words are what stop the track shrinking. In a
+         * narrow column they wrap down the cell and push every row taller; in a
+         * short row they are the content `auto` sizes the printed row to. The
+         * box alone still shows the desk is there. */
+        seat.classList.add("cell-collapsed");
       } else {
         seat.textContent="Empty seat";
       }
 
-      if(arranging){
+      if(tablesMode){
+        wireSeatTablesCell(seat, lay, trueIdx, renderTapPanel);
+        // SPIKE: layer the DRAG half of arranging underneath, so a boy can be
+        // moved without leaving Tables. Safe to stack — the two drop handlers
+        // read disjoint payloads and each ignores the other's.
+        wireSeatArrange(seat, lay, trueIdx, renderTapPanel, true);
+      } else if(arranging){
         wireSeatArrange(seat, lay, trueIdx, renderTapPanel);
       } else if(s){
         seat.addEventListener("click", function(){ tapClick(s, seat); });
@@ -17591,11 +18509,20 @@ function setupRoster() {
     // only way to fix a mis-scan is to leave the view he is working in.
     renderScanUndoRow(body);
 
+    /* SPIKE: the tray now shows in Tables mode too, in drag-only form. It used
+     * to be hidden here because its tap-a-name-then-tap-a-seat path writes
+     * through seatGridPending, which the seats are not listening for while
+     * they are being selected into tables — and a control that does nothing is
+     * worse than no control. Dragging out of it does work, so the tray is no
+     * longer doing nothing; only the tap half is off, and the label says so. */
     if(arranging){
-      renderUnplacedTray(body, unplaced, renderTapPanel);
+      renderUnplacedTray(body, unplaced, renderTapPanel, tablesMode);
     } else {
       seatGridPending=null;
     }
+    // Any half-finished tap-to-place is abandoned on entering Tables mode —
+    // there is no seat listening to complete it.
+    if(tablesMode) seatGridPending=null;
   }
   var seatGridPending=null;
 
@@ -18492,6 +19419,10 @@ function setupRoster() {
     if(c==="CTRL:UNDO"){
       var undone=undoMostRecentScan();
       if(undone==="note"){ flash(true,"Undo","","Removed the spoken note"); beep(true); }
+      // "scanPartial" means undoMostRecentScan() already flashed its own
+      // "only one of a batch was undone" warning -- flashing over it here
+      // would just replace that message with the generic one below.
+      else if(undone==="scanPartial"){ beep(true); }
       else if(undone){ flash(true,"Undo","","Reversed the last scan"); beep(true); }
       else { flash(false,"Nothing to undo","",""); beep(false); }
       return;
@@ -24417,7 +25348,7 @@ nameLine
    * checked, not the four-state preset (unchecked / full credit / partial
    * credit / no credit) — "partial credit" and "no credit" have no writer
    * anywhere yet (see hwMirrorValue()). Widening the Homework TAB itself to
-   * the real cycle is #122, not this slice.
+   * the real cycle is #361, not this slice.
    *
    * WHAT IS DELIBERATELY NOT OFFERED: clearing a cell back to "no record".
    * Neither setter writes an unset value, and inventing one would mean
@@ -27161,8 +28092,31 @@ nameLine
       return "Shuffle all "+n+" students into random seats?\n\nThis replaces the current seating chart and can't be undone. Only where each boy sits changes — no points, scans or history are touched.";
     });
   });
+  /* Tables mode on the class sheet. One flag, shared with the live chart, so
+   * "am I editing tables right now" has a single answer wherever the rebbi is
+   * looking — and the furniture he builds on this page is the furniture the
+   * Dashboard chart shows him a moment later.
+   *
+   * Kept in step with Rebbi's view by seatPrintSyncTablesBtn() below rather
+   * than only here, since the checkbox can be flipped independently. */
+  function seatPrintSyncTablesBtn(){
+    var b=$("seatPrintTablesBtn"); if(!b) return;
+    var rv = $("seatPrintRebbiView") ? $("seatPrintRebbiView").checked : false;
+    var on = !!data.seatTablesMode && !rv;
+    b.textContent = on ? "✓ Done with tables" : "🪑 Tables";
+    b.classList.toggle("btn-primary", on);
+    b.disabled = rv;
+    b.title = rv
+      ? "Turn Rebbi's view off to edit tables — a table is stored by where it sits in the room, so editing one through a mirrored chart moves the wrong block."
+      : "Group seats into a table, then drag the whole table around. For a room with tables instead of single desks.";
+  }
+  $("seatPrintTablesBtn").addEventListener("click", function(){
+    data.seatTablesMode=!data.seatTablesMode;
+    seatTablesReset();
+    save(); seatPrintSyncTablesBtn(); renderTapPanel(); renderSeatChartPrint();
+  });
   $("seatPrintShowPoints").addEventListener("change", function(){ data.seatPrintOpts.showPoints=this.checked; save(); renderSeatChartPrint(); });
-  $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); renderSeatChartPrint(); });
+  $("seatPrintRebbiView").addEventListener("change", function(){ data.seatPrintOpts.rebbiView=this.checked; save(); seatPrintSyncTablesBtn(); renderSeatChartPrint(); });
   $("seatPrintShowActivities").addEventListener("change", function(){ data.seatPrintOpts.showActivities=this.checked; save(); seatPrintSyncActLayout(); renderSeatChartPrint(); });
   // Layout of the printed codes block — the print-side twins of the chart's own
   // ▤ One row / ▦ Grouped and width buttons, worded identically so a rebbi who
@@ -27213,6 +28167,10 @@ nameLine
     var dims=$("seatPrintDims"); if(dims) dims.style.display = isList ? "none" : "";
     var rv=$("seatPrintRebbiViewRow"); if(rv) rv.style.display = isList ? "none" : "flex";
     var ar=$("seatPrintArrangeRow"); if(ar) ar.style.display = isList ? "none" : "flex";
+    // The Tables button lives inside that row, so List hides it along with the
+    // other two whole-room controls — but its label and disabled state still
+    // have to be right the moment the row comes back.
+    seatPrintSyncTablesBtn();
   }
   /* Seat the unplaced for the class sheet, and re-sync the two controls that
    * describe what it just did. One function so the three callers cannot drift —
@@ -28206,6 +29164,24 @@ nameLine
     // below still needs it.
     function seatRedraw(){ renderTapPanel(); renderSeatChartPrint(); }
 
+    /* Hoisted above the band loop for exactly the reason seatRedraw is: the
+     * unplaced-tray check in the tail below runs AFTER the loop closes and
+     * still reads tablesMode, so a `var` declared inside the loop is out of
+     * scope there — a ReferenceError that only fires when the sheet actually
+     * renders, which no static check catches. Both values are loop-invariant,
+     * so there is nothing to gain from computing them per band anyway.
+     *
+     * Putting the toolbar here also means it is drawn once per SHEET rather
+     * than once per band, with no bandIdx gate needed. Multi-band print landed
+     * on main after tables were written, so neither side of the rebase
+     * conflict covered this case.
+     *
+     * The !isList guard matters: `lay` is null in List mode, and
+     * renderSeatTablesBar would be handed nothing to draw. List has no room
+     * geometry to attach a table to, so it never has a tables mode. */
+    var tablesMode = !isList && !!data.seatTablesMode && !rebbiView;
+    if(tablesMode) renderSeatTablesBar(wrap, lay, seatRedraw);
+
     /* ONE PASS PER BAND — normally exactly one, and then `host` IS `wrap` and
      * the sheet is built into the page precisely as it always was. Everything
      * inside reads the class, the layout and the settings from the closure, so
@@ -28299,14 +29275,31 @@ nameLine
      * something: above the topmost chart normally, and below the bottom one in
      * Rebbi's view, where the front of the room is at the foot of every band. */
     var showFront = !multiBands || (rebbiView ? bandIdx===actList.length-1 : bandIdx===0);
+    // tablesMode (and its toolbar) are computed once above the band loop —
+    // both are loop-invariant, and the tail after the loop reads tablesMode.
     if(!rebbiView && showFront) host.appendChild(el("div","seat-front","Front of room"));
-    var grid=el("div","seat-grid print-seat-grid arranging");
-    grid.style.gridTemplateColumns="repeat("+lay.cols+", 1fr)";
-    displayOrder.forEach(function(item){
+    var grid=el("div","seat-grid print-seat-grid arranging"+(tablesMode?" tables-mode":""));
+    var axes=seatUsedAxes(lay, rebbiView), blankCols=axes.cols, blankRows=axes.rows;
+    grid.style.gridTemplateColumns=seatTrackTemplate(axes.cols, lay.cols, SEAT_BLANK_COL);
+    /* Rows are left auto-sized on the SHEET, deliberately — the print grid has
+     * never set gridTemplateRows, and a printed page's height is what it is.
+     * A blank row still gets thinner here, because its cells drop the "Empty
+     * seat" label below and auto follows the content down. */
+    renderSeatTables(grid, lay, rebbiView, tablesMode, seatRedraw);
+    displayOrder.forEach(function(item, dispIdx){
       var sid=item.sid, trueIdx=item.trueIdx;
       var s = sid ? byId[sid] : null;
-      var seat=el("div","seat"+(s?"":" empty"));
+      // TRUE coordinates — see the same lookup in renderSeatGrid for why that
+      // stays right under Rebbi's view.
+      var atTable = seatTableAtRC(lay, Math.floor(trueIdx/lay.cols), trueIdx%lay.cols);
+      var seat=el("div","seat"+(s?"":" empty")+(atTable?" at-table":"")
+                 +(tablesMode&&seatTableSel.indexOf(trueIdx)>=0?" tbl-sel":""));
       seat.dataset.idx=trueIdx;
+      // Explicit placement — required once a table backdrop is in the grid,
+      // because auto-placement skips the cells an explicit item occupies. See
+      // the fuller note in renderSeatGrid.
+      seat.style.gridRow    = Math.floor(dispIdx/lay.cols)+1;
+      seat.style.gridColumn = (dispIdx%lay.cols)+1;
       if(s){
         fillSeatPrintCard(seat, s, avatarMode, act, showPts, hasQR);
         var clearBtn=el("button","seat-clear no-print","✕");
@@ -28316,6 +29309,14 @@ nameLine
           ev.stopPropagation(); lay.seats[trueIdx]=null; save(); seatRedraw();
         });
         seat.appendChild(clearBtn);
+      } else if((blankCols && blankCols[dispIdx % lay.cols]===false) ||
+                (blankRows && blankRows[Math.floor(dispIdx / lay.cols)]===false)){
+        /* A collapsed cell drops the "Empty seat" label, for both axes and for
+         * the same reason: the words are what stop the track shrinking. In a
+         * narrow column they wrap down the cell and push every row taller; in a
+         * short row they are the content `auto` sizes the printed row to. The
+         * box alone still shows the desk is there. */
+        seat.classList.add("cell-collapsed");
       } else {
         seat.textContent="Empty seat";
       }
@@ -28323,7 +29324,14 @@ nameLine
       // behind a switch so a stray touch on a smartboard mid-lesson can't move
       // a boy. This page is where you set the sheet up — there is no lesson
       // running on it, and making the mock-up the thing you edit is the point.
-      wireSeatArrange(seat, lay, trueIdx, seatRedraw);
+      // Tables mode takes the seat over for the duration; see wireSeatTablesCell.
+      // SPIKE: same layering as the live chart — the class sheet's seats are
+      // draggable too, so Tables mode must not take that away here either.
+      if(tablesMode){
+        wireSeatTablesCell(seat, lay, trueIdx, seatRedraw);
+        wireSeatArrange(seat, lay, trueIdx, seatRedraw, true);
+      }
+      else wireSeatArrange(seat, lay, trueIdx, seatRedraw);
       grid.appendChild(seat);
     });
     host.appendChild(grid);
@@ -28342,8 +29350,10 @@ nameLine
       unplacedBox.innerHTML="";
       // No "not yet seated" tray in List: every student in the class is already
       // on the sheet, so a tray would be offering to place boys who are printed
-      // three inches above it.
-      if(!isList) renderUnplacedTray(unplacedBox, unplaced, seatRedraw);
+      // three inches above it. Nor in Tables mode, where the seats are not
+      // listening for the tray's tap-to-place — see renderSeatGrid's copy.
+      // SPIKE: shown in Tables mode too now, drag-only — see renderSeatGrid's copy.
+      if(!isList) renderUnplacedTray(unplacedBox, unplaced, seatRedraw, tablesMode);
     }
     /* Non-blocking fit check.
      *
@@ -29946,6 +30956,46 @@ nameLine
     if(typeof data.promptStyle!=="string") data.promptStyle="";
     if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
     if(!data.seating||typeof data.seating!=="object") data.seating={};
+    /* Tables in the seating chart (docs/Seating_Tables_Proposal.md).
+     *
+     * Purely additive — NO DATA_VERSION bump, because nothing converts: a save
+     * with no tables gets an empty list and renders exactly as it did before.
+     *
+     * Written out longhand rather than calling seatTablesFit() so this block
+     * stays self-contained: test-migration.html carries its own copy of
+     * load2fix() and has no seating helpers to call into. It is also doing a
+     * different job from the runtime helper — this one is the CORRUPT-DATA
+     * guard, so it DROPS anything it cannot vouch for, where seatTablesFit()
+     * clamps a merely out-of-date rectangle back into the room.
+     *
+     * Either way it can only ever discard a rectangle. Nothing here reads or
+     * writes lay.seats, so no arrangement of boys is reachable from this code.
+     */
+    if(typeof data.seatTablesMode!=="boolean") data.seatTablesMode=false;
+    Object.keys(data.seating).forEach(function(seatK){
+      var lay=data.seating[seatK];
+      if(!lay||typeof lay!=="object") return;
+      if(!Array.isArray(lay.tables)){ lay.tables=[]; return; }
+      var rows=(typeof lay.rows==="number"&&lay.rows>0)?lay.rows:4;
+      var cols=(typeof lay.cols==="number"&&lay.cols>0)?lay.cols:6;
+      var kept=[];
+      lay.tables.forEach(function(t){
+        if(!t||typeof t!=="object") return;
+        var r=Math.floor(t.r), c=Math.floor(t.c), w=Math.floor(t.w), h=Math.floor(t.h);
+        // NaN fails every one of these, which is how a garbage entry is caught.
+        if(!(r>=0&&c>=0&&w>=1&&h>=1)) return;
+        if(w*h<2) return;
+        if(r+h>rows||c+w>cols) return;
+        if(kept.some(function(o){ return r<o.r+o.h && o.r<r+h && c<o.c+o.w && o.c<c+w; })) return;
+        kept.push({
+          id: (typeof t.id==="string"&&t.id) ? t.id : ("tbl"+seatK+"-"+r+"-"+c+"-"+kept.length),
+          name: (typeof t.name==="string") ? t.name.slice(0,24) : "Table",
+          r:r, c:c, w:w, h:h, shape:"rect",
+          color: (["slate","blue","green","amber","rose","violet"].indexOf(t.color)>=0) ? t.color : "slate"
+        });
+      });
+      lay.tables=kept;
+    });
     if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
     // Show the class list for a class with no seating chart yet. Additive
     // boolean, defaults ON for existing saves as well as new ones: the state it
@@ -30880,8 +31930,14 @@ nameLine
       data.chavrusaSession={groups:[], pointTargetMode:"individual"};
     }
     if(!Array.isArray(data.chavrusaSession.groups)) data.chavrusaSession.groups=[];
-    if(typeof data.chavrusaSession.pointTargetMode!=="string") data.chavrusaSession.pointTargetMode="individual";
+    if(["individual","group","entity"].indexOf(data.chavrusaSession.pointTargetMode)<0) data.chavrusaSession.pointTargetMode="individual";
     if(!Array.isArray(data.chavrusaHistory)) data.chavrusaHistory=[];
+    // Group Entity mode's pooled totals (Phase 8, point-target modes slice).
+    // Stored, not derived -- same "Contest lesson" as data.miniContest: a total
+    // that's only ever a sum over data.log (capped, wipeable) is built on sand.
+    // Keyed by chavrusaSession group id; created lazily on first entity-mode
+    // award, so a missing key just means "no pool yet", not corrupt data.
+    if(!data.chavrusaPools || typeof data.chavrusaPools!=="object" || Array.isArray(data.chavrusaPools)) data.chavrusaPools={};
   }
   // Reached from exactly ONE place: the "Reset all scores" button in Settings.
   // The end-contest flow used to call this too, bundled onto its OK button; that

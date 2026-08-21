@@ -1,7 +1,7 @@
-// Cuts a release: bumps app.html's APP_VERSION, version.json, and renames
-// CHANGELOG.md's "## [Unreleased]" heading to a dated version heading (with
-// a fresh empty Unreleased above it) — the three files check-version-sync.js
-// requires to agree, updated together in one step.
+// Cuts a release: bumps app.html's APP_VERSION, version.json and sw.js's
+// CACHE_VERSION, and renames CHANGELOG.md's "## [Unreleased]" heading to a
+// dated version heading (with a fresh empty Unreleased above it) — the four
+// files check-version-sync.js requires to agree, updated together in one step.
 //
 // This exists because that three-file edit is exactly the kind of toil that
 // silently lapsed for a month (0.9.0, 2026-07-18, was still the live number
@@ -42,6 +42,22 @@ const versionJson = JSON.parse(fs.readFileSync(versionJsonPath, "utf8"));
 versionJson.version = version;
 versionJson.released = today;
 fs.writeFileSync(versionJsonPath, JSON.stringify(versionJson, null, 2) + "\n");
+
+// sw.js — CACHE_VERSION rides the release number. Bumping it renames the
+// cache, which is the only thing that ever flushes the cache-first assets
+// (manifest, icons, vendor/firebase/*.js); app.html itself is network-first
+// and needs no help. It was a hand-bumped "v1" until 0.10.0 shipped without
+// anyone touching it, so it lives here now rather than in a comment nobody
+// is prompted to read.
+const swPath = "sw.js";
+let sw = fs.readFileSync(swPath, "utf8");
+const swVersionRe = /var CACHE_VERSION\s*=\s*"[^"]+"/;
+if (!swVersionRe.test(sw)) {
+  console.error("Couldn't find `var CACHE_VERSION = \"...\"` in sw.js");
+  process.exit(1);
+}
+sw = sw.replace(swVersionRe, 'var CACHE_VERSION = "' + version + '"');
+fs.writeFileSync(swPath, sw);
 
 // CHANGELOG.md — rename [Unreleased] to the dated heading, add a fresh
 // empty Unreleased above it. Leaves the existing entries under the new

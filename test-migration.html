@@ -542,6 +542,46 @@ if(typeof data.coinCardFormat!=="string") data.coinCardFormat="avery5911";
 if(typeof data.promptStyle!=="string") data.promptStyle="";
 if(typeof data.nameStyle!=="string") data.nameStyle="hashem";
 if(!data.seating||typeof data.seating!=="object") data.seating={};
+/* Tables in the seating chart (docs/Seating_Tables_Proposal.md).
+ *
+ * Purely additive — NO DATA_VERSION bump, because nothing converts: a save
+ * with no tables gets an empty list and renders exactly as it did before.
+ *
+ * Written out longhand rather than calling seatTablesFit() so this block
+ * stays self-contained: test-migration.html carries its own copy of
+ * load2fix() and has no seating helpers to call into. It is also doing a
+ * different job from the runtime helper — this one is the CORRUPT-DATA
+ * guard, so it DROPS anything it cannot vouch for, where seatTablesFit()
+ * clamps a merely out-of-date rectangle back into the room.
+ *
+ * Either way it can only ever discard a rectangle. Nothing here reads or
+ * writes lay.seats, so no arrangement of boys is reachable from this code.
+ */
+if(typeof data.seatTablesMode!=="boolean") data.seatTablesMode=false;
+Object.keys(data.seating).forEach(function(seatK){
+  var lay=data.seating[seatK];
+  if(!lay||typeof lay!=="object") return;
+  if(!Array.isArray(lay.tables)){ lay.tables=[]; return; }
+  var rows=(typeof lay.rows==="number"&&lay.rows>0)?lay.rows:4;
+  var cols=(typeof lay.cols==="number"&&lay.cols>0)?lay.cols:6;
+  var kept=[];
+  lay.tables.forEach(function(t){
+    if(!t||typeof t!=="object") return;
+    var r=Math.floor(t.r), c=Math.floor(t.c), w=Math.floor(t.w), h=Math.floor(t.h);
+    // NaN fails every one of these, which is how a garbage entry is caught.
+    if(!(r>=0&&c>=0&&w>=1&&h>=1)) return;
+    if(w*h<2) return;
+    if(r+h>rows||c+w>cols) return;
+    if(kept.some(function(o){ return r<o.r+o.h && o.r<r+h && c<o.c+o.w && o.c<c+w; })) return;
+    kept.push({
+      id: (typeof t.id==="string"&&t.id) ? t.id : ("tbl"+seatK+"-"+r+"-"+c+"-"+kept.length),
+      name: (typeof t.name==="string") ? t.name.slice(0,24) : "Table",
+      r:r, c:c, w:w, h:h, shape:"rect",
+      color: (["slate","blue","green","amber","rose","violet"].indexOf(t.color)>=0) ? t.color : "slate"
+    });
+  });
+  lay.tables=kept;
+});
 if(typeof data.tapViewMode!=="string") data.tapViewMode="list";
 // Show the class list for a class with no seating chart yet. Additive
 // boolean, defaults ON for existing saves as well as new ones: the state it
@@ -1433,8 +1473,14 @@ if(!data.mirrorBackfill || typeof data.mirrorBackfill!=="object" || Array.isArra
     data.chavrusaSession={groups:[], pointTargetMode:"individual"};
   }
   if(!Array.isArray(data.chavrusaSession.groups)) data.chavrusaSession.groups=[];
-  if(typeof data.chavrusaSession.pointTargetMode!=="string") data.chavrusaSession.pointTargetMode="individual";
+  if(["individual","group","entity"].indexOf(data.chavrusaSession.pointTargetMode)<0) data.chavrusaSession.pointTargetMode="individual";
   if(!Array.isArray(data.chavrusaHistory)) data.chavrusaHistory=[];
+  // Group Entity mode's pooled totals (Phase 8, point-target modes slice).
+  // Stored, not derived -- same "Contest lesson" as data.miniContest: a total
+  // that's only ever a sum over data.log (capped, wipeable) is built on sand.
+  // Keyed by chavrusaSession group id; created lazily on first entity-mode
+  // award, so a missing key just means "no pool yet", not corrupt data.
+  if(!data.chavrusaPools || typeof data.chavrusaPools!=="object" || Array.isArray(data.chavrusaPools)) data.chavrusaPools={};
   }
 
 // ===== Drift check =====
@@ -2965,6 +3011,65 @@ function runBuiltInTests() {
   assert("sections→the rename is one-shot and never re-runs",
     t18h.codeSections[0].label==="Positive",
     "got "+JSON.stringify(t18h.codeSections.map(function(s){return s.label;})));
+
+  /* ---- Seating chart tables (docs/Seating_Tables_Proposal.md) ----
+   *
+   * The whole safety claim for this feature is that it can only ever discard a
+   * RECTANGLE — never a boy. Every case below therefore checks lay.seats came
+   * through untouched as well as checking what happened to lay.tables. */
+  var seatSeats = ["s1","s2","s3","s4","s5","s6",null,"s7",null,null,null,null,
+                   null,null,null,null,null,null,null,null,null,null,null,null];
+  function seatBlob(tables){
+    return { version:5, seating:{ "Shiur A": { rows:4, cols:6, seats:seatSeats.slice(), tables:tables } } };
+  }
+  function seatsOf(d){ return JSON.stringify(d.seating["Shiur A"].seats); }
+  var seatsSnap = JSON.stringify(seatSeats);
+
+  var t19a = runMigration({ version:5, seating:{ "Shiur A":{ rows:4, cols:6, seats:seatSeats.slice() } } });
+  assert("tables→a save predating the field gets an empty list, seats untouched",
+    Array.isArray(t19a.seating["Shiur A"].tables) && t19a.seating["Shiur A"].tables.length===0
+    && seatsOf(t19a)===seatsSnap);
+
+  assert("tables→seatTablesMode defaults OFF (nobody lands in a mode he never chose)",
+    t19a.seatTablesMode===false);
+
+  var t19b = runMigration(seatBlob([{id:"t1",name:"Table 1",r:1,c:1,w:2,h:2,shape:"rect",color:"blue"}]));
+  var keptB = t19b.seating["Shiur A"].tables;
+  assert("tables→a valid table survives intact",
+    keptB.length===1 && keptB[0].r===1 && keptB[0].c===1 && keptB[0].w===2
+    && keptB[0].h===2 && keptB[0].color==="blue" && keptB[0].name==="Table 1");
+
+  var t19c = runMigration(seatBlob("not an array"));
+  assert("tables→a corrupt tables value is repaired to []",
+    Array.isArray(t19c.seating["Shiur A"].tables) && t19c.seating["Shiur A"].tables.length===0
+    && seatsOf(t19c)===seatsSnap);
+
+  var t19d = runMigration(seatBlob([null, {}, {r:"x",c:0,w:2,h:1}, {r:0,c:0,w:1,h:1}]));
+  assert("tables→garbage entries dropped (NaN, missing fields, single-cell)",
+    t19d.seating["Shiur A"].tables.length===0 && seatsOf(t19d)===seatsSnap);
+
+  // A rectangle that no longer fits the room it is stored against. This is the
+  // documented trade: the resize may cost you a table, never a boy.
+  var t19e = runMigration(seatBlob([{id:"t1",name:"Wide",r:0,c:4,w:4,h:1,color:"rose"}]));
+  assert("tables→a table hanging off the edge is dropped, seats untouched",
+    t19e.seating["Shiur A"].tables.length===0 && seatsOf(t19e)===seatsSnap);
+
+  var t19f = runMigration(seatBlob([
+    {id:"a",name:"First",r:0,c:0,w:2,h:2,color:"green"},
+    {id:"b",name:"Overlapping",r:1,c:1,w:2,h:2,color:"amber"}
+  ]));
+  assert("tables→an overlapping pair keeps the first and drops the second",
+    t19f.seating["Shiur A"].tables.length===1 && t19f.seating["Shiur A"].tables[0].id==="a");
+
+  var t19g = runMigration(seatBlob([{r:2,c:2,w:2,h:1,color:"neon-pink"}]));
+  var kg = t19g.seating["Shiur A"].tables[0];
+  assert("tables→an unknown colour falls back to slate and a missing id is minted",
+    kg && kg.color==="slate" && typeof kg.id==="string" && kg.id.length>0);
+
+  // Idempotence: load2fix runs on EVERY load, so a second pass must be a no-op.
+  var t19h = runMigration(JSON.parse(JSON.stringify(t19b)));
+  assert("tables→running the backfill twice changes nothing",
+    JSON.stringify(t19h.seating["Shiur A"].tables)===JSON.stringify(keptB));
 
   // And none of this disturbed the Phase 2a promise.
   assert("codes→old stores STILL byte-identical",

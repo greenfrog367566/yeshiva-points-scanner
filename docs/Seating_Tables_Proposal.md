@@ -1,6 +1,11 @@
 # Menchmark — Tables in the Seating Chart
 
-**Status: PROPOSED — 2026-08-19. Not built. Needs a yes from Ben before any code.**
+**Status: APPROVED and BUILT — 2026-08-19, same session. Ben's three answers:
+rectangles only for v1, per-table colour yes, and the Print Wizard spec should
+carry it too. All three are reflected below and implemented.**
+
+Read §9 before trusting the interaction description in §5 — one behaviour
+changed during the build, for a reason worth knowing.
 
 Asked for: *"some rebbeim have tables — can we make a CSS for both the on-screen
 and printed seating chart to include seating tables — maybe drag and drop names
@@ -11,13 +16,13 @@ the same idea as chavrusa mode when we build that."*
 
 ## 1. What is being proposed, in one paragraph
 
-A **table is furniture drawn underneath the seats** — a rounded rectangle (long
-table) or a circle (round table) painted behind a block of grid cells, with the
-boys' cards sitting on top of it. It is created by selecting cells and pressing
-"Make a table", carries a name you can rename, and can be **dragged around the
-room as one block, taking its boys with it**. It renders identically on the
-live chart and the printed class sheet, because both already share the same
-`.seat-grid` / `.seat` rendering.
+A **table is furniture drawn underneath the seats** — a rounded rectangle
+painted behind a block of grid cells, with the boys' cards sitting on top of it.
+It is created by selecting cells and pressing "Make a table", carries a name you
+can rename and a colour you can cycle, and can be **dragged around the room as
+one block, taking its boys with it**. It renders identically on the live chart
+and the printed class sheet, because both already share the same `.seat-grid` /
+`.seat` rendering.
 
 **The central property, and the reason this is a small change rather than a
 scary one: a table never owns a student.** `lay.seats` stays the single source
@@ -49,16 +54,19 @@ a classroom is anyway.
 data.seating[classKey] = {
   rows, cols, seats:[ sid|null, ... ],          // UNCHANGED
   tables: [                                      // NEW
-    { id:"…", name:"Table 1", r:0, c:0, w:4, h:1, shape:"rect" }
+    { id:"…", name:"Table 1", r:0, c:0, w:4, h:1, shape:"rect", color:"slate" }
   ]
 }
 ```
 
-- `id` — from the existing `newId()` (`app.html:5888`). No new id scheme.
+- `id` — from the existing `newId()`. No new id scheme.
 - `r`,`c` — top-left cell, 0-based.
 - `w`,`h` — span in cells.
-- `shape` — `"rect"` (long table) or `"round"`.
-- `name` — free text, defaults to `Table N`.
+- `shape` — always `"rect"` in v1. Written but never varied, so round tables
+  later are a render change rather than a migration (§8).
+- `name` — free text, defaults to `Table N`, capped at 24 chars.
+- `color` — one of the fixed six: `slate` / `blue` / `green` / `amber` / `rose`
+  / `violet`. Not a free hex — see §8 for why that matters on paper.
 
 **Invariants**, enforced at create, at move, and again on load:
 `w ≥ 1`, `h ≥ 1`, `w*h ≥ 2`, `r+h ≤ rows`, `c+w ≤ cols`, and **no two tables
@@ -105,22 +113,24 @@ classes as `renderSeatGrid()`. So a table is **one extra grid item per table**,
 appended before the seat loop in both:
 
 ```js
-var back = el("div","seat-table seat-table-"+t.shape);
-back.style.gridRow    = (t.r+1)+" / span "+t.h;
-back.style.gridColumn = (t.c+1)+" / span "+t.w;
+var back = el("div","seat-table tc-"+t.color);
+back.style.gridRow    = (r+1)+" / span "+t.h;   // r/c mirrored under Rebbi's view
+back.style.gridColumn = (c+1)+" / span "+t.w;
 ```
 
 ```css
 .seat-table{
-  border:2px solid var(--line); border-radius:14px;
-  background:var(--gb-row,#f7f8fc);
+  position:relative;               /* the grip and name are absolute — see §9 */
+  border:2px solid var(--tbl-line); border-radius:16px;
+  background:var(--tbl-fill);
   z-index:0; pointer-events:none;
   margin:-5px;                     /* half the grid's 10px gap */
 }
-.seat-table-round{border-radius:50%}
+.seat-table.tc-blue{--tbl-line:#5b7fc4; --tbl-fill:#eef3fc}   /* × 6 */
 .seat-grid .seat{position:relative; z-index:1}
-.seat.at-table{background:transparent; border-color:transparent}
-.seat.at-table.empty{color:transparent}     /* bare table surface, not "Empty seat" */
+/* scoped through .seat-grid to outrank `.seat-print-preview .seat` — see §9 */
+.seat-grid .seat.at-table{background:transparent; border-color:transparent}
+.seat-grid .seat.at-table.empty{color:transparent}  /* bare table, not "Empty seat" */
 ```
 
 **Every seat must be placed explicitly too — this is not optional.** Both render
@@ -165,11 +175,12 @@ Two print-only rules:
 
 ```css
 body.print-seating .seat-table{
-  border:2px solid #333; background:#f0f0f0;
+  border-width:2px;               /* the colour comes from the tc-* class */
   -webkit-print-color-adjust:exact; print-color-adjust:exact;
   break-inside:avoid; page-break-inside:avoid;
 }
 body.print-seating .seat.at-table{border-color:transparent}
+body.print-seating .seat-table-grip{display:none!important}
 ```
 
 **A table must read by its BORDER, not its fill.** The seating-chart print block
@@ -222,13 +233,14 @@ While Tables mode is on:
    Tap-to-select works on touch, matching the tray's existing fallback.
 3. **"Make a table"** appears once ≥2 cells are selected and the box overlaps no
    existing table. Names it `Table N`, saves, redraws.
-4. Every table gets a **grip bar** — `⠿  Table 1  ▭/◯  ✕`:
+4. Every table gets a **grip bar** — `⠿  Table 1  ●  ✕`:
    - **Drag the grip to move the whole block**, and *every boy on it moves with
      it.* This is the ask, and it is the only part that writes to `lay.seats`.
-   - The move is **refused** — grip flashes, nothing written — if it would leave
-     the grid, overlap another table, or land on a cell occupied by a boy who
-     is not at this table.
-   - **`▭`/`◯` toggles the shape.** Pure CSS.
+   - **It swaps with whoever is already there** — see §9, this is the one thing
+     the build changed. The move is refused, with nothing written, only if it
+     would leave the grid or overlap another table.
+   - **A colour swatch cycles the six-colour palette.** Pure CSS. (No shape
+     control — v1 is rectangles only, see §8.)
    - **`✕` dissolves the table. Every boy stays exactly where he is sitting.**
      Non-destructive by construction, so it needs no confirm.
    - Clicking the name renames it inline.
@@ -292,15 +304,62 @@ have tables.
 
 ---
 
-## 8. Open questions for Ben
+## 8. The three questions, answered
 
-1. **Round tables — worth it, or is `rect` enough for v1?** `◯` is genuinely two
-   CSS lines, but a round table that reads properly usually wants a hollow
-   middle (a 3×3 block with the centre cell left empty), and that is a
-   convention to explain rather than a feature to build. Cheap to add later.
-2. **Should a table be able to carry its own colour?** Useful if a rebbi runs
-   fixed chaburos at fixed tables; more state and more print-colour risk. Left
-   out of this proposal deliberately.
-3. **Does this want to be in the Print Wizard's component list?**
-   `Print_Wizard_Spec.md` does not mention tables today. If tables ship, the
-   class-sheet component's description should mention them.
+Answered by Ben 2026-08-19 and built the same session.
+
+1. **Round tables — `rect` only for v1.** No shape control ships. The `shape`
+   field is still written as `"rect"` on every table, so adding round later is a
+   render change and not a migration.
+2. **Per-table colour — yes.** Shipped as a **fixed six-colour palette**
+   (slate / blue / green / amber / rose / violet) cycled by a swatch on the
+   grip, not a free colour picker. The palette is fixed for a reason that only
+   shows up on paper: each colour's **border** has to carry the table on its
+   own once the browser drops the fill, so the six were chosen dark enough to
+   do that. A free picker would let a rebbi choose a table that prints as
+   nothing.
+3. **Print Wizard — yes.** `Print_Wizard_Spec.md`'s class-sheet entry now
+   mentions tables.
+
+---
+
+## 9. What the build changed, and what it caught
+
+Three things worth recording, because none were visible from the design.
+
+**The move SWAPS; it does not refuse.** §5 originally said a move onto occupied
+cells would be refused. Correct, and useless: a class of 24 in a 25-desk room
+has one free cell, so every direction a rebbi could drag a table was refused and
+the grip read as broken. Dragging one *seat* onto another has always swapped the
+two boys, so dragging a *table* now swaps the block with whoever is standing
+there. Same idiom, scaled up — and still a pure permutation.
+
+That made the write harder than the design assumed, because the source and
+destination blocks are allowed to overlap (nudging a table one column across is
+the common case) and a naive pairwise swap clobbers itself the moment they do.
+It is written instead as: destination cells take the table's own boys offset for
+offset, and the cells the table vacates take the displaced boys in reading
+order. Those two sets are always the same size, so nobody is left standing.
+Verified exhaustively rather than by argument — **5625 cases** (every table
+size, every start, every destination, on both a full and a gappy chart), each
+checked for a lost boy, a duplicated boy, and whether the table's own boys
+actually travelled. Zero failures.
+
+**Two CSS bugs the browser pass caught and no static check could.**
+
+1. `.seat-table` set `z-index` but not `position:relative`, so the name caption
+   and the grip — both `position:absolute` — anchored to the page instead and
+   rendered in the top-left corner of the whole app.
+2. `.seat-print-preview .seat` sets a border at the *same* specificity as a bare
+   `.seat.at-table` and is declared later in the stylesheet, so on the class
+   sheet every boy at a table kept the card border the table was supposed to
+   absorb. The rules are scoped through `.seat-grid` now to outrank it.
+
+Both are noted inline at the rules themselves.
+
+**Coverage.** Nine new migration-harness tests (`tables→…`) cover the
+predating-the-field case, a corrupt value, garbage entries, a table hanging off
+the edge, an overlapping pair, an unknown colour, a missing id, and idempotence.
+Every one of them also asserts `lay.seats` came through byte-identical — which
+is the feature's whole safety claim, checked rather than asserted. Harness total
+is 358 passed / 0 failed.
