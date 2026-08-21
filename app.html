@@ -4453,7 +4453,8 @@ function setupRoster() {
         <summary>Erase from this computer</summary>
         <p>Backs your class up, then removes it from this computer and returns it to the setup screen — for a computer that isn't yours. Your backup is not touched, and this is only offered once your class is safely backed up somewhere.</p>
         <p id="eraseCardStatus" class="view-note"></p>
-        <button class="btn btn-bad" id="eraseThisComputerBtn">Erase from this computer…</button>
+        <button class="btn btn-bad" id="eraseThisComputerBtn">This is my computer — erase, keep the folder…</button>
+        <button class="btn btn-bad" id="eraseForgetBtn">Someone else's — erase and forget…</button>
       </details>
     </div>
   </section>
@@ -8048,6 +8049,32 @@ function setupRoster() {
       : "Your class is backed up in “" + r.folderName + "” on this computer.";
     box.appendChild(okLine);
 
+    // The "whose computer" question is only worth asking when there is a
+    // backups folder to keep or forget. Backed up to Drive with no folder,
+    // both answers do exactly the same thing — and offering to "remember my
+    // backups folder" when none exists promises a way back that will never
+    // appear on the setup screen.
+    var hasFolder = !!fbHandle;
+
+    if (!hasFolder) {
+      var soleNote = el("p", "view-note");
+      soleNote.textContent = "Your class comes back by signing in again on your own computer.";
+      box.appendChild(soleNote);
+
+      if (signinState.error) {
+        var e3 = el("p", "pill-note"); e3.textContent = signinState.error; box.appendChild(e3);
+      }
+      var onlyBtn = el("button", "btn btn-primary", "Erase it from this computer");
+      onlyBtn.addEventListener("click", function(){ signinEraseThisComputer(true); });
+      box.appendChild(onlyBtn);
+
+      var cancel3 = el("button", "btn btn-sm", "Cancel");
+      cancel3.style.marginLeft = "8px";
+      cancel3.addEventListener("click", signinCancelSignOut);
+      box.appendChild(cancel3);
+      return;
+    }
+
     var choose = el("p", "view-note");
     choose.textContent = "Whose computer is this?";
     box.appendChild(choose);
@@ -8060,7 +8087,7 @@ function setupRoster() {
     // offer the class straight back. IndexedDB is where that handle lives, so
     // it survives the localStorage wipe on its own — remembering is the
     // default state, and forgetting is the deliberate extra step.
-    var mineBtn = el("button", "btn btn-primary", "Mine — erase, but remember my backups folder");
+    var mineBtn = el("button", "btn btn-primary", "Mine — erase, but remember “" + fbHandle.name + "”");
     mineBtn.addEventListener("click", function(){ signinEraseThisComputer(false); });
     box.appendChild(mineBtn);
 
@@ -32212,6 +32239,7 @@ nameLine
         ? "Ready — your class will be backed up to Google Drive first."
         : "Ready — your class is backed up in “" + r.folderName + "”.";
       if (btn) btn.disabled = false;
+      if ($("eraseForgetBtn")) $("eraseForgetBtn").disabled = false;
     } else {
       // driveSupported() is false without an account, so a signed-out rebbi
       // cannot connect Drive at all — telling him to would be advice he can't
@@ -32222,25 +32250,37 @@ nameLine
         : ("Choose a backups folder (above)" + (canUseDrive ? " or connect Google Drive" : "") +
            " first. A downloaded file can't be used: Menchmark can't find it again afterwards, so it can't check it exists.");
       if (btn) btn.disabled = true;
+      if ($("eraseForgetBtn")) $("eraseForgetBtn").disabled = true;
     }
   }
 
-  if ($("eraseThisComputerBtn")) $("eraseThisComputerBtn").addEventListener("click", function(){
+  // `forget` decides whether the backups folder is remembered afterwards, and
+  // it must be asked here too. An earlier version always forgot, reasoning
+  // that someone erasing without an account has no way back — which had it
+  // backwards: the remembered folder IS the way back for exactly that rebbi,
+  // and it is what puts "Restore from this computer" on the setup screen.
+  function eraseFromCard(forget){
     var r = signinEraseReadiness();
     if (!r.ready) { renderEraseCard(); return; }
     var where = r.via === "drive" ? "Google Drive" : "“" + r.folderName + "”";
     var typed = prompt(
       "This backs your class up to " + where + ", then removes it from this computer " +
-      "and returns it to the setup screen. Your backup is not touched — this is only about this computer.\n\n" +
-      "Type ERASE to confirm:");
+      "and returns it to the setup screen." +
+      (forget
+        ? "\n\nThis computer will not remember your backups folder afterwards."
+        : "\n\nThis computer will still remember your backups folder, so the setup screen can offer your class straight back.") +
+      "\n\nYour backup itself is not touched.\n\nType ERASE to confirm:");
     if (typed === null) return;
     if (typed.trim().toUpperCase() !== "ERASE") { notice("Not erased — typed text didn't match “ERASE”."); return; }
     $("eraseCardStatus").textContent = "Backing up before erasing…";
-    signinEraseThisComputer(true, function(){ return true; }).then(function(ok){
+    signinEraseThisComputer(forget, function(){ return true; }).then(function(ok){
       if (!ok) $("eraseCardStatus").textContent =
         "Couldn't back up just now, so nothing was erased — your class is still here. Try again.";
     });
-  });
+  }
+
+  if ($("eraseThisComputerBtn")) $("eraseThisComputerBtn").addEventListener("click", function(){ eraseFromCard(false); });
+  if ($("eraseForgetBtn")) $("eraseForgetBtn").addEventListener("click", function(){ eraseFromCard(true); });
 
   $("clearAllData").addEventListener("click", function(){
     var typed=prompt("This permanently erases the institution name, class name, students, activities, scores, scan log, raffle history, and your saved Google Sheet link on this device. This cannot be undone.\n\nType CLEAR to confirm:");
