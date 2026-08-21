@@ -468,9 +468,34 @@ tailwind.config = {
           <div class="flex-1 h-px bg-slate-200"></div>
         </div>
 
-        <!-- Option C: Google Sheet -->
+        <!-- Option C: this computer's remembered backups folder.
+             Hidden unless a folder handle is actually found in IndexedDB, so a
+             genuinely new computer never sees an option that would do nothing.
+             The handle survives an erase because it lives in IndexedDB, not
+             localStorage — which is exactly what "erase but remember" means. -->
+        <div id="this-computer-block" class="mb-6 hidden">
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Option C — This computer</p>
+          <button id="btn-restore-local" type="button"
+                  class="w-full flex items-center gap-3 bg-white hover:bg-slate-50 border-2 border-slate-200 text-navy-700 rounded-xl px-5 py-3.5 transition-colors text-left">
+            <i data-lucide="hard-drive" class="w-5 h-5 opacity-60"></i>
+            <span class="flex-1">
+              <span class="font-semibold text-sm block">Restore from this computer</span>
+              <span id="local-folder-line" class="text-xs text-slate-400"></span>
+            </span>
+          </button>
+          <p id="local-restore-status" class="text-xs mt-2 hidden"></p>
+        </div>
+
+        <!-- Divider -->
+        <div id="this-computer-divider" class="flex items-center gap-3 mb-6 hidden">
+          <div class="flex-1 h-px bg-slate-200"></div>
+          <span class="text-xs font-semibold text-slate-400 uppercase">or</span>
+          <div class="flex-1 h-px bg-slate-200"></div>
+        </div>
+
+        <!-- Option D: Google Sheet -->
         <div>
-          <p class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Option C — Google Sheet</p>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Option D — Google Sheet</p>
           <input id="inp-sheet-url" type="url" placeholder="Paste your Google Apps Script URL…"
                  class="w-full border-2 border-slate-200 focus:border-gold-400 rounded-xl px-4 py-3.5 text-sm outline-none transition-colors mb-2" />
           <p class="text-xs text-slate-400 leading-relaxed">
@@ -546,6 +571,11 @@ var SETUP_RESUME_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 document.addEventListener('DOMContentLoaded', function () {
   if (typeof lucide !== 'undefined') lucide.createIcons();
+
+  // Shows Option C only if this computer actually remembers a backups folder.
+  initThisComputerOption();
+  var localBtn = document.getElementById('btn-restore-local');
+  if (localBtn) localBtn.addEventListener('click', restoreFromThisComputer);
 
   // If a previous setup actually completed, this is a fresh visit —
   // never resume old in-progress data over it (e.g. someone clicking
@@ -1010,6 +1040,117 @@ function processBackupFile(file) {
 // migrateData() → load2fix()) picks it up exactly like any other
 // saved session — no migration logic needs to be duplicated here.
 var APP_DATA_KEY = "qrPointsData_v1";
+
+/* ── Option C: restore from this computer's remembered backups folder ──
+   app.html's Folder Backup stores a FileSystemDirectoryHandle in IndexedDB
+   (see FB_DB/FB_STORE/FB_KEY there) and writes menchmark-backup-*.json into
+   it. Those names and the read below are the only coupling; the file itself
+   is the same JSON every other restore path takes, so a restored folder
+   backup and a restored download are indistinguishable to app.html.
+
+   Deliberately duplicated here rather than shared: setup.html never loads
+   app.html's script, exactly as the wizard's own activity defaults are
+   duplicated a few hundred lines up. If those constants change there, change
+   them here. */
+var FB_DB = "menchmarkBackupFS", FB_STORE = "handles", FB_KEY = "dir";
+
+function fbOpenDb() {
+  return new Promise(function (res, rej) {
+    var r = indexedDB.open(FB_DB, 1);
+    // No onupgradeneeded store creation here: setup only ever READS a handle
+    // app.html put there. Creating the store from this side would invent an
+    // empty database on a computer that never had a folder backup.
+    r.onsuccess = function () { res(r.result); };
+    r.onerror = function () { rej(r.error); };
+  });
+}
+
+function fbReadHandle() {
+  if (typeof indexedDB === "undefined") return Promise.resolve(null);
+  return fbOpenDb().then(function (db) {
+    if (!db.objectStoreNames.contains(FB_STORE)) return null;
+    return new Promise(function (res) {
+      var t = db.transaction(FB_STORE, "readonly");
+      var q = t.objectStore(FB_STORE).get(FB_KEY);
+      q.onsuccess = function () { res(q.result || null); };
+      q.onerror = function () { res(null); };
+    });
+  })["catch"](function () { return null; });
+}
+
+var localFolderHandle = null;
+
+function initThisComputerOption() {
+  fbReadHandle().then(function (h) {
+    if (!h) return;
+    localFolderHandle = h;
+    var block = document.getElementById('this-computer-block');
+    var divider = document.getElementById('this-computer-divider');
+    var line = document.getElementById('local-folder-line');
+    if (line) line.textContent = 'Backups folder: “' + h.name + '”';
+    if (block) block.classList.remove('hidden');
+    if (divider) divider.classList.remove('hidden');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  });
+}
+
+function localRestoreStatus(msg, ok) {
+  var el = document.getElementById('local-restore-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('hidden', 'text-red-500', 'text-emerald-600', 'text-slate-400');
+  el.classList.add(ok === true ? 'text-emerald-600' : ok === false ? 'text-red-500' : 'text-slate-400');
+}
+
+function restoreFromThisComputer() {
+  if (!localFolderHandle) return;
+  localRestoreStatus('Looking in “' + localFolderHandle.name + '”…');
+
+  // Reading a remembered handle needs permission again in a new page — the
+  // grant does not survive on its own, and asking is correct: this reads files
+  // on someone's computer.
+  var perm = localFolderHandle.queryPermission
+    ? localFolderHandle.queryPermission({ mode: 'read' })
+    : Promise.resolve('granted');
+
+  Promise.resolve(perm).then(function (state) {
+    if (state === 'granted') return 'granted';
+    if (!localFolderHandle.requestPermission) return 'denied';
+    return localFolderHandle.requestPermission({ mode: 'read' });
+  }).then(function (state) {
+    if (state !== 'granted') {
+      localRestoreStatus('Menchmark needs permission to read that folder. Try again and choose Allow.', false);
+      return;
+    }
+    var newest = null;
+    var entries = localFolderHandle.values ? localFolderHandle.values() : null;
+    if (!entries) { localRestoreStatus('This browser can’t read that folder.', false); return; }
+    return (async function () {
+      for await (var entry of entries) {
+        if (entry.kind !== 'file') continue;
+        if (!/^menchmark-backup.*\.json$/i.test(entry.name)) continue;
+        var f = await entry.getFile();
+        if (!newest || f.lastModified > newest.lastModified) newest = f;
+      }
+      if (!newest) {
+        localRestoreStatus('No Menchmark backup found in “' + localFolderHandle.name + '”.', false);
+        return;
+      }
+      var text = await newest.text();
+      var obj = JSON.parse(text);
+      if (!obj || !obj.students || !obj.activities) throw new Error('not a backup');
+      // Same handoff every other restore path here uses: write the blob and
+      // let app.html's own load()/migrateData()/load2fix() take it from there.
+      localStorage.setItem(APP_DATA_KEY, text);
+      localStorage.setItem('menchmark_setup_complete', 'true');
+      var count = (obj.students || []).length;
+      localRestoreStatus('Restoring ' + count + ' ' + (count === 1 ? 'boy' : 'boys') + '…', true);
+      window.location.href = 'app.html';
+    })();
+  })["catch"](function (e) {
+    localRestoreStatus('Couldn’t read a backup from that folder (' + (e && e.name || e) + ').', false);
+  });
+}
 
 function importData() {
   var sheetUrl = document.getElementById('inp-sheet-url').value.trim();

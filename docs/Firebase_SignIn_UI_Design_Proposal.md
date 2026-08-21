@@ -185,6 +185,45 @@ invisible plumbing" from `Universal_SignIn_Proposal.md` §4):
   local data** — signing out of the account is not signing out of the class
   sitting in `localStorage`.
 
+  **AMENDED (Ben, 2026-08-21): still the default, no longer the only option.**
+  The sentence above assumed the computer belongs to the rebbi signing out.
+  A rebbi who borrows a colleague's computer for one shiur had no way to take
+  his class off it, and "sign out" leaving the boys, scores and log on someone
+  else's machine is the wrong default *there* even though it is the right one
+  everywhere else. So sign-out now **asks, and only when there is a class on
+  the device to leave behind**:
+
+  - **Keep it here** — exactly the behaviour specified above, unchanged, and
+    still what a rebbi on his own computer gets by taking the default.
+  - **Erase it from this computer** — a second, deliberate screen. This is the
+    only path that touches local data, and it is gated on the class provably
+    existing elsewhere first (see below).
+
+  **The erase gate.** Erasing requires one of two proofs, both of things that
+  *happened* rather than were configured: Drive connected (the write is
+  attempted and must succeed before anything is deleted), or a folder backup
+  that already wrote to disk this session. A plain downloaded file is
+  deliberately **not** accepted — the browser hands the page no path or handle
+  for a download, so the app can neither confirm it happened nor offer it back
+  later. A failed backup erases nothing and says so.
+
+  **Erasing returns the computer to `setup.html`**, by clearing the class and
+  the `menchmark_setup_complete` flag (a prefix sweep of Menchmark's
+  `localStorage` keys, so no stray copy survives a hand-written list going
+  stale). The next person sees the wizard, not an emptied Menchmark.
+
+  **Two flavours, because the way back matters.** "Mine" keeps the remembered
+  backups folder — that handle lives in IndexedDB, so it survives the
+  `localStorage` wipe by construction, and `setup.html`'s Restore screen then
+  offers **"Restore from this computer"** naming the folder. "Someone else's"
+  additionally calls `fbClearHandle()`, so the machine keeps no pointer at all
+  to where the class went.
+
+  This also required the forced Drive-connect gate to stop hiding Sign out:
+  that gate exists to make a rebbi back up before he carries on *working*, and
+  must not trap a rebbi with no Drive account on a borrowed computer with no
+  way off it.
+
 ### 5. Error and edge cases
 
 - **Redirect fails / network drops mid-flow:** land back on the entry

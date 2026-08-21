@@ -7939,54 +7939,6 @@ function setupRoster() {
     if (typeof renderAccountSection === "function") renderAccountSection();
   }
 
-  // Back up FIRST, and only wipe if that provably succeeded. A rebbi choosing
-  // this is on someone else's computer, which is exactly where "it'll be in
-  // Drive" must not be an assumption — if the backup cannot be written, the
-  // class stays put and he is told why. Losing a class here would be the
-  // worst possible outcome of a button whose whole purpose is tidiness.
-  function signinSignOutAndRemove(){
-    signinState.error = null;
-    if (!(data.driveBackupEnabled && driveSupported())) {
-      signinState.error = "Google Drive isn't connected on this computer, so there's nowhere safe to put your class first. " +
-        "Download a backup file (Settings → Backup & Restore) or connect Drive, then sign out again.";
-      if (typeof renderAccountSection === "function") renderAccountSection();
-      return;
-    }
-    signinState.error = "Backing up your class to Drive…";
-    if (typeof renderAccountSection === "function") renderAccountSection();
-    return driveWriteBackup(true).then(function(ok){
-      if (!ok) {
-        signinState.error = "Couldn't back up to Drive just now, so nothing was removed — your class is still here. " +
-          "Check your connection and try again.";
-        if (typeof renderAccountSection === "function") renderAccountSection();
-        return false;
-      }
-      wipeLocalClass();
-      signinSignOutKeepingData(); // account cleared last, after the class is gone
-      notice("Signed out. Your class was backed up and removed from this computer.");
-      return true;
-    });
-  }
-
-  // Returns the device to a clean slate WITHOUT touching the Drive backup —
-  // the copy in Drive is the whole point, and is what the next sign-in on the
-  // rebbi's own computer restores from.
-  function wipeLocalClass(){
-    data = migrateData(JSON.parse(JSON.stringify(defaults)));
-    load2fix();
-    save();
-    $("schoolName").textContent = data.school;
-    syncClassNameField();
-    $("sheetUrl").value = data.sheetUrl || "";
-    $("autoSheet").checked = (data.autoSheet !== false);
-    renderActButtons(); renderRecent(); renderStudents(); renderActivities();
-    renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-    showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
-    if (typeof window._refreshTimerPanel === "function") window._refreshTimerPanel();
-    renderShulchaniStatus();
-    refreshLiveViews();
-    if (typeof refreshTrackedBadges === "function") refreshTrackedBadges();
-  }
 
   function renderAccountSignOutStep(box){
     var p = el("p", "view-note");
@@ -7996,8 +7948,8 @@ function setupRoster() {
     var detail = el("p", "view-note");
     detail.textContent = "\"" + (data.className || "Your class") + "\" — " +
       data.students.length + " " + (data.students.length === 1 ? "boy" : "boys") +
-      ". If this is someone else's computer, remove it: it will be backed up to your Drive first, " +
-      "and comes back the next time you sign in on your own.";
+      ". On someone else's computer, erase it: it is backed up first, and this computer " +
+      "goes back to the way it was before anyone set it up.";
     box.appendChild(detail);
 
     if (signinState.error) {
@@ -8008,15 +7960,164 @@ function setupRoster() {
     keepBtn.addEventListener("click", signinSignOutKeepingData);
     box.appendChild(keepBtn);
 
-    var removeBtn = el("button", "btn btn-sm", "Back up and remove it");
-    removeBtn.style.marginLeft = "8px";
-    removeBtn.addEventListener("click", signinSignOutAndRemove);
-    box.appendChild(removeBtn);
+    var eraseBtn = el("button", "btn btn-sm", "Erase it from this computer…");
+    eraseBtn.style.marginLeft = "8px";
+    eraseBtn.addEventListener("click", function(){
+      signinState.step = "needsEraseChoice";
+      signinState.error = null;
+      renderAccountSection();
+    });
+    box.appendChild(eraseBtn);
 
     var cancelBtn = el("button", "btn btn-sm", "Cancel");
     cancelBtn.style.marginLeft = "8px";
     cancelBtn.addEventListener("click", signinCancelSignOut);
     box.appendChild(cancelBtn);
+  }
+
+  // Erasing is only offered once the class provably exists somewhere else.
+  // Two proofs are accepted, and both are things that HAPPENED rather than
+  // things that were configured: Drive connected (the write is attempted and
+  // must succeed before anything is deleted), or a folder backup that already
+  // wrote to disk in this session.
+  //
+  // A plain downloaded file is deliberately NOT a proof. The browser hands the
+  // page no path and no handle for a download, so the app can neither confirm
+  // it happened nor ever offer it back — accepting it would mean deleting a
+  // class on the strength of something unverifiable.
+  function signinEraseReadiness(){
+    if (data.driveBackupEnabled && driveSupported()) {
+      return { ready: true, via: "drive" };
+    }
+    if (fbHandle && fbWroteThisSession) {
+      return { ready: true, via: "folder", folderName: fbHandle.name };
+    }
+    if (fbHandle) {
+      return { ready: false, reason: "folder-not-written", folderName: fbHandle.name };
+    }
+    return { ready: false, reason: "nothing" };
+  }
+
+  function renderAccountEraseStep(box){
+    var r = signinEraseReadiness();
+
+    var p = el("p", "view-note");
+    p.textContent = "Erase \"" + (data.className || "your class") + "\" from this computer?";
+    box.appendChild(p);
+
+    if (!r.ready) {
+      var why = el("p", "view-note");
+      why.textContent = r.reason === "folder-not-written"
+        ? "Your backups folder (“" + r.folderName + "”) hasn't been written to yet in this session. " +
+          "Back up to it now and the erase will unlock."
+        : "Nothing here is backed up yet, so there is nothing to erase safely from. " +
+          "Connect Google Drive, or choose a backups folder on this computer.";
+      box.appendChild(why);
+
+      var note = el("p", "view-note");
+      note.textContent = "A downloaded backup file can't be used for this: once the browser downloads it, " +
+        "Menchmark can't find it again — so it can't check it exists, and can't offer it back to you later. " +
+        "A backups folder can do both.";
+      box.appendChild(note);
+
+      if (signinState.error) {
+        var e1 = el("p", "pill-note"); e1.textContent = signinState.error; box.appendChild(e1);
+      }
+      var backBtn = el("button", "btn btn-primary", "Go back");
+      backBtn.addEventListener("click", function(){
+        signinState.step = "needsSignOutChoice"; signinState.error = null; renderAccountSection();
+      });
+      box.appendChild(backBtn);
+      return;
+    }
+
+    var okLine = el("p", "view-note");
+    okLine.textContent = r.via === "drive"
+      ? "Your class will be backed up to Google Drive first, and only erased if that works."
+      : "Your class is backed up in “" + r.folderName + "” on this computer.";
+    box.appendChild(okLine);
+
+    var choose = el("p", "view-note");
+    choose.textContent = "Whose computer is this?";
+    box.appendChild(choose);
+
+    if (signinState.error) {
+      var e2 = el("p", "pill-note"); e2.textContent = signinState.error; box.appendChild(e2);
+    }
+
+    // "Mine" keeps the remembered backups folder, which is what lets setup
+    // offer the class straight back. IndexedDB is where that handle lives, so
+    // it survives the localStorage wipe on its own — remembering is the
+    // default state, and forgetting is the deliberate extra step.
+    var mineBtn = el("button", "btn btn-primary", "Mine — erase, but remember my backups folder");
+    mineBtn.addEventListener("click", function(){ signinEraseThisComputer(false); });
+    box.appendChild(mineBtn);
+
+    var sharedBtn = el("button", "btn btn-sm", "Someone else's — erase and forget everything");
+    sharedBtn.style.marginLeft = "8px";
+    sharedBtn.addEventListener("click", function(){ signinEraseThisComputer(true); });
+    box.appendChild(sharedBtn);
+
+    var cancel2 = el("button", "btn btn-sm", "Cancel");
+    cancel2.style.marginLeft = "8px";
+    cancel2.addEventListener("click", signinCancelSignOut);
+    box.appendChild(cancel2);
+  }
+
+  // `forget` true drops the remembered backups folder as well, so this machine
+  // keeps no pointer at all to where the class went — the shared-computer case.
+  function signinEraseThisComputer(forget){
+    var r = signinEraseReadiness();
+    if (!r.ready) { renderAccountSection(); return; }
+
+    signinState.error = "Backing up before erasing…";
+    renderAccountSection();
+
+    var backedUp = (r.via === "drive") ? driveWriteBackup(true) : fbWrite(true);
+
+    return Promise.resolve(backedUp).then(function(ok){
+      if (!ok) {
+        signinState.error = "Couldn't back up just now, so nothing was erased — your class is still here. " +
+          "Check your connection (or the backups folder) and try again.";
+        renderAccountSection();
+        return false;
+      }
+      var done = forget ? Promise.resolve(fbClearHandle())["catch"](function(){}) : Promise.resolve();
+      return done.then(function(){
+        eraseThisComputer();
+        return true;
+      });
+    });
+  }
+
+  // The actual wipe. Clears the class AND the setup flag, which is what sends
+  // the next visit through the wizard rather than into an empty app — a
+  // computer someone else picks up should look untouched, not like a Menchmark
+  // that lost its class. The Drive backup and (unless forgotten) the backups
+  // folder are never deleted: they are the way back.
+  function eraseThisComputer(){
+    // Prefix sweep rather than a hand-written list of keys. A list is only as
+    // good as someone's memory of every key the app has ever written, and the
+    // one thing this must not do is leave a stray copy of a class on a
+    // computer whose owner was told it had been erased. Anything Menchmark
+    // wrote starts with the storage key or "menchmark"; nothing else is
+    // touched, so a shared origin keeps its own unrelated keys.
+    try {
+      var doomed = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k) continue;
+        if (k.indexOf(KEY) === 0 || k.toLowerCase().indexOf("menchmark") === 0) doomed.push(k);
+      }
+      doomed.forEach(function(k){ try { localStorage.removeItem(k); } catch (e) {} });
+    } catch (e) {}
+    try { sessionStorage.clear(); } catch (e) {}
+    if (window.firebase && window.firebase.auth) {
+      try { window.firebase.auth().signOut(); } catch (e) {}
+    }
+    // A deliberate navigation to the wizard, not a reload-to-re-render: the
+    // whole point is that this computer starts over.
+    location.href = "setup.html";
   }
 
   // ---------- Step 3b: self-serve backup-upload restore ----------
@@ -12230,6 +12331,7 @@ function setupRoster() {
     if (signinState.step === "needsDriveRestore") { renderAccountDriveRestoreStep(box); return; }
     if (signinState.step === "needsRoster") { renderAccountRosterStep(box); return; }
     if (signinState.step === "needsSignOutChoice") { renderAccountSignOutStep(box); return; }
+    if (signinState.step === "needsEraseChoice") { renderAccountEraseStep(box); return; }
 
     if (data.account) {
       // Forced Drive connect: every rebbi, either tier, must connect Google
@@ -12382,6 +12484,17 @@ function setupRoster() {
     var connectBtn = el("button", "btn btn-primary", "Connect Google Drive");
     connectBtn.addEventListener("click", driveConnect);
     box.appendChild(connectBtn);
+
+    // The gate exists to make a rebbi back up before he carries on WORKING —
+    // it must not also trap him here. Signing out is the way off a borrowed
+    // computer, and erasing lives behind it; a rebbi standing at a colleague's
+    // desk with no Drive account could otherwise reach neither, which is the
+    // exact situation the erase flow was built for. Signing out grants no
+    // access, so nothing is bypassed by offering it.
+    var outBtn = el("button", "btn btn-sm", "Sign out");
+    outBtn.style.marginLeft = "8px";
+    outBtn.addEventListener("click", signinSignOut);
+    box.appendChild(outBtn);
   }
   // Step 3b's Drive-restore offer — only ever shown after same-device
   // adoption found no local match at all (signinMaybeOfferDriveRestore()'s
@@ -29985,6 +30098,10 @@ nameLine
    */
   var FB_DB="menchmarkBackupFS", FB_STORE="handles", FB_KEY="dir";
   var fbHandle=null, fbBusy=false;
+  // Set only by a folder write that actually succeeded this session — read by
+  // the erase gate (signinEraseReadiness) as one of the two proofs that this
+  // rebbi's class exists somewhere other than the machine he is about to wipe.
+  var fbWroteThisSession=false;
   /* "Has anything changed since the last folder write?", counted rather than
    * timed. The closing write used to be skipped for 60 seconds after any other
    * write, which sounds like a debounce but silently dropped the commonest
@@ -30061,6 +30178,11 @@ nameLine
         // here: the bytes are already on disk by this point, so letting a
         // broken status line throw would drop us into the failure branch and
         // tell the rebbi nothing was backed up when it just was.
+        // Proof, not intent: the erase gate below only accepts a backup that
+        // actually reached the disk in THIS session, so it can never be
+        // satisfied by a folder that was chosen once and has been failing
+        // quietly ever since.
+        fbWroteThisSession = true;
         try{
           if(!silent) fbStatus("Backed up to “"+fbHandle.name+"” just now.", "good");
           else fbStatus("Backing up automatically to “"+fbHandle.name+"”. Last saved just now.", "good");
