@@ -233,3 +233,9 @@ All recorded in `Firebase_Rebuild_Scope.md` and `CLAUDE.md`.
   beta replies (four asked for it). Script already written in
   `docs/Onboarding_Video_Scripts.md`. (The beta tally called this one "C" —
   same video.)
+- **A decision on the prefix/suffix (dikduk) library format.** A rebbi built
+  a full word-by-word prefix/shoresh/suffix breakdown for Noach–Vayeira,
+  styled after Torah Umesorah's linear-translation PDFs; sample saved at
+  `docs/library-sources/`, scope written up in
+  `docs/Library_PrefixSuffix_Proposal.md`. Depends on Phase 6a (the library
+  loader) existing first — nothing reads `library/` yet either way.
