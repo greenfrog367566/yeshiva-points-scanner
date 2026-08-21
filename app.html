@@ -4843,7 +4843,11 @@ function setupRoster() {
         <button class="seat-segbtn" id="chavModeAutoBtn" type="button">Automatic</button>
       </div>
       <span class="grow"></span>
+      <button class="btn btn-sm" id="chavPauseBtn" type="button" style="display:none">⏸ Pause</button>
       <button class="btn btn-sm" id="chavSaveNewBtn" type="button">Save &amp; start new</button>
+    </div>
+    <div class="gb-warn" id="chavPausedNote" style="display:none;margin-bottom:12px;align-items:center;gap:10px">
+      <span class="grow">⏸ Paused — scans are scoring each student individually. Groups and point target are untouched; Resume to pick up right where you left off.</span>
     </div>
 
     <div class="toolbar" style="margin-bottom:16px;gap:8px;flex-wrap:wrap">
@@ -8847,11 +8851,36 @@ function setupRoster() {
     // mode on the seating chart shouldn't see a button that can never do
     // anything for them.
     $("chavFromTablesBtn").style.display = seatTablesArr(seatLayout()).length ? "" : "none";
+    chavRenderPauseBtn();
     chavRenderPointModeSeg();
     chavRenderTiles();
     chavRenderGroups();
     chavRenderHistory();
   }
+  // Pause/Resume (Phase 8 lifecycle slice). Shown only once there is
+  // something to pause -- an empty session has no scoring behavior to
+  // suspend, same reason chavFromTablesBtn hides rather than disables.
+  function chavRenderPauseBtn(){
+    var has=data.chavrusaSession.groups.length>0;
+    var paused=!!data.chavrusaSession.paused;
+    var btn=$("chavPauseBtn");
+    btn.style.display = has ? "" : "none";
+    btn.textContent = paused ? "▶ Resume" : "⏸ Pause";
+    btn.title = paused
+      ? "Resume — scans go back to Chavrusa Mode's point target"
+      : "Pause — scans score each student individually until you Resume; groups and point target are kept exactly as they are";
+    $("chavPausedNote").style.display = (has && paused) ? "flex" : "none";
+  }
+  // Shared by the tab's own Pause/Resume button and the seating chart's
+  // (Phase 8 lifecycle slice) -- one toggle, both entry points refresh
+  // everything since either can be looked at while the other is used.
+  function chavTogglePause(){
+    data.chavrusaSession.paused=!data.chavrusaSession.paused;
+    save();
+    renderChavrusa();
+    renderScanBoard(); renderTapPanel();
+  }
+  $("chavPauseBtn").addEventListener("click", chavTogglePause);
   function chavRenderPointModeSeg(){
     var mode=data.chavrusaSession.pointTargetMode;
     $("chavPointIndividualBtn").classList.toggle("active", mode==="individual");
@@ -8991,11 +9020,20 @@ function setupRoster() {
     data.chavrusaSession.groups=[];
     save(); renderChavrusa();
   });
-  $("chavSaveNewBtn").addEventListener("click", function(){
+  // Ends the current sitting -- archives non-empty groups to Past Chavrusas,
+  // clears every pool, and resets to a fresh session. Refuses (alert, no
+  // data touched) while any pool is still unresolved, the same Contest-
+  // lesson reason chavClearGroupsBtn and Remove group both refuse too.
+  // Shared by the tab's own "Save & start new" and the seating chart's
+  // compact End quick action (Phase 8 lifecycle slice) -- one definition of
+  // what ending a sitting does, not two that could drift apart. Returns
+  // whether it actually ended the sitting, so each caller decides its own
+  // re-render.
+  function chavEndAndSave(){
     var unresolved=chavUnresolvedGroups();
     if(unresolved.length){
       alert("Resolve Group Points for "+unresolved.length+" group"+(unresolved.length===1?"":"s")+" with pooled points before starting a new sitting — those points would otherwise be lost.");
-      return;
+      return false;
     }
     // Only worth a history entry if there is anything to remember -- an empty
     // sitting saved and reloaded would just be clutter in Past Chavrusas.
@@ -9004,10 +9042,13 @@ function setupRoster() {
       if(data.chavrusaHistory.length>200) data.chavrusaHistory.length=200;
     }
     data.chavrusaSession.groups.forEach(function(g){ delete data.chavrusaPools[g.id]; });
-    data.chavrusaSession={groups:[], pointTargetMode:"individual"};
+    data.chavrusaSession={groups:[], pointTargetMode:"individual", paused:false};
     chavSelected=[];
     save();
-    renderChavrusa();
+    return true;
+  }
+  $("chavSaveNewBtn").addEventListener("click", function(){
+    if(chavEndAndSave()) renderChavrusa();
   });
   function chavRenderHistory(){
     var list=$("chavHistoryList"); list.innerHTML="";
@@ -14794,8 +14835,11 @@ function setupRoster() {
     // default and needs no branch here at all -- it's exactly the fall-through
     // below, unchanged. Group/Entity only take over once a scanned student is
     // actually in an active group this sitting; an ungrouped student always
-    // scores normally regardless of the session's mode.
-    var chavGroup = chavActiveGroupFor(s.id);
+    // scores normally regardless of the session's mode. Pausing (Phase 8
+    // lifecycle slice) is the same fall-through as Individual mode -- groups
+    // and pointTargetMode are both left completely untouched, so Resume needs
+    // no memory of anything, it just stops overriding this check again.
+    var chavGroup = data.chavrusaSession.paused ? null : chavActiveGroupFor(s.id);
     if(chavGroup && data.chavrusaSession.pointTargetMode==="group"){
       return awardGroupTarget(chavGroup, armed.label, armed.delta);
     }
@@ -18035,6 +18079,37 @@ function setupRoster() {
     giveAllBtn.title="Give the armed activity to every student in the selected class";
     giveAllBtn.addEventListener("click", function(){ giveArmedToAll(); });
     toolbar.appendChild(giveAllBtn);
+    /* Chavrusa lifecycle (Phase 8 lifecycle slice) -- a way to start, pause/
+     * resume, or end a chavrusa sitting from the chart a rebbi is actually
+     * scanning from, instead of needing the Chavrusa Mode tab for anything
+     * but building groups in the first place. Starting still jumps to the
+     * tab (same idiom the unresolved-pool strip's Resolve button already
+     * uses) because there's no compact way to build groups here -- but
+     * pause/resume/end don't need the tab's own UI at all, so they act in
+     * place. Not class-scoped, same as data.chavrusaSession itself: these
+     * buttons reflect the one app-wide sitting regardless of which class is
+     * currently selected.
+     */
+    if(data.chavrusaSession.groups.length){
+      var chavPauseTb=el("button","seat-modebtn"+(data.chavrusaSession.paused?" active":""),
+        data.chavrusaSession.paused?"▶ Resume":"⏸ Pause");
+      chavPauseTb.title = data.chavrusaSession.paused
+        ? "Resume — scans go back to Chavrusa Mode's point target"
+        : "Pause — scans score each student individually until you Resume; groups and point target are kept exactly as they are";
+      chavPauseTb.addEventListener("click", chavTogglePause);
+      toolbar.appendChild(chavPauseTb);
+      var chavEndTb=el("button","seat-modebtn","⏹ End");
+      chavEndTb.title="End this chavrusa sitting and save it to Past Chavrusas";
+      chavEndTb.addEventListener("click", function(){
+        if(chavEndAndSave()){ renderChavrusa(); renderScanBoard(); renderTapPanel(); }
+      });
+      toolbar.appendChild(chavEndTb);
+    } else {
+      var chavStartTb=el("button","seat-modebtn","👥 Start Chavrusa");
+      chavStartTb.title="Build chavrusa pairs or groups for this sitting";
+      chavStartTb.addEventListener("click", function(){ activateTab("chavrusa"); });
+      toolbar.appendChild(chavStartTb);
+    }
     // ⚙ Display comes AFTER the List/Seating chart switch (not before it) so
     // that opening its drawer never shifts the switch — the drawer's content
     // only ever pushes what's to ITS right (Rebbi's view, or onto a wrapped
@@ -32456,6 +32531,10 @@ nameLine
     }
     if(!Array.isArray(data.chavrusaSession.groups)) data.chavrusaSession.groups=[];
     if(["individual","group","entity"].indexOf(data.chavrusaSession.pointTargetMode)<0) data.chavrusaSession.pointTargetMode="individual";
+    // Pause: a scan routes as a plain individual award while paused, whatever
+    // pointTargetMode says -- the mode itself is untouched, so Resume needs
+    // no memory of what it was. Purely additive, no DATA_VERSION bump.
+    if(typeof data.chavrusaSession.paused!=="boolean") data.chavrusaSession.paused=false;
     if(!Array.isArray(data.chavrusaHistory)) data.chavrusaHistory=[];
     // Group Entity mode's pooled totals (Phase 8, point-target modes slice).
     // Stored, not derived -- same "Contest lesson" as data.miniContest: a total
