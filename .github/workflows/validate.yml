@@ -62,6 +62,12 @@ jobs:
     # overwrite/idempotence guarantees the same way, against the real
     # exported Cloud Function. ubuntu-latest ships a JDK, which the
     # emulators need.
+    #
+    # npm cache: measured 2026-08-21, this job's own `npm install` (687
+    # packages, mostly firebase-tools' tree) was 1m44s of a 2m22s job —
+    # everything else, including the emulator-binary restore below, was
+    # already fast. cache:"npm" + npm ci fixes that without touching what
+    # the job verifies.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,12 +75,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
 
       - name: Install rules-test dependencies
-        run: npm install
+        run: npm ci
 
       - name: Install Cloud Functions dependencies
-        run: npm install
+        run: npm ci
         working-directory: functions
 
       - name: Cache Firestore emulator
