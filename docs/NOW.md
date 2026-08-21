@@ -20,25 +20,28 @@ spec, not here.
 
 ## Doing now
 
-**Open PRs — 2 of 5** (`CLAUDE.md` → "Finishing work"). Well under the cap —
-#358/#359/#360/#362/#363/#364, everything the 2026-08-20 table listed, has
-since merged.
+**Open PRs — 3 of 5** (`CLAUDE.md` → "Finishing work"). Under the cap.
 
 | PR | What | Owed before ready |
 |---|---|---|
 | #370 | Photo crop wizard, Choose photo button, bigger avatars | review |
 | #371 | Release-drift check that stays quiet until a release is due | review |
+| #377 | Chavrusa Dashboard integration (Phase 8 slice 3) + tables-flash fix + From tables | Ben's click-through |
 
 **Phase 8 (Chavrusa Mode) is the active build.** Slices 1 and 2 have both
 merged: manual/automatic group-building, Past Chavrusas, and Individual point
 mode (slice 1); Entire Group / Group Entity point-target modes + Resolve
-(slice 2, #358, merged 2026-08-21). **Two slices left, in build order agreed
-2026-08-20: Dashboard visual integration next** (grouping in List + Class
-view, scan-bar target indicator, multi-tile flash, unresolved-points strip —
-confirmed *not* blocked by the rest of Phase 3), **then the rule editor last**
-(planned as a full tag-based system — freeform per-student tags + rules
-referencing them, not just a never-pair blocklist). See
-`Menchmark_Phased_Build_Plan.md` → Phase 8 for the full status line.
+(slice 2, #358, merged 2026-08-21). **Slice 3 (Dashboard visual integration)
+is open as PR #377** — target confirmation, grouped-tile rings in List +
+Class view (List mode also clusters into brackets), and a dismissible
+unresolved-pool strip, all gated on point-target mode not being Individual.
+Also in #377: a "🪑 From tables" quick group-builder, and a fix for an
+unrelated CSS-specificity bug where a scan's award flash never showed its
+color on a student seated at a seating-tables table. **The rule editor is the
+last slice left after #377 lands** (planned as a full tag-based system —
+freeform per-student tags + rules referencing them, not just a never-pair
+blocklist). See `Menchmark_Phased_Build_Plan.md` → Phase 8 for the full
+status line.
 
 **The Firebase/Firestore rebuild is built and deployed.** All 8 build-order
 steps merged (PRs #290, #292, #300, #303, #309) and `firebase deploy` is live
