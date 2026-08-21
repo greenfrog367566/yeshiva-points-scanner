@@ -928,6 +928,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      seat" placeholder is right in the middle of a room and wrong in the
      middle of a table. */
   .seat-grid .seat.at-table.empty{background:transparent;border-style:solid;color:transparent}
+  /* .seat-grid .seat.at-table above is 3 classes deep and was beating the
+     2-class .seat.awarded/-bad/-ice rules below regardless of source order,
+     so a scan on a student seated at a table flashed the fly-number but never
+     the background/border color -- the confirmation a rebbi actually glances
+     for. Same specificity fight as the print-preview comment above, same fix:
+     go one class deeper than the rule being overridden. */
+  .seat-grid .seat.at-table.awarded{border-color:var(--good);background:var(--good-soft)}
+  .seat-grid .seat.at-table.awarded-bad{border-color:var(--bad);background:var(--bad-soft)}
+  .seat-grid .seat.at-table.awarded-ice{border-color:var(--ice);background:var(--ice-soft)}
   /* The six colours are a fixed palette rather than a free picker, for a
      reason that only shows up on paper: each one has to stay legible when the
      browser drops the fill (see the print block), so the BORDER is the colour
@@ -938,6 +947,21 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-table.tc-amber{--tbl-line:#b98c33;--tbl-fill:#fdf5e7}
   .seat-table.tc-rose{--tbl-line:#c46b7f;--tbl-fill:#fdeff2}
   .seat-table.tc-violet{--tbl-line:#8a72c0;--tbl-fill:#f4f0fc}
+  /* Dashboard touchpoint: a shared-color ring around every tile in an active
+     chavrusa group, in both List mode and Class view -- one class
+     (fillSeatLiveCard applies it) reaches both. box-shadow, deliberately not
+     border/background, so it never fights .awarded/-bad or .at-table for the
+     same property -- the exact collision this file's .at-table.awarded fix
+     above exists to undo. Same 6 colors as the table palette above, kept as
+     a separate variable/class pair so a seat can be at-table AND chav-grp at
+     once without the two treatments fighting each other. */
+  .tap-btn.chav-grp,.seat.chav-grp{box-shadow:0 0 0 2px var(--chv-line,#8d94a6) inset}
+  .chav-c0{--chv-line:#8d94a6}
+  .chav-c1{--chv-line:#5b7fc4}
+  .chav-c2{--chv-line:#5b9c6e}
+  .chav-c3{--chv-line:#b98c33}
+  .chav-c4{--chv-line:#c46b7f}
+  .chav-c5{--chv-line:#8a72c0}
   .seat-table-name{position:absolute;top:3px;left:11px;font-size:.62rem;font-weight:700;
     letter-spacing:.4px;text-transform:uppercase;color:var(--tbl-line,#8d94a6);
     pointer-events:none;max-width:calc(100% - 22px);overflow:hidden;
@@ -2852,6 +2876,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
               <h3>Leaderboard</h3>
               <span class="live-dot">Live</span>
               <button class="btn btn-sm" id="boardToggle">Hide</button>
+            </div>
+            <div class="gb-warn" id="chavUnresolvedStrip" style="display:none;align-items:center;gap:10px;margin:0 0 8px">
+              <span class="grow" id="chavUnresolvedStripText"></span>
+              <button class="btn btn-sm btn-primary" id="chavUnresolvedStripResolve" type="button">Resolve</button>
+              <button class="btn btn-sm" id="chavUnresolvedStripDismiss" type="button">✕</button>
             </div>
             <div class="board-body" id="scanBoardBody"></div>
           </div>
@@ -4856,6 +4885,7 @@ function setupRoster() {
           <input type="checkbox" id="chavAvoidPairings" checked> Avoid previous pairings
         </label>
         <span class="grow"></span>
+        <button class="btn btn-sm" id="chavFromTablesBtn" type="button" title="Turns each occupied table on this class's seating chart into a group, using whoever there isn't already grouped.">🪑 From tables</button>
         <button class="btn btn-sm btn-primary" id="chavGenerateBtn" type="button">Generate</button>
       </div>
       <div class="gb-warn" id="chavFallbackWarn" style="display:none;margin-top:10px;align-items:center;gap:10px">
@@ -8976,6 +9006,12 @@ function setupRoster() {
    */
   var chavMode="manual"; // "manual" | "auto" -- session-only UI state, not persisted
   var chavSelected=[]; // student ids currently tapped in Manual mode, not persisted
+  // Group ids the rebbi has dismissed the Dashboard's unresolved-pool strip
+  // for. Session-only, like chavSelected above -- a reload re-nagging about a
+  // real unresolved pool is fine, dropping the nag entirely would not be. A
+  // group's id leaving this set on its own (once resolved) needs no cleanup:
+  // chavUnresolvedGroups() only ever returns groups that still have a pool.
+  var chavStripDismissedIds={};
 
   function chavGroupedIds(){
     var ids={};
@@ -8991,6 +9027,10 @@ function setupRoster() {
     $("chavModeAutoBtn").classList.toggle("active", chavMode==="auto");
     $("chavManualPanel").style.display = chavMode==="manual" ? "block" : "none";
     $("chavAutoPanel").style.display = chavMode==="auto" ? "block" : "none";
+    // Hidden rather than disabled -- a rebbi who has never touched Tables
+    // mode on the seating chart shouldn't see a button that can never do
+    // anything for them.
+    $("chavFromTablesBtn").style.display = seatTablesArr(seatLayout()).length ? "" : "none";
     chavRenderPointModeSeg();
     chavRenderTiles();
     chavRenderGroups();
@@ -9072,6 +9112,10 @@ function setupRoster() {
           if(!removed) return;
           if(lastChavPoolAdd && lastChavPoolAdd.entryId===removed.id) lastChavPoolAdd=null;
           save(); renderChavrusa();
+          // The "🧩 N pooled" tile badge and the unresolved-pool strip both
+          // read this same total -- an undo that only re-rendered this tab
+          // would leave the Dashboard showing the pre-undo amount.
+          renderScanBoard(); renderTapPanel();
         });
         card.appendChild(undoPoolBtn);
       }
@@ -9098,6 +9142,27 @@ function setupRoster() {
   function chavUnresolvedGroups(){
     return data.chavrusaSession.groups.filter(function(g){ var p=data.chavrusaPools[g.id]; return p && p.total; });
   }
+  // Dashboard touchpoint: a dismissible strip above the mini leaderboard when
+  // Group Entity mode has left points sitting in a pool (spec: Menchmark_UI_
+  // Redesign_Summary.md §2). Driven from renderScanBoard(), which already
+  // runs after every scoring action, so this never needs its own call sites.
+  function renderChavUnresolvedStrip(){
+    var strip=$("chavUnresolvedStrip");
+    if(!strip) return;
+    var unresolved=chavUnresolvedGroups();
+    // Re-arms itself: dismissing hides today's set of unresolved groups, but
+    // a NEW pool (a different group id) shows the strip again even if others
+    // are still dismissed -- silence is per-group, not permanent.
+    var fresh=unresolved.filter(function(g){ return !chavStripDismissedIds[g.id]; });
+    if(!fresh.length){ strip.style.display="none"; return; }
+    $("chavUnresolvedStripText").textContent="🧩 "+unresolved.length+" group"+(unresolved.length===1?" has":"s have")+" unresolved points";
+    strip.style.display="flex";
+  }
+  $("chavUnresolvedStripResolve").addEventListener("click", function(){ activateTab("chavrusa"); });
+  $("chavUnresolvedStripDismiss").addEventListener("click", function(){
+    chavUnresolvedGroups().forEach(function(g){ chavStripDismissedIds[g.id]=true; });
+    renderChavUnresolvedStrip();
+  });
   $("chavClearGroupsBtn").addEventListener("click", function(){
     if(!data.chavrusaSession.groups.length) return;
     var unresolved=chavUnresolvedGroups();
@@ -9185,6 +9250,51 @@ function setupRoster() {
     var first=chavStudentName((group.studentIds||[])[0]).split(" ")[0];
     return first+"’s group";
   }
+  // Gates the purely-organizational Dashboard touchpoints -- List mode
+  // clustering and the tile ring (§2's "List mode grouping" bullet: "when a
+  // Chavrusa session is active"). Any point-target mode, Individual
+  // included: pairing students up is useful to SEE on the Dashboard whether
+  // or not points are routed through the pairing. The scoring-specific
+  // touchpoints (the target toast, the unresolved-pool strip) are narrower
+  // by construction instead -- the toast only fires from inside
+  // awardGroupTarget/awardGroupEntity, which award() only ever reaches when
+  // pointTargetMode isn't "individual", and the strip keys off an actual
+  // pool existing, which only Entity mode ever creates.
+  function chavGroupingActive(){
+    return data.chavrusaSession.groups.length>0;
+  }
+  // Same 6-color palette the seating-tables feature uses (SEAT_TABLE_COLORS),
+  // reused here as a plain index rather than sharing its CSS classes -- a
+  // chavrusa ring (box-shadow, see .chav-c0 etc.) and a table backdrop
+  // (border/background) must never fight over the same property the way
+  // .awarded and .at-table did before this PR's CSS fix.
+  function chavGroupColorIdx(group){
+    var idx=data.chavrusaSession.groups.indexOf(group);
+    return idx<0 ? 0 : idx%6;
+  }
+  // Entity mode only -- Group and Individual modes never create a pool, so
+  // showing "0 pooled" there would just be noise about a number that can
+  // never move. Reads data.chavrusaPools fresh (never cached), so a full
+  // re-render after any pool change (award, resolve, undo) always agrees.
+  function chavPoolLineFor(group){
+    if(!group || data.chavrusaSession.pointTargetMode!=="entity") return "";
+    var pool=data.chavrusaPools[group.id];
+    return "🧩 "+fmtVal(pool?pool.total:0)+" pooled";
+  }
+  // List mode's grouping: bracket by group (in group-creation order), every
+  // ungrouped student after all of them, alphabetical within each bucket.
+  // Takes an already-sorted array and re-sorts it (Array#sort is stable, so
+  // ties keep the alphabetical order the caller already applied) rather than
+  // computing lastFirstKey twice.
+  function chavClusterStuds(studs){
+    var groups=data.chavrusaSession.groups, order={};
+    groups.forEach(function(g, gi){ (g.studentIds||[]).forEach(function(sid){ order[sid]=gi; }); });
+    return studs.slice().sort(function(a,b){
+      var ga=order.hasOwnProperty(a.id)?order[a.id]:groups.length;
+      var gb=order.hasOwnProperty(b.id)?order[b.id]:groups.length;
+      return ga-gb;
+    });
+  }
   function chavPoolFor(groupId){
     var p=data.chavrusaPools[groupId];
     if(!p){ p={total:0, entries:[]}; data.chavrusaPools[groupId]=p; }
@@ -9209,7 +9319,12 @@ function setupRoster() {
     });
     save();
     renderRecent(); renderScanBoard(); renderTapPanel(); refreshLiveViews();
-    var gname=chavGroupLabel(group);
+    // Dashboard touchpoint #1(b) (§2): the scan bar's own armed-activity
+    // display can't name a group before the scan (which member gets tapped,
+    // and so which group, isn't known until then -- chavActiveGroupFor()
+    // only resolves at scan time), so the confirmation lands here instead,
+    // on the toast that already fires for exactly this award.
+    var gname="🎯 Target: "+chavGroupLabel(group)+" ("+ids.length+")";
     flash(delta>=0, gname, fmtDeltaBare(delta), done+" student"+(done===1?"":"s")+" · "+label, delta>=0?"positive":"negative");
     beep(delta>=0);
     return done>0;
@@ -9238,7 +9353,13 @@ function setupRoster() {
     lastChavPoolAdd={groupId:group.id, entryId:entry.id, ts:entry.ts};
     save();
     renderChavrusa();
-    var gname=chavGroupLabel(group);
+    // Also refreshes the Dashboard's unresolved-pool strip (touchpoint #4)
+    // and every member's tile (the "🧩 N pooled" line, fillSeatLiveCard) --
+    // this is the scan that just grew or created the pool both read, so they
+    // need to catch it as promptly as a real award does.
+    renderScanBoard();
+    renderTapPanel();
+    var gname="🎯 Target: "+chavGroupLabel(group)+" ("+(group.studentIds||[]).length+")";
     flash(delta>=0, gname, fmtDeltaBare(delta), "🧩 Added to pool · now "+fmtVal(pool.total), delta>=0?"positive":"negative");
     beep(delta>=0);
     return true;
@@ -9268,6 +9389,11 @@ function setupRoster() {
     if(!removed) return false;
     save();
     renderChavrusa();
+    // Same reason as the "Undo last pooled scan" button above: the
+    // top-bar "↩ Undo" reaches this path too, and the Dashboard's pool
+    // badge/strip must not go stale just because the undo came from there
+    // instead of from the Chavrusa Mode tab.
+    renderScanBoard(); renderTapPanel();
     return true;
   }
   // Splits a pool's total evenly across its group's members (integer division,
@@ -9359,6 +9485,48 @@ function setupRoster() {
     }
     return {groups:newGroups, hadRepeat:hadRepeat};
   }
+  // One group per occupied table on this class's current seating chart --
+  // for the common case a rebbi has already seated the room in table-shaped
+  // clusters (sometimes deliberately, as existing teams) and wants those
+  // clusters turned straight into chavrusas instead of a fresh random draw.
+  // Ungrouped-only, same restraint chavGenerateGroups applies: a student
+  // already in a group this sitting is left where he is, never moved.
+  function chavGroupsFromTables(){
+    var lay=seatLayout();
+    var grouped=chavGroupedIds();
+    var byTable={};
+    (lay.seats||[]).forEach(function(sid, trueIdx){
+      if(!sid || grouped[sid]) return;
+      var t=seatTableAtRC(lay, Math.floor(trueIdx/lay.cols), trueIdx%lay.cols);
+      if(!t) return;
+      (byTable[t.id]=byTable[t.id]||[]).push(sid);
+    });
+    var newGroups=[], skippedSolo=0;
+    Object.keys(byTable).forEach(function(tid){
+      var ids=byTable[tid];
+      if(ids.length>=2) newGroups.push({id:newId(), studentIds:ids});
+      else skippedSolo+=ids.length;
+    });
+    return {groups:newGroups, skippedSolo:skippedSolo};
+  }
+  $("chavFromTablesBtn").addEventListener("click", function(){
+    var result=chavGroupsFromTables();
+    var warn=$("chavFallbackWarn");
+    if(!result.groups.length){
+      $("chavFallbackWarnText").textContent="No table has 2+ ungrouped students right now — set up tables on the seating chart first (⚙ Setup & arrange → 🪑 Tables).";
+      warn.style.display="flex";
+      return;
+    }
+    data.chavrusaSession.groups=data.chavrusaSession.groups.concat(result.groups);
+    save();
+    if(result.skippedSolo>0){
+      $("chavFallbackWarnText").textContent=result.skippedSolo+" student"+(result.skippedSolo===1?"":"s")+" left ungrouped at a table (already in a group, or the only free seat there) — group "+(result.skippedSolo===1?"him":"them")+" manually if needed.";
+      warn.style.display="flex";
+    } else {
+      warn.style.display="none";
+    }
+    renderChavrusa();
+  });
   $("chavGenerateBtn").addEventListener("click", function(){
     var size=parseInt($("chavGroupSize").value,10);
     if(!isFinite(size) || size<2) size=2;
@@ -17167,6 +17335,7 @@ function setupRoster() {
     if(typeof renderStandings==="function" && $("view-standings") && $("view-standings").classList.contains("active")){
       renderStandings();
     }
+    renderChavUnresolvedStrip();
     var open = data.scanBoardOpen!==false;
     $("scanBoardBody").style.display = open ? "block" : "none";
     $("boardToggle").textContent = open ? "Hide" : "Show";
@@ -18373,6 +18542,13 @@ function setupRoster() {
 
     if(effViewMode==="seating"){ renderSeatGrid(body, studs); return; }
 
+    // Dashboard touchpoint (§2): List mode clusters into bracketed groups,
+    // ungrouped students below, alphabetical within each -- reverts to plain
+    // alphabetical (the sort just above, untouched) the moment no session is
+    // active. Class view is deliberately left out of this: a seat's position
+    // is furniture the rebbi arranged, not something a group should reorder.
+    if(chavGroupingActive()) studs=chavClusterStuds(studs);
+
     // Says why this is a list when the toolbar was set to Seating chart, and
     // carries the only way in. Shown ONLY on the fallback — a rebbi who chose
     // List is not nagged about a chart he never asked for.
@@ -18539,6 +18715,13 @@ function setupRoster() {
    * tighter than a List tile.
    */
   function fillSeatLiveCard(card, s, mode, showPts, avatarPx){
+    // Dashboard touchpoint #2 (§2): the shared choke point for both List
+    // mode's .tap-btn and Class view's .seat, so one check reaches both.
+    var chavGrp=null;
+    if(chavGroupingActive()){
+      chavGrp=chavActiveGroupFor(s.id);
+      if(chavGrp) card.classList.add("chav-grp", "chav-c"+chavGroupColorIdx(chavGrp));
+    }
     var kind=seatPrintCodeKind(mode), wantPhoto=seatPrintWantsPhoto(mode);
     /* THE FLEX ROW EXISTS ONLY WHEN BOTH ARE SHOWN — same rule as the printed
      * card. A code alone, or a face alone, keeps the exact DOM it has always
@@ -18601,6 +18784,16 @@ function setupRoster() {
        */
       var mcHeld=mcHeldFor(s.id);
       if(mcHeld) card.appendChild(el("span","ts-mc", mcHeld));
+      // Dashboard touchpoint: Group Entity's shared pool, same "held, not on
+      // your own score" idea mcHeld already renders -- without this, a scan
+      // in Entity mode moves a number a rebbi can't see anywhere on the
+      // tile he is looking at, since his own score line is frozen by
+      // design (see awardGroupEntity). Shown even at 0 once grouped, same
+      // restraint mcHeld does NOT take, deliberately: "0 pooled" tells a
+      // rebbi this tile's score is not where his next scan will land, which
+      // matters before the first scan as much as after it.
+      var poolLine=chavPoolLineFor(chavGrp);
+      if(poolLine) card.appendChild(el("span","ts-mc", poolLine));
     } else if(showPts && trkBadge){
       // Also-show: a small secondary figure (see .also-pts) — held aside
       // rather than shown as the primary number the badge now is.
