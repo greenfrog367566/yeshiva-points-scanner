@@ -2,18 +2,23 @@
 
 ## Status
 
-**🟡 PROPOSED 2026-08-21.** Not one of the original 8 build-order steps —
-it's a gap step 7 found and explicitly punted on: *"tier-1's suppression
-branch … needs a live Firestore write-sync path from a rebbi's own scans that
-doesn't exist anywhere yet — building that is out of scope here."*
-`docs/NOW.md` carries it under "Merged, not done" as the biggest item on that
-list. This doc is the design step that item is waiting on, written the same
-way steps 1–7 were: a recommendation plus the open questions only Ben can
-close.
+**✅ DECIDED 2026-08-21 by Ben** on all four open questions — full parity
+(not the narrow scope this doc originally recommended), the SDK client for
+writes, build the complete design before step 8 (no staged MVP), and the
+verification harness stays deferred. Not one of the original 8 build-order
+steps — it's a gap step 7 found and explicitly punted on: *"tier-1's
+suppression branch … needs a live Firestore write-sync path from a rebbi's
+own scans that doesn't exist anywhere yet — building that is out of scope
+here."* `docs/NOW.md` carries it under "Merged, not done."
 
-**Do not build from this doc until it has a yes.** Two questions below
-(scope fork, REST-vs-SDK) change the shape of the work enough that starting
-early risks a rebuild of the rebuild.
+**The full-parity decision reopens design work the narrow scope would have
+skipped** — `classWriter.js`'s own comment flags seating, settings, and
+raffle/auction/store history as "deliberately NOT yet covered … writing an
+untested mapping for them would be worse than a clean omission." Sections
+below marked **first-draft, not yet reviewed** propose shapes for those so
+this doc is buildable, but they haven't had the scrutiny the original four
+collections got in step 1's design-panel session — confirm before building
+against them, don't treat them as equally locked.
 
 ## Confirmed before writing this
 
@@ -58,10 +63,10 @@ Firestore write code exists anywhere":
   `firebase.firestore()` to read or write a document; every existing
   Firestore call in `app.html` is a hand-rolled `fetch()` against the REST
   API instead (`firestoreGetAccount`, `firestoreListCollection`,
-  `fetchClassFromFirestore`). See open question 2 — this matters more than
-  it looks.
+  `fetchClassFromFirestore`). See "Decided: write through the SDK client"
+  below — this matters more than it looks.
 
-## The scope fork (open question 1 — decide this first)
+## Decided: full parity — what that means concretely
 
 `fetchClassFromFirestore()` only ever reshaped `classes/{id}` plus
 `students` / `trackedItems` / `trackedEntries`. There is **no `activities`,
@@ -69,37 +74,58 @@ no `log`, no `prizeLedger`, no raffle/reward history, no settings** in what
 it reads back — confirmed independently by the `google sign-on flow`
 session, which sources new-device restore from the Drive backup (a full
 161-key `data` blob) specifically *because* Firestore today cannot
-reconstitute a class on its own.
+reconstitute a class on its own. **Ben's call: close that gap for real —
+Firestore should mirror everything Drive backup carries, not just the four
+collections step 1 originally specified shapes for.**
 
-So the real question isn't "does write-sync exist" — it's **how much of
-`data` is Firestore's job to mirror, ever:**
+**"Full" means every *class-data* field, not every `localStorage` key.**
+A literal mirror of all 161 top-level keys would sync things that must
+never leave one device — `navHidden` one-shot seeds, dismissed-banner
+flags, `_sentAt` stamps, cached UI state. Two devices fighting over which
+banner the other already dismissed is a regression, not parity. The
+working definition: **if a rebbi would recognize it as "my class's
+information" — something an admin's Class Book or a restored backup should
+show — it syncs; if it's this-browser bookkeeping, it doesn't.** This
+matches the same split `classWriter.js` already draws for the four
+collections it does write.
 
-- **Option A — narrow, matches what's already designed.** Firestore stays
-  roster + scores + tracked entries + (once built) the Prize Ledger — the
-  four collections step 1 actually specified shapes for
-  (`Firebase_DataModel_Design_Proposal.md` explicitly lists
-  "prizeLedger, seating, and Settings" as out of scope for exactly this
-  reason). Drive backup remains the full-fidelity copy. This is the
-  **minimum that makes the rebuild's headline promise true**: admin's Class
-  Book and superadmin's view-as already only read these four collections,
-  so this is also the *only* scope that actually pays off existing shipped
-  code.
-- **Option B — full parity.** Firestore eventually mirrors everything Drive
-  backup carries (raffle/auction/store history beyond the ledger, seating,
-  settings). Bigger, re-opens the "not one JSON blob per class" collection
-  design for every field `classWriter.js`'s own comment flags as
-  deliberately unmapped, and duplicates work Drive backup already does for
-  tier 1 today (the fragile-storage warning already treats a tier-1 Drive
-  backup as sufficient).
+**Three new pieces beyond the original four collections, first-draft
+shapes below:**
 
-**Recommendation: Option A.** It's smaller, it's what step 1 already
-designed collection shapes for, and it's what makes the two already-shipped
-read features (Class Book, view-as) actually show live data instead of a
-snapshot frozen at signup. Nothing about Option A blocks Option B later —
-new collections are additive, same as everywhere else in this app's data
-model.
+- **`classes/{classId}/state/seating`** — one doc, mirroring
+  `data.seating[data.currentClass]` (`{rows, cols, seats:[...],
+  tables:[...]}`, `app.html:16904`). Snapshot state, not an append-only
+  log — small and bounded by roster size, so a whole-doc `set()` on every
+  change is simpler and cheap enough, unlike `log`/`trackedEntries` which
+  need per-entry ids.
+- **`classes/{classId}/state/raffle`** — one doc, mirroring `data.raffle`
+  (`{mode, entries:{}, winners:[]}`, `app.html:30887`). Same
+  whole-doc-`set()` reasoning as seating.
+- **`classes/{classId}/state/settings`** — one doc for class-level
+  preferences an admin or a restore would need: `shulchaniMode` and its
+  seeded/stamped flags, point-value config, and any other *class*
+  preference (not per-device UI state — see the split above). Exact field
+  list needs a pass against `defaults` the same way `classWriter.js`'s
+  `classifyBook()` was built against real predicates, not guessed — flagged
+  here rather than enumerated, since guessing wrong here just means a
+  second migration later.
+- **`classes/{classId}/prizeLedger/{deviceId_ts_seq}`** — shape already
+  locked (`Firebase_Rebuild_Scope.md` open question 9), and
+  `firestore.rules` already has its `allow read, write: if isOwner(...) ||
+  isSuperadmin()` block live. **But nothing writes a ledger entry anywhere
+  in the app yet** — Phase 4 (Prize Ledger, Store/Auction/Raffle unification)
+  is 0-of-3, unbuilt. This is a real sequencing question, not a detail —
+  see "Open questions for Ben" below.
 
-## Recommended design (Option A scope)
+**New `firestore.rules` work, unlike the narrow scope.** The `state`
+subcollection above doesn't exist in the live rules file — it needs its own
+`match /state/{doc}` block (`allow read: if canReadClass(...)`, `allow
+write: if isOwner(...) || isSuperadmin()`, mirroring the `students` pattern
+already there). This is the one place full parity costs something the
+narrow scope wouldn't have: a rules change, not just client code against
+permissions already granted.
+
+## Recommended design
 
 ### Hook points — semantic setters, not `save()`
 
@@ -128,10 +154,19 @@ belongs:
 - **Activity / tracked-item CRUD** (add/edit/delete an activity or tracked
   item) — low-frequency, sync straightforwardly at the point of edit; no
   debouncing needed at this volume.
+- **Seating, raffle, settings** — the three new `state/*` docs above are
+  snapshot state, not append-only, so they sync at their own natural edit
+  points instead of `applyScore()`/`mirrorTracked()`: seating writes wherever
+  `data.seating[k]` is mutated (drag/resize/table edit), raffle at spin/draw
+  and entry changes, settings wherever the underlying preference is set
+  (e.g. `data.shulchaniMode=...`). Each is a whole-doc `set()`, not a diff —
+  simpler than the append-only collections, and cheap at this size.
 
-This deliberately does not touch `save()` itself. A rebbi's settings,
-`navHidden` flags, seating layout, and everything else `save()` persists
-stays localStorage-only, matching Option A's scope line exactly.
+This still deliberately does not touch `save()` itself, even under full
+parity — `navHidden` seeds and other this-browser-only bookkeeping never
+sync, per the data-vs-device split above. Full parity means every *class*
+field gets a home in Firestore; it doesn't mean every `localStorage` key
+does.
 
 ### Gate: tier 1, and only after cutover confirms
 
@@ -149,9 +184,9 @@ next to this one: the Attendance Log stamps `_sentAt` even when the Sheets
 push *failed*, so the normal resend logic never retries it — a silent,
 permanent drop. Whatever queues or marks a Firestore write as sent must only
 do so **after a confirmed successful write**, never optimistically. This is
-also the strongest argument for open question 2 below.
+also the strongest argument for the SDK decision below.
 
-## Open question 2 — write through the SDK client, not hand-rolled REST
+## Decided: write through the SDK client, not hand-rolled REST
 
 Every existing Firestore call in `app.html` is `fetch()` against the REST
 API with a bearer token. That was a reasonable shortcut for a handful of
@@ -172,17 +207,34 @@ this away for free:
   way the Attendance Log bug above got it wrong — the SDK's write queue
   already only marks a write "sent" once it actually lands.
 
-**Recommendation: use `firebase.firestore().collection(...).doc(...).set()`
-/ `FieldValue.increment()` for every write this design adds**, and leave the
+**Decided: use `firebase.firestore().collection(...).doc(...).set()` /
+`FieldValue.increment()` for every write this design adds**, and leave the
 existing REST-based reads (`fetchClassFromFirestore` etc.) exactly as they
 are — migrating reads to the SDK client is separable scope, not a
 prerequisite, and shouldn't ride along with this PR.
 
+## Decided: build the complete design before step 8 — no staged MVP
+
+The original draft of this doc raised whether `log` + `students.score`
+sync alone (the "Recognize" headline feature) could unblock step 8 early,
+with the rest following as a fast follow. **Ben's call: no — build fully
+first.** Step 8 (migrating the real beta cohort) waits on all of this,
+including the first-draft `state/*` pieces above, not a partial slice.
+
+**This surfaces a real sequencing tension worth flagging rather than
+silently resolving:** "build fully first" and "prizeLedger sync is gated on
+the Prize Ledger feature existing" (Phase 4, currently 0-of-3, unbuilt)
+can't both be satisfied without either (a) building Phase 4 first — a whole
+separate feature, not part of this design — or (b) reading "fully" as
+"everything that has somewhere to write today," which excludes prizeLedger
+until Phase 4 lands regardless of how this write-sync design is staged.
+**Recommend (b)**, since Phase 4 was never in this doc's scope and gating
+step 8 on an unrelated, unbuilt feature would be a scope creep this doc
+didn't ask for — but this needs an explicit yes, not an assumption. See
+"Open questions for Ben" below.
+
 ## Explicitly deferred (do not let these creep in)
 
-- **Full `data.*` parity with the Drive backup** (raffle/auction/store
-  history beyond the Prize Ledger, seating, settings) — option B above,
-  not this build.
 - **Two-device same-record conflicts.** Already flagged in the locked data
   model as "not urgent, build after the core works" — this design doesn't
   need to solve it either; `FieldValue.increment()` on scores sidesteps the
@@ -190,29 +242,25 @@ prerequisite, and shouldn't ride along with this PR.
 - **Real-time listeners / live multi-device view.** This is a write-sync
   path, not a live-collaboration feature. `fetchClassFromFirestore()` stays
   a pull, on the cadence it already runs at.
-- **Migrating existing REST reads to the SDK client.** See open question 2.
-- **Prize Ledger sync** — real, additive, same shape as everything else
-  here, but gated on the Prize Ledger feature itself existing first (Phase 4
-  is 0-of-3; nothing writes a ledger entry anywhere yet). Not a blocker for
-  shipping log/score/trackedEntries sync first.
+- **Migrating existing REST reads to the SDK client.** Writes move to the
+  SDK (decided above); reads stay REST for now — separable scope.
+- **A verification harness.** Deferred per Ben — see below, not dropped.
 
 ## Open questions for Ben
 
-1. **The scope fork above — Option A (roster + scores + tracked entries,
-   Drive stays full-fidelity) vs. Option B (eventual full parity).**
-   Recommend A.
-2. **Write through the vendored Firestore SDK client instead of hand-rolled
-   REST.** Recommend yes — see above.
-3. **Does step 8 (migrating the real beta cohort) need this whole design
-   before it's safe, or is `log` + `students.score` sync (the "Recognize"
-   headline feature) enough to unblock it, with `trackedEntries` following
-   as a fast follow?** This doc doesn't take a position — it changes how
-   step 8 is staged, not whether this design is right.
-4. **Verification harness.** Every other write path in this rebuild
-   (converter tool, step 3b's cohort upload) shipped with a verify pass —
-   count parity, spot check, idempotence-rerun. An ongoing per-scan sync has
-   no natural "verify once and done" moment the way a bulk import does.
-   Worth a lighter version (e.g. a debug-only comparison of local vs.
-   Firestore counts) before this reaches the beta cohort, or is trusting the
-   SDK's own offline-queue guarantees enough? Flagging rather than deciding
-   — this is exactly the kind of judgment call CLAUDE.md reserves for Ben.
+1. **The Phase-4 sequencing tension above.** Does "build fully first" mean
+   step 8 also waits on Prize Ledger (Phase 4, 0-of-3, unbuilt) existing as
+   a feature, or does prizeLedger sync simply join this design once Phase 4
+   ships on its own schedule, with step 8 gated on everything *else* here?
+   Recommend the latter.
+2. **The three first-draft `state/*` shapes** (seating, raffle, settings) —
+   sketched above to make full parity buildable, but not run through the
+   same design-panel scrutiny step 1's four collections got, and the
+   settings doc's exact field list is explicitly unenumerated pending a
+   pass against `defaults`. Worth a dedicated look before building, or is
+   the sketch above sufficient to start from?
+3. **Verification harness — deferred, per Ben's answer ("figure out
+   later"), but flagging the same "before it reaches the beta cohort" line
+   every other write path in this rebuild held to** (converter tool, step
+   3b's cohort upload each shipped with count-parity/spot-check/idempotence
+   passes). Revisit before step 8, not before build starts.

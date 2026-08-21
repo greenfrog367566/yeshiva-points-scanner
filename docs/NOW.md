@@ -91,14 +91,20 @@ including the live-project setup and the console-only gaps that cost a day.
   **Migrating the real beta cohort (step 8) before this exists moves their
   accounts, not their safety** — real auth and security rules, but their
   actual class data is exactly as fragile as it is today.
-  **A design proposal for the fix is written and waiting on Ben:**
+  **Design decided 2026-08-21 by Ben:**
   `docs/Firebase_TierOne_WriteSync_Design_Proposal.md`. Checked with the two
-  other sessions in this repo 2026-08-21 — neither was working on it, no
-  duplicate effort. Two decisions in it gate the build: narrow scope (roster
-  + scores + tracked entries, Drive stays the full-fidelity copy) vs. full
-  `data.*` parity, and writing through the vendored Firestore SDK client
-  (inherits offline queue/retry for free) instead of the hand-rolled REST
-  calls the rest of the Firestore code uses today.
+  other sessions in this repo first — neither was working on it, no
+  duplicate effort. Full parity (every class-data field Drive backup
+  carries, not just roster + scores + tracked entries), writing through the
+  vendored Firestore SDK client (inherits offline queue/retry for free)
+  instead of hand-rolled REST, and build the complete design before step 8
+  — no staged MVP. Full parity adds three new `state/*` docs (seating,
+  raffle, settings) beyond the original four collections, first-draft only
+  and flagged for review before building, plus a `firestore.rules` change
+  the narrow scope wouldn't have needed. One real open question left: does
+  step 8 also wait on the Prize Ledger feature (Phase 4, 0-of-3, unbuilt),
+  or does that join once Phase 4 ships on its own schedule? Not yet
+  built — this is design only.
 
 ---
 
@@ -180,10 +186,12 @@ Roughly in the order of what they unblock. Nothing here is a task Claude can tak
    the whole sign-in plan** — it blocks self-serve signup in *either* tier,
    including Ben's own school. `privacy@menchmark.app` is live and tested.
 2. **A yes on the offline resync proposal** before the dedup-fix PR is built.
-3. **A yes on `docs/Firebase_TierOne_WriteSync_Design_Proposal.md`** — the
-   tier-1 write-sync gap above. Two decisions gate the build: narrow scope
-   vs. full `data.*` parity, and the Firestore SDK client vs. hand-rolled
-   REST for writes. Gates step 8 (the beta cohort migration).
+3. **One leftover question on `docs/Firebase_TierOne_WriteSync_Design_Proposal.md`**
+   — the main design is decided (full parity, SDK client, build fully
+   before step 8), but does "fully" also mean step 8 waits on the Prize
+   Ledger feature (Phase 4, 0-of-3, unbuilt), or does prizeLedger sync join
+   this design once Phase 4 ships separately? The doc recommends the
+   latter. Everything else in it is buildable now.
 4. **Q3: what a school signs.** Gates onboarding school #2; blocks no code.
 5. **A yes on clearing the 10 dead worktrees** (`node scripts/wip-audit.js
    --stale` for the list). Stop-and-ask by policy. The seating-tables lines
