@@ -4445,6 +4445,16 @@ function setupRoster() {
         <p>Wipes everything — institution &amp; class name, students, activities, scores, scan log, raffle history, and the saved Google Sheet link. Use this to start completely fresh (a new class, a new year). Download a backup first if you're not sure.</p>
         <button class="btn btn-bad" id="clearAllData">Clear ALL data…</button>
       </details>
+      <!-- The same erase the Account section offers, reachable without an
+           account. A rebbi who borrowed a colleague's computer and never
+           signed in is the likeliest person to need it, and everything in the
+           Account section is gated behind being signed in. -->
+      <details class="card pad bk-card danger-zone">
+        <summary>Erase from this computer</summary>
+        <p>Backs your class up, then removes it from this computer and returns it to the setup screen — for a computer that isn't yours. Your backup is not touched, and this is only offered once your class is safely backed up somewhere.</p>
+        <p id="eraseCardStatus" class="view-note"></p>
+        <button class="btn btn-bad" id="eraseThisComputerBtn">Erase from this computer…</button>
+      </details>
     </div>
   </section>
 
@@ -8080,7 +8090,12 @@ function setupRoster() {
   // single check covers every way out rather than one flag per exit.
   function eraseStillRequested(){ return signinState.step === "needsEraseChoice"; }
 
-  function signinEraseThisComputer(forget){
+  // `stillWanted` lets a second entry point supply its own liveness test. The
+  // Backup & Restore card confirms up front with a blocking prompt and shows
+  // no cancel afterwards, so for it the answer is simply yes — the step-based
+  // check would read false there and abandon every erase.
+  function signinEraseThisComputer(forget, stillWanted){
+    var wanted = stillWanted || eraseStillRequested;
     if (eraseBusy) return Promise.resolve(false);
     var r = signinEraseReadiness();
     if (!r.ready) { renderAccountSection(); return Promise.resolve(false); }
@@ -8096,7 +8111,7 @@ function setupRoster() {
     return Promise.resolve(backedUp).then(function(ok){
       // Checked BEFORE the failure message too: telling a rebbi who already
       // cancelled that his backup failed would be alarming and untrue.
-      if (!eraseStillRequested()) return abandon();
+      if (!wanted()) return abandon();
       if (!ok) {
         eraseBusy = false;
         signinState.error = "Couldn't back up just now, so nothing was erased — your class is still here. " +
@@ -8108,7 +8123,7 @@ function setupRoster() {
       return done.then(function(){
         // Re-checked after forgetting the folder as well: that step is itself
         // asynchronous, and it is the last moment anything is recoverable.
-        if (!eraseStillRequested()) return abandon();
+        if (!wanted()) return abandon();
         eraseThisComputer();
         return true;
       });
@@ -30211,6 +30226,9 @@ nameLine
     if($("folderBackupNow")) $("folderBackupNow").style.display = fbHandle ? "" : "none";
     if($("folderBackupStop")) $("folderBackupStop").style.display = fbHandle ? "" : "none";
     if($("folderBackupPick")) $("folderBackupPick").textContent = fbHandle ? "Choose a different folder" : "Choose a folder";
+    // Every folder-backup state change is also a change to whether erasing is
+    // safe yet, and this runs on all of them (chosen, written, failed, forgotten).
+    if(typeof renderEraseCard==="function") renderEraseCard();
   }
   function fbFileName(){ return "menchmark-backup-"+todayKey()+".json"; }
   /* Writes the same JSON the Download button produces, so a folder backup and a
@@ -30689,6 +30707,7 @@ nameLine
   }
 
   function renderDriveBackupCard(){
+    if (typeof renderEraseCard === "function") renderEraseCard(); // Drive state gates the erase too
     var card = $("driveBackupCard"); if (!card) return;
     if (!driveSupported()) { card.style.display = "none"; return; }
     card.style.display = "";
@@ -32179,6 +32198,50 @@ nameLine
   // Full wipe — institution/class name, roster, activities, scores, log, raffle
   // history, and the saved Sheet link. Type-to-confirm since this is the one
   // action here with no way back short of a backup file.
+  // Second entry point for the erase, for a rebbi with no account. Same gate,
+  // same backup-then-wipe, same return to setup — only the door is different.
+  // It always offers the "forget everything" variant: someone erasing from
+  // here has no account to come back through, so a remembered folder would be
+  // a pointer he cannot use and the next person can.
+  function renderEraseCard(){
+    var el2 = $("eraseCardStatus"); if (!el2) return;
+    var btn = $("eraseThisComputerBtn");
+    var r = signinEraseReadiness();
+    if (r.ready) {
+      el2.textContent = r.via === "drive"
+        ? "Ready — your class will be backed up to Google Drive first."
+        : "Ready — your class is backed up in “" + r.folderName + "”.";
+      if (btn) btn.disabled = false;
+    } else {
+      // driveSupported() is false without an account, so a signed-out rebbi
+      // cannot connect Drive at all — telling him to would be advice he can't
+      // act on, and he is the person this card exists for.
+      var canUseDrive = !!(data.account && data.account.email);
+      el2.textContent = r.reason === "folder-not-written"
+        ? "Back up to “" + r.folderName + "” first — then this unlocks."
+        : ("Choose a backups folder (above)" + (canUseDrive ? " or connect Google Drive" : "") +
+           " first. A downloaded file can't be used: Menchmark can't find it again afterwards, so it can't check it exists.");
+      if (btn) btn.disabled = true;
+    }
+  }
+
+  if ($("eraseThisComputerBtn")) $("eraseThisComputerBtn").addEventListener("click", function(){
+    var r = signinEraseReadiness();
+    if (!r.ready) { renderEraseCard(); return; }
+    var where = r.via === "drive" ? "Google Drive" : "“" + r.folderName + "”";
+    var typed = prompt(
+      "This backs your class up to " + where + ", then removes it from this computer " +
+      "and returns it to the setup screen. Your backup is not touched — this is only about this computer.\n\n" +
+      "Type ERASE to confirm:");
+    if (typed === null) return;
+    if (typed.trim().toUpperCase() !== "ERASE") { notice("Not erased — typed text didn't match “ERASE”."); return; }
+    $("eraseCardStatus").textContent = "Backing up before erasing…";
+    signinEraseThisComputer(true, function(){ return true; }).then(function(ok){
+      if (!ok) $("eraseCardStatus").textContent =
+        "Couldn't back up just now, so nothing was erased — your class is still here. Try again.";
+    });
+  });
+
   $("clearAllData").addEventListener("click", function(){
     var typed=prompt("This permanently erases the institution name, class name, students, activities, scores, scan log, raffle history, and your saved Google Sheet link on this device. This cannot be undone.\n\nType CLEAR to confirm:");
     if(typed===null) return;
