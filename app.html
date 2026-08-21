@@ -358,12 +358,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .shelf .hsb-dropdown{position:static;border:none;box-shadow:none;padding:0;max-height:none;min-width:0;background:transparent}
   .shelf .seats-hist-row{font-size:.82rem;padding:7px 6px}
   .shelf .seats-hist-row .btn{flex:0 0 auto}
-  /* A shelf is narrower than the Dashboard column this board was drawn for, so
-     a long name plus its class tag wraps onto two lines and the rows lose their
-     rhythm. Ellipsize instead — the full name is on the Leader Board tab, one
-     press of "Open tab →" away. */
-  .shelf .mini-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-  .shelf .mini-row{gap:6px}
+  /* A shelf (or the shelves-off scan-bar dropdown that shows the same rows,
+     .bar-fallback) is narrower than the Dashboard column this board was drawn
+     for, so a long name plus its class tag wraps onto two lines and the rows
+     lose their rhythm. Ellipsize instead — the full name is on the Leader
+     Board tab, one press of "Open tab →" away. */
+  .shelf .mini-name,.bar-fallback .mini-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .shelf .mini-row,.bar-fallback .mini-row{gap:6px}
   /* A shelf lies OVER the page — it never reflows it. An earlier revision
      shifted `main` aside on wide screens so nothing was covered, but that
      moves every tile sideways the moment a shelf opens, which is exactly the
@@ -15921,6 +15922,11 @@ function setupRoster() {
     // Only the fallback picker is the pill's business. A shelf a rebbi
     // deliberately parked his Activities section in stays where he put it.
     if(isShelfOpen("left") && !shelfPanelIds("left").length) setShelfOpen("left", false);
+    // Shelves off: same job, for the pill's small anchored dropdown instead
+    // of the shelf. Without this, leaving "Points" context (renderSeatsScanBar's
+    // only caller) left the dropdown open over content it no longer matched.
+    var af=$("seatsActivityFallback");
+    if(af && af.style.display!=="none") af.style.display="none";
   }
   $("seatsArmedPill").addEventListener("click", function(e){
     e.stopPropagation();
@@ -19077,6 +19083,24 @@ function setupRoster() {
     SHELVES.forEach(function(side){ applyShelfOpen(side, !scanCustomizing && shelvesFeatureOn() && L.open[side]); });
     updateScanColsToggle();
     updatePanelTools();
+    // The Side Shelves setting can change while customize mode is still open
+    // (toggled from Settings, then back to the Scan tab without pressing
+    // Done) — refresh the two bits of customize UI that setScanCustomize()
+    // otherwise only computes once, on entry. Without this, "Seating chart
+    // only" could stay clickable — and still write shelf placements into
+    // data.scanLayout.place — after shelves had already been turned off.
+    if(scanCustomizing) updateCustomizeShelfBits();
+  }
+  // The hint text and the "Seating chart only" preset both depend on whether
+  // shelves are on — shared by setScanCustomize() (entering/leaving customize
+  // mode) and applyScanLayout() (the setting can also change while customize
+  // mode is already open, from the Settings tab).
+  function updateCustomizeShelfBits(){
+    var hint=$("scanCustomizeHint");
+    hint.innerHTML = shelvesFeatureOn()
+      ? 'Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / ◧ / ◨ / ▤ / 🚫 decide where it lives: on the page, in the left shelf, in the top-right shelf, in the bottom-right shelf, or hidden. The three shelves are always there on the screen edges whatever you choose here — a section on the page just means it is on the page <em>as well</em>. Everything shows here while you\'re customizing: a hidden section appears faded and marked 🚫 Hidden, and its button reads 👁 Show, which puts it back. Tap "Done" when finished.'
+      : 'Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / 🚫 decide whether it\'s on the page or hidden — side shelves are off (Settings → Side Shelves to turn them back on and park a section in one). Everything shows here while you\'re customizing: a hidden section appears faded and marked 🚫 Hidden, and its button reads 👁 Show, which puts it back. Tap "Done" when finished.';
+    $("scanLayoutSeatsOnly").style.display = (scanCustomizing && shelvesFeatureOn()) ? "" : "none";
   }
   /* ---------- Side shelves ---------- */
   function shelfEl(side){ return $(SHELF_EL[side]); }
@@ -19177,6 +19201,15 @@ function setupRoster() {
   }
   function renderShelves(){
     ensureScanLayout();
+    // Shelves off: they're hidden outright (body.no-shelves), and panelPlace()
+    // already coerces every placement to "col" — the columns loop just above,
+    // in applyScanLayout() (this function's only caller), has therefore
+    // already appendChild()'d every panel to its real column, which moves it
+    // out of a shelf body if it happened to still be sitting in one from
+    // before the setting was turned off. Nothing here would do anything but
+    // build four fallback lists (activity picker, prize rows, history,
+    // leaderboard) purely to sit invisible.
+    if(!shelvesFeatureOn()) return;
     SHELVES.forEach(function(side){
       var body=shelfBody(side); if(!body) return;
       // Rescue any real panels back into the pool BEFORE clearing, or emptying
@@ -19420,16 +19453,12 @@ function setupRoster() {
     btn.textContent = scanCustomizing ? "✓ Done" : "⚙ Customize layout";
     btn.classList.toggle("btn-primary", scanCustomizing);
     $("scanLayoutReset").style.display = scanCustomizing ? "" : "none";
-    var hint=$("scanCustomizeHint");
-    hint.style.display = scanCustomizing ? "" : "none";
+    $("scanCustomizeHint").style.display = scanCustomizing ? "" : "none";
     // "Seating chart only" parks the other three sections in their shelves —
     // meaningless with shelves off (they'd just stack back onto the same
     // single column), so it and the hint's shelf sentence both drop out.
-    hint.innerHTML = shelvesFeatureOn()
-      ? 'Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / ◧ / ◨ / ▤ / 🚫 decide where it lives: on the page, in the left shelf, in the top-right shelf, in the bottom-right shelf, or hidden. The three shelves are always there on the screen edges whatever you choose here — a section on the page just means it is on the page <em>as well</em>. Everything shows here while you\'re customizing: a hidden section appears faded and marked 🚫 Hidden, and its button reads 👁 Show, which puts it back. Tap "Done" when finished.'
-      : 'Drag a section onto another spot to move it, or use ▲ ▼ (reorder) and ⇄ (next column). ◀ ▶ makes a section wider or narrower. ▦ / 🚫 decide whether it\'s on the page or hidden — side shelves are off (Settings → Side Shelves to turn them back on and park a section in one). Everything shows here while you\'re customizing: a hidden section appears faded and marked 🚫 Hidden, and its button reads 👁 Show, which puts it back. Tap "Done" when finished.';
+    updateCustomizeShelfBits();
     $("scanColsToggle").style.display = scanCustomizing ? "" : "none";
-    $("scanLayoutSeatsOnly").style.display = (scanCustomizing && shelvesFeatureOn()) ? "" : "none";
     $("scanFullWidthWrap").style.display = scanCustomizing ? "" : "none";
     if(scanCustomizing){ updateScanColsToggle(); $("scanFullWidth").checked = !!data.fullWidth; }
     SCAN_PANELS.forEach(function(id){ var p=$("panel-"+id); if(p) p.setAttribute("draggable", scanCustomizing?"true":"false"); });
