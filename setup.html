@@ -502,6 +502,11 @@ tailwind.config = {
             </span>
           </button>
           <p id="local-restore-status" class="text-xs mt-2 hidden"></p>
+          <div id="restore-picker" class="hidden mt-3"></div>
+          <details id="older-backups" class="mt-2 hidden">
+            <summary class="text-xs text-slate-400 cursor-pointer select-none">other saved backups</summary>
+            <div id="older-backups-list" class="mt-2 space-y-1"></div>
+          </details>
         </div>
 
         <!-- Divider -->
@@ -594,8 +599,13 @@ document.addEventListener('DOMContentLoaded', function () {
   initThisComputerOption();
   var localBtn = document.getElementById('btn-restore-local');
   if (localBtn) localBtn.addEventListener('click', restoreFromThisComputer);
+  // Goes to the Restore screen and starts the same scan there, rather than
+  // building a second copy of the picker on the entry screen.
   var entryBtn = document.getElementById('entry-restore-btn');
-  if (entryBtn) entryBtn.addEventListener('click', restoreFromThisComputer);
+  if (entryBtn) entryBtn.addEventListener('click', function () {
+    goTo('screen-import');
+    restoreFromThisComputer();
+  });
 
   // If a previous setup actually completed, this is a fresh visit —
   // never resume old in-progress data over it (e.g. someone clicking
@@ -1134,6 +1144,38 @@ function localRestoreStatus(msg, ok) {
   });
 }
 
+// Locked pre-erase snapshots (menchmark-saved-*.json, written by app.html's
+// erase) and the rolling backup (menchmark-backup*.json). Snapshots are what
+// a rebbi is normally coming back for — they are the class exactly as he left
+// this computer — so they sort ahead of a rolling file of the same age.
+function backupFileRank(name) {
+  if (/^menchmark-saved-/i.test(name)) return 1;
+  if (/^menchmark-backup/i.test(name)) return 0;
+  return -1;
+}
+
+function describeBackup(file, obj) {
+  var when = new Date(file.lastModified);
+  var day = when.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  var time = when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  var n = obj && obj.students ? obj.students.length : 0;
+  return day + ', ' + time + ' — ' + n + ' ' + (n === 1 ? 'boy' : 'boys');
+}
+
+// Restores a specific File object through the same handoff every other path
+// here uses: write the blob, let app.html's load()/migrateData()/load2fix()
+// do the rest.
+async function restoreBackupFile(file) {
+  var text = await file.text();
+  var obj = JSON.parse(text);
+  if (!obj || !obj.students || !obj.activities) throw new Error('not a backup');
+  localStorage.setItem(APP_DATA_KEY, text);
+  localStorage.setItem('menchmark_setup_complete', 'true');
+  var n = (obj.students || []).length;
+  localRestoreStatus('Restoring ' + n + ' ' + (n === 1 ? 'boy' : 'boys') + '…', true);
+  window.location.href = 'app.html';
+}
+
 function restoreFromThisComputer() {
   if (!localFolderHandle) return;
   localRestoreStatus('Looking in “' + localFolderHandle.name + '”…');
@@ -1154,30 +1196,80 @@ function restoreFromThisComputer() {
       localRestoreStatus('Menchmark needs permission to read that folder. Try again and choose Allow.', false);
       return;
     }
-    var newest = null;
     var entries = localFolderHandle.values ? localFolderHandle.values() : null;
     if (!entries) { localRestoreStatus('This browser can’t read that folder.', false); return; }
     return (async function () {
+      var found = [];
       for await (var entry of entries) {
         if (entry.kind !== 'file') continue;
-        if (!/^menchmark-backup.*\.json$/i.test(entry.name)) continue;
-        var f = await entry.getFile();
-        if (!newest || f.lastModified > newest.lastModified) newest = f;
+        if (backupFileRank(entry.name) < 0) continue;
+        if (!/\.json$/i.test(entry.name)) continue;
+        found.push(await entry.getFile());
       }
-      if (!newest) {
+      if (!found.length) {
         localRestoreStatus('No Menchmark backup found in “' + localFolderHandle.name + '”.', false);
         return;
       }
-      var text = await newest.text();
-      var obj = JSON.parse(text);
-      if (!obj || !obj.students || !obj.activities) throw new Error('not a backup');
-      // Same handoff every other restore path here uses: write the blob and
-      // let app.html's own load()/migrateData()/load2fix() take it from there.
-      localStorage.setItem(APP_DATA_KEY, text);
-      localStorage.setItem('menchmark_setup_complete', 'true');
-      var count = (obj.students || []).length;
-      localRestoreStatus('Restoring ' + count + ' ' + (count === 1 ? 'boy' : 'boys') + '…', true);
-      window.location.href = 'app.html';
+      // Newest first; a locked snapshot wins a tie against the rolling file.
+      found.sort(function (a, b) {
+        return (b.lastModified - a.lastModified) || (backupFileRank(b.name) - backupFileRank(a.name));
+      });
+      var newest = found[0];
+      var rest = found.slice(1);
+
+      // Show what is actually there before restoring anything. Only the one
+      // being offered is parsed — reading every backup in the folder to render
+      // a list nobody may open is work for nothing.
+      var obj = null;
+      try { obj = JSON.parse(await newest.text()); } catch (e) {}
+      localRestoreStatus('');
+      document.getElementById('local-restore-status').classList.add('hidden');
+
+      var picker = document.getElementById('restore-picker');
+      picker.innerHTML = '';
+      var head = document.createElement('p');
+      head.className = 'text-sm font-semibold text-navy-700';
+      head.textContent = /^menchmark-saved-/i.test(newest.name)
+        ? 'Class as you left it' : 'Most recent automatic backup';
+      var sub = document.createElement('p');
+      sub.className = 'text-xs text-slate-500 mb-2';
+      sub.textContent = describeBackup(newest, obj);
+      var go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'w-full bg-gold-400 hover:bg-gold-300 text-navy-800 font-bold rounded-xl px-5 py-3 text-sm transition-colors';
+      go.textContent = 'Reload this class';
+      go.addEventListener('click', function () {
+        localRestoreStatus('Restoring…');
+        restoreBackupFile(newest)["catch"](function (e) {
+          localRestoreStatus('Couldn’t read that backup (' + (e && e.name || e) + ').', false);
+        });
+      });
+      picker.appendChild(head); picker.appendChild(sub); picker.appendChild(go);
+      picker.classList.remove('hidden');
+
+      var box = document.getElementById('older-backups');
+      var list = document.getElementById('older-backups-list');
+      if (box && list && rest.length) {
+        list.innerHTML = '';
+        rest.slice(0, 10).forEach(function (f) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'w-full text-left text-xs text-slate-500 hover:text-navy-700 underline py-1';
+          var d = new Date(f.lastModified);
+          b.textContent = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ', ' +
+            d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) +
+            (/^menchmark-saved-/i.test(f.name) ? ' — as you left it' : ' — automatic backup');
+          b.addEventListener('click', function () {
+            localRestoreStatus('Restoring…');
+            restoreBackupFile(f)["catch"](function (e) {
+              localRestoreStatus('Couldn’t read that backup (' + (e && e.name || e) + ').', false);
+            });
+          });
+          list.appendChild(b);
+        });
+        box.querySelector('summary').textContent = 'other saved backups (' + Math.min(rest.length, 10) + ')';
+        box.classList.remove('hidden');
+      }
     })();
   })["catch"](function (e) {
     localRestoreStatus('Couldn’t read a backup from that folder (' + (e && e.name || e) + ').', false);

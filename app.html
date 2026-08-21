@@ -8131,7 +8131,10 @@ function setupRoster() {
     signinState.error = "Backing up before erasing…";
     renderAccountSection();
 
-    var backedUp = (r.via === "drive") ? driveWriteBackup(true) : fbWrite(true);
+    // A LOCKED snapshot, not the rolling backup: this one is taken because
+    // the class is about to be removed from this computer, so it must not sit
+    // in the file that every automatic write rewrites.
+    var backedUp = (r.via === "drive") ? driveWriteSnapshot() : fbWriteSnapshot();
 
     function abandon(){ eraseBusy = false; return false; }
 
@@ -30277,6 +30280,61 @@ nameLine
     return Array.isArray(data.students) && data.students.length > 0;
   }
 
+  /* ---------- locked pre-erase snapshots ----------
+   * The rolling backup is a moving target: it is rewritten on open, on tab
+   * hide, and by "Back up now", and every one of those had to be taught not
+   * to carry an empty roster over it. A backup taken because a rebbi is about
+   * to wipe this computer must not live in that file. It gets its own name,
+   * with a timestamp, and nothing in the app ever writes to it again — so the
+   * class as it was when he left that computer simply stays there, and two
+   * erases keep two snapshots instead of the second erasing the first. */
+  var SNAPSHOT_PREFIX = "menchmark-saved-";
+  function snapshotStamp(){
+    var d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16).replace("T", "-").replace(":", "");
+  }
+  function snapshotFileName(){ return SNAPSHOT_PREFIX + snapshotStamp() + ".json"; }
+
+  // Resolves true only once the bytes are on disk — the erase waits on this.
+  function fbWriteSnapshot(){
+    if (!fbHandle) return Promise.resolve(false);
+    var payload = JSON.stringify(data);
+    return fbHandle.getFileHandle(snapshotFileName(), { create: true })
+      .then(function(fh){ return fh.createWritable(); })
+      .then(function(w){ return w.write(payload).then(function(){ return w.close(); }); })
+      .then(function(){ return true; })
+      ["catch"](function(){ return false; });
+  }
+
+  // Always creates a NEW Drive file. Never the PATCH-in-place that
+  // driveWriteBackupInner() does — that is exactly the behaviour a locked
+  // snapshot exists to avoid.
+  function driveWriteSnapshotInner(){
+    var payload = JSON.stringify(data);
+    var boundary = "menchmark" + Math.random().toString(36).slice(2);
+    var meta = { name: snapshotFileName(), parents: [driveFolderId], mimeType: "application/json" };
+    var body =
+      "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(meta) +
+      "\r\n--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" + payload + "\r\n--" + boundary + "--";
+    return driveApi("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+      method: "POST",
+      headers: { "Content-Type": "multipart/related; boundary=" + boundary },
+      body: body
+    });
+  }
+
+  function driveWriteSnapshot(){
+    if (!driveSupported()) return Promise.resolve(false);
+    if (!navigator.onLine) return Promise.resolve(false);
+    var chain = driveToken ? Promise.resolve() : driveWithRecovery(function(){
+      return Promise.reject(Object.assign(new Error("no token"), { unauthorized: true }));
+    });
+    return chain
+      .then(function(){ return driveWithRecovery(function(){ return driveFindOrCreateFolder().then(driveWriteSnapshotInner); }); })
+      .then(function(){ return true; })
+      ["catch"](function(){ return false; });
+  }
+
   function fbWrite(silent){
     if(!fbHandle || fbBusy) return Promise.resolve(false);
     fbBusy=true;
@@ -30565,8 +30623,12 @@ nameLine
     });
   }
 
+  // Includes locked snapshots as well as the rolling file, so a rebbi signing
+  // in on a new computer is offered whichever is genuinely newest — usually
+  // the snapshot taken as he left his last one.
   function driveListBackupFiles(){
-    var q = "name='" + DRIVE_FILE_NAME + "' and '" + driveFolderId + "' in parents and trashed=false";
+    var q = "(name='" + DRIVE_FILE_NAME + "' or name contains '" + SNAPSHOT_PREFIX + "') and '" +
+      driveFolderId + "' in parents and trashed=false";
     var url = "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(q) + "&fields=files(id,name,modifiedTime)";
     return driveApi(url).then(function(r){ return (r && r.files) || []; });
   }
