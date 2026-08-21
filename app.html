@@ -17725,8 +17725,10 @@ function setupRoster() {
     data.seatLiveRebbiView=false;
     // Codes off for arranging — see effSeatCardMode(). Written through the
     // setter rather than by poking seatScanMode, so the mode the picker shows
-    // and the legacy flag can never disagree.
-    if(seatPrintCodeKind(data.seatCardMode)==="qr") setSeatCardMode("photo");
+    // and the legacy flag can never disagree. Falls to "photo" only if there
+    // is one to show — see anyStudentHasPhoto() — otherwise "none", so
+    // dropping out of QR here doesn't hand back a chart of empty initials.
+    if(seatPrintCodeKind(data.seatCardMode)==="qr") setSeatCardMode(anyStudentHasPhoto() ? "photo" : "none");
     save(); renderTapPanel();
   }
 
@@ -18243,6 +18245,17 @@ function setupRoster() {
   function setSeatCardMode(m){
     data.seatCardMode = m;
     data.seatScanMode = seatPrintCodeKind(m)==="qr";
+  }
+  // Shared by every place that falls the live chart's Avatar back to "photo"
+  // (the fresh-install default, the one-shot auto-turn-on, and the two
+  // boot-time/entry-time QR disarms below) — one answer to "is there
+  // actually a face to show", so a rebbi with no photos yet gets a clean
+  // "None" chart instead of a row of coloured-initials circles standing in
+  // for pictures nobody has taken. Global across every class, not just the
+  // one currently selected, because seatCardMode itself is one setting for
+  // the whole roster, not a per-class one.
+  function anyStudentHasPhoto(){
+    return data.students.some(function(s){ return !!s.photo; });
   }
   /* Arranging never shows codes, whatever the mode says: dragging boys around a
    * grid where every cell is a QR you cannot read is how one ends up in the
@@ -31610,12 +31623,44 @@ nameLine
      * PURELY ADDITIVE, AND NOTHING CAN BE LOST: seatScanMode is still written
      * and still backfilled above, it just stopped being what the chart reads.
      * An old save arrives here with only the boolean, so the mode is derived
-     * from it — and since the boot-time disarm below turns a code mode back
-     * into "photo" anyway, every existing save opens on exactly the chart it
-     * opens on today: faces, names and scores.
-     */
+     * from it. This branch only fires once, ever, for any save — the moment
+     * it writes a valid string here, every later load finds one already and
+     * never re-enters it — so it only shapes what a genuinely fresh install
+     * (or a save from before seatCardMode existed) opens on, never a save
+     * that already picked something.
+     *
+     * "none", NOT "photo", ON THE NON-SCANNING BRANCH — changed on a rebbi's
+     * ask: a class with nobody's photo taken yet has nothing to show inside
+     * an avatar circle except two-letter initials standing in for a face
+     * nobody uploaded, and "none" reads as the class it actually is. The
+     * one-shot check right below promotes this to "photo" in the same pass
+     * if photos already exist on this very first load (a roster imported
+     * with Photo URLs, say) — and keeps watching for the first photo ever
+     * added after that, so this default is never stale for more than a day
+     * the way this one-time branch alone would leave it. */
     if(["qr","qrphoto","photo","none"].indexOf(data.seatCardMode)<0){
-      data.seatCardMode = data.seatScanMode ? "qr" : "photo";
+      data.seatCardMode = data.seatScanMode ? "qr" : "none";
+    }
+    // ONE-SHOT: the moment ANY student ever has a photo, turn the live
+    // seating chart's Avatar on to show it — a rebbi who has never touched
+    // this setting and has just added his first photo should not need to
+    // know "Display" exists to see it appear. Fires only while the chart is
+    // still on the "no photos yet" default ("none") and only once per save
+    // (seatPhotoAutoOn) — a rebbi who later picks something else himself,
+    // including switching back to "none" on purpose, is never overruled by
+    // a photo added afterward. Deliberately NOT in `defaults`, same reason
+    // the navHidden one-shots aren't: it has to fire for saves that already
+    // exist today, not only ones created after this shipped.
+    //
+    // Checked inline rather than through anyStudentHasPhoto() (its sibling
+    // in the main IIFE) — load2fix() is mirrored verbatim into
+    // test-migration.html, which has no other app helpers to call, so
+    // everything this function needs has to live inside it.
+    if(typeof data.seatPhotoAutoOn!=="boolean") data.seatPhotoAutoOn=false;
+    if(!data.seatPhotoAutoOn && data.seatCardMode==="none"
+       && data.students.some(function(s){ return !!s.photo; })){
+      data.seatCardMode="photo";
+      data.seatPhotoAutoOn=true;
     }
     /* Scores on the live cards. Defaults ON because that is what every chart
      * shows today in the state it boots into — the old code drew the score
@@ -32621,8 +32666,14 @@ nameLine
   // so are left alone; they are a way of looking at the class, not an armed
   // state. setSeatCardMode keeps seatScanMode in step, so the stored boolean
   // still cannot disagree with how the app is behaving.
+  // "photo" ONLY IF A PHOTO EXISTS (anyStudentHasPhoto()) — falling back to a
+  // chart of coloured-initials circles for a roster nobody has photographed
+  // is not "the chart a rebbi expects to find in front of a room" either;
+  // "none" is. A photo added later still turns this on by itself, through
+  // the one-shot seatPhotoAutoOn check in load2fix() — this fallback firing
+  // again on a later boot just needs to agree with what that already decided.
   if(seatPrintCodeKind(data.seatCardMode)==="qr"){
-    setSeatCardMode("photo"); save();
+    setSeatCardMode(anyStudentHasPhoto() ? "photo" : "none"); save();
   } else if(data.seatScanMode){ data.seatScanMode = false; save(); }
   // Same contract, same reason — independent toggle, see seatActivitiesMode above.
   if(data.seatActivitiesMode){ data.seatActivitiesMode = false; save(); }
