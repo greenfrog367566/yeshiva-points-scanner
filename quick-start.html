@@ -70,6 +70,13 @@ tailwind.config = {
     <b>Your very first visit opens the Setup Wizard automatically</b> — it walks you through this same setup, step by step. This guide is the map behind the wizard: use it as a reference, for anything you skipped, or to set up by hand.
   </p>
   <div class="flex flex-wrap gap-3">
+    <!-- Video A ("Setup From Scratch", filmed 2026-08-05) sits FIRST, ahead of
+         the wizard button: a rebbi who would rather be shown than read is
+         exactly the rebbi this page is hardest for, and he should not have to
+         scroll to find that out. External, so it opens in its own tab. -->
+    <button type="button" data-video-open class="inline-flex items-center gap-2 bg-navy-700 hover:bg-navy-800 text-white font-bold rounded-lg px-5 py-2.5 text-sm transition-all">
+      <i data-lucide="play-circle" class="w-4 h-4"></i> Watch the setup video
+    </button>
     <a href="setup.html" class="inline-flex items-center gap-2 border-2 border-navy-700 hover:bg-navy-700 hover:text-white text-navy-700 font-bold rounded-lg px-5 py-2.5 text-sm transition-all">
       <i data-lucide="wand-2" class="w-4 h-4"></i> Re-open the Setup Wizard
     </a>
@@ -356,6 +363,80 @@ tailwind.config = {
 </section>
 
 </main>
+
+<!-- ══════════ VIDEO VIEWER ══════════
+     Plays Video A ("Setup From Scratch") in place, so a rebbi who would rather
+     be shown than read never leaves the guide he is following.
+
+     Google Drive's /preview path is the embeddable one — /view is the page a
+     person opens, and it refuses to render in a frame. The "Open in Google
+     Drive" link below the player is the escape hatch for the case where the
+     frame is blocked anyway (a school network, or a browser set to block
+     third-party frames): a viewer that silently shows a grey box would be
+     worse than the plain link this replaced. -->
+<div id="videoModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-navy-800/80 p-4" role="dialog" aria-modal="true" aria-labelledby="videoModalTitle">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden">
+    <div class="flex items-center justify-between gap-4 px-5 py-3 border-b border-slate-200">
+      <h2 id="videoModalTitle" class="font-display text-lg text-navy-700">Setting up from scratch</h2>
+      <button type="button" data-video-close aria-label="Close the video" class="text-slate-400 hover:text-navy-700 rounded-lg p-1 transition-colors">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+    <!-- 16:9 without aspect-ratio, so it holds up on older school machines. -->
+    <div class="relative w-full bg-black" style="padding-top:56.25%">
+      <iframe id="videoFrame" class="absolute inset-0 w-full h-full" src="" title="Menchmark — setting up from scratch" allow="autoplay; fullscreen" allowfullscreen frameborder="0"></iframe>
+    </div>
+    <div class="px-5 py-3 text-sm text-slate-500 flex flex-wrap items-center justify-between gap-3">
+      <span>Getting started, and the whole Record group.</span>
+      <a href="https://drive.google.com/file/d/1omysViM_20zTGsPbHbq9QTkOuJw8Sn7h/view" target="_blank" rel="noopener" class="text-gold-500 font-semibold hover:underline inline-flex items-center gap-1.5">
+        <i data-lucide="external-link" class="w-4 h-4"></i> Open in Google Drive
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var VIDEO_SRC = "https://drive.google.com/file/d/1omysViM_20zTGsPbHbq9QTkOuJw8Sn7h/preview";
+  var modal = document.getElementById("videoModal");
+  var frame = document.getElementById("videoFrame");
+  var opener = null;
+
+  function open(btn){
+    opener = btn || null;
+    // src is set on OPEN, never in the markup: the Drive frame is not fetched
+    // at all unless somebody asks for it.
+    if(frame.src !== VIDEO_SRC) frame.src = VIDEO_SRC;
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+    document.body.style.overflow = "hidden";
+    var close = modal.querySelector("[data-video-close]");
+    if(close) close.focus();
+  }
+  function close(){
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+    document.body.style.overflow = "";
+    // Clearing src is what STOPS the video. Hiding the modal alone leaves it
+    // playing behind the page — audio and all — which is the bug every
+    // hand-rolled video modal ships with first.
+    frame.src = "";
+    if(opener) opener.focus();
+  }
+
+  document.querySelectorAll("[data-video-open]").forEach(function(b){
+    b.addEventListener("click", function(){ open(b); });
+  });
+  modal.querySelectorAll("[data-video-close]").forEach(function(b){
+    b.addEventListener("click", close);
+  });
+  // Click the backdrop, but not the panel inside it.
+  modal.addEventListener("click", function(ev){ if(ev.target === modal) close(); });
+  document.addEventListener("keydown", function(ev){
+    if(ev.key === "Escape" && !modal.classList.contains("hidden")) close();
+  });
+})();
+</script>
 <script>lucide.createIcons();</script>
 </body>
 </html>
