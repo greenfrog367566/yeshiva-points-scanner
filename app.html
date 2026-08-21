@@ -1077,6 +1077,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .avatar.editable:hover{outline:2px solid var(--brass);outline-offset:2px}
   .avatar.dragover{outline:3px dashed var(--brass);outline-offset:2px}
   .avatar-x{position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:var(--bad);color:#fff;border:none;font-size:10px;line-height:16px;padding:0;cursor:pointer}
+  /* Crop wizard (openPhotoCropModal): the wrap is sized exactly to the
+     displayed image (no letterboxing), and the circle is a real element —
+     not a mask — so its own box is what the drag/resize listeners are on.
+     The 9999px shadow darkens everything outside it without needing a
+     second overlay element. */
+  .crop-wrap{position:relative;overflow:hidden;border-radius:8px;background:#111;touch-action:none}
+  .crop-wrap img{display:block;user-select:none;pointer-events:none}
+  .crop-circle{position:absolute;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 9999px rgba(0,0,0,.55);cursor:grab;touch-action:none}
+  .crop-circle:active{cursor:grabbing}
   .nav-vis-group{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
   .nav-vis-head{display:flex;align-items:center;gap:8px;font-weight:700;cursor:pointer}
   .nav-vis-subs{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0 0 24px}
@@ -6312,28 +6321,127 @@ function setupRoster() {
     return null;
   }
   function el(tag, cls, txt){ var e=document.createElement(tag); if(cls) e.className=cls; if(txt!=null) e.textContent=txt; return e; }
-  // Shrinks any uploaded/dropped photo down to a small JPEG data URL before it
-  // ever touches localStorage — keeps a whole roster of photos well under a
-  // few hundred KB total. External Photo URLs (e.g. from a Sheet) skip this
-  // and are stored as-is, since they're just a link, not image bytes.
-  function readImageResized(file, maxDim, quality, cb){
+  // Opens a small crop wizard over an uploaded/dropped photo: drag the circle
+  // onto the boy's face, use the slider to grow or shrink it, then bake the
+  // selection into a fixed-size JPEG data URL. Doing the crop here — instead
+  // of a blind center-crop — is what lets the face land inside the circle
+  // instead of wherever object-fit:cover happened to center it. cb(dataUrl)
+  // fires only on "Use this photo", never on Cancel, so a caller that only
+  // acts inside cb is safe either way. Output is square: every avatar is
+  // drawn as a circle over it via CSS (.avatar{border-radius:50%}), same as
+  // before. CROP_OUT (256, up from the old flat 128) is bigger than any
+  // on-screen avatar today so a later size bump doesn't need a re-upload.
+  var CROP_OUT = 256;
+  function openPhotoCropModal(file, cb){
+    if(!file || file.type.indexOf("image/")!==0) return;
     var reader=new FileReader();
     reader.onload=function(ev){
       var img=new Image();
-      img.onload=function(){
-        var w=img.width, h=img.height;
-        var scale=Math.min(1, maxDim/Math.max(w,h));
-        var cw=Math.max(1, Math.round(w*scale)), ch=Math.max(1, Math.round(h*scale));
-        var canvas=document.createElement("canvas");
-        canvas.width=cw; canvas.height=ch;
-        canvas.getContext("2d").drawImage(img,0,0,cw,ch);
-        try{ cb(canvas.toDataURL("image/jpeg", quality)); }catch(e){ cb(null); }
-      };
-      img.onerror=function(){ cb(null); };
+      img.onload=function(){ buildCropModal(img); };
       img.src=ev.target.result;
     };
-    reader.onerror=function(){ cb(null); };
     reader.readAsDataURL(file);
+
+    function buildCropModal(img){
+      var boxSize=Math.max(220, Math.min(360, (window.innerWidth||360)-80));
+      // ,1 at the end: never upscale a small photo past its own resolution
+      // just to fill the box — a stretched preview would lie about the crop.
+      var fitScale=Math.min(boxSize/img.naturalWidth, boxSize/img.naturalHeight, 1);
+      var dispW=Math.max(1,Math.round(img.naturalWidth*fitScale)), dispH=Math.max(1,Math.round(img.naturalHeight*fitScale));
+      var minD=Math.max(20, Math.round(Math.min(dispW,dispH)*0.25)), maxD=Math.min(dispW,dispH);
+      var circle={ d:maxD, x:(dispW-maxD)/2, y:(dispH-maxD)/2 };
+
+      var overlay=el("div","modal-overlay");
+      var card=el("div","modal-card"); card.style.maxWidth=(dispW+40)+"px";
+      var head=el("div","modal-head");
+      head.appendChild(el("div","modal-title","Crop photo"));
+      var closeBtn=el("button","modal-close","✕"); closeBtn.type="button"; closeBtn.title="Cancel";
+      head.appendChild(closeBtn);
+      card.appendChild(head);
+
+      var hint=el("div","pill-note"); hint.style.margin="0 0 10px";
+      hint.textContent="Drag the circle onto his face, and use the slider to make it bigger or smaller.";
+      card.appendChild(hint);
+
+      var wrapOuter=el("div"); wrapOuter.style.cssText="margin:0 auto;width:"+dispW+"px";
+      var wrap=el("div","crop-wrap"); wrap.style.width=dispW+"px"; wrap.style.height=dispH+"px";
+      var imgEl=el("img"); imgEl.src=img.src; imgEl.alt=""; imgEl.draggable=false;
+      imgEl.style.width=dispW+"px"; imgEl.style.height=dispH+"px";
+      wrap.appendChild(imgEl);
+      var circleEl=el("div","crop-circle");
+      wrap.appendChild(circleEl);
+      wrapOuter.appendChild(wrap);
+      card.appendChild(wrapOuter);
+
+      function clampXY(){
+        circle.x=Math.max(0, Math.min(dispW-circle.d, circle.x));
+        circle.y=Math.max(0, Math.min(dispH-circle.d, circle.y));
+      }
+      function paint(){
+        circleEl.style.width=circle.d+"px"; circleEl.style.height=circle.d+"px";
+        circleEl.style.left=circle.x+"px"; circleEl.style.top=circle.y+"px";
+      }
+      paint();
+
+      var dragging=null;
+      circleEl.addEventListener("pointerdown", function(e){
+        e.preventDefault();
+        dragging={ startX:e.clientX, startY:e.clientY, origX:circle.x, origY:circle.y };
+        try{ circleEl.setPointerCapture(e.pointerId); }catch(err){}
+      });
+      circleEl.addEventListener("pointermove", function(e){
+        if(!dragging) return;
+        circle.x=dragging.origX + (e.clientX-dragging.startX);
+        circle.y=dragging.origY + (e.clientY-dragging.startY);
+        clampXY(); paint();
+      });
+      function endDrag(){ dragging=null; }
+      circleEl.addEventListener("pointerup", endDrag);
+      circleEl.addEventListener("pointercancel", endDrag);
+
+      var sizeRow=el("div"); sizeRow.style.cssText="margin:12px 0 4px;display:flex;align-items:center;gap:8px";
+      var smallLbl=el("span",null,"Small"); smallLbl.style.cssText="font-size:.78rem;color:var(--muted)";
+      var bigLbl=el("span",null,"Large"); bigLbl.style.cssText="font-size:.78rem;color:var(--muted)";
+      var slider=el("input"); slider.type="range"; slider.min=String(minD); slider.max=String(maxD); slider.value=String(circle.d); slider.style.flex="1";
+      sizeRow.appendChild(smallLbl); sizeRow.appendChild(slider); sizeRow.appendChild(bigLbl);
+      card.appendChild(sizeRow);
+      slider.addEventListener("input", function(){
+        var newD=parseInt(slider.value,10)||maxD;
+        var cx=circle.x+circle.d/2, cy=circle.y+circle.d/2;
+        circle.d=newD; circle.x=cx-newD/2; circle.y=cy-newD/2;
+        clampXY(); paint();
+      });
+
+      var btnRow=el("div","toolbar"); btnRow.style.margin="14px 0 0";
+      var saveBtn=el("button","btn btn-primary","Use this photo");
+      var cancelBtn=el("button","btn","Cancel");
+      btnRow.appendChild(saveBtn); btnRow.appendChild(cancelBtn);
+      card.appendChild(btnRow);
+
+      function close(){
+        if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        document.removeEventListener("keydown", onKey);
+      }
+      function onKey(e){ if(e.key==="Escape") close(); }
+      closeBtn.addEventListener("click", close);
+      cancelBtn.addEventListener("click", close);
+      overlay.addEventListener("click", function(e){ if(e.target===overlay) close(); });
+      document.addEventListener("keydown", onKey);
+
+      saveBtn.addEventListener("click", function(){
+        var sx=circle.x/fitScale, sy=circle.y/fitScale, sSize=circle.d/fitScale;
+        var canvas=document.createElement("canvas");
+        canvas.width=CROP_OUT; canvas.height=CROP_OUT;
+        canvas.getContext("2d").drawImage(img, sx, sy, sSize, sSize, 0, 0, CROP_OUT, CROP_OUT);
+        var url=null;
+        try{ url=canvas.toDataURL("image/jpeg", 0.85); }catch(e){}
+        close();
+        if(url) cb(url);
+      });
+
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+    }
   }
   function initials(name){
     var parts=(name||"").trim().split(/\s+/);
@@ -18038,7 +18146,7 @@ function setupRoster() {
       // else branch below, so every student in List mode rendered twice over
       // (and once in scan mode, above his QR). One card per boy — now built by
       // the one shared builder rather than by two branches that could drift.
-      fillSeatLiveCard(b, s, listMode, listShowPts, 30);
+      fillSeatLiveCard(b, s, listMode, listShowPts, 38);
       b.addEventListener("click", function(){ tapClick(s,b); });
       grid.appendChild(b);
     });
@@ -18455,13 +18563,15 @@ function setupRoster() {
       if(s){
         seat.dataset.sid=s.id;
         /* BIGGER, not smaller, when it is sharing the cell with a code. The
-         * 26px avatar is a marker beside a name you are already reading; next
+         * 34px avatar is a marker beside a name you are already reading; next
          * to a QR it is the whole point of the mode — you are meant to
-         * recognise the boy and scan him off the one card, from across a room.
-         * 44 against a 68px code is roughly the printed sheet's 76-against-95
-         * proportion, and still leaves the pair side by side in a full-screen
+         * recognise the boy and scan him off the one card, from across a room
+         * or off a projected board. 56 against a 68px code is close to the
+         * printed sheet's 76-against-95 proportion (bumped up from 44, per a
+         * rebbi's ask that the live chart's faces were too small to read at a
+         * distance), and still leaves the pair side by side in a full-screen
          * cell (it wraps in the narrow Dashboard panel, by design). */
-        fillSeatLiveCard(seat, s, cardMode, showPts, scanMode ? 44 : 26);
+        fillSeatLiveCard(seat, s, cardMode, showPts, scanMode ? 56 : 34);
         if(arranging){
           var clearBtn=el("button","seat-clear","✕");
           clearBtn.title="Remove from seat";
@@ -20221,7 +20331,7 @@ function setupRoster() {
   function renderPodiumCard(item, rankIndex){
     var card=el("div","lb-podium-card place-"+(rankIndex+1));
     card.appendChild(el("div","lb-medal", medalForRank(rankIndex)));
-    card.appendChild(avatarEl(item.s, rankIndex===0?64:52));
+    card.appendChild(avatarEl(item.s, rankIndex===0?84:68));
     card.appendChild(el("div","lb-podium-name", item.s.name));
     card.appendChild(el("div","lb-podium-score", isShulchani()?formatCoins(item.score,{abbr:coinAbbr(item.score,24)}):item.score+" pts"));
     card.appendChild(el("div","lb-podium-group", item.s.group ? item.s.group : rankTitle(rankIndex)));
@@ -26268,13 +26378,14 @@ nameLine
         renderStudBatchBar();
       });
       row.appendChild(pick);
-      var avatar=avatarEl(s, 40); avatar.classList.add("editable");
+      var avatar=avatarEl(s, 56); avatar.classList.add("editable");
       avatar.title="Click to upload a photo, or drag one here";
       var fileIn=el("input"); fileIn.type="file"; fileIn.accept="image/*"; fileIn.style.display="none";
+      function cropAndSet(f){
+        openPhotoCropModal(f, function(url){ if(url){ s.photo=url; save(); renderStudents(); } });
+      }
       fileIn.addEventListener("change", function(){
-        if(this.files && this.files[0]) readImageResized(this.files[0], 128, 0.72, function(url){
-          if(url){ s.photo=url; save(); renderStudents(); }
-        });
+        if(this.files && this.files[0]) cropAndSet(this.files[0]);
         this.value="";
       });
       avatar.appendChild(fileIn);
@@ -26284,7 +26395,7 @@ nameLine
       avatar.addEventListener("drop", function(e){
         e.preventDefault(); avatar.classList.remove("dragover");
         var f=e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-        if(f && f.type.indexOf("image/")===0) readImageResized(f, 128, 0.72, function(url){ if(url){ s.photo=url; save(); renderStudents(); } });
+        if(f && f.type.indexOf("image/")===0) cropAndSet(f);
       });
       if(s.photo){
         var xBtn=el("button","avatar-x","✕"); xBtn.title="Remove photo";
@@ -26351,6 +26462,9 @@ nameLine
         if(clash && clash.id!==s.id && !confirm("Another student is already named “"+clash.name+"”"+(clash.group?" in "+clash.group:"")+".\n\nRename this one to the same name anyway?")) return;
         s.name=nn||s.name; save(); renderStudents(); renderClassSel();
       });
+      var choosePhotoBtn=el("button","btn btn-sm","Choose photo…");
+      choosePhotoBtn.title="Pick an image file from this device";
+      choosePhotoBtn.addEventListener("click", function(){ fileIn.click(); });
       var photoUrlBtn=el("button","btn btn-sm","Photo URL…");
       photoUrlBtn.title="Paste a link to a photo (e.g. from Google Drive/Sheets) instead of uploading";
       photoUrlBtn.addEventListener("click", function(){
@@ -26377,12 +26491,15 @@ nameLine
           delete data.scores[s.id]; delete studentBreakdownOpen[s.id]; save(); renderStudents();
         }
       });
-      row.appendChild(avatar); row.appendChild(name); row.appendChild(classPicker); row.appendChild(code); row.appendChild(step); row.appendChild(bdBtn); row.appendChild(edit); row.appendChild(photoUrlBtn);
-      // NOTE (row width): this row now carries a checkbox plus 8-9 controls. See
+      row.appendChild(avatar); row.appendChild(name); row.appendChild(classPicker); row.appendChild(code); row.appendChild(step); row.appendChild(bdBtn); row.appendChild(edit); row.appendChild(choosePhotoBtn); row.appendChild(photoUrlBtn);
+      // NOTE (row width): this row now carries a checkbox plus 9-10 controls. See
       // the PR discussion — Rename / Photo URL / Delete are the candidates for
       // folding behind a per-row menu, deliberately NOT done here. classPicker
       // replaces the old static grp-tag <span> in place, so it isn't a net-new
-      // control despite the row-width note above.
+      // control despite the row-width note above. Choose photo… is new (the
+      // avatar click/drag still works too — this is the explicit, discoverable
+      // version of the same action, for a rebbi who doesn't know a small circle
+      // is clickable).
       if(removePhotoBtn) row.appendChild(removePhotoBtn);
       row.appendChild(del);
       list.appendChild(row);
