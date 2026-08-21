@@ -8252,10 +8252,17 @@ function setupRoster() {
     signinState.error = "Backing up before erasing…";
     renderAccountSection();
 
-    // A LOCKED snapshot, not the rolling backup: this one is taken because
-    // the class is about to be removed from this computer, so it must not sit
-    // in the file that every automatic write rewrites.
-    var backedUp = (r.via === "drive") ? driveWriteSnapshot() : fbWriteSnapshot();
+    // Folder: a LOCKED snapshot, because this copy is taken precisely because
+    // the class is about to be removed, and must not sit in the file every
+    // automatic write rewrites. There are two copies at this point either way
+    // — folder readiness already required a successful rolling write this
+    // session, and the erase no longer touches that file.
+    //
+    // Drive: still the ordinary backup write. A locked Drive snapshot is a
+    // separate change, deliberately not shipped alongside this one: it would
+    // be the only fresh copy for a rebbi with Drive and no folder, and an
+    // unexercised write is the wrong thing to stake a class on.
+    var backedUp = (r.via === "drive") ? driveWriteBackup(true) : fbWriteSnapshot();
 
     function abandon(){ eraseBusy = false; return false; }
 
@@ -30556,35 +30563,6 @@ nameLine
       ["catch"](function(){ return false; });
   }
 
-  // Always creates a NEW Drive file. Never the PATCH-in-place that
-  // driveWriteBackupInner() does — that is exactly the behaviour a locked
-  // snapshot exists to avoid.
-  function driveWriteSnapshotInner(){
-    var payload = JSON.stringify(data);
-    var boundary = "menchmark" + Math.random().toString(36).slice(2);
-    var meta = { name: snapshotFileName(), parents: [driveFolderId], mimeType: "application/json" };
-    var body =
-      "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(meta) +
-      "\r\n--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" + payload + "\r\n--" + boundary + "--";
-    return driveApi("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
-      method: "POST",
-      headers: { "Content-Type": "multipart/related; boundary=" + boundary },
-      body: body
-    });
-  }
-
-  function driveWriteSnapshot(){
-    if (!driveSupported()) return Promise.resolve(false);
-    if (!navigator.onLine) return Promise.resolve(false);
-    var chain = driveToken ? Promise.resolve() : driveWithRecovery(function(){
-      return Promise.reject(Object.assign(new Error("no token"), { unauthorized: true }));
-    });
-    return chain
-      .then(function(){ return driveWithRecovery(function(){ return driveFindOrCreateFolder().then(driveWriteSnapshotInner); }); })
-      .then(function(){ return true; })
-      ["catch"](function(){ return false; });
-  }
-
   function fbWrite(silent){
     if(!fbHandle || fbBusy) return Promise.resolve(false);
     fbBusy=true;
@@ -30873,12 +30851,8 @@ nameLine
     });
   }
 
-  // Includes locked snapshots as well as the rolling file, so a rebbi signing
-  // in on a new computer is offered whichever is genuinely newest — usually
-  // the snapshot taken as he left his last one.
   function driveListBackupFiles(){
-    var q = "(name='" + DRIVE_FILE_NAME + "' or name contains '" + SNAPSHOT_PREFIX + "') and '" +
-      driveFolderId + "' in parents and trashed=false";
+    var q = "name='" + DRIVE_FILE_NAME + "' and '" + driveFolderId + "' in parents and trashed=false";
     var url = "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(q) + "&fields=files(id,name,modifiedTime)";
     return driveApi(url).then(function(r){ return (r && r.files) || []; });
   }
