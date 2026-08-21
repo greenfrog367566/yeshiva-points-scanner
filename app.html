@@ -928,6 +928,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
      seat" placeholder is right in the middle of a room and wrong in the
      middle of a table. */
   .seat-grid .seat.at-table.empty{background:transparent;border-style:solid;color:transparent}
+  /* .seat-grid .seat.at-table above is 3 classes deep and was beating the
+     2-class .seat.awarded/-bad/-ice rules below regardless of source order,
+     so a scan on a student seated at a table flashed the fly-number but never
+     the background/border color -- the confirmation a rebbi actually glances
+     for. Same specificity fight as the print-preview comment above, same fix:
+     go one class deeper than the rule being overridden. */
+  .seat-grid .seat.at-table.awarded{border-color:var(--good);background:var(--good-soft)}
+  .seat-grid .seat.at-table.awarded-bad{border-color:var(--bad);background:var(--bad-soft)}
+  .seat-grid .seat.at-table.awarded-ice{border-color:var(--ice);background:var(--ice-soft)}
   /* The six colours are a fixed palette rather than a free picker, for a
      reason that only shows up on paper: each one has to stay legible when the
      browser drops the fill (see the print block), so the BORDER is the colour
@@ -938,6 +947,21 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .seat-table.tc-amber{--tbl-line:#b98c33;--tbl-fill:#fdf5e7}
   .seat-table.tc-rose{--tbl-line:#c46b7f;--tbl-fill:#fdeff2}
   .seat-table.tc-violet{--tbl-line:#8a72c0;--tbl-fill:#f4f0fc}
+  /* Dashboard touchpoint: a shared-color ring around every tile in an active
+     chavrusa group, in both List mode and Class view -- one class
+     (fillSeatLiveCard applies it) reaches both. box-shadow, deliberately not
+     border/background, so it never fights .awarded/-bad or .at-table for the
+     same property -- the exact collision this file's .at-table.awarded fix
+     above exists to undo. Same 6 colors as the table palette above, kept as
+     a separate variable/class pair so a seat can be at-table AND chav-grp at
+     once without the two treatments fighting each other. */
+  .tap-btn.chav-grp,.seat.chav-grp{box-shadow:0 0 0 2px var(--chv-line,#8d94a6) inset}
+  .chav-c0{--chv-line:#8d94a6}
+  .chav-c1{--chv-line:#5b7fc4}
+  .chav-c2{--chv-line:#5b9c6e}
+  .chav-c3{--chv-line:#b98c33}
+  .chav-c4{--chv-line:#c46b7f}
+  .chav-c5{--chv-line:#8a72c0}
   .seat-table-name{position:absolute;top:3px;left:11px;font-size:.62rem;font-weight:700;
     letter-spacing:.4px;text-transform:uppercase;color:var(--tbl-line,#8d94a6);
     pointer-events:none;max-width:calc(100% - 22px);overflow:hidden;
@@ -2853,6 +2877,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
               <span class="live-dot">Live</span>
               <button class="btn btn-sm" id="boardToggle">Hide</button>
             </div>
+            <div class="gb-warn" id="chavUnresolvedStrip" style="display:none;align-items:center;gap:10px;margin:0 0 8px">
+              <span class="grow" id="chavUnresolvedStripText"></span>
+              <button class="btn btn-sm btn-primary" id="chavUnresolvedStripResolve" type="button">Resolve</button>
+              <button class="btn btn-sm" id="chavUnresolvedStripDismiss" type="button">✕</button>
+            </div>
             <div class="board-body" id="scanBoardBody"></div>
           </div>
         </div>
@@ -4467,6 +4496,17 @@ function setupRoster() {
         <p>Wipes everything — institution &amp; class name, students, activities, scores, scan log, raffle history, and the saved Google Sheet link. Use this to start completely fresh (a new class, a new year). Download a backup first if you're not sure.</p>
         <button class="btn btn-bad" id="clearAllData">Clear ALL data…</button>
       </details>
+      <!-- The same erase the Account section offers, reachable without an
+           account. A rebbi who borrowed a colleague's computer and never
+           signed in is the likeliest person to need it, and everything in the
+           Account section is gated behind being signed in. -->
+      <details class="card pad bk-card danger-zone">
+        <summary>Erase from this computer</summary>
+        <p>Backs your class up, then removes it from this computer and returns it to the setup screen — for a computer that isn't yours. Your backup is not touched, and this is only offered once your class is safely backed up somewhere.</p>
+        <p id="eraseCardStatus" class="view-note"></p>
+        <button class="btn btn-bad" id="eraseThisComputerBtn">This is my computer — erase, keep the folder…</button>
+        <button class="btn btn-bad" id="eraseForgetBtn">Someone else's — erase and forget…</button>
+      </details>
     </div>
   </section>
 
@@ -4845,6 +4885,7 @@ function setupRoster() {
           <input type="checkbox" id="chavAvoidPairings" checked> Avoid previous pairings
         </label>
         <span class="grow"></span>
+        <button class="btn btn-sm" id="chavFromTablesBtn" type="button" title="Turns each occupied table on this class's seating chart into a group, using whoever there isn't already grouped.">🪑 From tables</button>
         <button class="btn btn-sm btn-primary" id="chavGenerateBtn" type="button">Generate</button>
       </div>
       <div class="gb-warn" id="chavFallbackWarn" style="display:none;margin-top:10px;align-items:center;gap:10px">
@@ -5268,6 +5309,7 @@ function setupRoster() {
           </select>
           <button class="btn btn-primary" id="serialConnectBtn">🔌 Connect scanner…</button>
           <button class="btn btn-sm btn-bad" id="serialDisconnectBtn" style="display:none">Disconnect</button>
+          <button class="btn btn-sm" id="serialHelpBtn" type="button">❓ COM setup codes</button>
         </div>
         <div id="serialStatus" class="pill-note" style="margin-top:8px">Not connected.</div>
       </div>
@@ -8065,54 +8107,6 @@ function setupRoster() {
     if (typeof renderAccountSection === "function") renderAccountSection();
   }
 
-  // Back up FIRST, and only wipe if that provably succeeded. A rebbi choosing
-  // this is on someone else's computer, which is exactly where "it'll be in
-  // Drive" must not be an assumption — if the backup cannot be written, the
-  // class stays put and he is told why. Losing a class here would be the
-  // worst possible outcome of a button whose whole purpose is tidiness.
-  function signinSignOutAndRemove(){
-    signinState.error = null;
-    if (!(data.driveBackupEnabled && driveSupported())) {
-      signinState.error = "Google Drive isn't connected on this computer, so there's nowhere safe to put your class first. " +
-        "Download a backup file (Settings → Backup & Restore) or connect Drive, then sign out again.";
-      if (typeof renderAccountSection === "function") renderAccountSection();
-      return;
-    }
-    signinState.error = "Backing up your class to Drive…";
-    if (typeof renderAccountSection === "function") renderAccountSection();
-    return driveWriteBackup(true).then(function(ok){
-      if (!ok) {
-        signinState.error = "Couldn't back up to Drive just now, so nothing was removed — your class is still here. " +
-          "Check your connection and try again.";
-        if (typeof renderAccountSection === "function") renderAccountSection();
-        return false;
-      }
-      wipeLocalClass();
-      signinSignOutKeepingData(); // account cleared last, after the class is gone
-      notice("Signed out. Your class was backed up and removed from this computer.");
-      return true;
-    });
-  }
-
-  // Returns the device to a clean slate WITHOUT touching the Drive backup —
-  // the copy in Drive is the whole point, and is what the next sign-in on the
-  // rebbi's own computer restores from.
-  function wipeLocalClass(){
-    data = migrateData(JSON.parse(JSON.stringify(defaults)));
-    load2fix();
-    save();
-    $("schoolName").textContent = data.school;
-    syncClassNameField();
-    $("sheetUrl").value = data.sheetUrl || "";
-    $("autoSheet").checked = (data.autoSheet !== false);
-    renderActButtons(); renderRecent(); renderStudents(); renderActivities();
-    renderClassSel(); renderScanBoard(); renderTapPanel(); applyScanLayout();
-    showDate(); applyHeaderShortcutsVisibility(); applyFullWidth(); renderHeaderScanContext();
-    if (typeof window._refreshTimerPanel === "function") window._refreshTimerPanel();
-    renderShulchaniStatus();
-    refreshLiveViews();
-    if (typeof refreshTrackedBadges === "function") refreshTrackedBadges();
-  }
 
   function renderAccountSignOutStep(box){
     var p = el("p", "view-note");
@@ -8122,8 +8116,8 @@ function setupRoster() {
     var detail = el("p", "view-note");
     detail.textContent = "\"" + (data.className || "Your class") + "\" — " +
       data.students.length + " " + (data.students.length === 1 ? "boy" : "boys") +
-      ". If this is someone else's computer, remove it: it will be backed up to your Drive first, " +
-      "and comes back the next time you sign in on your own.";
+      ". On someone else's computer, erase it: it is backed up first, and this computer " +
+      "goes back to the way it was before anyone set it up.";
     box.appendChild(detail);
 
     if (signinState.error) {
@@ -8134,15 +8128,236 @@ function setupRoster() {
     keepBtn.addEventListener("click", signinSignOutKeepingData);
     box.appendChild(keepBtn);
 
-    var removeBtn = el("button", "btn btn-sm", "Back up and remove it");
-    removeBtn.style.marginLeft = "8px";
-    removeBtn.addEventListener("click", signinSignOutAndRemove);
-    box.appendChild(removeBtn);
+    var eraseBtn = el("button", "btn btn-sm", "Erase it from this computer…");
+    eraseBtn.style.marginLeft = "8px";
+    eraseBtn.addEventListener("click", function(){
+      signinState.step = "needsEraseChoice";
+      signinState.error = null;
+      renderAccountSection();
+    });
+    box.appendChild(eraseBtn);
 
     var cancelBtn = el("button", "btn btn-sm", "Cancel");
     cancelBtn.style.marginLeft = "8px";
     cancelBtn.addEventListener("click", signinCancelSignOut);
     box.appendChild(cancelBtn);
+  }
+
+  // Erasing is only offered once the class provably exists somewhere else.
+  // Two proofs are accepted, and both are things that HAPPENED rather than
+  // things that were configured: Drive connected (the write is attempted and
+  // must succeed before anything is deleted), or a folder backup that already
+  // wrote to disk in this session.
+  //
+  // A plain downloaded file is deliberately NOT a proof. The browser hands the
+  // page no path and no handle for a download, so the app can neither confirm
+  // it happened nor ever offer it back — accepting it would mean deleting a
+  // class on the strength of something unverifiable.
+  function signinEraseReadiness(){
+    if (data.driveBackupEnabled && driveSupported()) {
+      return { ready: true, via: "drive" };
+    }
+    if (fbHandle && fbWroteThisSession) {
+      return { ready: true, via: "folder", folderName: fbHandle.name };
+    }
+    if (fbHandle) {
+      return { ready: false, reason: "folder-not-written", folderName: fbHandle.name };
+    }
+    return { ready: false, reason: "nothing" };
+  }
+
+  function renderAccountEraseStep(box){
+    var r = signinEraseReadiness();
+
+    var p = el("p", "view-note");
+    p.textContent = "Erase \"" + (data.className || "your class") + "\" from this computer?";
+    box.appendChild(p);
+
+    if (!r.ready) {
+      var why = el("p", "view-note");
+      why.textContent = r.reason === "folder-not-written"
+        ? "Your backups folder (“" + r.folderName + "”) hasn't been written to yet in this session. " +
+          "Back up to it now and the erase will unlock."
+        : "Nothing here is backed up yet, so there is nothing to erase safely from. " +
+          "Connect Google Drive, or choose a backups folder on this computer.";
+      box.appendChild(why);
+
+      var note = el("p", "view-note");
+      note.textContent = "A downloaded backup file can't be used for this: once the browser downloads it, " +
+        "Menchmark can't find it again — so it can't check it exists, and can't offer it back to you later. " +
+        "A backups folder can do both.";
+      box.appendChild(note);
+
+      if (signinState.error) {
+        var e1 = el("p", "pill-note"); e1.textContent = signinState.error; box.appendChild(e1);
+      }
+      var backBtn = el("button", "btn btn-primary", "Go back");
+      backBtn.addEventListener("click", function(){
+        signinState.step = "needsSignOutChoice"; signinState.error = null; renderAccountSection();
+      });
+      box.appendChild(backBtn);
+      return;
+    }
+
+    var okLine = el("p", "view-note");
+    okLine.textContent = r.via === "drive"
+      ? "Your class will be backed up to Google Drive first, and only erased if that works."
+      : "Your class is backed up in “" + r.folderName + "” on this computer.";
+    box.appendChild(okLine);
+
+    // The "whose computer" question is only worth asking when there is a
+    // backups folder to keep or forget. Backed up to Drive with no folder,
+    // both answers do exactly the same thing — and offering to "remember my
+    // backups folder" when none exists promises a way back that will never
+    // appear on the setup screen.
+    var hasFolder = !!fbHandle;
+
+    if (!hasFolder) {
+      var soleNote = el("p", "view-note");
+      soleNote.textContent = "Your class comes back by signing in again on your own computer.";
+      box.appendChild(soleNote);
+
+      if (signinState.error) {
+        var e3 = el("p", "pill-note"); e3.textContent = signinState.error; box.appendChild(e3);
+      }
+      var onlyBtn = el("button", "btn btn-primary", "Erase it from this computer");
+      onlyBtn.addEventListener("click", function(){ signinEraseThisComputer(true); });
+      box.appendChild(onlyBtn);
+
+      var cancel3 = el("button", "btn btn-sm", "Cancel");
+      cancel3.style.marginLeft = "8px";
+      cancel3.addEventListener("click", signinCancelSignOut);
+      box.appendChild(cancel3);
+      return;
+    }
+
+    var choose = el("p", "view-note");
+    choose.textContent = "Whose computer is this?";
+    box.appendChild(choose);
+
+    if (signinState.error) {
+      var e2 = el("p", "pill-note"); e2.textContent = signinState.error; box.appendChild(e2);
+    }
+
+    // "Mine" keeps the remembered backups folder, which is what lets setup
+    // offer the class straight back. IndexedDB is where that handle lives, so
+    // it survives the localStorage wipe on its own — remembering is the
+    // default state, and forgetting is the deliberate extra step.
+    var mineBtn = el("button", "btn btn-primary", "Mine — erase, but remember “" + fbHandle.name + "”");
+    mineBtn.addEventListener("click", function(){ signinEraseThisComputer(false); });
+    box.appendChild(mineBtn);
+
+    var sharedBtn = el("button", "btn btn-sm", "Someone else's — erase and forget everything");
+    sharedBtn.style.marginLeft = "8px";
+    sharedBtn.addEventListener("click", function(){ signinEraseThisComputer(true); });
+    box.appendChild(sharedBtn);
+
+    var cancel2 = el("button", "btn btn-sm", "Cancel");
+    cancel2.style.marginLeft = "8px";
+    cancel2.addEventListener("click", signinCancelSignOut);
+    box.appendChild(cancel2);
+  }
+
+  // `forget` true drops the remembered backups folder as well, so this machine
+  // keeps no pointer at all to where the class went — the shared-computer case.
+  // One erase at a time, and only while the rebbi is still asking for it.
+  // Backing up takes real time — a Drive round trip, or a write to a folder on
+  // a USB stick — and during that window he can hit Cancel, or Go back, or the
+  // button again. Every one of those used to end in the class being erased
+  // anyway, because nothing between "the backup resolved" and "delete
+  // everything" ever re-checked that the erase was still wanted.
+  var eraseBusy = false;
+
+  // The erase is still wanted only if this screen is still the one on show.
+  // Cancel moves the step to "idle" and Go back to "needsSignOutChoice", so a
+  // single check covers every way out rather than one flag per exit.
+  function eraseStillRequested(){ return signinState.step === "needsEraseChoice"; }
+
+  // `stillWanted` lets a second entry point supply its own liveness test. The
+  // Backup & Restore card confirms up front with a blocking prompt and shows
+  // no cancel afterwards, so for it the answer is simply yes — the step-based
+  // check would read false there and abandon every erase.
+  function signinEraseThisComputer(forget, stillWanted){
+    var wanted = stillWanted || eraseStillRequested;
+    if (eraseBusy) return Promise.resolve(false);
+    var r = signinEraseReadiness();
+    if (!r.ready) { renderAccountSection(); return Promise.resolve(false); }
+
+    eraseBusy = true;
+    signinState.error = "Backing up before erasing…";
+    renderAccountSection();
+
+    // Folder: a LOCKED snapshot, because this copy is taken precisely because
+    // the class is about to be removed, and must not sit in the file every
+    // automatic write rewrites. There are two copies at this point either way
+    // — folder readiness already required a successful rolling write this
+    // session, and the erase no longer touches that file.
+    //
+    // Drive: still the ordinary backup write. A locked Drive snapshot is a
+    // separate change, deliberately not shipped alongside this one: it would
+    // be the only fresh copy for a rebbi with Drive and no folder, and an
+    // unexercised write is the wrong thing to stake a class on.
+    var backedUp = (r.via === "drive") ? driveWriteBackup(true) : fbWriteSnapshot();
+
+    function abandon(){ eraseBusy = false; return false; }
+
+    return Promise.resolve(backedUp).then(function(ok){
+      // Checked BEFORE the failure message too: telling a rebbi who already
+      // cancelled that his backup failed would be alarming and untrue.
+      if (!wanted()) return abandon();
+      if (!ok) {
+        eraseBusy = false;
+        signinState.error = "Couldn't back up just now, so nothing was erased — your class is still here. " +
+          "Check your connection (or the backups folder) and try again.";
+        renderAccountSection();
+        return false;
+      }
+      var done = forget ? Promise.resolve(fbClearHandle())["catch"](function(){}) : Promise.resolve();
+      return done.then(function(){
+        // Re-checked after forgetting the folder as well: that step is itself
+        // asynchronous, and it is the last moment anything is recoverable.
+        if (!wanted()) return abandon();
+        eraseThisComputer();
+        return true;
+      });
+    })["catch"](function(){
+      // Never leave the guard latched — a stuck eraseBusy would silently
+      // disable the button for the rest of the session with no explanation.
+      eraseBusy = false;
+      signinState.error = "Something went wrong before anything was erased — your class is still here.";
+      renderAccountSection();
+      return false;
+    });
+  }
+
+  // The actual wipe. Clears the class AND the setup flag, which is what sends
+  // the next visit through the wizard rather than into an empty app — a
+  // computer someone else picks up should look untouched, not like a Menchmark
+  // that lost its class. The Drive backup and (unless forgotten) the backups
+  // folder are never deleted: they are the way back.
+  function eraseThisComputer(){
+    // Prefix sweep rather than a hand-written list of keys. A list is only as
+    // good as someone's memory of every key the app has ever written, and the
+    // one thing this must not do is leave a stray copy of a class on a
+    // computer whose owner was told it had been erased. Anything Menchmark
+    // wrote starts with the storage key or "menchmark"; nothing else is
+    // touched, so a shared origin keeps its own unrelated keys.
+    try {
+      var doomed = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k) continue;
+        if (k.indexOf(KEY) === 0 || k.toLowerCase().indexOf("menchmark") === 0) doomed.push(k);
+      }
+      doomed.forEach(function(k){ try { localStorage.removeItem(k); } catch (e) {} });
+    } catch (e) {}
+    try { sessionStorage.clear(); } catch (e) {}
+    if (window.firebase && window.firebase.auth) {
+      try { window.firebase.auth().signOut(); } catch (e) {}
+    }
+    // A deliberate navigation to the wizard, not a reload-to-re-render: the
+    // whole point is that this computer starts over.
+    location.href = "setup.html";
   }
 
   // ---------- Step 3b: self-serve backup-upload restore ----------
@@ -8796,6 +9011,12 @@ function setupRoster() {
    */
   var chavMode="manual"; // "manual" | "auto" -- session-only UI state, not persisted
   var chavSelected=[]; // student ids currently tapped in Manual mode, not persisted
+  // Group ids the rebbi has dismissed the Dashboard's unresolved-pool strip
+  // for. Session-only, like chavSelected above -- a reload re-nagging about a
+  // real unresolved pool is fine, dropping the nag entirely would not be. A
+  // group's id leaving this set on its own (once resolved) needs no cleanup:
+  // chavUnresolvedGroups() only ever returns groups that still have a pool.
+  var chavStripDismissedIds={};
 
   function chavGroupedIds(){
     var ids={};
@@ -8811,6 +9032,10 @@ function setupRoster() {
     $("chavModeAutoBtn").classList.toggle("active", chavMode==="auto");
     $("chavManualPanel").style.display = chavMode==="manual" ? "block" : "none";
     $("chavAutoPanel").style.display = chavMode==="auto" ? "block" : "none";
+    // Hidden rather than disabled -- a rebbi who has never touched Tables
+    // mode on the seating chart shouldn't see a button that can never do
+    // anything for them.
+    $("chavFromTablesBtn").style.display = seatTablesArr(seatLayout()).length ? "" : "none";
     chavRenderPointModeSeg();
     chavRenderTiles();
     chavRenderGroups();
@@ -8892,6 +9117,10 @@ function setupRoster() {
           if(!removed) return;
           if(lastChavPoolAdd && lastChavPoolAdd.entryId===removed.id) lastChavPoolAdd=null;
           save(); renderChavrusa();
+          // The "🧩 N pooled" tile badge and the unresolved-pool strip both
+          // read this same total -- an undo that only re-rendered this tab
+          // would leave the Dashboard showing the pre-undo amount.
+          renderScanBoard(); renderTapPanel();
         });
         card.appendChild(undoPoolBtn);
       }
@@ -8918,6 +9147,27 @@ function setupRoster() {
   function chavUnresolvedGroups(){
     return data.chavrusaSession.groups.filter(function(g){ var p=data.chavrusaPools[g.id]; return p && p.total; });
   }
+  // Dashboard touchpoint: a dismissible strip above the mini leaderboard when
+  // Group Entity mode has left points sitting in a pool (spec: Menchmark_UI_
+  // Redesign_Summary.md §2). Driven from renderScanBoard(), which already
+  // runs after every scoring action, so this never needs its own call sites.
+  function renderChavUnresolvedStrip(){
+    var strip=$("chavUnresolvedStrip");
+    if(!strip) return;
+    var unresolved=chavUnresolvedGroups();
+    // Re-arms itself: dismissing hides today's set of unresolved groups, but
+    // a NEW pool (a different group id) shows the strip again even if others
+    // are still dismissed -- silence is per-group, not permanent.
+    var fresh=unresolved.filter(function(g){ return !chavStripDismissedIds[g.id]; });
+    if(!fresh.length){ strip.style.display="none"; return; }
+    $("chavUnresolvedStripText").textContent="🧩 "+unresolved.length+" group"+(unresolved.length===1?" has":"s have")+" unresolved points";
+    strip.style.display="flex";
+  }
+  $("chavUnresolvedStripResolve").addEventListener("click", function(){ activateTab("chavrusa"); });
+  $("chavUnresolvedStripDismiss").addEventListener("click", function(){
+    chavUnresolvedGroups().forEach(function(g){ chavStripDismissedIds[g.id]=true; });
+    renderChavUnresolvedStrip();
+  });
   $("chavClearGroupsBtn").addEventListener("click", function(){
     if(!data.chavrusaSession.groups.length) return;
     var unresolved=chavUnresolvedGroups();
@@ -9005,6 +9255,51 @@ function setupRoster() {
     var first=chavStudentName((group.studentIds||[])[0]).split(" ")[0];
     return first+"’s group";
   }
+  // Gates the purely-organizational Dashboard touchpoints -- List mode
+  // clustering and the tile ring (§2's "List mode grouping" bullet: "when a
+  // Chavrusa session is active"). Any point-target mode, Individual
+  // included: pairing students up is useful to SEE on the Dashboard whether
+  // or not points are routed through the pairing. The scoring-specific
+  // touchpoints (the target toast, the unresolved-pool strip) are narrower
+  // by construction instead -- the toast only fires from inside
+  // awardGroupTarget/awardGroupEntity, which award() only ever reaches when
+  // pointTargetMode isn't "individual", and the strip keys off an actual
+  // pool existing, which only Entity mode ever creates.
+  function chavGroupingActive(){
+    return data.chavrusaSession.groups.length>0;
+  }
+  // Same 6-color palette the seating-tables feature uses (SEAT_TABLE_COLORS),
+  // reused here as a plain index rather than sharing its CSS classes -- a
+  // chavrusa ring (box-shadow, see .chav-c0 etc.) and a table backdrop
+  // (border/background) must never fight over the same property the way
+  // .awarded and .at-table did before this PR's CSS fix.
+  function chavGroupColorIdx(group){
+    var idx=data.chavrusaSession.groups.indexOf(group);
+    return idx<0 ? 0 : idx%6;
+  }
+  // Entity mode only -- Group and Individual modes never create a pool, so
+  // showing "0 pooled" there would just be noise about a number that can
+  // never move. Reads data.chavrusaPools fresh (never cached), so a full
+  // re-render after any pool change (award, resolve, undo) always agrees.
+  function chavPoolLineFor(group){
+    if(!group || data.chavrusaSession.pointTargetMode!=="entity") return "";
+    var pool=data.chavrusaPools[group.id];
+    return "🧩 "+fmtVal(pool?pool.total:0)+" pooled";
+  }
+  // List mode's grouping: bracket by group (in group-creation order), every
+  // ungrouped student after all of them, alphabetical within each bucket.
+  // Takes an already-sorted array and re-sorts it (Array#sort is stable, so
+  // ties keep the alphabetical order the caller already applied) rather than
+  // computing lastFirstKey twice.
+  function chavClusterStuds(studs){
+    var groups=data.chavrusaSession.groups, order={};
+    groups.forEach(function(g, gi){ (g.studentIds||[]).forEach(function(sid){ order[sid]=gi; }); });
+    return studs.slice().sort(function(a,b){
+      var ga=order.hasOwnProperty(a.id)?order[a.id]:groups.length;
+      var gb=order.hasOwnProperty(b.id)?order[b.id]:groups.length;
+      return ga-gb;
+    });
+  }
   function chavPoolFor(groupId){
     var p=data.chavrusaPools[groupId];
     if(!p){ p={total:0, entries:[]}; data.chavrusaPools[groupId]=p; }
@@ -9029,7 +9324,12 @@ function setupRoster() {
     });
     save();
     renderRecent(); renderScanBoard(); renderTapPanel(); refreshLiveViews();
-    var gname=chavGroupLabel(group);
+    // Dashboard touchpoint #1(b) (§2): the scan bar's own armed-activity
+    // display can't name a group before the scan (which member gets tapped,
+    // and so which group, isn't known until then -- chavActiveGroupFor()
+    // only resolves at scan time), so the confirmation lands here instead,
+    // on the toast that already fires for exactly this award.
+    var gname="🎯 Target: "+chavGroupLabel(group)+" ("+ids.length+")";
     flash(delta>=0, gname, fmtDeltaBare(delta), done+" student"+(done===1?"":"s")+" · "+label, delta>=0?"positive":"negative");
     beep(delta>=0);
     return done>0;
@@ -9058,7 +9358,13 @@ function setupRoster() {
     lastChavPoolAdd={groupId:group.id, entryId:entry.id, ts:entry.ts};
     save();
     renderChavrusa();
-    var gname=chavGroupLabel(group);
+    // Also refreshes the Dashboard's unresolved-pool strip (touchpoint #4)
+    // and every member's tile (the "🧩 N pooled" line, fillSeatLiveCard) --
+    // this is the scan that just grew or created the pool both read, so they
+    // need to catch it as promptly as a real award does.
+    renderScanBoard();
+    renderTapPanel();
+    var gname="🎯 Target: "+chavGroupLabel(group)+" ("+(group.studentIds||[]).length+")";
     flash(delta>=0, gname, fmtDeltaBare(delta), "🧩 Added to pool · now "+fmtVal(pool.total), delta>=0?"positive":"negative");
     beep(delta>=0);
     return true;
@@ -9088,6 +9394,11 @@ function setupRoster() {
     if(!removed) return false;
     save();
     renderChavrusa();
+    // Same reason as the "Undo last pooled scan" button above: the
+    // top-bar "↩ Undo" reaches this path too, and the Dashboard's pool
+    // badge/strip must not go stale just because the undo came from there
+    // instead of from the Chavrusa Mode tab.
+    renderScanBoard(); renderTapPanel();
     return true;
   }
   // Splits a pool's total evenly across its group's members (integer division,
@@ -9179,6 +9490,48 @@ function setupRoster() {
     }
     return {groups:newGroups, hadRepeat:hadRepeat};
   }
+  // One group per occupied table on this class's current seating chart --
+  // for the common case a rebbi has already seated the room in table-shaped
+  // clusters (sometimes deliberately, as existing teams) and wants those
+  // clusters turned straight into chavrusas instead of a fresh random draw.
+  // Ungrouped-only, same restraint chavGenerateGroups applies: a student
+  // already in a group this sitting is left where he is, never moved.
+  function chavGroupsFromTables(){
+    var lay=seatLayout();
+    var grouped=chavGroupedIds();
+    var byTable={};
+    (lay.seats||[]).forEach(function(sid, trueIdx){
+      if(!sid || grouped[sid]) return;
+      var t=seatTableAtRC(lay, Math.floor(trueIdx/lay.cols), trueIdx%lay.cols);
+      if(!t) return;
+      (byTable[t.id]=byTable[t.id]||[]).push(sid);
+    });
+    var newGroups=[], skippedSolo=0;
+    Object.keys(byTable).forEach(function(tid){
+      var ids=byTable[tid];
+      if(ids.length>=2) newGroups.push({id:newId(), studentIds:ids});
+      else skippedSolo+=ids.length;
+    });
+    return {groups:newGroups, skippedSolo:skippedSolo};
+  }
+  $("chavFromTablesBtn").addEventListener("click", function(){
+    var result=chavGroupsFromTables();
+    var warn=$("chavFallbackWarn");
+    if(!result.groups.length){
+      $("chavFallbackWarnText").textContent="No table has 2+ ungrouped students right now — set up tables on the seating chart first (⚙ Setup & arrange → 🪑 Tables).";
+      warn.style.display="flex";
+      return;
+    }
+    data.chavrusaSession.groups=data.chavrusaSession.groups.concat(result.groups);
+    save();
+    if(result.skippedSolo>0){
+      $("chavFallbackWarnText").textContent=result.skippedSolo+" student"+(result.skippedSolo===1?"":"s")+" left ungrouped at a table (already in a group, or the only free seat there) — group "+(result.skippedSolo===1?"him":"them")+" manually if needed.";
+      warn.style.display="flex";
+    } else {
+      warn.style.display="none";
+    }
+    renderChavrusa();
+  });
   $("chavGenerateBtn").addEventListener("click", function(){
     var size=parseInt($("chavGroupSize").value,10);
     if(!isFinite(size) || size<2) size=2;
@@ -12417,6 +12770,7 @@ function setupRoster() {
     if (signinState.step === "needsDriveRestore") { renderAccountDriveRestoreStep(box); return; }
     if (signinState.step === "needsRoster") { renderAccountRosterStep(box); return; }
     if (signinState.step === "needsSignOutChoice") { renderAccountSignOutStep(box); return; }
+    if (signinState.step === "needsEraseChoice") { renderAccountEraseStep(box); return; }
 
     if (data.account) {
       // Forced Drive connect: every rebbi, either tier, must connect Google
@@ -12569,6 +12923,17 @@ function setupRoster() {
     var connectBtn = el("button", "btn btn-primary", "Connect Google Drive");
     connectBtn.addEventListener("click", driveConnect);
     box.appendChild(connectBtn);
+
+    // The gate exists to make a rebbi back up before he carries on WORKING —
+    // it must not also trap him here. Signing out is the way off a borrowed
+    // computer, and erasing lives behind it; a rebbi standing at a colleague's
+    // desk with no Drive account could otherwise reach neither, which is the
+    // exact situation the erase flow was built for. Signing out grants no
+    // access, so nothing is bypassed by offering it.
+    var outBtn = el("button", "btn btn-sm", "Sign out");
+    outBtn.style.marginLeft = "8px";
+    outBtn.addEventListener("click", signinSignOut);
+    box.appendChild(outBtn);
   }
   // Step 3b's Drive-restore offer — only ever shown after same-device
   // adoption found no local match at all (signinMaybeOfferDriveRestore()'s
@@ -17050,6 +17415,7 @@ function setupRoster() {
     if(typeof renderStandings==="function" && $("view-standings") && $("view-standings").classList.contains("active")){
       renderStandings();
     }
+    renderChavUnresolvedStrip();
     var open = data.scanBoardOpen!==false;
     $("scanBoardBody").style.display = open ? "block" : "none";
     $("boardToggle").textContent = open ? "Hide" : "Show";
@@ -18256,6 +18622,13 @@ function setupRoster() {
 
     if(effViewMode==="seating"){ renderSeatGrid(body, studs); return; }
 
+    // Dashboard touchpoint (§2): List mode clusters into bracketed groups,
+    // ungrouped students below, alphabetical within each -- reverts to plain
+    // alphabetical (the sort just above, untouched) the moment no session is
+    // active. Class view is deliberately left out of this: a seat's position
+    // is furniture the rebbi arranged, not something a group should reorder.
+    if(chavGroupingActive()) studs=chavClusterStuds(studs);
+
     // Says why this is a list when the toolbar was set to Seating chart, and
     // carries the only way in. Shown ONLY on the fallback — a rebbi who chose
     // List is not nagged about a chart he never asked for.
@@ -18422,6 +18795,13 @@ function setupRoster() {
    * tighter than a List tile.
    */
   function fillSeatLiveCard(card, s, mode, showPts, avatarPx){
+    // Dashboard touchpoint #2 (§2): the shared choke point for both List
+    // mode's .tap-btn and Class view's .seat, so one check reaches both.
+    var chavGrp=null;
+    if(chavGroupingActive()){
+      chavGrp=chavActiveGroupFor(s.id);
+      if(chavGrp) card.classList.add("chav-grp", "chav-c"+chavGroupColorIdx(chavGrp));
+    }
     var kind=seatPrintCodeKind(mode), wantPhoto=seatPrintWantsPhoto(mode);
     /* THE FLEX ROW EXISTS ONLY WHEN BOTH ARE SHOWN — same rule as the printed
      * card. A code alone, or a face alone, keeps the exact DOM it has always
@@ -18484,6 +18864,16 @@ function setupRoster() {
        */
       var mcHeld=mcHeldFor(s.id);
       if(mcHeld) card.appendChild(el("span","ts-mc", mcHeld));
+      // Dashboard touchpoint: Group Entity's shared pool, same "held, not on
+      // your own score" idea mcHeld already renders -- without this, a scan
+      // in Entity mode moves a number a rebbi can't see anywhere on the
+      // tile he is looking at, since his own score line is frozen by
+      // design (see awardGroupEntity). Shown even at 0 once grouped, same
+      // restraint mcHeld does NOT take, deliberately: "0 pooled" tells a
+      // rebbi this tile's score is not where his next scan will land, which
+      // matters before the first scan as much as after it.
+      var poolLine=chavPoolLineFor(chavGrp);
+      if(poolLine) card.appendChild(el("span","ts-mc", poolLine));
     } else if(showPts && trkBadge){
       // Also-show: a small secondary figure (see .also-pts) — held aside
       // rather than shown as the primary number the badge now is.
@@ -30365,6 +30755,10 @@ nameLine
    */
   var FB_DB="menchmarkBackupFS", FB_STORE="handles", FB_KEY="dir";
   var fbHandle=null, fbBusy=false;
+  // Set only by a folder write that actually succeeded this session — read by
+  // the erase gate (signinEraseReadiness) as one of the two proofs that this
+  // rebbi's class exists somewhere other than the machine he is about to wipe.
+  var fbWroteThisSession=false;
   /* "Has anything changed since the last folder write?", counted rather than
    * timed. The closing write used to be skipped for 60 seconds after any other
    * write, which sounds like a debounce but silently dropped the commonest
@@ -30414,12 +30808,56 @@ nameLine
     if($("folderBackupNow")) $("folderBackupNow").style.display = fbHandle ? "" : "none";
     if($("folderBackupStop")) $("folderBackupStop").style.display = fbHandle ? "" : "none";
     if($("folderBackupPick")) $("folderBackupPick").textContent = fbHandle ? "Choose a different folder" : "Choose a folder";
+    // Every folder-backup state change is also a change to whether erasing is
+    // safe yet, and this runs on all of them (chosen, written, failed, forgotten).
+    if(typeof renderEraseCard==="function") renderEraseCard();
   }
   function fbFileName(){ return "menchmark-backup-"+todayKey()+".json"; }
   /* Writes the same JSON the Download button produces, so a folder backup and a
    * downloaded one are the same thing and restore through the same path.
    * `silent` suppresses the success line for the automatic writes, which should
    * not shout every time the app opens. */
+  // The folder twin of driveMaybeAutoWrite()'s guard, and it matters more here
+  // because fbInit()'s write fires on EVERY boot the moment permission is
+  // granted. The sequence that costs a rebbi his class: erase this computer,
+  // land on setup, press "Skip & Start Now", and the blank class that creates
+  // is written straight over menchmark-backup-*.json in the folder that was
+  // being kept precisely so he could restore from it. An empty roster is never
+  // worth preserving, so no automatic write may carry one.
+  //
+  // Only the AUTOMATIC writes are gated. "Back up now" is an explicit
+  // instruction and still does what it says, and the erase path's own write is
+  // deliberate too.
+  function fbAutoWriteAllowed(){
+    return Array.isArray(data.students) && data.students.length > 0;
+  }
+
+  /* ---------- locked pre-erase snapshots ----------
+   * The rolling backup is a moving target: it is rewritten on open, on tab
+   * hide, and by "Back up now", and every one of those had to be taught not
+   * to carry an empty roster over it. A backup taken because a rebbi is about
+   * to wipe this computer must not live in that file. It gets its own name,
+   * with a timestamp, and nothing in the app ever writes to it again — so the
+   * class as it was when he left that computer simply stays there, and two
+   * erases keep two snapshots instead of the second erasing the first. */
+  var SNAPSHOT_PREFIX = "menchmark-saved-";
+  function snapshotStamp(){
+    var d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16).replace("T", "-").replace(":", "");
+  }
+  function snapshotFileName(){ return SNAPSHOT_PREFIX + snapshotStamp() + ".json"; }
+
+  // Resolves true only once the bytes are on disk — the erase waits on this.
+  function fbWriteSnapshot(){
+    if (!fbHandle) return Promise.resolve(false);
+    var payload = JSON.stringify(data);
+    return fbHandle.getFileHandle(snapshotFileName(), { create: true })
+      .then(function(fh){ return fh.createWritable(); })
+      .then(function(w){ return w.write(payload).then(function(){ return w.close(); }); })
+      .then(function(){ return true; })
+      ["catch"](function(){ return false; });
+  }
+
   function fbWrite(silent){
     if(!fbHandle || fbBusy) return Promise.resolve(false);
     fbBusy=true;
@@ -30441,6 +30879,11 @@ nameLine
         // here: the bytes are already on disk by this point, so letting a
         // broken status line throw would drop us into the failure branch and
         // tell the rebbi nothing was backed up when it just was.
+        // Proof, not intent: the erase gate below only accepts a backup that
+        // actually reached the disk in THIS session, so it can never be
+        // satisfied by a folder that was chosen once and has been failing
+        // quietly ever since.
+        fbWroteThisSession = true;
         try{
           if(!silent) fbStatus("Backed up to “"+fbHandle.name+"” just now.", "good");
           else fbStatus("Backing up automatically to “"+fbHandle.name+"”. Last saved just now.", "good");
@@ -30487,7 +30930,10 @@ nameLine
         if(p==="granted"){
           fbHandle=h;
           fbStatus("Backing up automatically to “"+h.name+"”.", "good");
-          fbWrite(true);
+          // Never on an empty roster — see fbAutoWriteAllowed(). This is the
+          // exact boot that follows an erase, and the folder it would write to
+          // is the one holding the class.
+          if(fbAutoWriteAllowed()) fbWrite(true);
         } else {
           fbStatus("Menchmark still remembers the folder “"+h.name+"”, but this browser is asking for permission again. Press “Choose a folder” and pick it once more.", "bad");
         }
@@ -30563,6 +31009,7 @@ nameLine
     if(document.visibilityState!=="hidden") return;
     if(!fbHandle) return;
     if(fbWrittenSeq===(fbSaveSeq||0)) return;
+    if(!fbAutoWriteAllowed()) return; // same guard as the open-time write
     fbWrite(true);
   });
 
@@ -30887,6 +31334,7 @@ nameLine
   }
 
   function renderDriveBackupCard(){
+    if (typeof renderEraseCard === "function") renderEraseCard(); // Drive state gates the erase too
     var card = $("driveBackupCard"); if (!card) return;
     if (!driveSupported()) { card.style.display = "none"; return; }
     card.style.display = "";
@@ -32416,6 +32864,63 @@ nameLine
   // Full wipe — institution/class name, roster, activities, scores, log, raffle
   // history, and the saved Sheet link. Type-to-confirm since this is the one
   // action here with no way back short of a backup file.
+  // Second entry point for the erase, for a rebbi with no account. Same gate,
+  // same backup-then-wipe, same return to setup — only the door is different.
+  // It always offers the "forget everything" variant: someone erasing from
+  // here has no account to come back through, so a remembered folder would be
+  // a pointer he cannot use and the next person can.
+  function renderEraseCard(){
+    var el2 = $("eraseCardStatus"); if (!el2) return;
+    var btn = $("eraseThisComputerBtn");
+    var r = signinEraseReadiness();
+    if (r.ready) {
+      el2.textContent = r.via === "drive"
+        ? "Ready — your class will be backed up to Google Drive first."
+        : "Ready — your class is backed up in “" + r.folderName + "”.";
+      if (btn) btn.disabled = false;
+      if ($("eraseForgetBtn")) $("eraseForgetBtn").disabled = false;
+    } else {
+      // driveSupported() is false without an account, so a signed-out rebbi
+      // cannot connect Drive at all — telling him to would be advice he can't
+      // act on, and he is the person this card exists for.
+      var canUseDrive = !!(data.account && data.account.email);
+      el2.textContent = r.reason === "folder-not-written"
+        ? "Back up to “" + r.folderName + "” first — then this unlocks."
+        : ("Choose a backups folder (above)" + (canUseDrive ? " or connect Google Drive" : "") +
+           " first. A downloaded file can't be used: Menchmark can't find it again afterwards, so it can't check it exists.");
+      if (btn) btn.disabled = true;
+      if ($("eraseForgetBtn")) $("eraseForgetBtn").disabled = true;
+    }
+  }
+
+  // `forget` decides whether the backups folder is remembered afterwards, and
+  // it must be asked here too. An earlier version always forgot, reasoning
+  // that someone erasing without an account has no way back — which had it
+  // backwards: the remembered folder IS the way back for exactly that rebbi,
+  // and it is what puts "Restore from this computer" on the setup screen.
+  function eraseFromCard(forget){
+    var r = signinEraseReadiness();
+    if (!r.ready) { renderEraseCard(); return; }
+    var where = r.via === "drive" ? "Google Drive" : "“" + r.folderName + "”";
+    var typed = prompt(
+      "This backs your class up to " + where + ", then removes it from this computer " +
+      "and returns it to the setup screen." +
+      (forget
+        ? "\n\nThis computer will not remember your backups folder afterwards."
+        : "\n\nThis computer will still remember your backups folder, so the setup screen can offer your class straight back.") +
+      "\n\nYour backup itself is not touched.\n\nType ERASE to confirm:");
+    if (typed === null) return;
+    if (typed.trim().toUpperCase() !== "ERASE") { notice("Not erased — typed text didn't match “ERASE”."); return; }
+    $("eraseCardStatus").textContent = "Backing up before erasing…";
+    signinEraseThisComputer(forget, function(){ return true; }).then(function(ok){
+      if (!ok) $("eraseCardStatus").textContent =
+        "Couldn't back up just now, so nothing was erased — your class is still here. Try again.";
+    });
+  }
+
+  if ($("eraseThisComputerBtn")) $("eraseThisComputerBtn").addEventListener("click", function(){ eraseFromCard(false); });
+  if ($("eraseForgetBtn")) $("eraseForgetBtn").addEventListener("click", function(){ eraseFromCard(true); });
+
   $("clearAllData").addEventListener("click", function(){
     var typed=prompt("This permanently erases the institution name, class name, students, activities, scores, scan log, raffle history, and your saved Google Sheet link on this device. This cannot be undone.\n\nType CLEAR to confirm:");
     if(typed===null) return;
@@ -33952,11 +34457,17 @@ Two different resets, matching the two sections of the scanner's manual — try 
 | Scans appear duplicated or garbled | Wrong baud rate selected — check your scanner's manual for its default |
 `;
 
-    function openHelp(tab) {
+    function openHelp(tab, anchor) {
       currentTab = tab || 'guide';
       renderHelpTab();
       document.getElementById('helpModal').style.display = 'block';
       document.body.style.overflow = 'hidden';
+      if (anchor) {
+        requestAnimationFrame(function(){
+          var el = document.getElementById(anchor);
+          if (el) el.scrollIntoView({block:'start'});
+        });
+      }
     }
 
     function closeHelp() {
@@ -33978,10 +34489,12 @@ Two different resets, matching the two sections of the scanner's manual — try 
     }
 
     document.addEventListener('DOMContentLoaded', function(){
-      var helpBtn   = document.getElementById('helpBtn');
-      var helpClose = document.getElementById('helpClose');
-      var helpModal = document.getElementById('helpModal');
+      var helpBtn      = document.getElementById('helpBtn');
+      var helpClose    = document.getElementById('helpClose');
+      var helpModal    = document.getElementById('helpModal');
+      var serialHelpBtn = document.getElementById('serialHelpBtn');
       if (helpBtn)   helpBtn.addEventListener('click', function(){ openHelp('guide'); });
+      if (serialHelpBtn) serialHelpBtn.addEventListener('click', function(){ openHelp('scanner', 'help-switching-a-tera-scanner-into-usb-com-mode'); });
       if (helpClose) helpClose.addEventListener('click', closeHelp);
       if (helpModal) helpModal.addEventListener('click', function(e){ if(e.target===this) closeHelp(); });
       ['helpTabGuide','helpTabScanner','helpTabAbout'].forEach(function(id, i){
