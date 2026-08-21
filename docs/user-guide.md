@@ -250,7 +250,7 @@ Use the search box and class filter at the top of the Students tab to quickly fi
 Each student can have a photo instead of just initials — this shows up on the Students tab, the tap panel, the leader board, the floating scanner, and (new) on printed seating charts.
 
 
-- Click a student's avatar circle to upload a photo, or drag an image onto it.
+- Click "Choose photo…" (or the student's avatar circle, or drag an image onto it) to upload a photo. A small crop wizard opens first — drag the circle onto his face and use the slider to grow or shrink it, then "Use this photo" saves it.
 
 
 - Prefer a link instead of a file? Use "Photo URL…" to paste a direct image link (for example, one from a Google Sheet or Drive).
